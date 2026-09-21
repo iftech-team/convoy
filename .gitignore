@@ -1,0 +1,6 @@
+.build/
+dist/
+*.zip
+.DS_Store
+Resources/AppIcon.iconset/
+.claude/settings.local.json

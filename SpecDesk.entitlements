@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <!-- Embedded CLIs use standard user permissions, as explicitly selected.
+         No Full Disk Access, Accessibility, Automation, or screen recording. -->
+</dict></plist>
