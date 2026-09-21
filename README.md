@@ -137,3 +137,7 @@ Saved terminal output is labelled read-only. If Claude reports that a conversati
 Resume always asks the provider to resume the recorded conversation; it never silently replays the first prompt when a transcript lookup fails. Missing Claude conversations offer explicit fresh recovery, preserving the worktree, branch, review relationship and account configuration. Sessions bind to their provider configuration home on their next launch; older records without that information use the selected account once. Keep the original account selected when resuming a legacy record for the first time.
 
 Stopping a terminal terminates its PTY process group and reaps the child, with a bounded fallback for an unresponsive process. Switching views retains the running terminal. Saved snapshots preserve spaces and join soft-wrapped lines. Review feedback switches focus to the original builder after insertion, without submitting it. Removed sessions are excluded from tab navigation; bulk closing does not remove running sessions from their panes.
+
+## License
+
+MIT. Embedded terminals use [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (MIT). The Claude and OpenAI marks belong to their owners and are used to identify the agents.
