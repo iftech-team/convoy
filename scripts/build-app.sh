@@ -47,6 +47,23 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 if [ -f Resources/AppIcon.icns ]; then cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"; fi
-codesign --force --sign - "$app/Contents/MacOS/ConvoyStatus"
-codesign --force --sign - "$app"
+# Signing. Default is ad-hoc (local use). For distribution set SIGN_IDENTITY to a
+# "Developer ID Application: …" certificate; the hardened runtime is required for notarization.
+# Optionally set NOTARY_PROFILE to a `xcrun notarytool store-credentials` profile name to notarize and staple.
+identity="${SIGN_IDENTITY:--}"
+if [ "$identity" = "-" ]; then
+  codesign --force --sign - "$app/Contents/MacOS/ConvoyStatus"
+  codesign --force --sign - "$app"
+else
+  codesign --force --options runtime --timestamp --entitlements Convoy.entitlements --sign "$identity" "$app/Contents/MacOS/ConvoyStatus"
+  codesign --force --options runtime --timestamp --entitlements Convoy.entitlements --deep --sign "$identity" "$app"
+  codesign --verify --deep --strict "$app"
+  if [ -n "${NOTARY_PROFILE:-}" ]; then
+    ditto -c -k --keepParent "$app" "dist/notarize.zip"
+    xcrun notarytool submit "dist/notarize.zip" --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun stapler staple "$app"
+    rm -f "dist/notarize.zip"
+    spctl --assess --type execute "$app" && echo "Notarized and stapled."
+  fi
+fi
 echo "Built $PWD/$app"

@@ -85,3 +85,25 @@ import Testing
     #expect(SessionCommand.missingConversation(in: "No conversation found with session ID: example"))
     #expect(!SessionCommand.missingConversation(in: "Connection timed out"))
 }
+
+@Test func freshRecoveryPreservesWorktreeAndAccountWithoutReplayingTask() throws {
+    var original = LinkedSession(agent: .claude, sessionID: UUID().uuidString, title: "Builder", initialPrompt: "Perform a migration", reviewOf: UUID())
+    original.workingDirectory = "/tmp/feature-worktree"
+    original.branch = "feature/test"
+    original.baseRef = "main"
+    original.agentHome = "/tmp/account-one"
+    let fresh = original.freshConversation()
+    #expect(fresh.id != original.id)
+    #expect(fresh.sessionID != original.sessionID)
+    #expect(fresh.initialPrompt == nil)
+    #expect(fresh.workingDirectory == original.workingDirectory)
+    #expect(fresh.branch == original.branch)
+    #expect(fresh.baseRef == original.baseRef)
+    #expect(fresh.reviewOf == original.reviewOf)
+    #expect(fresh.agentHome == original.agentHome)
+    let restored = try JSONDecoder().decode(LinkedSession.self, from: JSONEncoder().encode(fresh))
+    #expect(restored.agentHome == original.agentHome)
+    let resume = SessionCommand.script(session: original, directory: original.workingDirectory!, resume: true)
+    #expect(resume.contains("'--resume'"))
+    #expect(!resume.contains("Perform a migration"))
+}

@@ -17,6 +17,10 @@ import Testing
     let dataFile = WorkspaceFile(url: root.appendingPathComponent("qa-workspace.json"))
     try dataFile.save(Workspace(projects: [group, api, admin], selectedProjectID: group.id, selectedSessionID: session.id))
     let store = Store(workspaceURL: dataFile.url)
+    let staleID = UUID()
+    store.terminals.openTab(staleID)
+    #expect(!store.tabOrder.contains(staleID))
+    store.terminals.close(staleID)
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 820), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     defer { window.close() }
@@ -28,7 +32,7 @@ import Testing
     try capture(hosting, to: root.appendingPathComponent("workspace.png"))
 
     let handle = TerminalHandle(session: session, project: group, snapshotURL: root.appendingPathComponent("terminal-history.txt"))
-    let terminalView = NSHostingView(rootView: TerminalPane(handle: handle))
+    let terminalView = NSHostingView(rootView: TerminalPane(handle: handle).environmentObject(store))
     window.contentView = terminalView
     handle.start(script: "printf 'SPECDESK_READY\\n'; printf 'cwd=%s\\n' \"$PWD\"; read -r reply; printf 'received=%s\\n' \"$reply\"", directory: root.path)
     defer { if handle.running { handle.stop() } }
@@ -36,6 +40,15 @@ import Testing
         if handle.text.contains("SPECDESK_READY") { break }
         try await Task.sleep(for: .milliseconds(50))
     }
+    #expect(handle.running)
+    #expect(handle.text.contains("SPECDESK_READY"))
+    // Switching away and recreating the hosting view must retain the same PTY.
+    window.contentView = NSHostingView(rootView: Text("Another session"))
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(handle.running)
+    let reopened = NSHostingView(rootView: TerminalPane(handle: handle).environmentObject(store))
+    window.contentView = reopened
+    try await Task.sleep(for: .milliseconds(100))
     #expect(handle.running)
     #expect(handle.text.contains("SPECDESK_READY"))
     // Cursor movement leaves empty cells, as Claude's TUI does between words.
@@ -51,7 +64,25 @@ import Testing
     #expect(handle.text.contains("received=embedded-input-ok"))
     #expect(handle.exitCode == 0)
     #expect(try String(contentsOf: root.appendingPathComponent("terminal-history.txt"), encoding: .utf8).contains("embedded-input-ok"))
-    try capture(terminalView, to: root.appendingPathComponent("terminal.png"))
+    try capture(reopened, to: root.appendingPathComponent("terminal.png"))
+
+    let stoppable = TerminalHandle(session: session, project: group, snapshotURL: root.appendingPathComponent("stopped-history.txt"))
+    stoppable.start(script: "printf 'STOP_READY\\n'; read -r reply", directory: root.path)
+    defer { if stoppable.running { stoppable.stop() } }
+    for _ in 0..<100 {
+        if stoppable.text.contains("STOP_READY") { break }
+        try await Task.sleep(for: .milliseconds(50))
+    }
+    #expect(stoppable.text.contains("STOP_READY"))
+    let stoppedPID = stoppable.view.process.shellPid
+    stoppable.stop()
+    for _ in 0..<100 {
+        if kill(stoppedPID, 0) != 0 { break }
+        try await Task.sleep(for: .milliseconds(50))
+    }
+    #expect(!stoppable.running)
+    #expect(kill(stoppedPID, 0) == -1)
+    #expect(try String(contentsOf: root.appendingPathComponent("stopped-history.txt"), encoding: .utf8).contains("STOP_READY"))
 }
 
 @MainActor private func capture(_ view: NSView, to url: URL) throws {

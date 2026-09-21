@@ -132,7 +132,7 @@ struct SessionPanel: View {
                             }
                             Spacer()
                             Button("Start fresh") {
-                                let fresh = LinkedSession(agent: session.agent, sessionID: UUID().uuidString.lowercased(), title: session.title + " — new", reviewOf: session.reviewOf)
+                                let fresh = session.freshConversation()
                                 store.startSession(fresh, in: project)
                             }.buttonStyle(.borderedProminent)
                         }.padding(12).background(.bar)
@@ -454,7 +454,7 @@ struct NewSessionSheet: View {
                 Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button {
                     var session = LinkedSession(agent: agent, sessionID: agent == .claude ? UUID().uuidString.lowercased() : "", title: title.trimmingCharacters(in: .whitespacesAndNewlines), notes: note, initialPrompt: prompt, reviewOf: source?.id)
-                    if let source, let builder = project.linkedSessions.first(where: { $0.id == source.id }) { session.workingDirectory = builder.workingDirectory; session.branch = builder.branch }
+                    if let source, let builder = project.linkedSessions.first(where: { $0.id == source.id }) { session.workingDirectory = builder.workingDirectory; session.branch = builder.branch; session.baseRef = builder.baseRef }
                     let wantWorktree = source == nil && useWorktree && !branch.trimmingCharacters(in: .whitespaces).isEmpty
                     store.skipSetupOnce = setupPolicy == "skip"
                     store.startSession(session, in: project, worktreeBranch: wantWorktree ? branch.trimmingCharacters(in: .whitespaces) : nil, base: base.trimmingCharacters(in: .whitespaces))
@@ -494,6 +494,7 @@ struct SessionDetails: View {
 }
 
 struct FeedbackSheet: View {
+    @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
     let session: LinkedSession
     let project: Project
@@ -510,8 +511,10 @@ struct FeedbackSheet: View {
                 Spacer(); Button("Cancel") { dismiss() }
                 Button("Insert in builder") {
                     let safe = feedback.replacingOccurrences(of: "\u{1b}", with: "")
-                    builder?.view.send(txt: "\u{1b}[200~" + safe + "\u{1b}[201~")
+                    guard let builder, builder.running else { return }
+                    builder.view.send(txt: "\u{1b}[200~" + safe + "\u{1b}[201~")
                     dismiss()
+                    store.openSession(builder.sessionID, in: builder.projectID)
                 }.buttonStyle(.borderedProminent).disabled(builder?.running != true || feedback.isEmpty)
             }
         }.padding(24).frame(width: 650)

@@ -94,6 +94,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     override init() {
         super.init()
+        // UserNotifications raises an Objective-C exception outside an app bundle
+        // (including swift run and the native test host).
+        guard Bundle.main.bundleURL.pathExtension == "app", Bundle.main.bundleIdentifier != nil else { return }
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         center.requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, _ in
@@ -102,6 +105,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func post(title: String, body: String, sessionID: UUID, sound: String) {
+        guard authorized else { return }
         let content = UNMutableNotificationContent()
         content.title = title; content.body = body
         content.userInfo = ["session": sessionID.uuidString]

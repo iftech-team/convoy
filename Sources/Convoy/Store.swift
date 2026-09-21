@@ -256,8 +256,9 @@ final class Store: ObservableObject {
         commit(next); multiSelection = []
     }
     func closeTabs(_ ids: Set<UUID>) {
-        for id in ids where terminals.handles[id]?.running != true { terminals.close(id) }
-        panes = panes.map { $0.map { ids.contains($0) ? nil : $0 } ?? nil }
+        let closable = ids.filter { terminals.handles[$0]?.running != true }
+        for id in closable { terminals.close(id) }
+        panes = panes.map { $0.map { closable.contains($0) ? nil : $0 } ?? nil }
         multiSelection = []
         if let current = workspace.selectedSessionID, !tabOrder.contains(current) {
             if let last = tabOrder.last, let project = project(ofSession: last) { openSession(last, in: project.id) } else { goHome() }
@@ -523,7 +524,7 @@ final class Store: ObservableObject {
         sessionCreationProject = project
     }
     /// Open tab ids in display order (archived or removed sessions are skipped).
-    var tabOrder: [UUID] { terminals.openOrder.filter { session($0)?.archived != true } }
+    var tabOrder: [UUID] { terminals.openOrder.filter { session($0).map { $0.archived != true } ?? false } }
     func selectTab(index: Int) {
         let tabs = tabOrder
         guard tabs.indices.contains(index), let project = project(ofSession: tabs[index]) else { return }
@@ -587,11 +588,26 @@ final class Store: ObservableObject {
     /// `worktreeBranch` creates (or reuses) a git worktree for the session before launching.
     func startSession(_ session: LinkedSession, in project: Project, resume: Bool = false, worktreeBranch: String? = nil, base: String? = nil) {
         guard canSave else { error = "Recover your workspace before launching a session."; return }
+        if terminals.handles[session.id]?.running == true {
+            openSession(session.id, in: project.id)
+            return
+        }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else {
             error = "This workspace folder no longer exists. Reconnect its folder before launching a session."; return
         }
         var session = session
+        if session.agentHome == nil {
+            let key = session.agent == .claude ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME"
+            session.agentHome = accounts.environment(for: session.agent)[key]
+                ?? ProcessInfo.processInfo.environment[key]
+                ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(session.agent == .claude ? ".claude" : ".codex").path
+        }
+        if let home = session.agentHome, home.hasPrefix(Accounts.root.path + "/"),
+           !FileManager.default.fileExists(atPath: home) {
+            error = "The account used by this session was removed. Restore that account before resuming."
+            return
+        }
         var createdWorktree = false
         if let worktreeBranch, !worktreeBranch.isEmpty, session.workingDirectory == nil {
             do {
@@ -604,7 +620,8 @@ final class Store: ObservableObject {
                 if !notes.isEmpty { notice = "Shared paths: " + notes.joined(separator: ", ") }
             } catch { self.error = "Couldn’t create the worktree: \(error.localizedDescription)"; return }
         }
-        if let dir = session.workingDirectory, !FileManager.default.fileExists(atPath: dir) {
+        if let dir = session.workingDirectory,
+           (!FileManager.default.fileExists(atPath: dir, isDirectory: &isDirectory) || !isDirectory.boolValue) {
             error = "This session’s worktree is missing (\(dir)). Remove the worktree from the session menu, or recreate it."; return
         }
         if !project.linkedSessions.contains(where: { $0.id == session.id }) {
@@ -612,16 +629,11 @@ final class Store: ObservableObject {
         } else {
             updateSession(session, project: project.id)
         }
-        guard workspace.projects.first(where: { $0.id == project.id })?.linkedSessions.contains(where: { $0.id == session.id }) == true else { return }
+        guard workspace.projects.first(where: { $0.id == project.id })?.linkedSessions.first(where: { $0.id == session.id }) == session else { return }
         let directory = directory(for: session, in: project)
-        var resume = resume
-        if resume, session.agent == .claude, !session.sessionID.isEmpty,
-           !SessionCommand.claudeTranscriptExists(sessionID: session.sessionID, directory: directory) {
-            // Claude never saved this conversation (no message was sent), so a resume would fail.
-            // Start it fresh under the same ID instead of showing an error.
-            resume = false
-            notice = "No saved conversation for “\(session.title)” — started fresh with the same session ID."
-        }
+        // Resume is an explicit provider operation. A guessed transcript path is
+        // not evidence that a conversation is absent (accounts and formats vary).
+        // Never replay the initial task or silently create a replacement here.
         if session.agent == .claude, !session.sessionID.isEmpty, !resume { agentStatus.forget(session.sessionID) }
         hibernated.remove(session.id)
         var setup: String?

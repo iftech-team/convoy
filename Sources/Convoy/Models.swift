@@ -26,6 +26,20 @@ struct LinkedSession: Codable, Identifiable, Equatable, Sendable {
     var branch: String?
     var baseRef: String?
     var pinned: Bool?
+    /// Provider configuration home selected on first launch; retained for resume.
+    var agentHome: String?
+
+    /// Recovery preserves scope, but never replays a possibly completed task.
+    func freshConversation() -> LinkedSession {
+        var fresh = self
+        fresh.id = UUID()
+        fresh.sessionID = agent == .claude ? UUID().uuidString.lowercased() : ""
+        fresh.title += " — new"
+        fresh.createdAt = Date()
+        fresh.initialPrompt = nil
+        fresh.archived = false
+        return fresh
+    }
 }
 
 /// A unit of work an agent takes end to end: worktree, implementation, then PR or push.

@@ -13,6 +13,17 @@ bash scripts/install.sh   # or: open dist/Convoy.app
 
 The first build fetches SwiftTerm and its package dependencies. The script packages its resource bundle in the macOS Resources directory and adjusts SwiftPM's generated release resource accessor accordingly. The app is ad-hoc signed for local use, not notarized for distribution.
 
+## Signing for distribution
+
+Local builds are ad-hoc signed and need `xattr -dr com.apple.quarantine` (or the landing's one-line installer) on other Macs. For a build Gatekeeper accepts:
+
+```sh
+xcrun notarytool store-credentials convoy --apple-id you@example.com --team-id TEAMID   # once; uses an app-specific password
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=convoy bash scripts/install.sh
+```
+
+This needs a paid Apple Developer Program membership and a Developer ID Application certificate (Xcode → Settings → Accounts → Manage Certificates).
+
 ## Start working
 
 1. Choose **Open folder…**. Select a single repository or a parent such as `Projects` or `olucha-cargo`.
@@ -111,3 +122,9 @@ Read-only live Codex integration test: add `SPECDESK_LIVE_LIMITS_TEST=1` to the 
 Opening a session collapses the project and session sidebars and replaces the workspace header with a 40-point terminal toolbar. Use the project menu to reach Reviews or Specs, the session title to switch conversations, the list button to browse sessions, and the three-dot menu for review, edit, archive and stop actions. The native sidebar button restores projects. Agent trust/permission prompts remain in the terminal.
 
 Saved terminal output is labelled read-only. If Claude reports that a conversation ID does not exist (for example, a launch ended at the trust screen before any messages), Convoy offers **Start fresh** in the same workspace. This creates a new session record and preserves the old one; it does not bypass the agent's trust prompt or silently replay the original task. Snapshots preserve blank terminal cells as spaces and skip continuation cells for wide characters.
+
+### Session reliability
+
+Resume always asks the provider to resume the recorded conversation; it never silently replays the first prompt when a transcript lookup fails. Missing Claude conversations offer explicit fresh recovery, preserving the worktree, branch, review relationship and account configuration. Sessions bind to their provider configuration home on their next launch; older records without that information use the selected account once. Keep the original account selected when resuming a legacy record for the first time.
+
+Stopping a terminal terminates its PTY process group and reaps the child, with a bounded fallback for an unresponsive process. Switching views retains the running terminal. Saved snapshots preserve spaces and join soft-wrapped lines. Review feedback switches focus to the original builder after insertion, without submitting it. Removed sessions are excluded from tab navigation; bulk closing does not remove running sessions from their panes.

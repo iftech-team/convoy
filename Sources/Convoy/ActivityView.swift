@@ -81,7 +81,7 @@ struct ProjectIconSheet: View {
     @State private var emoji = ""
     @State private var fetching = false
     @State private var fetchError: String?
-    static let colors = ["#5E6AD2", "#4CAF83", "#E5A54B", "#D65C5C", "#3FA7D6", "#B067C9", "#8A8F98", "#E07C4C"]
+    nonisolated static let colors = ["#5E6AD2", "#4CAF83", "#E5A54B", "#D65C5C", "#3FA7D6", "#B067C9", "#8A8F98", "#E07C4C"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {

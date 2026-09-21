@@ -61,20 +61,6 @@ enum SessionCommand {
         return prefix + " && exec " + args.map(quote).joined(separator: " ")
     }
 
-    /// Claude writes `~/.claude/projects/<encoded cwd>/<session id>.jsonl` after the first message.
-    /// Nothing is written for a session that was opened and closed without a message.
-    static func claudeTranscriptExists(sessionID: String, directory: String) -> Bool {
-        let id = sessionID.lowercased()
-        guard !id.isEmpty else { return false }
-        let root = (ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
-                    ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")).appendingPathComponent("projects")
-        let encoded = directory.replacingOccurrences(of: "[^A-Za-z0-9]", with: "-", options: .regularExpression)
-        if FileManager.default.fileExists(atPath: root.appendingPathComponent(encoded).appendingPathComponent("\(id).jsonl").path) { return true }
-        // Encoding rules may differ between versions; fall back to a shallow search.
-        let dirs = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
-        return dirs.contains { FileManager.default.fileExists(atPath: root.appendingPathComponent($0).appendingPathComponent("\(id).jsonl").path) }
-    }
-
     static func codexID(in text: String) -> String? {
         let pattern = #"codex resume ([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"#
         guard let range = text.range(of: pattern, options: .regularExpression) else { return nil }
@@ -149,8 +135,29 @@ final class TerminalHandle: NSObject, ObservableObject, @preconcurrency LocalPro
     }
 
     func stop() {
+        guard running else { return }
         saveSnapshot()
+        let pid = view.process.shellPid
+        // Interactive shells can ignore SIGTERM. Signal the PTY's own process
+        // group, then reap the child after SwiftTerm cancels its exit watcher.
+        if pid > 0 { kill(getpgid(pid) == pid ? -pid : pid, SIGHUP) }
         view.terminate()
+        if pid > 0 {
+            Task.detached {
+                var status: Int32 = 0
+                for _ in 0..<40 {
+                    let result = waitpid(pid, &status, WNOHANG)
+                    if result != 0 { return }
+                    try? await Task.sleep(for: .milliseconds(50))
+                }
+                // waitpid == 0 means this is still our unreaped child, so its
+                // PID cannot have been reused by an unrelated process.
+                if waitpid(pid, &status, WNOHANG) == 0 {
+                    kill(getpgid(pid) == pid ? -pid : pid, SIGKILL)
+                    _ = waitpid(pid, &status, 0)
+                }
+            }
+        }
         running = false
         onChange?()
     }
@@ -218,7 +225,9 @@ final class TerminalManager: ObservableObject {
             if UserDefaults.standard.object(forKey: "agentStatusHooks") as? Bool ?? true { hookHelper = helper.path }
         }
         var extra = accounts?.environment(for: session.agent) ?? [:]
-        if session.agent == .claude, let dir = extra["CLAUDE_CONFIG_DIR"] { extra["CLAUDE_CONFIG_DIR"] = dir }
+        if let home = session.agentHome {
+            extra[session.agent == .claude ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME"] = home
+        }
         handle.start(script: SessionCommand.script(session: session, directory: directory, resume: resume, claudeStatusCommand: statusCommand, hookHelper: hookHelper, setup: setup), directory: directory, extraEnvironment: extra)
     }
 
@@ -262,10 +271,13 @@ func terminalSnapshot(_ terminal: Terminal) -> String {
     var lines: [String] = []
     var row = terminal.buffer.totalLinesTrimmed
     while let line = terminal.getScrollInvariantLine(row: row) {
-        lines.append(line.translateToString(trimRight: true, skipNullCellsFollowingWide: true) { cell in
+        let continues = terminal.getScrollInvariantLine(row: row + 1)?.isWrapped == true
+        let text = line.translateToString(trimRight: !continues, skipNullCellsFollowingWide: true) { cell in
             let character = terminal.getCharacter(for: cell)
             return character == "\0" ? " " : character
-        })
+        }
+        if line.isWrapped && !lines.isEmpty { lines[lines.count - 1] += text }
+        else { lines.append(text) }
         row += 1
     }
     return lines.joined(separator: "\n")
