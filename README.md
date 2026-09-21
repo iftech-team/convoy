@@ -1,5 +1,14 @@
 # Convoy
 
+**Website and download:** [peshbar.com/convoy](https://peshbar.com/convoy) · **Releases:** [GitHub Releases](https://github.com/iftech-team/convoy/releases) · Part of the [Peshbar](https://peshbar.com) family.
+
+Install the latest build on macOS 14+ with one command (downloads the release, installs to /Applications, clears quarantine):
+
+```sh
+curl -fsSL https://peshbar.com/convoy-install.sh | sh
+```
+
+
 Convoy is a macOS workspace for Claude Code and Codex sessions. Sessions and cross-agent reviews come first; Spec Driven Development is optional.
 
 Requires macOS 14+, Swift 6 to build, and your existing Claude Code / Codex CLI installation and login. Embedded terminals use SwiftTerm 1.20.0 (MIT).
