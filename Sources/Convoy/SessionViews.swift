@@ -247,14 +247,16 @@ struct TerminalPane: View {
 struct NewSessionSheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
-    let project: Project
+    @State private var project: Project
     let source: LinkedSession?
+    /// Header / ⌘N: the sheet opens on the current project but any project can be chosen.
+    let pickProject: Bool
     @State private var agent: Agent
     @State private var title: String
     @State private var prompt: String
 
-    init(project: Project, source: LinkedSession? = nil, output: String = "") {
-        self.project = project; self.source = source
+    init(project: Project, source: LinkedSession? = nil, output: String = "", pickProject: Bool = false) {
+        _project = State(initialValue: project); self.source = source; self.pickProject = pickProject
         let preferred = project.defaultAgent ?? (Agent(rawValue: UserDefaults.standard.string(forKey: "defaultAgent") ?? "") ?? .claude)
         _agent = State(initialValue: source?.agent.other ?? preferred)
         _title = State(initialValue: source.map { "Review: \($0.title)" } ?? "")
@@ -270,6 +272,40 @@ struct NewSessionSheet: View {
     @State private var refs: [String] = []
 
     private var isGitRepo: Bool { FileManager.default.fileExists(atPath: project.path + "/.git") }
+
+    private func switchProject(to next: Project) {
+        guard next.id != project.id else { return }
+        project = next
+        refs = []; base = next.baseRef ?? ""; branchEdited = false
+        branch = GitWorktree.slug(title, prefix: next.branchPrefix ?? branchPrefix)
+        if agent != .codex || next.defaultAgent != nil { agent = next.defaultAgent ?? agent }
+        useWorktree = worktreeByDefault
+        loadRefs()
+    }
+
+    private var projectChip: some View {
+        HStack(spacing: 6) {
+            ProjectIconView(project: project, size: 14)
+            Text(project.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(project.tint)
+            if pickProject { Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary) }
+        }.padding(.horizontal, 8).padding(.vertical, 4).background(project.tint.opacity(0.12), in: Capsule())
+    }
+
+    @ViewBuilder private var projectPicker: some View {
+        if pickProject {
+            Menu {
+                ForEach(store.workspace.rootProjects) { root in
+                    Button { switchProject(to: root) } label: { Label(root.name, systemImage: root.id == project.id ? "checkmark" : (root.isGroup ? "folder" : "shippingbox")) }
+                    ForEach(store.workspace.children(of: root.id)) { child in
+                        Button { switchProject(to: child) } label: { Label("    " + child.name, systemImage: child.id == project.id ? "checkmark" : "shippingbox") }
+                    }
+                }
+            } label: { projectChip }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Choose the project for this session")
+        } else {
+            projectChip
+        }
+    }
 
     private func loadRefs() {
         let path = project.path
@@ -352,10 +388,7 @@ struct NewSessionSheet: View {
             HStack(spacing: 10) {
                 Text(source == nil ? "New session" : "Start a review").font(.system(size: 18, weight: .bold))
                 Spacer()
-                HStack(spacing: 6) {
-                    ProjectIconView(project: project, size: 14)
-                    Text(project.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(project.tint)
-                }.padding(.horizontal, 8).padding(.vertical, 4).background(project.tint.opacity(0.12), in: Capsule())
+                projectPicker
             }
             Text(project.path).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled).lineLimit(1).truncationMode(.middle)
 
@@ -446,6 +479,7 @@ struct NewSessionSheet: View {
                     if let source, let builder = project.linkedSessions.first(where: { $0.id == source.id }) { session.workingDirectory = builder.workingDirectory; session.branch = builder.branch; session.baseRef = builder.baseRef }
                     let wantWorktree = source == nil && useWorktree && !branch.trimmingCharacters(in: .whitespaces).isEmpty
                     store.skipSetupOnce = setupPolicy == "skip"
+                    if pickProject, store.workspace.selectedProjectID != project.id { store.selectProject(project.id) }
                     store.startSession(session, in: project, worktreeBranch: wantWorktree ? branch.trimmingCharacters(in: .whitespaces) : nil, base: base.trimmingCharacters(in: .whitespaces))
                     if store.error == nil {
                         if keepOpen { title = ""; prompt = ""; note = ""; branch = ""; branchEdited = false } else { dismiss() }

@@ -508,8 +508,9 @@ final class Store: ObservableObject {
         let current = UserDefaults.standard.object(forKey: "showSidebar") as? Bool ?? true
         UserDefaults.standard.set(!current, forKey: "showSidebar")
     }
+    /// ⌘N / header plus: opens the new-session sheet on the current project (or the first one); the sheet lets you pick another.
     func newSessionInCurrentProject() {
-        guard let project else { return }
+        guard let project = project ?? workspace.rootProjects.first else { return }
         sessionCreationProject = project
     }
     /// Open tab ids in display order (archived or removed sessions are skipped).

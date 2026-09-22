@@ -113,7 +113,7 @@ struct WorkspaceView: View {
         .onChange(of: store.showSettings) { _, v in if v { store.projectSettingsID = nil } }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in store.updateBadge(); store.agentStatus.reload() }
         .sheet(item: $store.sessionCreationProject) { project in
-            NewSessionSheet(project: project)
+            NewSessionSheet(project: project, pickProject: true)
         }
         .alert("Remove from Convoy?", isPresented: Binding(get: { projectToRemove != nil }, set: { if !$0 { projectToRemove = nil } }), presenting: projectToRemove) { project in
             Button("Cancel", role: .cancel) { projectToRemove = nil }
@@ -195,11 +195,11 @@ struct SessionTabBar: View {
                 }.frame(width: 28, height: 28).contentShape(Rectangle())
             }.buttonStyle(.plain).help("Activity (\(store.keys.display("go.activity")))").accessibilityLabel("Activity feed")
                 .popover(isPresented: $store.showActivity, arrowEdge: .bottom) { ActivityFeed().environmentObject(store) }
-            if let project = store.project {
-                Button { store.sessionCreationProject = project } label: {
+            if !store.workspace.projects.isEmpty {
+                Button { store.newSessionInCurrentProject() } label: {
                     Image(systemName: "plus").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
                         .frame(width: 28, height: 28).contentShape(Rectangle())
-                }.buttonStyle(.plain).help("New session in \(project.name)").accessibilityLabel("New session")
+                }.buttonStyle(.plain).help("New session… (\(store.keys.display("session.new")))").accessibilityLabel("New session")
                     .padding(.trailing, 6)
             }
         }
@@ -932,7 +932,7 @@ struct AppCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("New Session…") { store.newSessionInCurrentProject() }.bound("session.new", keys).disabled(store.project == nil)
+            Button("New Session…") { store.newSessionInCurrentProject() }.bound("session.new", keys).disabled(store.workspace.projects.isEmpty)
             Button("New Specification…") { store.newSpecRequest = UUID() }.bound("project.newSpec", keys).disabled(store.project == nil)
             Button("Open Folder…") { store.addProject() }.bound("project.open", keys)
             Divider()

@@ -146,7 +146,7 @@ struct EmptyPane: View {
             Text("Drop a session here, or pick one").font(.system(size: 11)).foregroundStyle(.tertiary)
             HStack(spacing: 8) {
                 Button { store.focusedPane = index; store.openPalette(.terminals) } label: { Label("Choose…", systemImage: "rectangle.on.rectangle") }
-                Button { store.focusedPane = index; store.newSessionInCurrentProject() } label: { Label("New session", systemImage: "plus") }.disabled(store.project == nil)
+                Button { store.focusedPane = index; store.newSessionInCurrentProject() } label: { Label("New session", systemImage: "plus") }.disabled(store.workspace.projects.isEmpty)
             }.controlSize(.small)
             if !suggestions.isEmpty {
                 VStack(spacing: 2) {

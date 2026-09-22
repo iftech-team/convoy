@@ -30,7 +30,7 @@ struct HomePage: View {
                     Spacer()
                     HStack(spacing: 8) {
                         Button { store.newSessionInCurrentProject() } label: { Label("New session", systemImage: "plus") }
-                            .buttonStyle(.borderedProminent).disabled(store.project == nil).help(store.keys.display("session.new"))
+                            .buttonStyle(.borderedProminent).disabled(store.workspace.projects.isEmpty).help(store.keys.display("session.new"))
                         Button { store.addProject() } label: { Label("Open folder", systemImage: "folder.badge.plus") }.help(store.keys.display("project.open"))
                         Button { store.openPalette(.all) } label: { Label("Search", systemImage: "command") }.help(store.keys.display("go.palette"))
                         Button { store.dashboardRequest = UUID() } label: { Label("Dashboard", systemImage: "rectangle.3.group") }.help(store.keys.display("go.dashboard"))
