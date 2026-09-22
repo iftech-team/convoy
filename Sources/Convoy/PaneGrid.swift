@@ -9,11 +9,12 @@ struct PaneGrid: View {
         Group {
             switch store.paneCount {
             case 2:
-                HSplitView { pane(0); pane(1) }
+                EvenSplit(axis: .horizontal, key: "panes.h") { pane(0) } second: { pane(1) }
             case 4:
-                VSplitView {
-                    HSplitView { pane(0); pane(1) }
-                    HSplitView { pane(2); pane(3) }
+                EvenSplit(axis: .vertical, key: "panes.v") {
+                    EvenSplit(axis: .horizontal, key: "panes.h1") { pane(0) } second: { pane(1) }
+                } second: {
+                    EvenSplit(axis: .horizontal, key: "panes.h2") { pane(2) } second: { pane(3) }
                 }
             default:
                 pane(0)
@@ -49,6 +50,57 @@ struct PaneGrid: View {
             _ = project
             return true
         }
+    }
+}
+
+/// Two children split down the middle, with a draggable divider. Unlike HSplitView the first
+/// child never swallows the whole width; the ratio is remembered per key.
+struct EvenSplit<First: View, Second: View>: View {
+    let axis: Axis
+    let key: String
+    @ViewBuilder let first: () -> First
+    @ViewBuilder let second: () -> Second
+    @State private var fraction: CGFloat
+    @State private var dragStart: CGFloat?
+    @State private var hovering = false
+
+    init(axis: Axis, key: String, @ViewBuilder first: @escaping () -> First, @ViewBuilder second: @escaping () -> Second) {
+        self.axis = axis; self.key = key; self.first = first; self.second = second
+        let saved = UserDefaults.standard.double(forKey: "split." + key)
+        _fraction = State(initialValue: saved > 0.15 && saved < 0.85 ? saved : 0.5)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let total = axis == .horizontal ? geo.size.width : geo.size.height
+            let minimum: CGFloat = axis == .horizontal ? 320 : 200
+            let firstSize = max(minimum, min(max(minimum, total - minimum), (total * fraction).rounded()))
+            let divider = Rectangle().fill(Color.primary.opacity(hovering ? 0.25 : 0.1))
+                .frame(width: axis == .horizontal ? 1 : nil, height: axis == .vertical ? 1 : nil)
+                .padding(axis == .horizontal ? .horizontal : .vertical, 3)
+                .contentShape(Rectangle())
+                .onHover { inside in hovering = inside; if inside { (axis == .horizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).push() } else { NSCursor.pop() } }
+                .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("split." + key)).onChanged { value in
+                    if dragStart == nil { dragStart = firstSize }
+                    let delta = axis == .horizontal ? value.translation.width : value.translation.height
+                    let next = max(minimum, min(max(minimum, total - minimum), (dragStart ?? firstSize) + delta))
+                    fraction = next / max(total, 1)
+                }.onEnded { _ in dragStart = nil; UserDefaults.standard.set(Double(fraction), forKey: "split." + key) })
+                .onTapGesture(count: 2) { fraction = 0.5; UserDefaults.standard.set(0.5, forKey: "split." + key) }
+            if axis == .horizontal {
+                HStack(spacing: 0) {
+                    first().frame(width: firstSize)
+                    divider
+                    second().frame(maxWidth: .infinity)
+                }
+            } else {
+                VStack(spacing: 0) {
+                    first().frame(height: firstSize)
+                    divider
+                    second().frame(maxHeight: .infinity)
+                }
+            }
+        }.coordinateSpace(name: "split." + key)
     }
 }
 

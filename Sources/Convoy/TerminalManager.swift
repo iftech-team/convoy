@@ -131,6 +131,8 @@ final class TerminalHandle: NSObject, ObservableObject, @preconcurrency LocalPro
     private var seenPR: String?
     private let snapshotURL: URL
     var onChange: (() -> Void)?
+    /// The SwiftUI host currently allowed to display `view`. See TerminalContainer.
+    weak var owner: TerminalContainer?
 
     init(session: LinkedSession, project: Project, snapshotURL: URL) {
         self.sessionID = session.id
@@ -323,28 +325,44 @@ func terminalSnapshot(_ terminal: Terminal) -> String {
     return lines.joined(separator: "\n")
 }
 
+/// Container that owns the terminal view. SwiftUI may briefly keep an old host alive while creating a
+/// new one for the same handle (for example when the pane layout changes); only the newest container
+/// may claim the view, so a dying host never steals it back and leaves the pane blank.
+final class TerminalContainer: NSView {
+    weak var handle: TerminalHandle?
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil { claimIfOwner() }
+    }
+    func claimIfOwner() {
+        guard let handle, handle.owner === self else { return }
+        let terminal = handle.view
+        if terminal.superview !== self {
+            terminal.removeFromSuperview()
+            terminal.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(terminal)
+            NSLayoutConstraint.activate([
+                terminal.leadingAnchor.constraint(equalTo: leadingAnchor),
+                terminal.trailingAnchor.constraint(equalTo: trailingAnchor),
+                terminal.topAnchor.constraint(equalTo: topAnchor),
+                terminal.bottomAnchor.constraint(equalTo: bottomAnchor)
+            ])
+        }
+        if window != nil { DispatchQueue.main.async { [weak self] in self?.window?.makeFirstResponder(terminal) } }
+    }
+}
+
 struct EmbeddedTerminal: NSViewRepresentable {
     let handle: TerminalHandle
-    func makeNSView(context: Context) -> NSView {
-        let container = NSView()
-        install(in: container)
+    func makeNSView(context: Context) -> TerminalContainer {
+        let container = TerminalContainer()
+        container.handle = handle
+        handle.owner = container
+        container.claimIfOwner()
         return container
     }
-    func updateNSView(_ container: NSView, context: Context) {
-        if handle.view.superview !== container { install(in: container) }
-    }
-    private func install(in container: NSView) {
-        container.subviews.forEach { $0.removeFromSuperview() }
-        let terminal = handle.view
-        terminal.removeFromSuperview()
-        terminal.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(terminal)
-        NSLayoutConstraint.activate([
-            terminal.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            terminal.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            terminal.topAnchor.constraint(equalTo: container.topAnchor),
-            terminal.bottomAnchor.constraint(equalTo: container.bottomAnchor)
-        ])
-        DispatchQueue.main.async { terminal.window?.makeFirstResponder(terminal) }
+    func updateNSView(_ container: TerminalContainer, context: Context) {
+        if handle.owner == nil { handle.owner = container }
+        container.claimIfOwner()
     }
 }
