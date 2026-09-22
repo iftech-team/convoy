@@ -131,106 +131,317 @@ extension Store {
 
 // MARK: - Views
 
+extension AgentTask.Status {
+    var label: String {
+        switch self { case .queued: "Queued"; case .running: "Running"; case .review: "Needs review"; case .pr: "PR open"; case .done: "Done"; case .failed: "Failed" }
+    }
+    var tint: Color {
+        switch self { case .queued: .secondary; case .running: AppTheme.accent; case .review: .orange; case .pr: .purple; case .done: .green; case .failed: .red }
+    }
+    /// Linear-style status glyph.
+    var symbol: String {
+        switch self { case .queued: "circle.dotted"; case .running: "circle.lefthalf.filled"; case .review: "circle.righthalf.filled"; case .pr: "arrow.triangle.pull"; case .done: "checkmark.circle.fill"; case .failed: "xmark.circle" }
+    }
+    /// Display order for sections and columns.
+    static let display: [AgentTask.Status] = [.queued, .running, .review, .pr, .done, .failed]
+}
+
 struct TasksPanel: View {
     @EnvironmentObject var store: Store
     let project: Project?           // nil = all projects
+    @AppStorage("tasksLayout") private var layout = "list"
     @State private var editing: AgentTask?
-    @State private var filter: AgentTask.Status?
+    @State private var collapsed: Set<AgentTask.Status> = []
+    @State private var hideDone = false
 
-    private var list: [AgentTask] {
-        let base = project.map { store.tasks(for: $0) } ?? store.tasks
-        let order: [AgentTask.Status] = [.running, .review, .pr, .queued, .failed, .done]
-        return base.filter { filter == nil || $0.status == filter }.sorted { a, b in
-            let ia = order.firstIndex(of: a.status) ?? 9, ib = order.firstIndex(of: b.status) ?? 9
-            return ia != ib ? ia < ib : a.createdAt > b.createdAt
-        }
+    private var all: [AgentTask] {
+        (project.map { store.tasks(for: $0) } ?? store.tasks).sorted { $0.createdAt > $1.createdAt }
+    }
+    private func tasks(in status: AgentTask.Status) -> [AgentTask] { all.filter { $0.status == status } }
+    private var visibleStatuses: [AgentTask.Status] { AgentTask.Status.display.filter { !(hideDone && $0 == .done) } }
+
+    private func newTask(in status: AgentTask.Status = .queued) {
+        guard let p = project ?? store.project else { return }
+        var task = AgentTask(projectID: p.id, title: "", mode: p.taskMode ?? "pr", agent: p.defaultAgent ?? (Agent(rawValue: UserDefaults.standard.string(forKey: "defaultAgent") ?? "") ?? .claude))
+        task.status = status == .running ? .queued : status
+        editing = task
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Text(project.map { "Tasks · \($0.name)" } ?? "All tasks").font(.system(size: 15, weight: .semibold))
-                Picker("", selection: $filter) {
-                    Text("All").tag(AgentTask.Status?.none)
-                    ForEach(AgentTask.Status.allCases, id: \.self) { s in Text(label(s)).tag(AgentTask.Status?.some(s)) }
-                }.pickerStyle(.menu).labelsHidden().frame(width: 120)
+                Text("\(all.count)").font(.system(size: 12, weight: .medium)).foregroundStyle(.tertiary)
+                Picker("", selection: $layout) {
+                    Label("List", systemImage: "list.bullet").tag("list")
+                    Label("Board", systemImage: "rectangle.split.3x1").tag("board")
+                }.pickerStyle(.segmented).labelsHidden().frame(width: 150).help("List or kanban board")
+                Toggle(isOn: $hideDone) { Text("Hide done").font(.system(size: 11)) }.toggleStyle(.checkbox)
                 Spacer()
                 if let project {
                     Toggle("Auto-run queue", isOn: Binding(get: { project.autoRunTasks == true }, set: { v in var p = project; p.autoRunTasks = v; store.updateProject(p) }))
                         .toggleStyle(.switch).controlSize(.small).help("Start the next queued task when one finishes")
-                    Button { editing = AgentTask(projectID: project.id, title: "", mode: project.taskMode ?? "pr", agent: project.defaultAgent ?? (Agent(rawValue: UserDefaults.standard.string(forKey: "defaultAgent") ?? "") ?? .claude)) } label: { Label("New task", systemImage: "plus") }.buttonStyle(.borderedProminent)
-                } else if let p = store.project {
-                    Button { editing = AgentTask(projectID: p.id, title: "", mode: p.taskMode ?? "pr") } label: { Label("New task in \(p.name)", systemImage: "plus") }.buttonStyle(.borderedProminent)
                 }
+                if project != nil || store.project != nil {
+                    Button { newTask() } label: { Label(project == nil ? "New task in \(store.project?.name ?? "")" : "New task", systemImage: "plus") }.buttonStyle(.borderedProminent)
+                }
+            }.padding(.horizontal, 20).padding(.vertical, 14)
+            Divider()
+            if all.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: "checklist").font(.system(size: 26)).foregroundStyle(.tertiary)
+                    Text("No tasks yet").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
+                    Text("Describe the work; the agent takes it in its own worktree, implements, verifies, then opens a PR or pushes.")
+                        .font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center).frame(maxWidth: 380)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if layout == "board" {
+                board
+            } else {
+                list
             }
-            Text("Describe the work; the agent takes it in its own worktree, implements, verifies, then opens a PR or pushes. Status follows the agent's hooks; PR links are picked up from the terminal.")
-                .font(.caption).foregroundStyle(.secondary)
-            if list.isEmpty {
-                Text(filter == nil ? "No tasks yet." : "No tasks with this status.").font(.caption).foregroundStyle(.secondary).padding(.top, 8)
-            }
-            ScrollView {
-                LazyVStack(spacing: 0) { ForEach(list) { task in row(task) } }
-                    .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(AppTheme.stroke))
-            }
-        }.padding(20)
-            .sheet(item: $editing) { task in TaskSheet(task: task) }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .sheet(item: $editing) { task in TaskSheet(task: task) }
     }
 
-    func label(_ s: AgentTask.Status) -> String {
-        switch s { case .queued: "Queued"; case .running: "Running"; case .review: "Needs review"; case .pr: "PR open"; case .done: "Done"; case .failed: "Failed" }
-    }
-    func tint(_ s: AgentTask.Status) -> Color {
-        switch s { case .queued: .secondary; case .running: AppTheme.accent; case .review: .orange; case .pr: .purple; case .done: .green; case .failed: .red }
-    }
+    // MARK: List
 
-    private func row(_ task: AgentTask) -> some View {
-        let proj = store.workspace.projects.first { $0.id == task.projectID }
-        let session = task.sessionID.flatMap { store.session($0) }
-        let running = task.sessionID.flatMap { store.terminals.handles[$0]?.running } == true
-        return HStack(alignment: .top, spacing: 12) {
-            Text(label(task.status)).font(.system(size: 10, weight: .semibold)).foregroundStyle(tint(task.status))
-                .padding(.horizontal, 7).padding(.vertical, 3).background(tint(task.status).opacity(0.14), in: Capsule()).frame(width: 96, alignment: .leading)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    Text(task.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                    if project == nil, let proj { Text(proj.name).font(.system(size: 11)).foregroundStyle(proj.tint) }
-                    if let b = task.branch { Text("⎇ " + b).font(.system(size: 10)).foregroundStyle(.secondary) }
-                    if let spec = task.spec { Text("spec: " + URL(fileURLWithPath: spec).lastPathComponent).font(.system(size: 10)).foregroundStyle(.secondary) }
-                }
-                if !task.details.isEmpty { Text(task.details).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2) }
-                HStack(spacing: 8) {
-                    Text(task.mode == "pr" ? "→ pull request" : (task.mode == "push" ? "→ push to main" : "commit only")).font(.system(size: 10)).foregroundStyle(.tertiary)
-                    if let url = task.prURL { Link(url.replacingOccurrences(of: "https://", with: ""), destination: URL(string: url)!).font(.system(size: 10)) }
-                    if let s = session, let state = store.agentState(s), running { Text(AgentStateGlyph(state: state, running: true).label).font(.system(size: 10)).foregroundStyle(state.needsYou ? .orange : .secondary) }
-                    Text(task.createdAt.formatted(.relative(presentation: .named))).font(.system(size: 10)).foregroundStyle(.tertiary)
+    private var list: some View {
+        ScrollView {
+            LazyVStack(spacing: 0, pinnedViews: .sectionHeaders) {
+                ForEach(visibleStatuses, id: \.self) { status in
+                    let items = tasks(in: status)
+                    if !items.isEmpty || status == .queued {
+                        Section {
+                            if !collapsed.contains(status) {
+                                ForEach(items) { task in TaskRow(task: task, showProject: project == nil, editing: $editing) }
+                                if items.isEmpty { Text("Nothing queued.").font(.caption).foregroundStyle(.tertiary).padding(.leading, 44).padding(.vertical, 8).frame(maxWidth: .infinity, alignment: .leading) }
+                            }
+                        } header: {
+                            sectionHeader(status, count: items.count)
+                        }
+                        .dropDestination(for: String.self) { ids, _ in move(ids, to: status) }
+                    }
                 }
             }
+        }
+    }
+
+    private func sectionHeader(_ status: AgentTask.Status, count: Int) -> some View {
+        HStack(spacing: 8) {
+            Button { if collapsed.contains(status) { collapsed.remove(status) } else { collapsed.insert(status) } } label: {
+                Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(collapsed.contains(status) ? -90 : 0)).frame(width: 14)
+            }.buttonStyle(.plain)
+            Image(systemName: status.symbol).font(.system(size: 12)).foregroundStyle(status.tint)
+            Text(status.label).font(.system(size: 12, weight: .semibold))
+            Text("\(count)").font(.system(size: 11)).foregroundStyle(.tertiary)
             Spacer()
+            if status == .queued || status == .done {
+                Button { newTask(in: status) } label: { Image(systemName: "plus").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).frame(width: 20, height: 20) }
+                    .buttonStyle(.plain).help("New task")
+            }
+        }.padding(.horizontal, 14).frame(height: 32).background(AppTheme.raised)
+    }
+
+    // MARK: Board
+
+    private var board: some View {
+        ScrollView(.horizontal) {
+            HStack(alignment: .top, spacing: 12) {
+                ForEach(visibleStatuses, id: \.self) { status in column(status) }
+            }.padding(16)
+        }
+    }
+
+    private func column(_ status: AgentTask.Status) -> some View {
+        let items = tasks(in: status)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                Image(systemName: status.symbol).font(.system(size: 12)).foregroundStyle(status.tint)
+                Text(status.label).font(.system(size: 12, weight: .semibold))
+                Text("\(items.count)").font(.system(size: 11)).foregroundStyle(.tertiary)
+                Spacer()
+                if status == .queued {
+                    Button { newTask() } label: { Image(systemName: "plus").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).frame(width: 20, height: 20) }.buttonStyle(.plain)
+                }
+            }.padding(.horizontal, 4)
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    ForEach(items) { task in TaskCardView(task: task, showProject: project == nil, editing: $editing) }
+                    if items.isEmpty {
+                        Text(status == .running ? "Drop a task here to run it." : "No tasks").font(.caption).foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity).padding(.vertical, 24)
+                            .background(Color.primary.opacity(0.02), in: RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(AppTheme.stroke, style: StrokeStyle(lineWidth: 1, dash: [4])))
+                    }
+                }.padding(2)
+            }
+        }
+        .frame(width: 272).frame(maxHeight: .infinity, alignment: .top)
+        .dropDestination(for: String.self) { ids, _ in move(ids, to: status) }
+    }
+
+    // MARK: Moving between statuses
+
+    private func move(_ ids: [String], to status: AgentTask.Status) -> Bool {
+        var moved = false
+        for raw in ids {
+            guard let id = UUID(uuidString: raw), var task = store.tasks.first(where: { $0.id == id }), task.status != status else { continue }
+            moved = true
+            switch status {
+            case .running:
+                if task.status == .queued || task.status == .failed { store.runTask(task) } else { task.status = .running; store.saveTask(task) }
+            case .done:
+                task.status = .done; task.finishedAt = Date(); store.saveTask(task)
+            case .queued:
+                task.status = .queued; task.sessionID = nil; task.startedAt = nil; task.finishedAt = nil; store.saveTask(task)
+            default:
+                task.status = status; store.saveTask(task)
+            }
+        }
+        return moved
+    }
+}
+
+/// Shared pieces for a task in the list or on the board.
+@MainActor private struct TaskMeta {
+    let task: AgentTask
+    let store: Store
+    var project: Project? { store.workspace.projects.first { $0.id == task.projectID } }
+    var session: LinkedSession? { task.sessionID.flatMap { store.session($0) } }
+    var running: Bool { task.sessionID.flatMap { store.terminals.handles[$0]?.running } == true }
+    var agentLabel: String? {
+        guard let session, running, let state = store.agentState(session) else { return nil }
+        return AgentStateGlyph(state: state, running: true).label
+    }
+    var needsYou: Bool { session.flatMap { store.agentState($0)?.needsYou } == true && running }
+    var modeLabel: String { task.mode == "pr" ? "pull request" : (task.mode == "push" ? "push to main" : "commit only") }
+    func open() { if let sid = task.sessionID, let project { store.openSession(sid, in: project.id) } }
+}
+
+private struct TaskActionsMenu: View {
+    @EnvironmentObject var store: Store
+    let task: AgentTask
+    @Binding var editing: AgentTask?
+    var body: some View {
+        let meta = TaskMeta(task: task, store: store)
+        Group {
+            switch task.status {
+            case .queued, .failed: Button { store.runTask(task) } label: { Label("Run", systemImage: "play") }
+            case .running, .review, .pr, .done:
+                if task.sessionID != nil { Button { meta.open() } label: { Label("Open session", systemImage: "terminal") } }
+            }
+            if let rid = task.reviewSessionID, let project = meta.project { Button { store.openSession(rid, in: project.id) } label: { Label("Open reviewer", systemImage: "checkmark.bubble") } }
+            if let url = task.prURL, let link = URL(string: url) { Button { NSWorkspace.shared.open(link) } label: { Label("Open pull request", systemImage: "arrow.triangle.pull") } }
+            Divider()
+            Button { editing = task } label: { Label("Edit…", systemImage: "pencil") }
+            Menu("Set status") {
+                ForEach(AgentTask.Status.display, id: \.self) { s in
+                    Button { var t = task; t.status = s; if s == .done { t.finishedAt = Date() }; store.saveTask(t) } label: { Label(s.label, systemImage: s.symbol) }.disabled(s == task.status)
+                }
+            }
+            if task.status != .done { Button { var t = task; t.status = .done; t.finishedAt = Date(); store.saveTask(t) } label: { Label("Mark done", systemImage: "checkmark.circle") } }
+            if task.status != .queued { Button { var t = task; t.status = .queued; store.saveTask(t) } label: { Label("Re-queue", systemImage: "arrow.counterclockwise") } }
+            Divider()
+            Button(role: .destructive) { store.deleteTask(task.id) } label: { Label("Delete", systemImage: "trash") }
+        }
+    }
+}
+
+private struct TaskRow: View {
+    @EnvironmentObject var store: Store
+    let task: AgentTask
+    let showProject: Bool
+    @Binding var editing: AgentTask?
+    @State private var hovered = false
+
+    var body: some View {
+        let meta = TaskMeta(task: task, store: store)
+        HStack(spacing: 10) {
+            Image(systemName: task.status.symbol).font(.system(size: 13)).foregroundStyle(task.status.tint).frame(width: 18)
+            AgentIcon(agent: task.agent, size: 12).opacity(0.8)
+            Text(task.title).font(.system(size: 13)).lineLimit(1)
+            if let label = meta.agentLabel {
+                Text(label).font(.system(size: 10.5)).foregroundStyle(meta.needsYou ? .orange : .secondary)
+                    .padding(.horizontal, 6).padding(.vertical, 2).background((meta.needsYou ? Color.orange : Color.secondary).opacity(0.12), in: Capsule())
+            }
+            Spacer(minLength: 12)
+            if let url = task.prURL, let link = URL(string: url) {
+                Link(destination: link) { Image(systemName: "arrow.triangle.pull").font(.system(size: 11)) }.help(url)
+            }
+            if let b = task.branch { Text(b).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).frame(maxWidth: 200) }
+            if let spec = task.spec { Image(systemName: "doc.text").font(.system(size: 11)).foregroundStyle(.tertiary).help(spec) }
+            if showProject, let project = meta.project {
+                HStack(spacing: 5) {
+                    Circle().fill(project.tint).frame(width: 6, height: 6)
+                    Text(project.name).font(.system(size: 11)).foregroundStyle(.secondary)
+                }.padding(.horizontal, 7).padding(.vertical, 2).background(Color.primary.opacity(0.05), in: Capsule())
+            }
+            Text(task.createdAt.formatted(.relative(presentation: .named))).font(.system(size: 10.5)).foregroundStyle(.tertiary).frame(width: 72, alignment: .trailing)
+            Menu { TaskActionsMenu(task: task, editing: $editing) } label: { Image(systemName: "ellipsis").frame(width: 20, height: 20) }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().opacity(hovered ? 1 : 0.35)
+        }
+        .padding(.horizontal, 14).frame(height: 36)
+        .background(hovered ? Color.primary.opacity(0.04) : .clear)
+        .overlay(alignment: .bottom) { Divider().padding(.leading, 42).opacity(0.6) }
+        .contentShape(Rectangle())
+        .onHover { hovered = $0 }
+        .onTapGesture(count: 2) { if task.sessionID != nil { meta.open() } else { editing = task } }
+        .contextMenu { TaskActionsMenu(task: task, editing: $editing) }
+        .draggable(task.id.uuidString)
+    }
+}
+
+private struct TaskCardView: View {
+    @EnvironmentObject var store: Store
+    let task: AgentTask
+    let showProject: Bool
+    @Binding var editing: AgentTask?
+    @State private var hovered = false
+
+    var body: some View {
+        let meta = TaskMeta(task: task, store: store)
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
+                if let project = meta.project {
+                    Circle().fill(project.tint).frame(width: 6, height: 6)
+                    if showProject { Text(project.name).font(.system(size: 10.5, weight: .medium)).foregroundStyle(project.tint).lineLimit(1) }
+                }
+                AgentIcon(agent: task.agent, size: 11).opacity(0.8)
+                Text(task.createdAt.formatted(.relative(presentation: .named))).font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                Spacer()
+                Menu { TaskActionsMenu(task: task, editing: $editing) } label: { Image(systemName: "ellipsis").frame(width: 18, height: 18) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().opacity(hovered ? 1 : 0.3)
+            }
+            Text(task.title).font(.system(size: 13, weight: .medium)).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+            if !task.details.isEmpty { Text(task.details).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2) }
+            HStack(spacing: 6) {
+                if let label = meta.agentLabel {
+                    Text(label).font(.system(size: 10)).foregroundStyle(meta.needsYou ? .orange : .secondary)
+                        .padding(.horizontal, 6).padding(.vertical, 2).background((meta.needsYou ? Color.orange : Color.secondary).opacity(0.12), in: Capsule())
+                }
+                if let b = task.branch { Label(b, systemImage: "arrow.triangle.branch").font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
+                if let spec = task.spec { Image(systemName: "doc.text").font(.system(size: 10)).foregroundStyle(.tertiary).help(spec) }
+                Spacer()
+                if let url = task.prURL, let link = URL(string: url) { Link(destination: link) { Image(systemName: "arrow.triangle.pull").font(.system(size: 11)) }.help(url) }
                 switch task.status {
                 case .queued, .failed:
-                    Button("Run") { store.runTask(task) }.buttonStyle(.borderedProminent).controlSize(.small)
-                    Button("Edit") { editing = task }.controlSize(.small)
-                case .running:
-                    if let sid = task.sessionID, let proj { Button("Open") { store.openSession(sid, in: proj.id) }.controlSize(.small) }
-                    Button("Mark done") { var t = task; t.status = .done; t.finishedAt = Date(); store.saveTask(t) }.controlSize(.small)
-                case .review, .pr:
-                    if let sid = task.sessionID, let proj { Button("Open") { store.openSession(sid, in: proj.id) }.controlSize(.small) }
-                    if let rid = task.reviewSessionID, let proj { Button("Reviewer") { store.openSession(rid, in: proj.id) }.controlSize(.small) }
-                    Button("Done") { var t = task; t.status = .done; t.finishedAt = Date(); store.saveTask(t) }.buttonStyle(.borderedProminent).controlSize(.small)
-                case .done:
-                    if let sid = task.sessionID, let proj { Button("Session") { store.openSession(sid, in: proj.id) }.controlSize(.small) }
+                    Button { store.runTask(task) } label: { Image(systemName: "play.fill").font(.system(size: 10)) }.buttonStyle(.borderedProminent).controlSize(.mini).help("Run")
+                case .running, .review, .pr:
+                    Button { meta.open() } label: { Image(systemName: "terminal").font(.system(size: 10)) }.controlSize(.mini).help("Open session")
+                case .done: EmptyView()
                 }
-                Menu {
-                    Button("Edit…") { editing = task }
-                    Button("Re-queue") { var t = task; t.status = .queued; store.saveTask(t) }
-                    Button("Mark failed") { var t = task; t.status = .failed; store.saveTask(t) }
-                    Divider()
-                    Button("Delete", role: .destructive) { store.deleteTask(task.id) }
-                } label: { Image(systemName: "ellipsis").frame(width: 20, height: 20) }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             }
-        }.padding(.horizontal, 14).padding(.vertical, 10).overlay(alignment: .bottom) { Divider().padding(.leading, 14) }
+        }
+        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(hovered ? AppTheme.accent.opacity(0.4) : AppTheme.stroke))
+        .contentShape(Rectangle())
+        .onHover { hovered = $0 }
+        .onTapGesture(count: 2) { if task.sessionID != nil { meta.open() } else { editing = task } }
+        .contextMenu { TaskActionsMenu(task: task, editing: $editing) }
+        .draggable(task.id.uuidString)
     }
 }
 
