@@ -38,6 +38,7 @@ enum SessionCommand {
             if !settings.isEmpty, let data = try? JSONSerialization.data(withJSONObject: settings), let json = String(data: data, encoding: .utf8) {
                 args += ["--settings", json]
             }
+            if let model = session.model, !model.isEmpty { args += ["--model", model] }
             if resume {
                 args += session.sessionID.isEmpty ? ["--resume"] : ["--resume", session.sessionID.lowercased()]
             } else {
@@ -46,6 +47,7 @@ enum SessionCommand {
         } else {
             args = ["codex"]
             if yolo { args.append("--dangerously-bypass-approvals-and-sandbox") }
+            if let model = session.model, !model.isEmpty { args += ["--model", model] }
             if resume {
                 args += ["resume"]
                 if !session.sessionID.isEmpty { args.append(session.sessionID) }
@@ -267,8 +269,12 @@ final class TerminalManager: ObservableObject {
             if UserDefaults.standard.object(forKey: "agentStatusHooks") as? Bool ?? true { hookHelper = helper.path }
         }
         var extra = accounts?.environment(for: session.agent) ?? [:]
+        let key = session.agent == .claude ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME"
         if let home = session.agentHome {
-            extra[session.agent == .claude ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME"] = home
+            // Only override when the session really uses a managed or custom home. Setting CLAUDE_CONFIG_DIR
+            // to the default ~/.claude makes Claude look for a different keychain entry and demand a new login.
+            let standard = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(session.agent == .claude ? ".claude" : ".codex").path
+            if home == standard { extra.removeValue(forKey: key) } else { extra[key] = home }
         }
         handle.start(script: SessionCommand.script(session: session, directory: directory, resume: resume, claudeStatusCommand: statusCommand, hookHelper: hookHelper, setup: setup), directory: directory, extraEnvironment: extra)
     }

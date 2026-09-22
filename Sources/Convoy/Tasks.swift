@@ -49,11 +49,18 @@ enum TaskPrompt {
         if docExists { lines.append("Before changing anything, read .specdesk/PROJECT.md for project context and conventions.") }
         if let spec = task.spec { lines.append("The work must satisfy the specification in \(spec). Read it first and treat its acceptance criteria as the definition of done.") }
         lines.append("Work in this checkout only. Verify your changes (build, tests, or a manual check) before finishing.")
-        switch task.mode {
-        case "pr":
+        if project.isGroup {
+            lines.append("This folder is a group of separate git repositories (one per subfolder); the folder itself is not a repository. Make changes inside the repositories they belong to, and run every git command from inside that repository (`cd <repo>` first, or `git -C <repo> …`).")
+        }
+        switch (task.mode, project.isGroup) {
+        case ("pr", false):
             lines.append("When done: commit with a clear message, run `git push -u origin HEAD`, then open a pull request against \(baseBranch) with `gh pr create --fill` and print the PR URL on its own line.")
-        case "push":
+        case ("pr", true):
+            lines.append("When done, in each repository you changed: commit with a clear message on a new branch, run `git push -u origin HEAD`, then open a pull request against that repository's default branch with `gh pr create --fill` and print each PR URL on its own line.")
+        case ("push", false):
             lines.append("When done: commit with a clear message and run `git push origin HEAD:\(baseBranch)`. Report the commit hash.")
+        case ("push", true):
+            lines.append("When done, in each repository you changed: commit with a clear message and push the current branch to its default branch (`git push origin HEAD:<default branch>`, check with `git symbolic-ref refs/remotes/origin/HEAD`). Report each commit hash.")
         default:
             lines.append("When done: commit with a clear message. Do not push.")
         }
@@ -88,7 +95,8 @@ extension Store {
         let docExists = FileManager.default.fileExists(atPath: project.path + "/.specdesk/PROJECT.md")
         let base = project.baseRef?.isEmpty == false ? project.baseRef! : GitWorktree.defaultBase(project.path)
         let prompt = TaskPrompt.build(task: task, project: project, docExists: docExists, baseBranch: base)
-        let session = LinkedSession(agent: task.agent, sessionID: task.agent == .claude ? UUID().uuidString.lowercased() : "", title: task.title, initialPrompt: prompt)
+        var session = LinkedSession(agent: task.agent, sessionID: task.agent == .claude ? UUID().uuidString.lowercased() : "", title: task.title, initialPrompt: prompt)
+        session.model = task.model?.trimmingCharacters(in: .whitespaces).isEmpty == false ? task.model : nil
         let isRepo = FileManager.default.fileExists(atPath: project.path + "/.git")
         let branch = isRepo && task.mode != "none" ? GitWorktree.slug(task.title, prefix: project.branchPrefix ?? UserDefaults.standard.string(forKey: "branchPrefix") ?? "") : nil
         startSession(session, in: project, worktreeBranch: branch, base: base)
@@ -484,6 +492,31 @@ struct TaskSheet: View {
         }.buttonStyle(.plain)
     }
 
+    private static let claudeModels: [(String, String)] = [("opus", "Opus · most capable"), ("sonnet", "Sonnet · balanced"), ("haiku", "Haiku · fastest")]
+    private static let codexModels: [(String, String)] = [("gpt-5-codex", "GPT-5 Codex"), ("gpt-5", "GPT-5"), ("o3", "o3")]
+
+    /// Editable model field: pick a preset from the menu or type any model id the CLI accepts.
+    private var modelField: some View {
+        let presets = task.agent == .claude ? Self.claudeModels : Self.codexModels
+        let binding = Binding(get: { task.model ?? "" }, set: { task.model = $0.isEmpty ? nil : $0 })
+        return HStack(spacing: 6) {
+            Image(systemName: "cpu").foregroundStyle(.tertiary).font(.system(size: 10))
+            TextField("Agent default", text: binding).textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
+            Menu {
+                Button { task.model = nil } label: { if task.model == nil { Label("Agent default", systemImage: "checkmark") } else { Text("Agent default") } }
+                Divider()
+                ForEach(presets, id: \.0) { id, name in
+                    Button { task.model = id } label: { if task.model == id { Label(name, systemImage: "checkmark") } else { Text(name) } }
+                }
+            } label: {
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).frame(width: 18, height: 18)
+            }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        }.padding(.horizontal, 10).frame(height: 30)
+            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(AppTheme.stroke))
+            .help(task.agent == .claude ? "Passed as claude --model; aliases like opus/sonnet or a full model id" : "Passed as codex --model")
+    }
+
     private var specField: some View {
         let current = task.spec.map { $0.replacingOccurrences(of: ".specdesk/specs/", with: "") }
         return Menu {
@@ -541,15 +574,19 @@ struct TaskSheet: View {
                     }
             }
 
+            VStack(alignment: .leading, spacing: 8) {
+                label("Agent")
+                HStack(spacing: 8) { agentCard(.claude); agentCard(.codex) }
+            }
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 8) {
-                    label("Agent")
-                    HStack(spacing: 8) { agentCard(.claude); agentCard(.codex) }
+                    label("Model")
+                    modelField
                 }.frame(maxWidth: .infinity)
                 VStack(alignment: .leading, spacing: 8) {
                     label("Spec")
                     specField
-                }.frame(width: 220)
+                }.frame(maxWidth: .infinity)
             }
 
             VStack(alignment: .leading, spacing: 8) {

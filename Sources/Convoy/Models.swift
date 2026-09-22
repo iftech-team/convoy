@@ -28,6 +28,8 @@ struct LinkedSession: Codable, Identifiable, Equatable, Sendable {
     var pinned: Bool?
     /// Provider configuration home selected on first launch; retained for resume.
     var agentHome: String?
+    /// CLI model override (`claude --model` / `codex --model`); nil means the agent default.
+    var model: String?
 
     /// Recovery preserves scope, but never replays a possibly completed task.
     func freshConversation() -> LinkedSession {
@@ -61,6 +63,7 @@ struct AgentTask: Codable, Identifiable, Equatable, Sendable {
     var prURL: String?
     var autoReview: Bool = false
     var reviewSessionID: UUID?
+    var model: String?
 }
 
 /// Saved terminal command or agent prompt; `projectID == nil` means global.

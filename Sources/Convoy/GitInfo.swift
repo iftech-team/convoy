@@ -153,8 +153,15 @@ enum GitWorktree {
         if let deleteBranch { _ = GitInfoService.run(["branch", "-D", deleteBranch], in: repo) }
     }
 
+    /// Current branch of `repo`; "main" when the folder is not a repository (a project group) or git fails.
     static func defaultBase(_ repo: String) -> String {
-        GitInfoService.run(["rev-parse", "--abbrev-ref", "HEAD"], in: repo).map { $0.1.trimmingCharacters(in: .whitespacesAndNewlines) } ?? "HEAD"
+        guard let (status, out) = GitInfoService.run(["rev-parse", "--abbrev-ref", "HEAD"], in: repo), status == 0 else { return "main" }
+        let name = out.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty || name.hasPrefix("fatal") ? "main" : name
+    }
+    static func isRepository(_ path: String) -> Bool {
+        guard let (status, out) = GitInfoService.run(["rev-parse", "--is-inside-work-tree"], in: path), status == 0 else { return false }
+        return out.trimmingCharacters(in: .whitespacesAndNewlines) == "true"
     }
 }
 
