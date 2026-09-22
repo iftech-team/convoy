@@ -67,26 +67,33 @@ struct DocsPanel: View {
 
     var body: some View {
         HSplitView {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("DOCS & SPECS").font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundStyle(.secondary)
                     Spacer()
-                    Button { reload() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).foregroundStyle(.secondary)
+                    Button { reload() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 11)) }.buttonStyle(.plain).foregroundStyle(.secondary).help("Reload from disk")
                 }
-                if !files.contains(Docs.projectDoc) {
-                    Button { writeProjectDoc() } label: { Label("Write project doc with AI", systemImage: "sparkles") }.controlSize(.small)
-                }
-                Button { specTitle = ""; newSpec = true } label: { Label("New spec…", systemImage: "doc.badge.plus") }.controlSize(.small)
-                List(selection: $selected) {
-                    ForEach(files, id: \.self) { file in
-                        HStack(spacing: 6) {
-                            Image(systemName: file == Docs.projectDoc ? "book" : (file.hasPrefix(".specdesk/specs/") ? "doc.text" : "doc")).foregroundStyle(file.hasPrefix(".specdesk") ? AppTheme.accent : .secondary).frame(width: 14)
-                            Text(file.replacingOccurrences(of: ".specdesk/specs/", with: "").replacingOccurrences(of: ".specdesk/", with: "")).font(.system(size: 12)).lineLimit(1)
-                        }.tag(file)
+                VStack(spacing: 6) {
+                    if !files.contains(Docs.projectDoc) {
+                        actionButton("Write project doc with AI", icon: "sparkles", prominent: true) { writeProjectDoc() }
                     }
-                }.listStyle(.sidebar)
-                Text("Stored in the repo under .specdesk so agents read them as files.").font(.system(size: 10)).foregroundStyle(.tertiary)
-            }.padding(12).frame(minWidth: 200, idealWidth: 240, maxWidth: 320)
+                    actionButton("New spec…", icon: "doc.badge.plus", prominent: files.contains(Docs.projectDoc)) { specTitle = ""; newSpec = true }
+                }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        let doc = files.filter { $0 == Docs.projectDoc }
+                        let specs = files.filter { $0.hasPrefix(".specdesk/specs/") }
+                        let others = files.filter { $0 != Docs.projectDoc && !$0.hasPrefix(".specdesk/specs/") }
+                        if !doc.isEmpty { group("Project doc", doc) }
+                        if !specs.isEmpty { group("Specs", specs) }
+                        if !others.isEmpty { group("Other docs", others) }
+                        if files.isEmpty {
+                            Text("Nothing here yet.").font(.system(size: 11)).foregroundStyle(.tertiary).padding(.horizontal, 6).padding(.top, 8)
+                        }
+                    }.padding(.vertical, 4)
+                }
+                Text("Stored in the repo under .specdesk so agents read them as files.").font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+            }.padding(12).frame(minWidth: 200, idealWidth: 240, maxWidth: 320, maxHeight: .infinity, alignment: .top)
             VStack(spacing: 0) {
                 if let selected {
                     HStack(spacing: 8) {
@@ -112,25 +119,84 @@ struct DocsPanel: View {
                         ScrollView { MarkdownView(text: text).padding(24).frame(maxWidth: 820, alignment: .leading) }.frame(maxWidth: .infinity)
                     }
                 } else {
-                    VStack(spacing: 10) {
-                        Image(systemName: "book").font(.system(size: 28)).foregroundStyle(.tertiary)
-                        Text("Project doc and specs").font(.system(size: 15, weight: .semibold))
-                        Text("The project doc gives every agent the context it needs. Specs describe one piece of work each; tasks link to them.").font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 380)
-                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(spacing: 14) {
+                        Image(systemName: "book").font(.system(size: 26, weight: .medium)).foregroundStyle(AppTheme.accent)
+                            .frame(width: 64, height: 64).background(AppTheme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 17))
+                        VStack(spacing: 6) {
+                            Text("Project doc and specs").font(.system(size: 19, weight: .semibold))
+                            Text("The project doc gives every agent the context it needs. Specs describe one piece of work each; tasks link to them.")
+                                .font(.system(size: 12.5)).foregroundStyle(.secondary).multilineTextAlignment(.center).lineSpacing(2).frame(maxWidth: 400)
+                        }
+                        HStack(spacing: 10) {
+                            if !files.contains(Docs.projectDoc) {
+                                Button { writeProjectDoc() } label: { Label("Write project doc with AI", systemImage: "sparkles") }.buttonStyle(.borderedProminent).controlSize(.large)
+                            } else {
+                                Button { selected = Docs.projectDoc } label: { Label("Open project doc", systemImage: "book") }.buttonStyle(.borderedProminent).controlSize(.large)
+                            }
+                            Button { specTitle = ""; newSpec = true } label: { Label("New spec", systemImage: "doc.badge.plus") }.controlSize(.large)
+                        }.padding(.top, 4)
+                    }.padding(32).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }.frame(minWidth: 400)
         }
         .onAppear(perform: reload)
         .onChange(of: selected) { _, file in load(file) }
         .sheet(isPresented: $newSpec) {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("New specification").font(.title2.bold())
-                TextField("Feature or problem, e.g. Checkout retries", text: $specTitle).textFieldStyle(.roundedBorder)
-                Text("Creates .specdesk/specs/<slug>.md from a template. Draft with AI afterwards, or write it yourself.").font(.caption).foregroundStyle(.secondary)
-                HStack { Spacer(); Button("Cancel") { newSpec = false }
-                    Button("Create") { createSpec(); newSpec = false }.buttonStyle(.borderedProminent).disabled(specTitle.trimmingCharacters(in: .whitespaces).isEmpty) }
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 10) {
+                    Text("New specification").font(.system(size: 18, weight: .bold))
+                    Spacer()
+                    HStack(spacing: 6) {
+                        ProjectIconView(project: project, size: 14)
+                        Text(project.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(project.tint)
+                    }.padding(.horizontal, 8).padding(.vertical, 4).background(project.tint.opacity(0.12), in: Capsule())
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("TITLE").font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundStyle(.secondary)
+                    TextField("Feature or problem, e.g. Checkout retries", text: $specTitle).textFieldStyle(.roundedBorder).font(.system(size: 13))
+                        .onSubmit { if !specTitle.trimmingCharacters(in: .whitespaces).isEmpty { createSpec(); newSpec = false } }
+                }
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.text").foregroundStyle(.tertiary).font(.system(size: 10))
+                    Text(".specdesk/specs/\(specTitle.trimmingCharacters(in: .whitespaces).isEmpty ? "<slug>" : GitWorktree.slug(specTitle)).md")
+                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                }
+                Text("Starts from a template. Draft it with AI afterwards, or write it yourself.").font(.caption).foregroundStyle(.tertiary)
+                HStack {
+                    Spacer()
+                    Button("Cancel") { newSpec = false }.keyboardShortcut(.cancelAction)
+                    Button { createSpec(); newSpec = false } label: { Label("Create spec", systemImage: "doc.badge.plus") }
+                        .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction).disabled(specTitle.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
             }.padding(24).frame(width: 480)
         }
+    }
+
+    private func actionButton(_ title: String, icon: String, prominent: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon).font(.system(size: 12, weight: .medium)).frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered).tint(prominent ? AppTheme.accent : nil).controlSize(.regular)
+    }
+
+    @ViewBuilder private func group(_ title: String, _ items: [String]) -> some View {
+        Text(title.uppercased()).font(.system(size: 9.5, weight: .semibold)).tracking(0.5).foregroundStyle(.tertiary).padding(.horizontal, 8).padding(.top, 8).padding(.bottom, 2)
+        ForEach(items, id: \.self) { file in fileRow(file) }
+    }
+
+    private func fileRow(_ file: String) -> some View {
+        let isSelected = selected == file
+        let isSpec = file.hasPrefix(".specdesk/specs/")
+        let name = file.replacingOccurrences(of: ".specdesk/specs/", with: "").replacingOccurrences(of: ".specdesk/", with: "")
+        return Button { selected = file } label: {
+            HStack(spacing: 7) {
+                Image(systemName: file == Docs.projectDoc ? "book" : (isSpec ? "doc.text" : "doc")).font(.system(size: 11))
+                    .foregroundStyle(isSelected ? AppTheme.accent : (file.hasPrefix(".specdesk") ? AppTheme.accent.opacity(0.8) : .secondary)).frame(width: 14)
+                Text(name).font(.system(size: 12, weight: isSelected ? .medium : .regular)).lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 0)
+            }.padding(.horizontal, 8).frame(height: 26).contentShape(Rectangle())
+                .background(isSelected ? AppTheme.accent.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 6))
+        }.buttonStyle(.plain)
     }
 
     private func reload() { files = Docs.files(in: project.path); if let s = selected, !files.contains(s) { selected = nil } }
