@@ -560,7 +560,12 @@ struct ProjectWorkbench: View {
                         TextField("Search specifications", text: $search).textFieldStyle(.roundedBorder)
                         ScrollView {
                             VStack(spacing: 8) {
-                                ForEach(project.specs.filter { search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) }) { spec in
+                                let visible = project.specs.filter { search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) }
+                                if visible.isEmpty {
+                                    Text(project.specs.isEmpty ? "No specifications yet." : "No matches.").font(.caption).foregroundStyle(.tertiary)
+                                        .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
+                                }
+                                ForEach(visible) { spec in
                                     Button { store.selectSpec(spec.id) } label: {
                                         VStack(alignment: .leading, spacing: 5) {
                                             Text(spec.title).font(.headline)
@@ -572,13 +577,15 @@ struct ProjectWorkbench: View {
                             }
                         }
                         Button("Create specification") { title = ""; newSpec = true }
-                    }.padding(16).frame(minWidth: 200, idealWidth: 230, maxWidth: 280)
-                    if let spec = store.spec {
-                        SpecView(spec: spec).id(spec.id)
-                    } else {
-                        ContentUnavailableView("Specs are optional", systemImage: "doc.text", description: Text("Use a spec when work benefits from written requirements and acceptance criteria. Sessions do not require one."))
-                    }
-                }
+                    }.padding(16).frame(minWidth: 200, idealWidth: 230, maxWidth: 280, maxHeight: .infinity, alignment: .top)
+                    Group {
+                        if let spec = store.spec {
+                            SpecView(spec: spec).id(spec.id)
+                        } else {
+                            ContentUnavailableView("Specs are optional", systemImage: "doc.text", description: Text("Use a spec when work benefits from written requirements and acceptance criteria. Sessions do not require one."))
+                        }
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 SessionWorkspace(project: project, area: $area, newSession: $newSession)
             }
