@@ -5,10 +5,10 @@ import Testing
 @Test @MainActor func modelOverrideReachesBothCLIs() {
     var claude = LinkedSession(agent: .claude, sessionID: UUID().uuidString.lowercased(), title: "t")
     claude.model = "opus"
-    #expect(SessionCommand.script(session: claude, directory: "/tmp", resume: false).contains("--model opus"))
+    #expect(SessionCommand.script(session: claude, directory: "/tmp", resume: false).contains("'--model' 'opus'"))
     var codex = LinkedSession(agent: .codex, sessionID: "", title: "t")
     codex.model = "gpt-5-codex"
-    #expect(SessionCommand.script(session: codex, directory: "/tmp", resume: false).contains("--model gpt-5-codex"))
+    #expect(SessionCommand.script(session: codex, directory: "/tmp", resume: false).contains("'--model' 'gpt-5-codex'"))
     let plain = LinkedSession(agent: .claude, sessionID: UUID().uuidString.lowercased(), title: "t")
     #expect(!SessionCommand.script(session: plain, directory: "/tmp", resume: false).contains("--model"))
 }
