@@ -23,6 +23,25 @@ final class Store: ObservableObject {
     @Published var feedbackRequest: UUID?
     @Published var areaRequest: String?
     @Published var newSpecRequest = UUID()
+    @Published var newTaskRequest = UUID()
+    /// Which workbench section each project is on. Kept here so a rebuilt view does not fall back to Sessions.
+    @Published var areaByProject: [UUID: String] = [:]
+    static let areas = ["Sessions", "Reviews", "Specs", "History", "Tasks", "Docs"]
+    func area(of project: Project) -> String { areaByProject[project.id] ?? "Sessions" }
+    /// Next / previous section for the current project; opens the project page if a terminal is showing.
+    func cycleArea(_ offset: Int) {
+        guard let project else { return }
+        let list = Store.areas
+        let current = list.firstIndex(of: area(of: project)) ?? 0
+        let next = list[((current + offset) % list.count + list.count) % list.count]
+        if !showProjectPage { selectProject(project.id) }
+        areaRequest = next
+    }
+    func requestNewTask() {
+        guard let project else { return }
+        if !showProjectPage { selectProject(project.id) }
+        areaRequest = "Tasks"; newTaskRequest = UUID()
+    }
     @Published var searchFocusRequest = UUID()
     private var canSave = true
     private let file: WorkspaceFile

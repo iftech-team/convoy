@@ -184,6 +184,7 @@ struct TasksPanel: View {
                 }
                 if project != nil || store.project != nil {
                     Button { newTask() } label: { Label(project == nil ? "New task in \(store.project?.name ?? "")" : "New task", systemImage: "plus") }.buttonStyle(.borderedProminent)
+                        .help("New task (\(store.keys.display("project.newTask")))")
                 }
             }.padding(.horizontal, 20).padding(.vertical, 14)
             Divider()
@@ -201,6 +202,7 @@ struct TasksPanel: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: store.newTaskRequest) { _, _ in if editing == nil { newTask() } }
         .sheet(item: $editing) { task in TaskSheet(task: task) }
     }
 

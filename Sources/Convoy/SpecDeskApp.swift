@@ -497,7 +497,11 @@ struct ProjectTreeRow: View {
 struct ProjectWorkbench: View {
     @EnvironmentObject var store: Store
     let project: Project
-    @State private var area = "Sessions"
+    private var area: String {
+        get { store.area(of: project) }
+        nonmutating set { store.areaByProject[project.id] = newValue }
+    }
+    private var areaBinding: Binding<String> { Binding(get: { area }, set: { area = $0 }) }
     @State private var newSpec = false
     @State private var title = ""
     @State private var search = ""
@@ -531,7 +535,7 @@ struct ProjectWorkbench: View {
                     Button { area = "Sessions"; newSession = true } label: { Label("New session", systemImage: "plus") }
                         .buttonStyle(.borderedProminent).controlSize(.large)
                 }
-                Picker("Workspace section", selection: $area) {
+                Picker("Workspace section", selection: areaBinding) {
                     Text("Sessions").tag("Sessions")
                     Text("Reviews").tag("Reviews")
                     Text("Specs").tag("Specs")
@@ -539,7 +543,7 @@ struct ProjectWorkbench: View {
                     Text("Tasks").tag("Tasks")
                     Text("Docs").tag("Docs")
                 }.pickerStyle(.segmented).labelsHidden().frame(width: 560)
-                    .help("Sessions and reviews work independently of optional specifications")
+                    .help("⌥⌘1–6 jump to a section · \(store.keys.display("project.previousArea")) / \(store.keys.display("project.nextArea")) cycle")
             }.padding(.horizontal, 24).padding(.vertical, 20)
             Divider()
             }
@@ -587,7 +591,7 @@ struct ProjectWorkbench: View {
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                SessionWorkspace(project: project, area: $area, newSession: $newSession)
+                SessionWorkspace(project: project, area: areaBinding, newSession: $newSession)
             }
         }
         .onChange(of: store.sessionCreationProject?.id) { _, id in
@@ -980,6 +984,9 @@ struct AppCommands: Commands {
             Button("History") { store.areaRequest = "History"; if !store.showProjectPage, let p = store.project { store.selectProject(p.id); store.areaRequest = "History" } }.bound("project.history", keys)
             Button("Tasks") { store.areaRequest = "Tasks"; if !store.showProjectPage, let p = store.project { store.selectProject(p.id); store.areaRequest = "Tasks" } }.bound("project.tasks", keys)
             Button("Docs & Specs") { store.areaRequest = "Docs"; if !store.showProjectPage, let p = store.project { store.selectProject(p.id); store.areaRequest = "Docs" } }.bound("project.docs", keys)
+            Button("Next Section") { store.cycleArea(1) }.bound("project.nextArea", keys)
+            Button("Previous Section") { store.cycleArea(-1) }.bound("project.previousArea", keys)
+            Button("New Task…") { store.requestNewTask() }.bound("project.newTask", keys).disabled(store.project == nil)
             Divider()
             Button("Show in Finder") { if let p = store.project { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: p.path) } }.bound("project.finder", keys)
             Button("Copy Folder Path") { if let p = store.project { store.copy(p.path) } }.bound("project.copyPath", keys)

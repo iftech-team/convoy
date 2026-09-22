@@ -104,43 +104,39 @@ struct HistoryPanel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Conversations saved by Claude Code and Codex for \(project.name)\(project.isGroup ? "" : " and its worktrees"). Resume any of them here, even ones started in a plain terminal.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Spacer()
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Text("History").font(.system(size: 15, weight: .semibold))
+                Text("\(shown.count)").font(.system(size: 12, weight: .medium)).foregroundStyle(.tertiary)
                 if loading { ProgressView().controlSize(.small) }
-                Button { load() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).foregroundStyle(.secondary)
-            }
-            TextField("Filter by first message or ID", text: $filter).textFieldStyle(.roundedBorder)
+                Spacer()
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.tertiary)
+                    TextField("Filter by first message or ID", text: $filter).textFieldStyle(.plain).font(.system(size: 12))
+                    if !filter.isEmpty {
+                        Button { filter = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(.tertiary) }.buttonStyle(.plain)
+                    }
+                }.padding(.horizontal, 9).frame(width: 300, height: 28)
+                    .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(AppTheme.stroke))
+                Button { load() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 11)) }.buttonStyle(.plain).foregroundStyle(.secondary).help("Rescan")
+            }.padding(.horizontal, 20).padding(.vertical, 14)
+            Text("Conversations saved by Claude Code and Codex for \(project.name)\(project.isGroup ? "" : " and its worktrees"). Resume any of them here, even ones started in a plain terminal.")
+                .font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 20).padding(.bottom, 10)
+            Divider()
             if shown.isEmpty && !loading {
-                Text(filter.isEmpty ? "No saved conversations found for this folder." : "No matches").font(.caption).foregroundStyle(.secondary).padding(.top, 12)
-            }
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(shown) { entry in row(entry) }
+                VStack(spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 24)).foregroundStyle(.tertiary)
+                    Text(filter.isEmpty ? "No saved conversations for this folder" : "No matches").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) { ForEach(shown) { entry in HistoryRow(entry: entry, project: project, linked: known.contains(entry.sessionID.lowercased())) { resume(entry, linked: $0) } } }
                 }
-                .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(AppTheme.stroke))
             }
-        }.padding(20)
-            .onAppear(perform: load)
-    }
-
-    private func row(_ entry: TranscriptEntry) -> some View {
-        let linked = known.contains(entry.sessionID.lowercased())
-        return HStack(spacing: 12) {
-            Image(systemName: entry.agent == .claude ? "sparkle" : "chevron.left.forwardslash.chevron.right").foregroundStyle(AppTheme.accent).frame(width: 16)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(entry.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                Text("\(entry.agent.rawValue) · \(entry.date.formatted(date: .abbreviated, time: .shortened)) · \(ByteCountFormatter.string(fromByteCount: Int64(entry.bytes), countStyle: .file)) · \(entry.sessionID.prefix(8))\(entry.directory != project.path ? " · " + URL(fileURLWithPath: entry.directory).lastPathComponent : "")")
-                    .font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer()
-            if linked { Text("In sidebar").font(.caption).foregroundStyle(.tertiary) }
-            Button(linked ? "Open" : "Resume") { resume(entry, linked: linked) }.controlSize(.small)
-            Button { store.copy(entry.sessionID) } label: { Image(systemName: "doc.on.doc") }.buttonStyle(.plain).foregroundStyle(.secondary).help("Copy session ID")
-        }.padding(.horizontal, 14).padding(.vertical, 8).overlay(alignment: .bottom) { Divider().padding(.leading, 14) }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear(perform: load)
     }
 
     private func resume(_ entry: TranscriptEntry, linked: Bool) {
@@ -161,6 +157,58 @@ struct HistoryPanel: View {
         Task.detached(priority: .userInitiated) {
             let found = TranscriptScanner.scan(directories: unique)
             await MainActor.run { entries = found; loading = false }
+        }
+    }
+}
+
+private struct HistoryRow: View {
+    @EnvironmentObject var store: Store
+    let entry: TranscriptEntry
+    let project: Project
+    let linked: Bool
+    let resume: (Bool) -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            AgentIcon(agent: entry.agent, size: 16).frame(width: 26, height: 26)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(entry.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(entry.agent.rawValue)
+                    Text("·").foregroundStyle(.quaternary)
+                    Text(entry.date.formatted(date: .abbreviated, time: .shortened))
+                    Text("·").foregroundStyle(.quaternary)
+                    Text(ByteCountFormatter.string(fromByteCount: Int64(entry.bytes), countStyle: .file))
+                    Text("·").foregroundStyle(.quaternary)
+                    Text(String(entry.sessionID.prefix(8))).font(.system(size: 10.5, design: .monospaced))
+                    if entry.directory != project.path {
+                        Text("·").foregroundStyle(.quaternary)
+                        Label(URL(fileURLWithPath: entry.directory).lastPathComponent, systemImage: "folder").lineLimit(1)
+                    }
+                }.font(.system(size: 10.5)).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 12)
+            if linked {
+                Text("In sidebar").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                    .padding(.horizontal, 7).padding(.vertical, 2).background(Color.primary.opacity(0.06), in: Capsule())
+            }
+            Button { resume(linked) } label: { Label(linked ? "Open" : "Resume", systemImage: linked ? "arrow.up.forward.square" : "play.fill").font(.system(size: 11, weight: .medium)) }
+                .buttonStyle(.bordered).tint(hovered ? AppTheme.accent : nil).controlSize(.small)
+            Button { store.copy(entry.sessionID) } label: { Image(systemName: "doc.on.doc").font(.system(size: 11)) }
+                .buttonStyle(.plain).foregroundStyle(.secondary).help("Copy session ID").opacity(hovered ? 1 : 0.4)
+        }
+        .padding(.horizontal, 20).padding(.vertical, 9)
+        .background(hovered ? Color.primary.opacity(0.04) : .clear)
+        .overlay(alignment: .bottom) { Divider().padding(.leading, 58).opacity(0.6) }
+        .contentShape(Rectangle())
+        .onHover { hovered = $0 }
+        .onTapGesture(count: 2) { resume(linked) }
+        .contextMenu {
+            Button(linked ? "Open" : "Resume") { resume(linked) }
+            Button("Copy session ID") { store.copy(entry.sessionID) }
+            Button("Show folder in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: entry.directory) }
         }
     }
 }
