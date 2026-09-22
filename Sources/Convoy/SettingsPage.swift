@@ -10,7 +10,7 @@ struct SettingsPage: View {
         ("General", "slider.horizontal.3", ["keep awake", "sleep", "sidebar", "compact", "group", "sort", "worktree default", "branch prefix"]),
         ("Appearance", "paintpalette", ["theme", "dark", "light", "system", "accent"]),
         ("Terminal", "terminal", ["font", "size", "scrollback", "lines", "snapshot"]),
-        ("Agents", "sparkles", ["claude", "codex", "hooks", "status", "working", "waiting", "done", "status line", "hibernate", "sleep", "idle", "review", "template", "brief", "default agent", "yolo", "permissions", "skip"]),
+        ("Agents", "sparkles", ["claude", "codex", "hooks", "status", "working", "waiting", "done", "status line", "hibernate", "sleep", "idle", "review", "template", "brief", "default agent", "yolo", "permissions", "skip", "trust", "folder"]),
         ("Accounts", "person.crop.circle", ["account", "login", "switch", "hot swap", "claude", "codex"]),
         ("Quick Commands", "bolt", ["prompt", "preset", "command", "snippet", "quick"]),
         ("Git", "arrow.triangle.branch", ["branch", "worktree", "dirty", "poll", "refresh", "setup", "install", "hooks"]),
@@ -176,6 +176,7 @@ struct AgentSettings: View {
     @AppStorage("yoloCodex") private var yoloCodex = false
     @StateObject private var detector = AgentDetector()
     @AppStorage("agentStatusHooks") private var hooks = true
+    @AppStorage("autoTrustFolders") private var autoTrust = true
     @AppStorage("claudeLimitsIntegration") private var claudeLimitsIntegration = false
     @AppStorage("hibernateAfterMinutes") private var hibernate = 0
     @AppStorage("reviewTemplate") private var reviewTemplate = ""
@@ -204,6 +205,7 @@ struct AgentSettings: View {
         SettingsGroup(title: "Permissions", footer: "Yolo mode launches Claude with --dangerously-skip-permissions and Codex with --dangerously-bypass-approvals-and-sandbox. Agents then edit files and run commands without asking. Applies to sessions started afterwards. Use it only in folders you can afford to have changed unattended.") {
             SettingsRow(title: "Claude Code: skip permission prompts (Yolo)") { Toggle("", isOn: $yoloClaude).labelsHidden().toggleStyle(.switch) }
             SettingsRow(title: "Codex: bypass approvals and sandbox (Yolo)") { Toggle("", isOn: $yoloCodex).labelsHidden().toggleStyle(.switch) }
+            SettingsRow(title: "Trust project folders automatically", detail: "Marks the session folder (including new worktrees) as trusted in ~/.claude.json and Codex config.toml before launch, so agents never stop on the “trust this folder?” prompt.") { Toggle("", isOn: $autoTrust).labelsHidden().toggleStyle(.switch) }
         }
         .onAppear { if !detector.checked { detector.detect() } }
         SettingsGroup(title: "Review brief template", footer: "Used by Start review and by auto-review of tasks unless a project overrides it (project ⋯ menu → Review & task defaults). Placeholders: {{title}} {{path}} {{scope}} {{task}} {{notes}} {{spec}} {{output}} {{branch}}. Empty = built-in default.") {

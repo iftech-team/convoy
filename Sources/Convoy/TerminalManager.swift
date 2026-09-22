@@ -276,6 +276,9 @@ final class TerminalManager: ObservableObject {
             let standard = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(session.agent == .claude ? ".claude" : ".codex").path
             if home == standard { extra.removeValue(forKey: key) } else { extra[key] = home }
         }
+        if UserDefaults.standard.object(forKey: "autoTrustFolders") as? Bool ?? true {
+            FolderTrust.approve(agent: session.agent, directory: directory, home: extra[key])
+        }
         handle.start(script: SessionCommand.script(session: session, directory: directory, resume: resume, claudeStatusCommand: statusCommand, hookHelper: hookHelper, setup: setup), directory: directory, extraEnvironment: extra)
     }
 
