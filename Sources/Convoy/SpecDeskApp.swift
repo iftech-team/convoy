@@ -274,7 +274,6 @@ struct SessionTab: View {
         .draggable(session.id.uuidString)
         .contextMenu {
             ForEach(0..<store.paneCount, id: \.self) { i in Button("Open in pane \(i + 1)") { store.place(session.id, in: i); store.focusPane(i) } }
-            Button("Open in split") { store.split(with: session.id) }.disabled(selected)
             Button("Close tab", action: close)
             Button("Close other tabs") { for id in store.tabOrder where id != session.id && store.terminals.handles[id]?.running != true { store.terminals.close(id) }; store.openSession(session.id, in: project.id) }
         }
@@ -902,7 +901,6 @@ struct SidebarSessionRow: View {
                 if store.paneCount > 1 {
                     ForEach(0..<store.paneCount, id: \.self) { i in Button("Open in pane \(i + 1)") { store.openSession(session.id, in: project.id); store.place(session.id, in: i); store.focusPane(i) } }
                 }
-                Button { store.split(with: session.id) } label: { Label("Open in split", systemImage: "rectangle.split.2x1") }.disabled(selected)
                 if !running {
                     Button { store.startSession(session, in: project, resume: true) } label: { Label("Resume", systemImage: "play") }
                 } else {
@@ -953,13 +951,11 @@ struct AppCommands: Commands {
             Button("Edit Name & Notes…") { store.editRequest = store.workspace.selectedSessionID }.bound("session.edit", keys)
             Button("Start Review…") { store.reviewRequest = store.workspace.selectedSessionID }.bound("session.review", keys)
             Button("Send Feedback to Builder…") { store.feedbackRequest = store.workspace.selectedSessionID }.bound("session.feedback", keys)
-            Button("Toggle Changes Panel") { store.diffRequest = UUID() }.bound("session.diff", keys)
             Button("Quick Commands…") { store.openPalette(.quick) }.bound("session.quick", keys)
             Divider()
             Button("Switch Terminal…") { store.openPalette(.terminals) }.bound("tab.switch", keys)
             Button("Next Tab") { store.selectTab(offset: 1) }.bound("tab.next", keys)
             Button("Previous Tab") { store.selectTab(offset: -1) }.bound("tab.previous", keys)
-            Button("Split With Recent Terminal") { store.split(with: nil) }.bound("tab.split", keys)
             Button("Single Pane") { store.setLayout(1) }.bound("view.layout1", keys)
             Button("Two Panes") { store.setLayout(2) }.bound("view.layout2", keys)
             Button("Four Panes") { store.setLayout(4) }.bound("view.layout4", keys)

@@ -53,7 +53,6 @@ final class Store: ObservableObject {
         didSet { UserDefaults.standard.set(hibernated.map(\.uuidString), forKey: "hibernatedSessions") }
     }
     @Published var multiSelection: Set<UUID> = []
-    @Published var diffRequest = UUID()
     @Published var quickRequest = UUID()
     @Published var findRequest = UUID()
     @Published var taskFromSpec: (UUID, String)?
@@ -200,16 +199,6 @@ final class Store: ObservableObject {
         let current = filled.firstIndex(of: focusedPane) ?? 0
         focusPane(filled[((current + offset) % filled.count + filled.count) % filled.count])
     }
-    /// Legacy split shortcut: two panes, recent terminal beside the current one.
-    func split(with id: UUID?) {
-        let target = id ?? recentTabs.first { $0 != workspace.selectedSessionID && tabOrder.contains($0) }
-        guard let target else { return }
-        if panes.count == 1 { setLayout(2) }
-        let empty = panes.firstIndex(where: { $0 == nil }) ?? (focusedPane == 0 ? 1 : 0)
-        place(target, in: empty)
-        focusPane(empty)
-    }
-    func unsplit() { setLayout(1) }
 
     // MARK: Pinning, reordering, multi-select
 

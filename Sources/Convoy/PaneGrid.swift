@@ -90,7 +90,6 @@ struct SessionPaneView: View {
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Quick commands")
                 Menu {
                     Button("Maximize (one pane)") { store.setLayout(1); store.place(session.id, in: 0); store.focusPane(0) }
-                    Button("Changes…") { store.setLayout(1); store.place(session.id, in: 0); store.focusPane(0); store.diffRequest = UUID() }
                     Divider()
                     if running { Button("Stop session…", role: .destructive) { stopConfirm = true } }
                     Button("Close pane") { store.closePane(index) }

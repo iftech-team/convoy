@@ -25,7 +25,6 @@ struct SessionPanel: View {
     @State private var editing: LinkedSession?
     @State private var feedback: LinkedSession?
     @State private var stopID: UUID?
-    @State private var showDiff = false
 
     var sessions: [LinkedSession] {
         project.linkedSessions.filter {
@@ -102,11 +101,6 @@ struct SessionPanel: View {
                         } label: { Image(systemName: "bolt").frame(width: 22, height: 22) }
                             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                             .help("Quick commands (\(store.keys.display("session.quick")))").accessibilityLabel("Quick commands")
-                        Button { showDiff.toggle() } label: {
-                            Image(systemName: "plus.forwardslash.minus").foregroundStyle(showDiff ? AppTheme.accent : .primary).frame(width: 22, height: 22)
-                        }.buttonStyle(.plain).help("Changes (\(store.keys.display("session.diff")))").accessibilityLabel("Toggle changes")
-                        Button { store.split(with: nil) } label: { Image(systemName: "rectangle.split.2x1").frame(width: 22, height: 22) }
-                            .buttonStyle(.plain).help("Split with recent terminal (\(store.keys.display("tab.split")))").accessibilityLabel("Split")
                         Button { newSession = true } label: { Image(systemName: "plus") }
                             .buttonStyle(.plain).help("New session").accessibilityLabel("New session")
                         Menu {
@@ -157,10 +151,6 @@ struct SessionPanel: View {
                         }
                     }
                 }.frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
-                if showDiff {
-                    DiffPanel(directory: store.directory(for: session, in: project), baseRef: session.baseRef, sessionID: session.id) { showDiff = false }
-                        .id(session.id).frame(minWidth: 420, idealWidth: 560, maxWidth: .infinity)
-                }
                 }
             } else {
                 VStack(spacing: 18) {
@@ -185,7 +175,6 @@ struct SessionPanel: View {
                     .background(Color(nsColor: .textBackgroundColor).opacity(0.4))
             }
         }
-        .onChange(of: store.diffRequest) { _, _ in if selected != nil { showDiff.toggle() } }
         .onChange(of: store.editRequest) { _, id in
             guard let id, let session = project.linkedSessions.first(where: { $0.id == id }) else { return }
             store.editRequest = nil; editing = session

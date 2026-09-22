@@ -106,7 +106,7 @@ Claude sessions report working / waiting / done through Claude Code hooks that C
 
 ## Review, split view, quick commands
 
-The **±** button in a session header (⇧⌘G) opens a Changes panel: every file changed in the session's directory versus its worktree base (merge-base) or HEAD, including untracked files, with a unified diff. Click **+** on a line to leave a note; **Send to agent** inserts all notes into that session's terminal as one message. **Split** (⌘D) shows another terminal beside the current one; ⇧⌘D closes it. **⚡ Quick commands** (⌘/) are saved prompts or shell commands, global or per project, inserted with bracketed paste and optionally submitted. The bell (⇧⌘A) opens the Activity feed of completions, questions, sleeps and worktree events.
+**⚡ Quick commands** (⌘/) are saved prompts or shell commands, global or per project, inserted with bracketed paste and optionally submitted. The bell (⇧⌘A) opens the Activity feed of completions, questions, sleeps and worktree events.
 
 ## Sidebar extras, hibernation, accounts
 
