@@ -75,6 +75,46 @@ final class CapturingTerminal: LocalProcessTerminalView {
         super.dataReceived(slice: slice)
         onOutput?(String(decoding: slice, as: UTF8.self))
     }
+
+    // SwiftTerm does not accept drops. Dragging a file (screenshot, photo, log) from Finder
+    // onto the terminal types its shell-quoted path, the way Terminal.app and iTerm do, so the
+    // agent can read it.
+    override init(frame: CGRect, font: NSFont? = nil, options: TerminalOptions) {
+        super.init(frame: frame, font: font, options: options)
+        registerForDraggedTypes([.fileURL])
+    }
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    private func droppedURLs(_ sender: NSDraggingInfo) -> [URL] {
+        (sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+    }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        droppedURLs(sender).isEmpty ? [] : .copy
+    }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        droppedURLs(sender).isEmpty ? [] : .copy
+    }
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { !droppedURLs(sender).isEmpty }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = droppedURLs(sender)
+        guard !urls.isEmpty else { return false }
+        send(txt: Self.droppedText(for: urls))
+        window?.makeFirstResponder(self)
+        return true
+    }
+
+    /// Paths joined by spaces, each quoted for the shell, with a trailing space so the user can keep typing.
+    static func droppedText(for urls: [URL]) -> String {
+        urls.map { shellQuote($0.path) }.joined(separator: " ") + " "
+    }
+    static func shellQuote(_ path: String) -> String {
+        let safe = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "/._-+=:@%,~"))
+        if !path.isEmpty, path.unicodeScalars.allSatisfy(safe.contains) { return path }
+        return "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
 }
 
 @MainActor
