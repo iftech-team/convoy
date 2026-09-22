@@ -141,3 +141,7 @@ Stopping a terminal terminates its PTY process group and reaps the child, with a
 ## License
 
 MIT. Embedded terminals use [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (MIT). The Claude and OpenAI marks belong to their owners and are used to identify the agents.
+
+## Releasing
+
+`scripts/release.sh <version> [notes.md]` bumps the version, builds, tags and publishes a GitHub release with `Convoy-<version>.zip` plus a stable `Convoy.zip`. peshbar.com and `convoy-install.sh` download `releases/latest/download/Convoy.zip`, so they follow every release automatically.
