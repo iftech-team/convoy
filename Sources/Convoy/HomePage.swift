@@ -87,7 +87,7 @@ struct HomePage: View {
                     }
                 }
                 HStack(spacing: 14) {
-                    hint("⌘K", "palette"); hint("⌘E", "switch terminal"); hint("⌘D", "split"); hint("⇧⌘G", "changes"); hint("⌘/", "quick commands"); hint("⌘,", "settings")
+                    hint("⌘K", "palette"); hint("⌘E", "switch terminal"); hint("⌘/", "quick commands"); hint("⌘,", "settings")
                 }.padding(.top, 8)
             }.padding(36).frame(maxWidth: .infinity, alignment: .leading)
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
