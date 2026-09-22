@@ -239,38 +239,142 @@ struct TaskSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State var task: AgentTask
     @State private var runNow = true
+    @FocusState private var titleFocused: Bool
     private var project: Project? { store.workspace.projects.first { $0.id == task.projectID } }
     private var specs: [String] { project.map { Docs.specFiles(in: $0.path) } ?? [] }
+    private var isNew: Bool { task.title.isEmpty }
+    private var canSave: Bool { !task.title.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    private func label(_ text: String) -> some View {
+        Text(text.uppercased()).font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundStyle(.secondary)
+    }
+
+    private var modeSummary: String {
+        switch task.mode {
+        case "push": return "Works in a fresh worktree branch, verifies, then pushes straight to the main branch."
+        case "none": return "Works in a fresh worktree branch, verifies, then commits. Nothing is pushed."
+        default: return "Works in a fresh worktree branch, verifies, then pushes and opens a pull request with gh."
+        }
+    }
+
+    private func agentCard(_ candidate: Agent) -> some View {
+        let selected = task.agent == candidate
+        return Button { task.agent = candidate } label: {
+            HStack(spacing: 10) {
+                AgentIcon(agent: candidate, size: 18)
+                Text(candidate.rawValue).font(.system(size: 13, weight: .semibold))
+                Spacer()
+                if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(AppTheme.accent) }
+            }.padding(.horizontal, 12).padding(.vertical, 10).frame(maxWidth: .infinity).contentShape(Rectangle())
+                .background(selected ? AppTheme.accent.opacity(0.14) : Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 9))
+                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(selected ? AppTheme.accent.opacity(0.7) : AppTheme.stroke, lineWidth: selected ? 1.5 : 1))
+        }.buttonStyle(.plain)
+    }
+
+    private var specField: some View {
+        let current = task.spec.map { $0.replacingOccurrences(of: ".specdesk/specs/", with: "") }
+        return Menu {
+            Button { task.spec = nil } label: { if task.spec == nil { Label("None", systemImage: "checkmark") } else { Text("None") } }
+            if !specs.isEmpty {
+                Divider()
+                ForEach(specs, id: \.self) { spec in
+                    let name = spec.replacingOccurrences(of: ".specdesk/specs/", with: "")
+                    Button { task.spec = spec } label: { if task.spec == spec { Label(name, systemImage: "checkmark") } else { Text(name) } }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.text").foregroundStyle(.tertiary).font(.system(size: 10))
+                Text(current ?? "No spec").font(.system(size: 12, design: current == nil ? .default : .monospaced))
+                    .foregroundStyle(current == nil ? .secondary : .primary).lineLimit(1).truncationMode(.middle)
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+            }.padding(.horizontal, 10).frame(height: 30).contentShape(Rectangle())
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(AppTheme.stroke))
+        }.menuStyle(.borderlessButton).menuIndicator(.hidden)
+            .help(specs.isEmpty ? "No specs in .specdesk/specs yet" : "Attach a spec from .specdesk/specs")
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(task.title.isEmpty ? "New task" : "Edit task").font(.title2.bold())
-            if let project { Label(project.name, systemImage: "folder").foregroundStyle(.secondary) }
-            TextField("What should be done?", text: $task.title).textFieldStyle(.roundedBorder)
-            TextEditor(text: $task.details).frame(height: 150).border(.quaternary)
-                .overlay(alignment: .topLeading) { if task.details.isEmpty { Text("Details, constraints, acceptance criteria… (optional)").foregroundStyle(.tertiary).padding(6).allowsHitTesting(false) } }
-            HStack(spacing: 12) {
-                Picker("Agent", selection: $task.agent) { ForEach(Agent.allCases) { Text($0.rawValue).tag($0) } }.frame(width: 200)
-                Picker("When done", selection: $task.mode) { Text("Open pull request").tag("pr"); Text("Push to main branch").tag("push"); Text("Commit only").tag("none") }.frame(width: 260)
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 10) {
+                Text(isNew ? "New task" : "Edit task").font(.system(size: 18, weight: .bold))
+                Spacer()
+                if let project {
+                    HStack(spacing: 6) {
+                        ProjectIconView(project: project, size: 14)
+                        Text(project.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(project.tint)
+                    }.padding(.horizontal, 8).padding(.vertical, 4).background(project.tint.opacity(0.12), in: Capsule())
+                }
             }
-            HStack(spacing: 12) {
-                Picker("Spec", selection: $task.spec) {
-                    Text("None").tag(String?.none)
-                    ForEach(specs, id: \.self) { Text($0.replacingOccurrences(of: ".specdesk/specs/", with: "")).tag(String?.some($0)) }
-                }.frame(width: 320)
-                Toggle("Auto-review by the other agent when finished", isOn: $task.autoReview)
+
+            VStack(alignment: .leading, spacing: 6) {
+                label("Task")
+                TextField("What should be done? e.g. Add filter by source to referrals", text: $task.title)
+                    .textFieldStyle(.roundedBorder).font(.system(size: 13)).focused($titleFocused)
             }
-            Text("The agent gets the task text, the project doc (.specdesk/PROJECT.md) and the chosen spec, works in a fresh worktree branch, verifies, then \(task.mode == "pr" ? "pushes and opens a PR with gh" : (task.mode == "push" ? "pushes straight to the main branch" : "commits")).")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack {
-                if task.status == .queued { Toggle("Run now", isOn: $runNow) }
-                Spacer(); Button("Cancel") { dismiss() }
-                Button(task.status == .queued && runNow ? "Save & run" : "Save") {
+
+            VStack(alignment: .leading, spacing: 6) {
+                label("Details (optional)")
+                TextEditor(text: $task.details).font(.system(size: 12.5)).scrollContentBackground(.hidden).padding(6).frame(height: 120)
+                    .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(AppTheme.stroke))
+                    .overlay(alignment: .topLeading) {
+                        if task.details.isEmpty {
+                            Text("Constraints, acceptance criteria, links, branch prefix…").font(.system(size: 12.5)).foregroundStyle(.tertiary)
+                                .padding(.horizontal, 11).padding(.vertical, 6).allowsHitTesting(false)
+                        }
+                    }
+            }
+
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    label("Agent")
+                    HStack(spacing: 8) { agentCard(.claude); agentCard(.codex) }
+                }.frame(maxWidth: .infinity)
+                VStack(alignment: .leading, spacing: 8) {
+                    label("Spec")
+                    specField
+                }.frame(width: 220)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                label("When done")
+                Picker("", selection: $task.mode) {
+                    Text("Open pull request").tag("pr")
+                    Text("Push to main").tag("push")
+                    Text("Commit only").tag("none")
+                }.pickerStyle(.segmented).labelsHidden()
+                Text(modeSummary).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Auto-review when finished").font(.system(size: 13, weight: .medium))
+                    Text("The other agent inspects the result and reports back without editing.").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                Toggle("", isOn: $task.autoReview).labelsHidden().toggleStyle(.switch)
+            }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+
+            HStack(spacing: 12) {
+                if task.status == .queued {
+                    Toggle(isOn: $runNow) { Text("Run now").font(.system(size: 12)) }.toggleStyle(.checkbox)
+                    Text("Unchecked tasks wait in the queue.").font(.caption).foregroundStyle(.tertiary)
+                }
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button {
                     store.saveTask(task)
                     if task.status == .queued && runNow { store.runTask(task) }
                     dismiss()
-                }.buttonStyle(.borderedProminent).disabled(task.title.trimmingCharacters(in: .whitespaces).isEmpty)
+                } label: {
+                    Label(task.status == .queued && runNow ? "Save & run" : "Save", systemImage: task.status == .queued && runNow ? "play.fill" : "checkmark")
+                }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction).disabled(!canSave)
             }
         }.padding(24).frame(width: 640)
+            .onAppear { if isNew { titleFocused = true } }
     }
 }
