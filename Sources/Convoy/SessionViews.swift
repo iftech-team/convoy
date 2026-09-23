@@ -47,7 +47,6 @@ struct SessionPanel: View {
                                 Text("Sessions").tag("Sessions")
                                 Text("Reviews").tag("Reviews")
                                 Text("Specs").tag("Specs")
-                                Text("History").tag("History")
                                 Text("Tasks").tag("Tasks")
                                 Text("Docs").tag("Docs")
                             }
@@ -151,6 +150,8 @@ struct SessionPanel: View {
                         }
                     }
                 }.frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
+            } else if !reviewsOnly {
+                HistoryPanel(project: project, onNewSession: { newSession = true })
             } else {
                 VStack(spacing: 18) {
                     Image(systemName: reviewsOnly ? "checkmark.bubble" : "terminal")
@@ -392,8 +393,8 @@ struct NewSessionSheet: View {
             Text(project.path).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled).lineLimit(1).truncationMode(.middle)
 
             VStack(alignment: .leading, spacing: 6) {
-                label("Name")
-                TextField("What is this session for? e.g. Fix delivery status", text: $title).textFieldStyle(.roundedBorder).font(.system(size: 13))
+                label("Name (optional)")
+                TextField("Leave empty to name it after the first message", text: $title).textFieldStyle(.roundedBorder).font(.system(size: 13))
                     .onChange(of: title) { _, value in if !branchEdited { branch = GitWorktree.slug(value, prefix: project.branchPrefix ?? branchPrefix) } }
             }
 
@@ -474,19 +475,23 @@ struct NewSessionSheet: View {
                 Text((agent == .claude ? yoloClaude : yoloCodex) ? "Starts without permission prompts (Yolo is on in Settings → Agents)." : "Uses your installed agent, login and approval settings.").font(.caption).foregroundStyle(.tertiary)
                 Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button {
-                    var session = LinkedSession(agent: agent, sessionID: agent == .claude ? UUID().uuidString.lowercased() : "", title: title.trimmingCharacters(in: .whitespacesAndNewlines), notes: note, initialPrompt: prompt, reviewOf: source?.id)
+                    let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let finalTitle = trimmedTitle.isEmpty ? SessionNaming.autoTitle(agent: agent, prompt: prompt) : trimmedTitle
+                    var session = LinkedSession(agent: agent, sessionID: agent == .claude ? UUID().uuidString.lowercased() : "", title: finalTitle, notes: note, initialPrompt: prompt, reviewOf: source?.id)
                     if let source, let builder = project.linkedSessions.first(where: { $0.id == source.id }) { session.workingDirectory = builder.workingDirectory; session.branch = builder.branch; session.baseRef = builder.baseRef }
-                    let wantWorktree = source == nil && useWorktree && !branch.trimmingCharacters(in: .whitespaces).isEmpty
+                    var branchName = branch.trimmingCharacters(in: .whitespaces)
+                    if useWorktree && source == nil && branchName.isEmpty { branchName = GitWorktree.slug(finalTitle, prefix: project.branchPrefix ?? branchPrefix) }
+                    let wantWorktree = source == nil && useWorktree && !branchName.isEmpty
                     store.skipSetupOnce = setupPolicy == "skip"
                     if pickProject, store.workspace.selectedProjectID != project.id { store.selectProject(project.id) }
-                    store.startSession(session, in: project, worktreeBranch: wantWorktree ? branch.trimmingCharacters(in: .whitespaces) : nil, base: base.trimmingCharacters(in: .whitespaces))
+                    store.startSession(session, in: project, worktreeBranch: wantWorktree ? branchName : nil, base: base.trimmingCharacters(in: .whitespaces))
                     if store.error == nil {
                         if keepOpen { title = ""; prompt = ""; note = ""; branch = ""; branchEdited = false } else { dismiss() }
                     }
                 } label: {
                     Text(source == nil ? "Start \(agent.rawValue)" : "Launch reviewer")
                 }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
-                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (useWorktree && source == nil && branch.trimmingCharacters(in: .whitespaces).isEmpty))
+
             }
         }.padding(24).frame(width: 640)
     }

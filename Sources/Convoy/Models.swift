@@ -11,6 +11,18 @@ enum TaskStatus: String, Codable, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 }
 
+/// Name for a session the user did not bother to name: the first line of its first message, else agent + time.
+enum SessionNaming {
+    static func autoTitle(agent: Agent, prompt: String?, date: Date = Date()) -> String {
+        if let prompt, let first = prompt.split(whereSeparator: \.isNewline).map({ $0.trimmingCharacters(in: .whitespaces) }).first(where: { !$0.isEmpty }) {
+            let cleaned = first.replacingOccurrences(of: "^[#*>\\-\\s]+", with: "", options: .regularExpression)
+            if !cleaned.isEmpty { return cleaned.count > 60 ? String(cleaned.prefix(57)).trimmingCharacters(in: .whitespaces) + "…" : cleaned }
+        }
+        let f = DateFormatter(); f.dateFormat = "MMM d, HH:mm"
+        return "\(agent.rawValue) · \(f.string(from: date))"
+    }
+}
+
 struct LinkedSession: Codable, Identifiable, Equatable, Sendable {
     var id = UUID()
     var agent: Agent

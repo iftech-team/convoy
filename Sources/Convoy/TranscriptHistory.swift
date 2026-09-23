@@ -93,6 +93,7 @@ enum TranscriptScanner {
 struct HistoryPanel: View {
     @EnvironmentObject var store: Store
     let project: Project
+    var onNewSession: (() -> Void)? = nil
     @State private var entries: [TranscriptEntry] = []
     @State private var loading = false
     @State private var filter = ""
@@ -106,7 +107,7 @@ struct HistoryPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                Text("History").font(.system(size: 15, weight: .semibold))
+                Text("Saved conversations").font(.system(size: 15, weight: .semibold))
                 Text("\(shown.count)").font(.system(size: 12, weight: .medium)).foregroundStyle(.tertiary)
                 if loading { ProgressView().controlSize(.small) }
                 Spacer()
@@ -120,14 +121,16 @@ struct HistoryPanel: View {
                     .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
                     .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(AppTheme.stroke))
                 Button { load() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 11)) }.buttonStyle(.plain).foregroundStyle(.secondary).help("Rescan")
+                if let onNewSession { Button { onNewSession() } label: { Label("New session", systemImage: "plus") }.buttonStyle(.borderedProminent) }
             }.padding(.horizontal, 20).padding(.vertical, 14)
-            Text("Conversations saved by Claude Code and Codex for \(project.name)\(project.isGroup ? "" : " and its worktrees"). Resume any of them here, even ones started in a plain terminal.")
+            Text("Pick a session in the sidebar, start a new one, or resume any conversation Claude Code or Codex saved for \(project.name)\(project.isGroup ? "" : " and its worktrees"), even ones started in a plain terminal.")
                 .font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 20).padding(.bottom, 10)
             Divider()
             if shown.isEmpty && !loading {
                 VStack(spacing: 8) {
                     Image(systemName: "clock.arrow.circlepath").font(.system(size: 24)).foregroundStyle(.tertiary)
                     Text(filter.isEmpty ? "No saved conversations for this folder" : "No matches").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+                    if filter.isEmpty, let onNewSession { Button { onNewSession() } label: { Label("Start your first session", systemImage: "plus") }.buttonStyle(.borderedProminent).controlSize(.large).padding(.top, 6) }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {

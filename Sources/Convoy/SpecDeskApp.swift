@@ -529,7 +529,7 @@ struct ProjectWorkbench: View {
     @State private var newSession = false
 
     private var hasOpenSession: Bool {
-        !["Specs", "History", "Tasks", "Docs"].contains(area) && project.linkedSessions.contains {
+        !["Specs", "Tasks", "Docs"].contains(area) && project.linkedSessions.contains {
             $0.id == store.workspace.selectedSessionID && store.tabOrder.contains($0.id) && $0.archived != true && (area != "Reviews" || $0.reviewOf != nil)
         }
     }
@@ -560,17 +560,14 @@ struct ProjectWorkbench: View {
                     Text("Sessions").tag("Sessions")
                     Text("Reviews").tag("Reviews")
                     Text("Specs").tag("Specs")
-                    Text("History").tag("History")
                     Text("Tasks").tag("Tasks")
                     Text("Docs").tag("Docs")
-                }.pickerStyle(.segmented).labelsHidden().frame(width: 560)
-                    .help("⌥⌘1–6 jump to a section · \(store.keys.display("project.previousArea")) / \(store.keys.display("project.nextArea")) cycle")
+                }.pickerStyle(.segmented).labelsHidden().frame(width: 470)
+                    .help("⌥⌘1–5 jump to a section · \(store.keys.display("project.previousArea")) / \(store.keys.display("project.nextArea")) cycle")
             }.padding(.horizontal, 24).padding(.vertical, 20)
             Divider()
             }
-            if area == "History" {
-                HistoryPanel(project: project)
-            } else if area == "Tasks" {
+            if area == "Tasks" {
                 TasksPanel(project: project)
             } else if area == "Docs" {
                 DocsPanel(project: project)
@@ -624,7 +621,7 @@ struct ProjectWorkbench: View {
         }
         .onChange(of: store.newSpecRequest) { _, _ in area = "Specs"; title = ""; newSpec = true }
         .onChange(of: store.workspace.selectedSessionID) { _, id in
-            if id != nil && ["Specs", "History", "Tasks", "Docs"].contains(area) { area = "Sessions" }
+            if id != nil && ["Specs", "Tasks", "Docs"].contains(area) { area = "Sessions" }
         }
         .onChange(of: store.sessionFocusRequest) { _, _ in
             let selected = project.linkedSessions.first { $0.id == store.workspace.selectedSessionID }
@@ -1002,7 +999,6 @@ struct AppCommands: Commands {
             Button("Sessions") { store.areaRequest = "Sessions" }.bound("project.sessions", keys)
             Button("Reviews") { store.areaRequest = "Reviews" }.bound("project.reviews", keys)
             Button("Specs") { store.areaRequest = "Specs" }.bound("project.specs", keys)
-            Button("History") { store.areaRequest = "History"; if !store.showProjectPage, let p = store.project { store.selectProject(p.id); store.areaRequest = "History" } }.bound("project.history", keys)
             Button("Tasks") { store.areaRequest = "Tasks"; if !store.showProjectPage, let p = store.project { store.selectProject(p.id); store.areaRequest = "Tasks" } }.bound("project.tasks", keys)
             Button("Docs & Specs") { store.areaRequest = "Docs"; if !store.showProjectPage, let p = store.project { store.selectProject(p.id); store.areaRequest = "Docs" } }.bound("project.docs", keys)
             Button("Next Section") { store.cycleArea(1) }.bound("project.nextArea", keys)
