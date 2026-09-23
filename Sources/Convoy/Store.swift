@@ -394,10 +394,33 @@ final class Store: ObservableObject {
     /// Files & Changes panel beside the content area. Persisted so it reopens the way it was left.
     @Published var showGitPanel = UserDefaults.standard.bool(forKey: "showGitPanel") { didSet { UserDefaults.standard.set(showGitPanel, forKey: "showGitPanel") } }
     func toggleGitPanel() { showGitPanel.toggle() }
-    /// The folder the panel follows: the displayed session's worktree, else the selected project.
-    var gitPanelDirectory: String? {
+    /// The folder on screen: the displayed session's worktree, else the selected project.
+    var gitPanelBase: String? {
         if let session = displayedSession, let project = project(ofSession: session.id) { return directory(for: session, in: project) }
         return project?.path
+    }
+    /// Repository chosen per non-repo folder (a project group), remembered across launches.
+    @Published var gitPanelRepoChoice: [String: String] = UserDefaults.standard.dictionary(forKey: "gitPanelRepoChoice") as? [String: String] ?? [:] {
+        didSet { UserDefaults.standard.set(gitPanelRepoChoice, forKey: "gitPanelRepoChoice") }
+    }
+    /// Repositories directly under `base`: child projects plus any immediate subfolder with a .git.
+    func gitRepoCandidates(under base: String) -> [String] {
+        let fm = FileManager.default
+        var found: [String] = []
+        for project in workspace.projects where !project.isGroup && project.path.hasPrefix(base + "/") && fm.fileExists(atPath: project.path + "/.git") { found.append(project.path) }
+        for name in (try? fm.contentsOfDirectory(atPath: base)) ?? [] where !name.hasPrefix(".") {
+            let path = base + "/" + name
+            if fm.fileExists(atPath: path + "/.git") { found.append(path) }
+        }
+        return Array(Set(found)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+    /// The repository the panel shows. A repo folder is used as-is; a group falls back to the chosen or first child repository.
+    var gitPanelDirectory: String? {
+        guard let base = gitPanelBase else { return nil }
+        if FileManager.default.fileExists(atPath: base + "/.git") { return base }
+        let candidates = gitRepoCandidates(under: base)
+        if let chosen = gitPanelRepoChoice[base], candidates.contains(chosen) { return chosen }
+        return candidates.first ?? base
     }
     private var gitPanels: [String: GitPanelModel] = [:]
     /// One model per folder so the commit draft and selection survive switching tabs.

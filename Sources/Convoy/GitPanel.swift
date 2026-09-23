@@ -39,6 +39,25 @@ struct GitPanelView: View {
             Picker("Section", selection: $model.tab) { ForEach(GitPanelTab.allCases) { Text($0.rawValue).tag($0) } }
                 .pickerStyle(.segmented).labelsHidden().controlSize(.small).frame(width: 200)
             Spacer(minLength: 4)
+            if let base = store.gitPanelBase, !FileManager.default.fileExists(atPath: base + "/.git") {
+                let candidates = store.gitRepoCandidates(under: base)
+                if !candidates.isEmpty {
+                    Menu {
+                        ForEach(candidates, id: \.self) { path in
+                            Button { store.gitPanelRepoChoice[base] = path } label: {
+                                if path == model.directory { Label(URL(fileURLWithPath: path).lastPathComponent, systemImage: "checkmark") } else { Text(URL(fileURLWithPath: path).lastPathComponent) }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "shippingbox").font(.system(size: 10))
+                            Text(URL(fileURLWithPath: model.directory).lastPathComponent).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                            Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary)
+                        }.padding(.horizontal, 7).frame(height: 22).background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                    }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                        .help("This folder is a group; choose which repository the panel shows")
+                }
+            }
             if model.isRepo { BranchChip(model: model, newBranch: $newBranch) }
             if model.refreshing { ProgressView().controlSize(.mini) }
             Button { model.refresh(); model.loadBranches() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .medium)).frame(width: 22, height: 22) }
@@ -52,7 +71,7 @@ struct GitPanelView: View {
         VStack(spacing: 10) {
             Image(systemName: "arrow.triangle.branch").font(.system(size: 22, weight: .medium)).foregroundStyle(.tertiary)
             Text("Not a git repository").font(.system(size: 13, weight: .semibold))
-            Text("Convoy shows changes for a single repository. Groups and plain folders only get the Files tab.")
+            Text("Convoy shows changes for a single repository. This folder has no repositories inside it, so only the Files tab is available.")
                 .font(.system(size: 11.5)).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 260)
             Text(model.directory).font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
         }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)

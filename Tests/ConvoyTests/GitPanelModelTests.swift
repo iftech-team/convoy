@@ -147,3 +147,22 @@ private func write(_ text: String, to path: String) throws { try text.write(toFi
 }
 
 }
+
+@Test @MainActor func groupFolderResolvesToChildRepository() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("convoy-group-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    for name in ["api", "admin"] {
+        let dir = root.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        _ = GitInfoService.run(["init", "-q"], in: dir.path)
+    }
+    try FileManager.default.createDirectory(at: root.appendingPathComponent("docs"), withIntermediateDirectories: true)
+    let group = Project(name: "g", path: root.path, group: true)
+    let file = WorkspaceFile(url: root.appendingPathComponent("ws.json"))
+    try file.save(Workspace(projects: [group], selectedProjectID: group.id))
+    let store = Store(workspaceURL: file.url)
+    #expect(store.gitRepoCandidates(under: root.path) == [root.appendingPathComponent("admin").path, root.appendingPathComponent("api").path])
+    #expect(store.gitPanelDirectory == root.appendingPathComponent("admin").path)
+    store.gitPanelRepoChoice[root.path] = root.appendingPathComponent("api").path
+    #expect(store.gitPanelDirectory == root.appendingPathComponent("api").path)
+}
