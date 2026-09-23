@@ -57,6 +57,13 @@
       ],
       "category": "Development",
       "maintainer": "iftech-team"
-    }
+    },
+    "artifactName": "Convoy-Preview-${version}-${os}-${arch}.${ext}"
+  },
+  "homepage": "https://peshbar.com/convoy",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iftech-team/convoy.git",
+    "directory": "apps/desktop"
   }
 }

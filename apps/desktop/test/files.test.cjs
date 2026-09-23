@@ -19,7 +19,7 @@ test('preview rejects traversal, external symlinks, binary and oversized files',
   if (process.platform !== 'win32') { fs.symlinkSync(os.tmpdir(), path.join(dir, 'link')); await assert.rejects(preview(dir, 'link')); }
 });
 test('Git panel handles unborn repositories, spaced paths, stage, commit, diffs and rename records', async t => {
-  const dir = fixture(t); await git(dir, ['init']); await git(dir, ['config', 'user.name', 'Test']); await git(dir, ['config', 'user.email', 'test@example.invalid']);
+  const dir = fixture(t); await git(dir, ['init']); await git(dir, ['config', 'core.autocrlf', 'false']); await git(dir, ['config', 'user.name', 'Test']); await git(dir, ['config', 'user.email', 'test@example.invalid']);
   const name = 'space name.txt'; fs.writeFileSync(path.join(dir, name), 'one\n');
   assert.equal((await snapshot(dir)).changes[0].untracked, true);
   await mutate(dir, 'stage', { path: name }); await mutate(dir, 'unstage', { path: name });
@@ -33,7 +33,7 @@ test('Git panel handles unborn repositories, spaced paths, stage, commit, diffs 
 });
 test('discard hunk rejects stale diffs and preserves other hunks', async t => {
   const { digest } = require('../src/files.cjs');
-  const dir = fixture(t); await git(dir, ['init']); await git(dir, ['config', 'user.name', 'Test']); await git(dir, ['config', 'user.email', 'test@example.invalid']);
+  const dir = fixture(t); await git(dir, ['init']); await git(dir, ['config', 'core.autocrlf', 'false']); await git(dir, ['config', 'user.name', 'Test']); await git(dir, ['config', 'user.email', 'test@example.invalid']);
   const before = Array.from({ length: 30 }, (_, i) => `line ${i}`).join('\n') + '\n';
   fs.writeFileSync(path.join(dir, 'text'), before); await mutate(dir, 'stageAll'); await mutate(dir, 'commit', { message: 'Initial' });
   fs.writeFileSync(path.join(dir, 'text'), before.replace('line 1\n', 'first edit\n').replace('line 25\n', 'second edit\n'));
@@ -44,7 +44,7 @@ test('discard hunk rejects stale diffs and preserves other hunks', async t => {
 });
 
 test('staging a path treats Git wildcard characters literally', async t => {
-  const dir = fixture(t); await git(dir, ['init']);
+  const dir = fixture(t); await git(dir, ['init']); await git(dir, ['config', 'core.autocrlf', 'false']);
   fs.writeFileSync(path.join(dir, '[ab].txt'), 'literal'); fs.writeFileSync(path.join(dir, 'a.txt'), 'other');
   await mutate(dir, 'stage', { path: '[ab].txt' });
   const status = await snapshot(dir);
@@ -63,4 +63,20 @@ test('shared-file setup never follows destination symlinks or overwrites existin
     await assert.rejects(setup(repo, target, ['linked/nested/file'], ''));
     assert.deepEqual(fs.readdirSync(outside), []);
   }
+});
+
+test('discard and hunk discard respect Git CRLF checkout settings', async t => {
+  const { digest } = require('../src/files.cjs');
+  const dir = fixture(t);
+  await git(dir, ['init']); await git(dir, ['config', 'core.autocrlf', 'true']);
+  await git(dir, ['config', 'user.name', 'Test']); await git(dir, ['config', 'user.email', 'test@example.invalid']);
+  const before = Array.from({ length: 30 }, (_, i) => `line ${i}`).join('\r\n') + '\r\n';
+  fs.writeFileSync(path.join(dir, 'text.txt'), before); await mutate(dir, 'stageAll'); await mutate(dir, 'commit', { message: 'CRLF fixture' });
+  fs.writeFileSync(path.join(dir, 'text.txt'), 'changed\r\n');
+  await mutate(dir, 'discard', { path: 'text.txt' });
+  assert.equal(fs.readFileSync(path.join(dir, 'text.txt'), 'utf8'), before);
+  fs.writeFileSync(path.join(dir, 'text.txt'), before.replace('line 1\r\n', 'first edit\r\n').replace('line 25\r\n', 'second edit\r\n'));
+  const diff = await read(dir, { kind: 'unstaged', path: 'text.txt' });
+  await mutate(dir, 'discardHunk', { path: 'text.txt', hunk: 0, hash: digest(diff) });
+  assert.equal(fs.readFileSync(path.join(dir, 'text.txt'), 'utf8'), before.replace('line 25\r\n', 'second edit\r\n'));
 });
