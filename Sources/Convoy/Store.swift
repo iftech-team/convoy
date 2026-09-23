@@ -297,9 +297,9 @@ final class Store: ObservableObject {
 
     // MARK: Source control (runs git in the session's directory; output surfaces in the panel)
 
-    func gitCommand(_ args: [String], in directory: String, timeout: TimeInterval = 60) async -> (ok: Bool, output: String) {
+    func gitCommand(_ args: [String], in directory: String, timeout: TimeInterval = 60, input: Data? = nil, environment: [String: String] = [:]) async -> (ok: Bool, output: String) {
         await Task.detached(priority: .userInitiated) { () -> (Bool, String) in
-            guard let (status, out) = GitInfoService.run(args, in: directory, timeout: timeout) else { return (false, "git timed out") }
+            guard let (status, out) = GitInfoService.run(args, in: directory, timeout: timeout, input: input, environment: environment) else { return (false, "git timed out") }
             return (status == 0, out.trimmingCharacters(in: .whitespacesAndNewlines))
         }.value
     }
@@ -390,6 +390,25 @@ final class Store: ObservableObject {
 
     /// Directory a session runs in: its worktree when it has one, otherwise the project folder.
     func directory(for session: LinkedSession, in project: Project) -> String { session.workingDirectory ?? project.path }
+
+    /// Files & Changes panel beside the content area. Persisted so it reopens the way it was left.
+    @Published var showGitPanel = UserDefaults.standard.bool(forKey: "showGitPanel") { didSet { UserDefaults.standard.set(showGitPanel, forKey: "showGitPanel") } }
+    func toggleGitPanel() { showGitPanel.toggle() }
+    /// The folder the panel follows: the displayed session's worktree, else the selected project.
+    var gitPanelDirectory: String? {
+        if let session = displayedSession, let project = project(ofSession: session.id) { return directory(for: session, in: project) }
+        return project?.path
+    }
+    private var gitPanels: [String: GitPanelModel] = [:]
+    /// One model per folder so the commit draft and selection survive switching tabs.
+    func gitPanel(for directory: String) -> GitPanelModel {
+        if let model = gitPanels[directory] { return model }
+        let model = GitPanelModel(directory: directory, store: self)
+        gitPanels[directory] = model
+        return model
+    }
+    /// Refreshes the panel that is currently on screen, if any.
+    func refreshGitPanel() { if let dir = gitPanelDirectory, showGitPanel { gitPanels[dir]?.refresh() } }
 
     /// Keeps branch/dirty info fresh for what is on screen.
     func trackGit() {

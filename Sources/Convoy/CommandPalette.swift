@@ -71,6 +71,13 @@ struct CommandPalette: View {
             ("Open Claude /usage", "Runs /usage in the current project", "gauge", "⌥⌘U", { store.openClaudeUsage() }),
             ("Toggle keep awake", "", "cup.and.saucer", "⌥⌘K", { store.wake.mode = store.wake.mode == "off" ? "sessions" : "off" }),
             ("Find project in sidebar", "", "magnifyingglass", "⌘F", { store.searchFocusRequest = UUID() }),
+            ("Files & Changes", "Browse files, stage, commit, push, log", "sidebar.right", "⇧⌘G", { store.toggleGitPanel() }),
+            ("Git: Commit…", "Open the panel on the commit composer", "checkmark.seal", nil, { store.showGitPanel = true; if let d = store.gitPanelDirectory { store.gitPanel(for: d).tab = .changes } }),
+            ("Git: Push", "", "arrow.up.to.line", nil, { store.showGitPanel = true; if let d = store.gitPanelDirectory { store.gitPanel(for: d).push() } }),
+            ("Git: Pull (fast-forward)", "", "arrow.down.to.line", nil, { store.showGitPanel = true; if let d = store.gitPanelDirectory { store.gitPanel(for: d).pull() } }),
+            ("Git: Fetch", "", "arrow.down.circle", nil, { store.showGitPanel = true; if let d = store.gitPanelDirectory { store.gitPanel(for: d).fetch() } }),
+            ("Git: Log", "Recent commits with revert and reset", "clock.arrow.circlepath", nil, { store.showGitPanel = true; if let d = store.gitPanelDirectory { store.gitPanel(for: d).tab = .log } }),
+            ("Git: Files", "Browse the project tree", "folder", nil, { store.showGitPanel = true; if let d = store.gitPanelDirectory { store.gitPanel(for: d).tab = .files } }),
         ]
         for (title, subtitle, icon, shortcut, run) in actions {
             items.append(PaletteItem(id: "a-\(title)", kind: .action, title: title, subtitle: subtitle, icon: icon, shortcut: shortcut, action: run))

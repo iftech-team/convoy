@@ -58,23 +58,29 @@ struct PaneGrid: View {
 struct EvenSplit<First: View, Second: View>: View {
     let axis: Axis
     let key: String
+    let minimumFirst: CGFloat
+    let minimumSecond: CGFloat
+    let defaultFraction: CGFloat
     @ViewBuilder let first: () -> First
     @ViewBuilder let second: () -> Second
     @State private var fraction: CGFloat
     @State private var dragStart: CGFloat?
     @State private var hovering = false
 
-    init(axis: Axis, key: String, @ViewBuilder first: @escaping () -> First, @ViewBuilder second: @escaping () -> Second) {
+    init(axis: Axis, key: String, minimumFirst: CGFloat? = nil, minimumSecond: CGFloat? = nil, defaultFraction: CGFloat = 0.5,
+         @ViewBuilder first: @escaping () -> First, @ViewBuilder second: @escaping () -> Second) {
         self.axis = axis; self.key = key; self.first = first; self.second = second
+        let fallback: CGFloat = axis == .horizontal ? 320 : 200
+        self.minimumFirst = minimumFirst ?? fallback; self.minimumSecond = minimumSecond ?? fallback; self.defaultFraction = defaultFraction
         let saved = UserDefaults.standard.double(forKey: "split." + key)
-        _fraction = State(initialValue: saved > 0.15 && saved < 0.85 ? saved : 0.5)
+        _fraction = State(initialValue: saved > 0.1 && saved < 0.9 ? saved : defaultFraction)
     }
 
     var body: some View {
         GeometryReader { geo in
             let total = axis == .horizontal ? geo.size.width : geo.size.height
-            let minimum: CGFloat = axis == .horizontal ? 320 : 200
-            let firstSize = max(minimum, min(max(minimum, total - minimum), (total * fraction).rounded()))
+            let minimum = minimumFirst
+            let firstSize = max(minimum, min(max(minimum, total - minimumSecond), (total * fraction).rounded()))
             let divider = Rectangle().fill(Color.primary.opacity(hovering ? 0.25 : 0.1))
                 .frame(width: axis == .horizontal ? 1 : nil, height: axis == .vertical ? 1 : nil)
                 .padding(axis == .horizontal ? .horizontal : .vertical, 3)
@@ -83,10 +89,10 @@ struct EvenSplit<First: View, Second: View>: View {
                 .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("split." + key)).onChanged { value in
                     if dragStart == nil { dragStart = firstSize }
                     let delta = axis == .horizontal ? value.translation.width : value.translation.height
-                    let next = max(minimum, min(max(minimum, total - minimum), (dragStart ?? firstSize) + delta))
+                    let next = max(minimum, min(max(minimum, total - minimumSecond), (dragStart ?? firstSize) + delta))
                     fraction = next / max(total, 1)
                 }.onEnded { _ in dragStart = nil; UserDefaults.standard.set(Double(fraction), forKey: "split." + key) })
-                .onTapGesture(count: 2) { fraction = 0.5; UserDefaults.standard.set(0.5, forKey: "split." + key) }
+                .onTapGesture(count: 2) { fraction = defaultFraction; UserDefaults.standard.set(Double(defaultFraction), forKey: "split." + key) }
             if axis == .horizontal {
                 HStack(spacing: 0) {
                     first().frame(width: firstSize)

@@ -90,7 +90,7 @@ env CLANG_MODULE_CACHE_PATH="$PWD/.build/ModuleCache" \
 
 To include the native-window and real PTY input/output test (uses a harmless shell, no model requests), also set `SPECDESK_UI_TEST_DIR="$PWD/.build/qa"`. This writes test-window snapshots and uses isolated test workspace data. Native tests require a normal macOS GUI session.
 
-Tests cover persistence, schema migration, folder discovery, duplicate imports, group removal, shell argument escaping, review context, and terminal input/output. Full end-to-end model reviews are not exercised by tests.
+Tests cover persistence, schema migration, folder discovery, duplicate imports, group removal, shell argument escaping, review context, terminal input/output, git status/diff/log parsing, and the Files & Changes model against a temporary repository (stage, commit, hunk discard, branches, revert, reset). With `SPECDESK_UI_TEST_DIR` set, a snapshot test also renders the panel to PNGs. Full end-to-end model reviews are not exercised by tests.
 
 References: [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm), [Codex CLI](https://learn.chatgpt.com/docs/developer-commands?surface=cli), [Claude Code CLI](https://code.claude.com/docs/en/cli-reference).
 
@@ -103,6 +103,17 @@ Claude sessions report working / waiting / done through Claude Code hooks that C
 ## Git worktrees and branches
 
 **New session → Run in a new git worktree** creates an isolated checkout under `~/Library/Application Support/Convoy/worktrees/<project>/<branch>` with `git worktree add --no-track -b <branch>`, so parallel sessions on one repo never overwrite each other. The branch name is generated from the session title (optional prefix in Settings) and can be edited. Reviews of a worktree session run in the same worktree. Right-click the session to show, copy or remove the worktree (optionally deleting the branch). The sidebar and session header show the current branch, changed-file count and ahead/behind, read with optional locks disabled so polling never races an agent's own git commands.
+
+## Files & Changes panel
+
+⇧⌘G (or the panel button in the tab bar, or the branch label in a session header) opens a JetBrains-style source-control panel beside the terminal. It follows the focused session's folder, worktrees included, and works on the project page too. Its width is remembered.
+
+- **Changes** lists conflicts, staged, unstaged and untracked files with ± line counts; the checkbox stages or unstages. The diff below shows the selected file (unified or split, wrap, maximize) with line numbers and a per-hunk **Discard**. The commit box has Amend, **Generate** (asks Claude for a message from the diff, using the existing `claude` login), **Commit** (⌘↩) and a menu for Commit & Push, Push, Fetch, Pull and Open pull request (needs the `gh` CLI). Right-click a file to discard its changes or move an untracked file to the Trash; both ask first.
+- **Files** is a tree of tracked and untracked-but-not-ignored files (plain folders fall back to a directory walk) coloured by git status, with a filter, a read-only viewer with line numbers, rendered Markdown with a Raw toggle, and image previews.
+- **Log** shows the last 200 commits; select one to see its files and diffs. Right-click for Revert commit and soft or mixed Reset, each with a confirmation. Hard reset is deliberately not offered.
+- The branch chip switches branches (local or remote), creates one, and runs Fetch, Pull (fast-forward only) and Push (with `-u origin HEAD` when the branch has no upstream).
+
+The panel refreshes on file-system events, after every action, and every 10 s while open. Git runs with `--no-optional-locks`, and writes respect an agent's `index.lock` (the error is shown; try again once the agent is done). Git never prompts for credentials here; push from the terminal if authentication is needed.
 
 ## Review, split view, quick commands
 

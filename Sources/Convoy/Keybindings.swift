@@ -117,6 +117,7 @@ final class Keybindings: ObservableObject {
         KeyAction(id: "limits.refresh", title: "Refresh Codex limits", group: "Limits", defaultBinding: "cmd+opt+l"),
         KeyAction(id: "limits.claudeUsage", title: "Open Claude /usage", group: "Limits", defaultBinding: "cmd+opt+u"),
         KeyAction(id: "git.refresh", title: "Refresh git status", group: "Project", defaultBinding: "cmd+opt+g"),
+        KeyAction(id: "git.panel", title: "Files & Changes panel", group: "Project", defaultBinding: "cmd+shift+g"),
     ]
 
     func binding(_ id: String) -> KeyBinding? {

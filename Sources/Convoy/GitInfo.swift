@@ -58,19 +58,40 @@ final class GitInfoService: ObservableObject {
         }
     }
 
-    nonisolated static func run(_ arguments: [String], in directory: String, timeout: TimeInterval = 8) -> (Int32, String)? {
+    /// `input` is written to git's stdin (for `apply -`); `environment` is merged last (for `GIT_EDITOR=true`).
+    /// Output is decoded leniently so a diff with non-UTF-8 bytes still comes back.
+    ///
+    /// Reads the pipe on the calling thread. Waiting on a DispatchGroup here deadlocks when called from a
+    /// detached Task: the cooperative pool is blocked and the global-queue reader never runs, so every call
+    /// times out. The timeout is enforced by a small dedicated thread instead of GCD.
+    nonisolated static func run(_ arguments: [String], in directory: String, timeout: TimeInterval = 8, input: Data? = nil, environment: [String: String] = [:]) -> (Int32, String)? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["git", "-C", directory, "--no-optional-locks"] + arguments
-        process.environment = ProcessInfo.processInfo.environment.merging(["GIT_OPTIONAL_LOCKS": "0", "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"]) { $1 }
+        process.environment = ProcessInfo.processInfo.environment.merging(["GIT_OPTIONAL_LOCKS": "0", "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"]) { $1 }.merging(environment) { $1 }
         let pipe = Pipe(); process.standardOutput = pipe; process.standardError = pipe
+        let stdin = Pipe(); process.standardInput = stdin
         do { try process.run() } catch { return nil }
-        let deadline = DispatchTime.now() + timeout
-        let group = DispatchGroup(); group.enter()
-        DispatchQueue.global().async { process.waitUntilExit(); group.leave() }
-        if group.wait(timeout: deadline) == .timedOut { process.terminate(); return nil }
-        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        return (process.terminationStatus, output)
+        if let input { stdin.fileHandleForWriting.write(input) }
+        try? stdin.fileHandleForWriting.close()
+
+        final class Watchdog: @unchecked Sendable { var done = false; var timedOut = false; let condition = NSCondition() }
+        let watchdog = Watchdog()
+        let deadline = Date(timeIntervalSinceNow: timeout)
+        Thread.detachNewThread {
+            watchdog.condition.lock()
+            while !watchdog.done && watchdog.condition.wait(until: deadline) {}
+            if !watchdog.done { watchdog.timedOut = true; if process.isRunning { process.terminate() } }
+            watchdog.condition.unlock()
+        }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        watchdog.condition.lock()
+        watchdog.done = true; watchdog.condition.signal()
+        let timedOut = watchdog.timedOut
+        watchdog.condition.unlock()
+        if timedOut { return nil }
+        return (process.terminationStatus, String(decoding: data, as: UTF8.self))
     }
 
     nonisolated static func read(_ path: String) -> GitInfo? {
