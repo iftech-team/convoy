@@ -1,8 +1,10 @@
 # Port and native review — September 23, 2026
 
 Reference: native macOS 0.5.8 (`2732d28`). Its Files & Changes source changes were
-applied to this worktree while retaining the Electron implementation. No merge,
-commit, push, release, model request, or real task publication was performed.
+applied to this worktree while retaining the Electron implementation. Main 0.5.9
+(`ee04717`) was subsequently merged, preserving its newer History and optional
+session-name behavior. No release, model request, or real task publication was
+performed during validation.
 
 ## Implemented in the Electron preview
 
@@ -34,7 +36,7 @@ review/fix loop. Provider permissions stay enabled. See the
 
 ## Validation
 
-- Native macOS: 51-test suite passed; Git panel and terminal snapshot fixtures
+- Native macOS: merged 0.5.9 suite passed with 52 tests; Git panel and terminal snapshot fixtures
   also passed in the preceding full UI-enabled run.
 - JavaScript: 34 passed, one Windows-only legacy PowerShell check skipped locally.
 - macOS Electron: renderer, real IPC/app lifecycle, explicit two-task queue and

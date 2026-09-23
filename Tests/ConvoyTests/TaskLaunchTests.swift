@@ -26,3 +26,12 @@ import Testing
     #expect(prompt.contains("group of separate git repositories"))
     #expect(!prompt.contains("HEAD:fatal"))
 }
+
+@Test func unnamedSessionsGetAUsefulTitle() {
+    #expect(SessionNaming.autoTitle(agent: .claude, prompt: "Fix the login bug\n\nMore details here") == "Fix the login bug")
+    #expect(SessionNaming.autoTitle(agent: .claude, prompt: "# Refactor the payment module") == "Refactor the payment module")
+    let long = SessionNaming.autoTitle(agent: .codex, prompt: String(repeating: "word ", count: 30))
+    #expect(long.count <= 60 && long.hasSuffix("…"))
+    let fallback = SessionNaming.autoTitle(agent: .codex, prompt: "   \n", date: Date(timeIntervalSince1970: 0))
+    #expect(fallback.hasPrefix("Codex · "))
+}
