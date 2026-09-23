@@ -40,7 +40,6 @@ struct SessionPanel: View {
     var body: some View {
         Group {
             if let session = selected {
-                HSplitView {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 12) {
                         Menu {
@@ -75,9 +74,10 @@ struct SessionPanel: View {
                         }.menuStyle(.borderlessButton).frame(maxWidth: 260)
                         Spacer(minLength: 8)
                         if let git = store.git.info[store.directory(for: session, in: project)] {
-                            Label(git.branch + (git.summary.isEmpty ? "" : " · " + git.summary), systemImage: "arrow.triangle.branch")
-                                .font(.caption).foregroundStyle(session.branch != nil ? AppTheme.accent : .secondary).lineLimit(1)
-                                .help(session.workingDirectory ?? project.path)
+                            Button { store.toggleGitPanel() } label: {
+                                Label(git.branch + (git.summary.isEmpty ? "" : " · " + git.summary), systemImage: "arrow.triangle.branch")
+                                    .font(.caption).foregroundStyle(store.showGitPanel || session.branch != nil ? AppTheme.accent : .secondary).lineLimit(1)
+                            }.buttonStyle(.plain).help("Files & Changes (\(store.keys.display("git.panel"))) · \(session.workingDirectory ?? project.path)")
                         }
                         Text(session.agent.rawValue).font(.caption).foregroundStyle(.secondary)
                         let running = manager.handles[session.id]?.running == true
@@ -151,7 +151,6 @@ struct SessionPanel: View {
                         }
                     }
                 }.frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
-                }
             } else {
                 VStack(spacing: 18) {
                     Image(systemName: reviewsOnly ? "checkmark.bubble" : "terminal")

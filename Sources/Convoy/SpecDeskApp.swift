@@ -61,6 +61,20 @@ struct WorkspaceView: View {
     @State private var projectToRemove: Project?
     @AppStorage("showSidebar") private var showSidebar = true
 
+    @ViewBuilder private var mainContent: some View {
+        if store.showSettings {
+            SettingsPage()
+        } else if let pid = store.projectSettingsID, let project = store.workspace.projects.first(where: { $0.id == pid }) {
+            ProjectSettingsPage(project: project).id(pid)
+        } else if !store.visiblePaneSessions.isEmpty && !store.showProjectPage {
+            PaneGrid(manager: store.terminals)
+        } else if store.showProjectPage, let project = store.project {
+            ProjectWorkbench(project: project).id(project.id)
+        } else {
+            HomePage(manager: store.terminals, usage: store.usage)
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HSplitView {
@@ -71,16 +85,14 @@ struct WorkspaceView: View {
                 VStack(spacing: 0) {
                     SessionTabBar(manager: store.terminals, showSidebar: $showSidebar)
                     Divider()
-                    if store.showSettings {
-                        SettingsPage()
-                    } else if let pid = store.projectSettingsID, let project = store.workspace.projects.first(where: { $0.id == pid }) {
-                        ProjectSettingsPage(project: project).id(pid)
-                    } else if !store.visiblePaneSessions.isEmpty && !store.showProjectPage {
-                        PaneGrid(manager: store.terminals)
-                    } else if store.showProjectPage, let project = store.project {
-                        ProjectWorkbench(project: project).id(project.id)
+                    if store.showGitPanel && !store.showSettings && store.projectSettingsID == nil {
+                        EvenSplit(axis: .horizontal, key: "git.panel", minimumFirst: 520, minimumSecond: 340, defaultFraction: 0.6) {
+                            mainContent
+                        } second: {
+                            if let dir = store.gitPanelDirectory { GitPanelView(model: store.gitPanel(for: dir)).id(dir) } else { GitPanelEmpty() }
+                        }
                     } else {
-                        HomePage(manager: store.terminals, usage: store.usage)
+                        mainContent
                     }
                 }.frame(minWidth: 620, maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -185,6 +197,15 @@ struct SessionTabBar: View {
                     }.buttonStyle(.plain).help("\(count == 1 ? "One pane" : "\(count) panes") (\(store.keys.display("view.layout\(count)")))")
                 }
             }.padding(.trailing, 6)
+            Button { store.toggleGitPanel() } label: {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: "sidebar.right").font(.system(size: 12, weight: .medium)).foregroundStyle(store.showGitPanel ? AppTheme.accent : .secondary)
+                    if let changed = store.gitPanelDirectory.flatMap({ store.git.info[$0]?.changed }), changed > 0 {
+                        Text("\(min(99, changed))").font(.system(size: 8, weight: .bold)).foregroundStyle(.white)
+                            .padding(.horizontal, 3).padding(.vertical, 1).background(AppTheme.accent, in: Capsule()).offset(x: 7, y: -5)
+                    }
+                }.frame(width: 28, height: 28).contentShape(Rectangle())
+            }.buttonStyle(.plain).help("Files & Changes (\(store.keys.display("git.panel")))").accessibilityLabel("Toggle Files & Changes panel")
             Button { store.showActivity.toggle() } label: {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: "bell").font(.system(size: 12, weight: .medium)).foregroundStyle(store.showActivity ? AppTheme.accent : .secondary)
@@ -991,7 +1012,8 @@ struct AppCommands: Commands {
             Button("Show in Finder") { if let p = store.project { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: p.path) } }.bound("project.finder", keys)
             Button("Copy Folder Path") { if let p = store.project { store.copy(p.path) } }.bound("project.copyPath", keys)
             Button("Refresh Projects") { if let p = store.project { store.importSubprojects(p) } }.bound("project.refresh", keys)
-            Button("Refresh Git Status") { store.trackGit(); store.git.refreshNow([]) }.bound("git.refresh", keys)
+            Button("Refresh Git Status") { store.trackGit(); store.git.refreshNow([]); store.refreshGitPanel() }.bound("git.refresh", keys)
+            Button("Files & Changes") { store.toggleGitPanel() }.bound("git.panel", keys)
         }
         CommandMenu("Go") {
             Button("Command Palette…") { if store.showPalette { store.showPalette = false } else { store.openPalette(.all) } }.bound("go.palette", keys)
@@ -1017,7 +1039,7 @@ enum ShortcutReference {
     static let groups: [(String, [(String, String)])] = [
         ("General", [("⌘K", "Command palette"), ("⇧⌘P", "Search sessions & projects"), ("⌘F", "Find project in sidebar"), ("⌘B", "Toggle sidebar"), ("⌘,", "Settings"), ("⌥⌘T", "Cycle theme"), ("⌥⌘K", "Toggle keep awake")]),
         ("Sessions & tabs", [("⌘N", "New session"), ("⌘E", "Switch terminal (recent first)"), ("⌃Tab / ⌃⇧Tab", "Next / previous tab"), ("⌘1–9", "Jump to tab"), ("⌘W", "Close tab"), ("⇧⌘T", "Reopen closed tab"), ("⇧⌘R", "Resume session"), ("⌘.", "Stop session"), ("⌘I", "Edit name & notes"), ("⌥⌘R", "Start review"), ("⇧⌘B", "Send feedback to builder")]),
-        ("Project", [("⌘O", "Open folder"), ("⌥⌘1 / 2 / 3", "Sessions / Reviews / Specs"), ("⌥⌘N", "New specification"), ("⌥⌘F", "Show in Finder"), ("⌥⌘C", "Copy folder path"), ("⌃⌘R", "Refresh projects"), ("⌥⌘G", "Refresh git status")]),
+        ("Project", [("⌘O", "Open folder"), ("⌥⌘1 / 2 / 3", "Sessions / Reviews / Specs"), ("⌥⌘N", "New specification"), ("⌥⌘F", "Show in Finder"), ("⌥⌘C", "Copy folder path"), ("⌃⌘R", "Refresh projects"), ("⌥⌘G", "Refresh git status"), ("⇧⌘G", "Files & Changes panel")]),
         ("Limits", [("⇧⌘L", "AI Limits panel"), ("⌥⌘L", "Refresh Codex limits"), ("⌥⌘U", "Open Claude /usage")]),
     ]
 }
