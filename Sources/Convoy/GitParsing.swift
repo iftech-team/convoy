@@ -274,6 +274,52 @@ enum SideBySide {
     }
 }
 
+/// Display helpers: strip the indentation every line shares, and find the changed span inside a
+/// removed/added pair so the split and unified views can highlight just what differs.
+enum DiffDisplay {
+    /// Longest whitespace prefix common to every non-blank line of the diff.
+    static func commonIndent(_ diff: FileDiff) -> String {
+        var indent: String? = nil
+        for hunk in diff.hunks {
+            for line in hunk.lines where line.kind != .noNewline {
+                let text = line.text
+                if text.allSatisfy({ $0 == " " || $0 == "\t" }) { continue }
+                let lead = String(text.prefix { $0 == " " || $0 == "\t" })
+                guard let current = indent else { indent = lead; continue }
+                indent = String(zip(current, lead).prefix { $0 == $1 }.map { $0.0 })
+                if indent?.isEmpty == true { return "" }
+            }
+        }
+        return indent ?? ""
+    }
+    static func strip(_ text: String, indent: String) -> String {
+        indent.isEmpty || !text.hasPrefix(indent) ? text : String(text.dropFirst(indent.count))
+    }
+
+    /// Character ranges that differ between a removed line and the added line it is paired with.
+    struct Span: Equatable { let prefix: Int; let suffix: Int }
+    static func changedSpan(_ old: String, _ new: String) -> Span? {
+        let a = Array(old), b = Array(new)
+        var prefix = 0
+        while prefix < a.count, prefix < b.count, a[prefix] == b[prefix] { prefix += 1 }
+        var suffix = 0
+        while suffix < a.count - prefix, suffix < b.count - prefix, a[a.count - 1 - suffix] == b[b.count - 1 - suffix] { suffix += 1 }
+        // No highlight when everything or (almost) nothing is shared: a whole-line change reads better plain.
+        let shared = prefix + suffix
+        if shared == 0 || (shared * 4 < max(a.count, b.count)) { return nil }
+        return Span(prefix: prefix, suffix: suffix)
+    }
+    /// Spans keyed by DiffLine.id for every removed/added pair in a hunk (same pairing as SideBySide).
+    static func spans(for hunk: DiffHunk) -> [Int: Span] {
+        var out: [Int: Span] = [:]
+        for row in SideBySide.rows(for: hunk) {
+            guard let l = row.left, let r = row.right, l.kind == .removed, r.kind == .added, let span = changedSpan(l.text, r.text) else { continue }
+            out[l.id] = span; out[r.id] = span
+        }
+        return out
+    }
+}
+
 // MARK: Log, branches
 
 struct GitCommit: Identifiable, Equatable, Sendable {

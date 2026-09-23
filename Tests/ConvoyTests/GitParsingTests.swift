@@ -170,3 +170,28 @@ deleted file mode 100644
     #expect(counts["src/new.swift"] == LineCounts(added: 2, removed: 0))
     #expect(counts["new"] == LineCounts(added: 1, removed: 1))
 }
+
+@Test func diffDisplayStripsSharedIndentAndFindsChangedSpan() {
+    let lines = [
+        DiffLine(id: 1, kind: .context, text: "\t\t\tsize: '45%',", oldNumber: 1, newNumber: 1),
+        DiffLine(id: 2, kind: .removed, text: "\t\t\tfield: 'type',", oldNumber: 2, newNumber: nil),
+        DiffLine(id: 3, kind: .added, text: "\t\t\tfield: 'kind',", oldNumber: nil, newNumber: 2),
+        DiffLine(id: 4, kind: .context, text: "", oldNumber: 3, newNumber: 3),
+    ]
+    let hunk = DiffHunk(id: 1, header: "@@ -1,3 +1,3 @@", oldStart: 1, oldCount: 3, newStart: 1, newCount: 3, lines: lines)
+    var diff = FileDiff()
+    diff.hunks = [hunk]
+    #expect(DiffDisplay.commonIndent(diff) == "\t\t\t")
+    #expect(DiffDisplay.strip("\t\t\tsize", indent: "\t\t\t") == "size")
+    #expect(DiffDisplay.strip("size", indent: "\t\t\t") == "size")
+    let spans = DiffDisplay.spans(for: hunk)
+    #expect(spans[2] == DiffDisplay.Span(prefix: 11, suffix: 2))
+    #expect(spans[3] == spans[2])
+    #expect(DiffDisplay.changedSpan("completely different", "nothing alike here") == nil)
+    var mixed = FileDiff()
+    mixed.hunks = [DiffHunk(id: 1, header: "", oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: [
+        DiffLine(id: 1, kind: .context, text: "    a", oldNumber: 1, newNumber: 1),
+        DiffLine(id: 2, kind: .added, text: "  b", oldNumber: nil, newNumber: 2),
+    ])]
+    #expect(DiffDisplay.commonIndent(mixed) == "  ")
+}

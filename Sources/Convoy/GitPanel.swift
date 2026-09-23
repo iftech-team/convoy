@@ -34,11 +34,33 @@ struct GitPanelView: View {
         .sheet(isPresented: $newBranch) { NewBranchSheet(model: model) }
     }
 
+    /// One row when there is room, otherwise the section picker on its own line and the chips below it.
     private var header: some View {
-        HStack(spacing: 8) {
-            Picker("Section", selection: $model.tab) { ForEach(GitPanelTab.allCases) { Text($0.rawValue).tag($0) } }
-                .pickerStyle(.segmented).labelsHidden().controlSize(.small).frame(width: 200)
-            Spacer(minLength: 4)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { sectionPicker; Spacer(minLength: 4); chips; controls }
+                .padding(.horizontal, 10).frame(height: 36).background(AppTheme.raised)
+            VStack(spacing: 4) {
+                HStack(spacing: 8) { sectionPicker; Spacer(minLength: 4); controls }
+                HStack(spacing: 8) { chips; Spacer(minLength: 0) }
+            }.padding(.horizontal, 10).padding(.vertical, 6).background(AppTheme.raised)
+        }
+    }
+
+    private var sectionPicker: some View {
+        Picker("Section", selection: $model.tab) { ForEach(GitPanelTab.allCases) { Text($0.rawValue).tag($0) } }
+            .pickerStyle(.segmented).labelsHidden().controlSize(.small).frame(width: 190)
+    }
+
+    @ViewBuilder private var controls: some View {
+        if model.refreshing { ProgressView().controlSize(.mini) }
+        Button { model.refresh(); model.loadBranches() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .medium)).frame(width: 22, height: 22) }
+            .buttonStyle(.plain).foregroundStyle(.secondary).help("Refresh").accessibilityLabel("Refresh git status")
+        Button { store.showGitPanel = false } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).frame(width: 22, height: 22) }
+            .buttonStyle(.plain).foregroundStyle(.secondary).help("Close (\(store.keys.display("git.panel")))").accessibilityLabel("Close git panel")
+    }
+
+    @ViewBuilder private var chips: some View {
+        HStack(spacing: 6) {
             if let base = store.gitPanelBase, !FileManager.default.fileExists(atPath: base + "/.git") {
                 let candidates = store.gitRepoCandidates(under: base)
                 if !candidates.isEmpty {
@@ -59,12 +81,7 @@ struct GitPanelView: View {
                 }
             }
             if model.isRepo { BranchChip(model: model, newBranch: $newBranch) }
-            if model.refreshing { ProgressView().controlSize(.mini) }
-            Button { model.refresh(); model.loadBranches() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .medium)).frame(width: 22, height: 22) }
-                .buttonStyle(.plain).foregroundStyle(.secondary).help("Refresh").accessibilityLabel("Refresh git status")
-            Button { store.showGitPanel = false } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).frame(width: 22, height: 22) }
-                .buttonStyle(.plain).foregroundStyle(.secondary).help("Close (\(store.keys.display("git.panel")))").accessibilityLabel("Close git panel")
-        }.padding(.horizontal, 10).frame(height: 36).background(AppTheme.raised)
+        }
     }
 
     private var notRepo: some View {
@@ -391,22 +408,22 @@ struct GitDiffArea: View {
     var body: some View {
         VStack(spacing: 0) {
             if let target = model.target {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     if let code = file?.displayCode ?? model.diff.map({ $0.isNew ? .added : ($0.isDeleted ? .deleted : ($0.isRename ? .renamed : .modified)) }) {
                         Text(code.label).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(DiffPalette.color(for: code))
                     }
-                    Text(target.path).font(.system(size: 11, design: .monospaced)).lineLimit(1).truncationMode(.middle).layoutPriority(1).help(target.path)
+                    Text((target.path as NSString).lastPathComponent).font(.system(size: 11, weight: .medium, design: .monospaced)).lineLimit(1).truncationMode(.middle).help(target.path)
                     if let diff = model.diff, !diff.isBinary, diff.additions + diff.deletions > 0 {
                         Text("+\(diff.additions)").foregroundStyle(.green).font(.system(size: 9.5, design: .monospaced)).fixedSize()
                         Text("−\(diff.deletions)").foregroundStyle(.red).font(.system(size: 9.5, design: .monospaced)).fixedSize()
                     }
-                    Text(scopeLabel(target)).font(.system(size: 9.5)).foregroundStyle(.tertiary).fixedSize()
                     Spacer(minLength: 4)
                     if model.diffLoading { ProgressView().controlSize(.mini) }
-                    Picker("Layout", selection: $layoutRaw) { Text("Unified").tag(DiffLayout.unified.rawValue); Text("Split").tag(DiffLayout.sideBySide.rawValue) }
-                        .pickerStyle(.segmented).labelsHidden().controlSize(.mini).frame(width: 110)
+                    Button { layoutRaw = layout == .unified ? DiffLayout.sideBySide.rawValue : DiffLayout.unified.rawValue } label: {
+                        Image(systemName: "rectangle.split.2x1").font(.system(size: 11)).foregroundStyle(layout == .sideBySide ? AppTheme.accent : .secondary).frame(width: 20, height: 20)
+                    }.buttonStyle(.plain).help(layout == .sideBySide ? "Unified diff" : "Side-by-side diff")
                     Button { wrap.toggle() } label: { Image(systemName: "text.word.spacing").font(.system(size: 11)).foregroundStyle(wrap ? AppTheme.accent : .secondary).frame(width: 20, height: 20) }
-                        .buttonStyle(.plain).help(wrap ? "Scroll long lines" : "Wrap long lines")
+                        .buttonStyle(.plain).help(wrap ? "Scroll long lines" : "Wrap long lines").disabled(layout == .sideBySide)
                     Button { model.maximizeDiff.toggle() } label: { Image(systemName: model.maximizeDiff ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right").font(.system(size: 11)).foregroundStyle(model.maximizeDiff ? AppTheme.accent : .secondary).frame(width: 20, height: 20) }
                         .buttonStyle(.plain).help(model.maximizeDiff ? "Show the file list" : "Give the diff the whole panel")
                     if let file, target.isWorkingTree {
