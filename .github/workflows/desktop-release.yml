@@ -58,11 +58,11 @@ jobs:
         run: |
           set -euo pipefail
           cd installers
-          files=("Convoy-Preview-${VERSION}-win-x64.exe" "Convoy-Preview-${VERSION}-linux-x64.AppImage" "Convoy-Preview-${VERSION}-linux-x64.deb")
+          files=("Convoy-Preview-${VERSION}-win-x64.exe" "Convoy-Preview-${VERSION}-linux-x86_64.AppImage" "Convoy-Preview-${VERSION}-linux-amd64.deb")
           for file in "${files[@]}"; do test -s "$file"; done
           sha256sum "${files[@]}" > SHA256SUMS.txt
           cat > notes.md <<'NOTES'
-          First Electron preview for Windows and Linux (x64).
+          Electron preview for Windows and Linux (x64).
 
           Includes projects, saved Claude Code/Codex sessions, two terminal panes, Git worktrees, tasks, specs, agent status and Files & Changes. Some native macOS features are still being ported.
 
