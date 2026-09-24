@@ -27,8 +27,14 @@ pub struct Workspace {
 
 impl Workspace {
     pub fn new() -> Self {
+        Workspace::at(Storage::default())
+    }
+
+    /// The same thing pointed somewhere else, which is how a test gets one
+    /// without writing into the workspace the user is actually using.
+    pub fn at(storage: Storage) -> Self {
         Workspace {
-            storage: Storage::default(),
+            storage,
             inner: Mutex::new(None),
         }
     }

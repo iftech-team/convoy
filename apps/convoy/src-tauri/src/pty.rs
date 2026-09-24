@@ -430,6 +430,86 @@ mod tests {
         assert!(!terminals.running("probe"), "the session was not cleared");
     }
 
+    /// The rule the whole queue rests on: an agent that exits cleanly hands
+    /// its task to review, and never straight to done.
+    ///
+    /// This is here rather than in convoy-core because the core has always had
+    /// it; what had never been true is that anything called it. The assertion
+    /// is on the workspace file after the child is reaped, which is the only
+    /// way to catch the wiring being absent.
+    #[cfg(unix)]
+    #[test]
+    fn a_clean_exit_sends_the_task_to_review() {
+        use convoy_core::model::{Agent, PublishMode, TaskStatus};
+        use convoy_core::planning::TaskInput;
+        use convoy_core::{Storage, Workspace as CoreWorkspace};
+        use tauri::Manager;
+
+        let root = std::env::temp_dir().join(format!("convoy-exit-{}", std::process::id()));
+        let project = root.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let storage = Storage::new(root.join("state"));
+
+        let mut core = CoreWorkspace::load(storage.workspace_file()).unwrap();
+        core.add_project(&project).unwrap();
+        let project_id = core.state().projects[0].id.clone();
+        core.save_task(TaskInput {
+            id: None,
+            project_id,
+            spec_id: None,
+            title: "Something to finish".into(),
+            details: String::new(),
+            findings: String::new(),
+            agent: Agent::Claude,
+            mode: PublishMode::None,
+            auto_review: false,
+        })
+        .unwrap();
+        let task_id = core.state().tasks[0].id.clone();
+        core.prepare_task(&task_id, None).unwrap();
+        let session_id = core.state().tasks[0].session_id.clone().unwrap();
+        drop(core);
+
+        let app = tauri::test::mock_app();
+        app.manage(crate::commands::Workspace::at(storage.clone()));
+        let terminals = Arc::new(Terminals::new());
+        let (exits, exited) = std::sync::mpsc::channel::<()>();
+        app.handle().listen("terminal:exit", move |_| {
+            let _ = exits.send(());
+        });
+
+        let env = vec![(
+            "PATH".to_string(),
+            std::env::var("PATH").unwrap_or_default(),
+        )];
+        terminals
+            .start(
+                app.handle(),
+                Launch {
+                    id: &session_id,
+                    program: "/bin/sh",
+                    args: &["-c".to_string(), "exit 0".to_string()],
+                    cwd: &project,
+                    env: &env,
+                    cols: 80,
+                    rows: 24,
+                },
+            )
+            .expect("spawn");
+
+        exited
+            .recv_timeout(Duration::from_secs(10))
+            .expect("no exit event");
+
+        let core = CoreWorkspace::load(storage.workspace_file()).unwrap();
+        assert_eq!(
+            core.state().tasks[0].status,
+            TaskStatus::Review,
+            "a clean exit must hand the task to review"
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
     /// Stopping signals the process group, so an agent's own children go with
     /// it rather than surviving as orphans. Windows has no process groups;
     /// `taskkill /T` walks the tree there, and `stopping_ends_the_session`

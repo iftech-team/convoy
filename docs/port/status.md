@@ -1,10 +1,14 @@
 # Port and native review — September 23, 2026
 
-> **September 24, 2026.** Linux moved off Electron. `apps/linux` is a native
-> GTK4 client in Rust; `apps/desktop` remains the Windows implementation and is
-> unchanged. Both read the same schema-3 `workspace.json`, so either can be run
-> against existing data — but not at the same time. See
-> [the Linux client](#linux-gtk-client) below and
+> **September 24, 2026.** Linux moved off Electron twice in one day. First to
+> `apps/linux`, a native GTK4 client in Rust; then, once the design was seen
+> beside the macOS app, to `apps/convoy` — a Tauri client that now covers both
+> Windows and Linux with one interface. `apps/linux` still builds and still
+> passes its tests; `apps/desktop` is the Electron build it replaced. All of
+> them read the same schema-3 `workspace.json`, so any one can be run against
+> existing data — but not two at the same time. See
+> [the Tauri client](#convoy-tauri-client) and
+> [the Linux client](#linux-gtk-client) below, and
 > [`docs/plan-refactor/`](../plan-refactor/) for why and how.
 
 Reference: native macOS 0.5.8 (`2732d28`). Its Files & Changes source changes were
@@ -107,6 +111,64 @@ terminal checks; `convoy-vte-probe` exists for them but has not been run
 interactively. No distribution package has been installed from a clean system;
 the PKGBUILD and Debian metadata are written but only CI builds them. Signing,
 updates and a real release remain release work, as before.
+
+## Convoy (Tauri) client
+
+`apps/convoy` is the client for **Windows and Linux**, following the macOS
+SwiftUI app as its design. macOS keeps its native app and is not touched.
+`convoy-core` moved across from the GTK client unchanged — that was the point
+of writing it with no toolkit dependency — and only the front end is new.
+
+Feature parity with the Electron preview: projects and discovery, sessions with
+resume, recovery, models and accounts, reviews and builder feedback, worktrees
+with shared files and setup commands, Files & Changes with four views,
+side-by-side diffs, staging, hunk discard, commits, branches, remotes and pull
+requests, specifications with approval and export, tasks as a list and a board
+with a queue and publish modes, transcript import, usage limits, the agent
+monitor, hibernation, keep-awake, notifications, the activity log and a command
+palette.
+
+### What was actually run
+
+- **Rust**: `cargo fmt`, `cargo clippy --all-targets -D warnings` and
+  `cargo test` clean on Linux, and `fmt` and `clippy` clean on `windows-2022`
+  in CI — which is the first time any Windows branch in this tree has been
+  compiled rather than read.
+- **Terminal**: the pty path end to end without a window — a command runs,
+  input reaches it, the exit code comes back, and stopping takes the whole
+  process tree. The Windows counterpart runs the same path through ConPTY.
+- **Exit rules**: a task whose session exits cleanly is asserted to be in
+  review afterwards, by reading the workspace file back. The assertion was
+  checked against a deliberately broken build first, because a test of wiring
+  that passes when the wiring is absent proves nothing — it failed, as it
+  should.
+- **Screens**: sessions, the workbench, the session menu, tasks as a list and
+  as a board, specifications, activity, Files & Changes in all four views with
+  a unified and a side-by-side diff, settings, the new-session and new-task
+  dialogs, the command palette, and both themes — each opened under Xvfb and
+  looked at.
+- **An agent**: Claude Code started from the session list, drew its interface
+  in the window, took keyboard input and exited; the exit code arrived and the
+  session returned to stopped.
+- **Core**: 87 tests. The ones that cannot mean anything on Windows — a login
+  shell, Unix permission bits, symlinks — now say so with `cfg(unix)` rather
+  than failing there. The Windows launch cases are covered by
+  `tests/windows.rs`, which runs from either platform because the platform is
+  a parameter rather than a `cfg!`.
+
+### Not yet validated
+
+**Nobody has used it on Windows.** CI compiles it, lints it, runs its tests and
+builds an installer, but no one has installed that installer and started an
+agent. Provider resolution against a real `claude.exe`, ConPTY rendering of an
+agent's interface, notification delivery and the Recycle Bin all remain
+unproven there.
+
+Input latency on Linux — the one open question the design pivot named — is
+still open. It needs somebody typing at a running agent, and no automation
+closes it.
+
+Signing, updates and a real release remain release work.
 
 ## Local Linux artifact
 

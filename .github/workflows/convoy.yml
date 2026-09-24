@@ -140,9 +140,20 @@ jobs:
 
       # ConPTY rather than a pty: a command runs, input reaches it, the exit
       # code comes back, and stopping clears the session.
+      #
+      # The test binary is built into target\debug\deps, while
+      # WebView2Loader.dll is placed in target\debug. Windows looks beside the
+      # executable and then along PATH, so without this the harness dies with
+      # STATUS_ENTRYPOINT_NOT_FOUND before a single test runs.
       - name: Terminal tests
         working-directory: apps/convoy/src-tauri
-        run: cargo test
+        shell: pwsh
+        run: |
+          cargo build --tests
+          Get-ChildItem -Recurse -Filter WebView2Loader.dll target |
+            Select-Object -First 5 -ExpandProperty FullName
+          $env:PATH = "$PWD\target\debug;$env:PATH"
+          cargo test
 
       # The shared rules, run natively: PATH resolution, %APPDATA%, the status
       # line quoting. These have Windows branches that are exercised from Linux
