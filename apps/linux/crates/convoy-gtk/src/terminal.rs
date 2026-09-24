@@ -385,3 +385,21 @@ pub fn write_raw(view: &SessionView, bytes: &[u8]) -> isize {
         )
     }
 }
+
+/// What the agent has printed: the live buffer when the terminal is open,
+/// otherwise the bounded excerpt kept on disk. This is the text that feeds a
+/// review brief, and it is data — never instructions.
+pub fn saved_output(app: &Rc<App>, id: &str) -> String {
+    let live = app
+        .views
+        .borrow()
+        .get(id)
+        .map(|view| buffer_text(&view.terminal))
+        .unwrap_or_default();
+    if !live.trim().is_empty() {
+        return live;
+    }
+    History::new(app.storage.history())
+        .read(id)
+        .unwrap_or_default()
+}

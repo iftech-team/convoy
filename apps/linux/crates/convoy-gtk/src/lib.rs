@@ -3,6 +3,7 @@
 //! Exposed as a library so the window can be built and inspected by a test
 //! rather than only by a person. `main.rs` is a thin wrapper around [`run`].
 
+pub mod actions;
 pub mod app;
 pub mod dialogs;
 pub mod objects;

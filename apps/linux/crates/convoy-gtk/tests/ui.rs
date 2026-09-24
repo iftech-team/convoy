@@ -238,4 +238,202 @@ fn run_checks(app: &Rc<convoy_gtk::state::App>) {
         raw["schemaVersion"] == 3,
         format!("{}", raw["schemaVersion"]),
     );
+
+    session_menu_checks(app, &project.id);
+    quick_command_checks(app, &project.id);
+    split_checks(app);
+}
+
+fn enabled(app: &Rc<convoy_gtk::state::App>, name: &str) -> bool {
+    app.actions
+        .lookup_action(name)
+        .and_downcast::<gtk::gio::SimpleAction>()
+        .map(|action| action.is_enabled())
+        .unwrap_or(false)
+}
+
+fn activate(app: &Rc<convoy_gtk::state::App>, name: &str) {
+    if let Some(action) = app.actions.lookup_action(name) {
+        action.activate(None);
+    }
+}
+
+/// What the session menu offers depends on the session, exactly as the
+/// Electron renderer's `#session-menu` did.
+fn session_menu_checks(app: &Rc<convoy_gtk::state::App>, project: &str) {
+    let session = app.selected_session().expect("session");
+    check(
+        "a stopped session can be edited, archived and recovered",
+        enabled(app, "edit") && enabled(app, "archive") && enabled(app, "recover"),
+        "an entry was disabled",
+    );
+    check(
+        "a worktree is offered for a fresh session",
+        enabled(app, "worktree") && !enabled(app, "remove-worktree"),
+        format!(
+            "worktree={} remove={}",
+            enabled(app, "worktree"),
+            enabled(app, "remove-worktree")
+        ),
+    );
+    check(
+        "feedback is offered only by a review",
+        !enabled(app, "feedback"),
+        "feedback was offered by a session with no builder",
+    );
+    check(
+        "closing a split is offered only when one is open",
+        !enabled(app, "unsplit"),
+        "unsplit was enabled with no split",
+    );
+
+    // A review links back to its builder and may send feedback.
+    let brief = convoy_core::review::brief(&app.workspace.borrow(), &session.id, "built it")
+        .expect("brief");
+    let handoff =
+        convoy_core::review::handoff(&app.workspace.borrow(), &session.id, brief).expect("handoff");
+    check(
+        "a review uses the other agent",
+        handoff.agent != session.agent,
+        "the reviewer matched the builder",
+    );
+    app.workspace
+        .borrow_mut()
+        .add_session(handoff)
+        .expect("review session");
+    window::rebuild_tabs(app);
+    app.sync();
+
+    let review = app
+        .workspace
+        .borrow()
+        .state()
+        .sessions
+        .iter()
+        .find(|other| other.review_of.as_deref() == Some(session.id.as_str()))
+        .cloned()
+        .expect("review");
+    app.selection.borrow_mut().session = Some(review.id.clone());
+    app.refresh_selection();
+    check(
+        "a review may send feedback to its builder",
+        enabled(app, "feedback"),
+        "feedback was not offered",
+    );
+
+    // Pinning reorders the tabs; archiving removes one.
+    app.selection.borrow_mut().session = Some(review.id.clone());
+    app.refresh_selection();
+    activate(app, "pin");
+    check(
+        "a pinned session comes first",
+        app.visible_sessions().first().map(|first| first.id.clone()) == Some(review.id.clone()),
+        "the pinned session was not first",
+    );
+
+    let before = app.tabs.n_pages();
+    activate(app, "archive");
+    check(
+        "archiving removes the tab",
+        app.tabs.n_pages() == before - 1,
+        format!("{before} pages before, {} after", app.tabs.n_pages()),
+    );
+    check(
+        "an archived session is out of sight, not deleted",
+        app.workspace
+            .borrow()
+            .state()
+            .sessions
+            .iter()
+            .any(|other| other.id == review.id),
+        "the session disappeared from the workspace",
+    );
+
+    let _ = project;
+    app.selection.borrow_mut().session = Some(session.id);
+    app.refresh_selection();
+}
+
+/// Quick commands are scoped: a command saved for one project is not offered
+/// in another, and a global one is offered everywhere.
+fn quick_command_checks(app: &Rc<convoy_gtk::state::App>, project: &str) {
+    use convoy_core::model::QuickCommand;
+
+    let command = |id: &str, owner: Option<&str>| QuickCommand {
+        id: id.to_string(),
+        title: id.to_string(),
+        text: "echo hello".to_string(),
+        submit: false,
+        project_id: owner.map(str::to_string),
+        unknown: Default::default(),
+    };
+    {
+        let mut workspace = app.workspace.borrow_mut();
+        workspace.save_command(command("global", None)).expect("global");
+        workspace
+            .save_command(command("scoped", Some(project)))
+            .expect("scoped");
+    }
+    app.sync();
+
+    // Two commands plus the "Manage…" section.
+    check(
+        "both commands are offered for their project",
+        app.quick_menu.n_items() == 3,
+        format!("{} menu items", app.quick_menu.n_items()),
+    );
+
+    let session = app.selected_session().expect("session");
+    let resolved = convoy_core::review::quick_command(&app.workspace.borrow(), &session.id, "scoped");
+    check(
+        "a scoped command resolves for its own project",
+        resolved.is_ok(),
+        "it did not resolve",
+    );
+    check(
+        "an unknown command is refused",
+        convoy_core::review::quick_command(&app.workspace.borrow(), &session.id, "missing").is_err(),
+        "an unknown id resolved",
+    );
+}
+
+/// The split view shows a second session beside the first, and closing it
+/// returns that session to the tab strip.
+fn split_checks(app: &Rc<convoy_gtk::state::App>) {
+    let sessions = app.visible_sessions();
+    if sessions.len() < 2 {
+        check("there are two sessions to split", false, "not enough sessions");
+        return;
+    }
+    let other = sessions[1].id.clone();
+    let before = app.tabs.n_pages();
+
+    window::open_split(app, &other);
+    check(
+        "the split pane is filled",
+        app.panes.end_child().is_some(),
+        "no second pane",
+    );
+    check(
+        "the split session leaves the tab strip",
+        app.tabs.n_pages() == before - 1,
+        format!("{before} pages before, {} after", app.tabs.n_pages()),
+    );
+    check(
+        "closing the split becomes available",
+        enabled(app, "unsplit"),
+        "unsplit stayed disabled",
+    );
+
+    window::close_split(app);
+    check(
+        "closing the split empties the pane",
+        app.panes.end_child().is_none() && app.split.borrow().is_none(),
+        "the pane survived",
+    );
+    check(
+        "the session returns to the tab strip",
+        app.tabs.n_pages() == before,
+        format!("{} pages, expected {before}", app.tabs.n_pages()),
+    );
 }

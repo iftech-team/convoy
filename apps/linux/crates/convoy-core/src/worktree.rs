@@ -124,3 +124,194 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
     }
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Worktree lifecycle, ported from the `worktree:create` and `worktree:remove`
+// handlers in main.cjs.
+// ---------------------------------------------------------------------------
+
+use crate::git::Git;
+use crate::model::{ActivityKind, Session};
+use crate::workspace::Workspace;
+
+/// Whether a session currently has a process, or is in the middle of a
+/// worktree operation. Held by the UI; the rules that consult it live here.
+pub type Busy<'a> = &'a dyn Fn(&str) -> bool;
+
+#[derive(Debug, Clone)]
+pub struct CreatePlan {
+    pub session_id: String,
+    pub project_path: PathBuf,
+    pub branch: String,
+    /// Shared files and the setup command the user will be asked about.
+    pub shared_paths: Vec<String>,
+    pub setup_command: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RemovePlan {
+    pub project_path: PathBuf,
+    pub directory: PathBuf,
+    /// Every session pointing at this worktree; all of them get archived.
+    pub linked: Vec<String>,
+}
+
+/// A worktree belongs to a fresh coding session. Reviews share the builder's
+/// folder, and a session that has already run would change directory
+/// underneath a live conversation.
+pub fn plan_create(
+    workspace: &Workspace,
+    id: &str,
+    branch: &str,
+    busy: Busy<'_>,
+) -> Result<CreatePlan> {
+    let session = workspace.session(id)?.clone();
+    ensure!(
+        !busy(id)
+            && !session.started
+            && session.working_directory.is_none()
+            && session.review_of.is_none()
+            && !session.is_archived(),
+        "Create a worktree on a new, stopped coding session."
+    );
+    let project = workspace.project(&session.project_id)?.clone();
+    Ok(CreatePlan {
+        session_id: id.to_string(),
+        project_path: project.path,
+        branch: branch.to_string(),
+        shared_paths: project
+            .shared_paths
+            .unwrap_or_default()
+            .lines()
+            .map(|line| line.trim().to_string())
+            .filter(|line| !line.is_empty())
+            .collect(),
+        setup_command: project.setup_command.filter(|value| !value.trim().is_empty()),
+    })
+}
+
+/// Binds a created worktree to its session. If this fails the worktree and its
+/// branch are left in place — losing a checkout because a write failed would
+/// be worse than an orphan the user can see and remove.
+pub fn record_create(
+    workspace: &mut Workspace,
+    id: &str,
+    directory: &Path,
+    branch: &str,
+) -> Result<()> {
+    let session_id = id.to_string();
+    let target = directory.to_path_buf();
+    let name = branch.to_string();
+    let saved = workspace
+        .update({
+            let session_id = session_id.clone();
+            let name = name.clone();
+            move |state| {
+                let Some(session) = state
+                    .sessions
+                    .iter_mut()
+                    .find(|session| session.id == session_id)
+                else {
+                    bail!("Session not found.")
+                };
+                session.working_directory = Some(target);
+                session.branch = Some(name);
+                session.owns_worktree = Some(true);
+                Ok(())
+            }
+        })
+        .map(|_| ());
+    if let Err(error) = saved {
+        bail!(
+            "Worktree created at {}, but its session could not be saved: {error}. \
+             The worktree and branch have been preserved.",
+            directory.display()
+        )
+    }
+    workspace.record(
+        ActivityKind::Worktree,
+        &session_id,
+        &format!("Created worktree on {name}"),
+    )?;
+    Ok(())
+}
+
+/// Only worktrees this app created, directly under its own root, may be
+/// removed — never a checkout the user set up themselves.
+pub fn plan_remove(
+    workspace: &Workspace,
+    id: &str,
+    root: &Path,
+    busy: Busy<'_>,
+) -> Result<RemovePlan> {
+    let session = workspace.session(id)?.clone();
+    let directory = session.working_directory.clone();
+    let owned = session.owns_worktree()
+        && directory
+            .as_ref()
+            .is_some_and(|directory| directory.parent() == Some(root));
+    ensure!(
+        owned,
+        "Only worktrees created by this app can be removed."
+    );
+    let directory = directory.expect("checked above");
+    let linked: Vec<String> = workspace
+        .state()
+        .sessions
+        .iter()
+        .filter(|other| other.working_directory.as_deref() == Some(directory.as_path()))
+        .map(|other| other.id.clone())
+        .collect();
+    ensure!(
+        !linked.iter().any(|id| busy(id)),
+        "Stop all sessions using this worktree first."
+    );
+    let project = workspace.project(&session.project_id)?.clone();
+    Ok(RemovePlan {
+        project_path: project.path,
+        directory,
+        linked,
+    })
+}
+
+/// Removes the checkout and archives the sessions that used it. `git worktree
+/// remove` runs without `--force`, so uncommitted work is never discarded, and
+/// the branch is kept.
+pub fn remove(workspace: &mut Workspace, git: &Git, plan: &RemovePlan) -> Result<()> {
+    remove_checkout(git, plan)?;
+    record_remove(workspace, &plan.directory)
+}
+
+/// The blocking half: Git removes the checkout, or refuses because it is dirty.
+pub fn remove_checkout(git: &Git, plan: &RemovePlan) -> Result<()> {
+    git.run(
+        &plan.project_path,
+        &["worktree", "remove", &plan.directory.to_string_lossy()],
+    )
+    .map(|_| ())
+}
+
+/// The bookkeeping half: every session that used the folder is archived,
+/// because for them it is gone.
+pub fn record_remove(workspace: &mut Workspace, directory: &Path) -> Result<()> {
+    let directory = directory.to_path_buf();
+    workspace
+        .update(move |state| {
+            for session in state.sessions.iter_mut().filter(|session| {
+                session.working_directory.as_deref() == Some(directory.as_path())
+            }) {
+                session.archived = Some(true);
+                session.worktree_removed = Some(true);
+            }
+            Ok(())
+        })
+        .map(|_| ())
+}
+
+/// The folder a session works in.
+pub fn directory_of(workspace: &Workspace, session: &Session) -> Result<PathBuf> {
+    match &session.working_directory {
+        Some(directory) => Ok(directory.clone()),
+        None => Ok(workspace.project(&session.project_id)?.path.clone()),
+    }
+}

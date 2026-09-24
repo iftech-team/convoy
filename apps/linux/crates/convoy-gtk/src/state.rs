@@ -76,6 +76,44 @@ pub struct App {
     /// Guards the tab-selection handler while the tab set is being rebuilt.
     pub rebuilding: Cell<bool>,
     pub search: RefCell<String>,
+    /// Actions of the session menu, enabled and disabled by
+    /// [`App::refresh_selection`].
+    pub actions: gtk::gio::SimpleActionGroup,
+    /// Sessions in the middle of a worktree operation. A worktree moving under
+    /// a running agent would be worse than making the user wait.
+    pub busy: RefCell<std::collections::HashSet<String>>,
+    pub git_status: gtk::Label,
+    /// The session shown in the second pane, when the view is split.
+    pub split: RefCell<Option<String>>,
+    pub panes: gtk::Paned,
+    /// Rebuilt whenever the quick commands change, so the menu always matches
+    /// what is saved and what the selected project is allowed to see.
+    pub quick_menu: gtk::gio::Menu,
+}
+
+/// Runs blocking work off the main loop and returns to it with the result.
+/// Git and provider calls are short but not instant, and the UI must not stop
+/// while `git fetch` talks to a remote.
+pub fn background<T, W, D>(app: &Rc<App>, work: W, done: D)
+where
+    T: Send + 'static,
+    W: FnOnce() -> convoy_core::Result<T> + Send + 'static,
+    D: Fn(&Rc<App>, T) + 'static,
+{
+    let (sender, receiver) = async_channel::bounded(1);
+    gtk::gio::spawn_blocking(move || {
+        let _ = sender.send_blocking(work());
+    });
+    glib::spawn_future_local({
+        let app = app.clone();
+        async move {
+            match receiver.recv().await {
+                Ok(Ok(value)) => done(&app, value),
+                Ok(Err(error)) => app.error(error),
+                Err(_) => {}
+            }
+        }
+    });
 }
 
 impl App {
@@ -138,7 +176,48 @@ impl App {
     pub fn sync(&self) {
         self.sync_projects();
         self.sync_sessions();
+        self.sync_quick_commands();
         self.refresh_selection();
+    }
+
+    /// Quick commands scoped to the selected project, plus the global ones.
+    fn sync_quick_commands(&self) {
+        self.quick_menu.remove_all();
+        let project = self.selection.borrow().project.clone();
+        let workspace = self.workspace.borrow();
+        let mut any = false;
+        for command in &workspace.state().quick_commands {
+            let scoped = command
+                .project_id
+                .as_deref()
+                .is_none_or(|owner| Some(owner) == project.as_deref());
+            if !scoped {
+                continue;
+            }
+            any = true;
+            let item = gtk::gio::MenuItem::new(
+                Some(&if command.submit {
+                    format!("{} ⏎", command.title)
+                } else {
+                    command.title.clone()
+                }),
+                None,
+            );
+            item.set_action_and_target_value(
+                Some("session.quick"),
+                Some(&command.id.to_variant()),
+            );
+            self.quick_menu.append_item(&item);
+        }
+        if !any {
+            self.quick_menu.append(
+                Some("No quick commands yet"),
+                Some("session.manage-commands"),
+            );
+        }
+        let manage = gtk::gio::Menu::new();
+        manage.append(Some("Manage quick commands…"), Some("session.manage-commands"));
+        self.quick_menu.append_section(None, &manage);
     }
 
     fn sync_projects(&self) {
@@ -278,6 +357,7 @@ impl App {
             },
         );
         self.chrome.stop.set_sensitive(running);
+        self.refresh_actions(session.as_ref(), running);
 
         self.chrome.running_label.set_label(&match running_total {
             0 => "No sessions running".to_string(),
@@ -299,6 +379,55 @@ impl App {
             Some(_) => "Start a session to run Claude Code or Codex in this folder.",
             None => "Open a folder to begin.",
         }));
+    }
+}
+
+impl App {
+    /// Which menu entries make sense for the selected session. The conditions
+    /// are the ones the Electron renderer applied to its `#session-menu`.
+    fn refresh_actions(&self, session: Option<&Session>, running: bool) {
+        let busy = session.is_some_and(|session| self.busy.borrow().contains(&session.id));
+        let idle = session.is_some() && !running && !busy;
+        let has_others = session.is_some_and(|session| {
+            self.visible_sessions()
+                .iter()
+                .any(|other| other.id != session.id)
+        });
+        let enable = |name: &str, value: bool| {
+            if let Some(action) = self.actions.lookup_action(name) {
+                if let Ok(action) = action.downcast::<gtk::gio::SimpleAction>() {
+                    action.set_enabled(value);
+                }
+            }
+        };
+        enable("recover", idle);
+        enable("edit", session.is_some());
+        enable("pin", session.is_some());
+        enable("archive", idle);
+        enable("review", session.is_some());
+        enable(
+            "feedback",
+            session.is_some_and(|session| session.review_of.is_some()),
+        );
+        enable("usage", session.is_some());
+        enable("history", session.is_some());
+        enable(
+            "worktree",
+            idle
+                && session.is_some_and(|session| {
+                    !session.started
+                        && session.working_directory.is_none()
+                        && session.review_of.is_none()
+                        && !session.is_archived()
+                }),
+        );
+        enable(
+            "remove-worktree",
+            idle && session.is_some_and(|session| session.owns_worktree()),
+        );
+        enable("git-status", session.is_some());
+        enable("split", has_others);
+        enable("unsplit", self.split.borrow().is_some());
     }
 }
 

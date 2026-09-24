@@ -271,3 +271,181 @@ fn real_worktrees_isolate_changes_reject_invalid_branches_and_refuse_dirty_remov
         "the branch is retained after the worktree is removed"
     );
 }
+
+#[test]
+fn worktrees_belong_to_fresh_sessions_and_only_this_app_may_remove_them() {
+    let fixture = fixture();
+    let git = Git::default();
+    let repo = fixture.path().join("repo");
+    fs::create_dir(&repo).unwrap();
+    git.run(&repo, &["init"]).unwrap();
+    git.run(
+        &repo,
+        &[
+            "-c", "user.name=Convoy Test",
+            "-c", "user.email=test@example.invalid",
+            "-c", "commit.gpgSign=false",
+            "commit", "--allow-empty", "-m", "initial",
+        ],
+    )
+    .unwrap();
+
+    let mut workspace = Workspace::load(&fixture.file).unwrap();
+    workspace.add_project(&repo).unwrap();
+    let project = workspace.state().projects[0].id.clone();
+    workspace
+        .add_session(new_session(&project, Agent::Claude, "Builder"))
+        .unwrap();
+    let builder = workspace.state().sessions[0].id.clone();
+
+    let idle = |_: &str| false;
+    let root = fixture.path().join("worktrees");
+
+    // A review shares the builder's folder, so it never gets its own.
+    let mut review = new_session(&project, Agent::Codex, "Review");
+    review.review_of = Some(builder.clone());
+    workspace.add_session(review).unwrap();
+    let review_id = workspace.state().sessions[1].id.clone();
+    let error = convoy_core::worktree::plan_create(&workspace, &review_id, "convoy/x", &idle)
+        .unwrap_err();
+    assert!(error.to_string().contains("new, stopped coding session"));
+
+    // Nor does a session that is already running.
+    let busy = |id: &str| id == builder;
+    assert!(convoy_core::worktree::plan_create(&workspace, &builder, "convoy/x", &busy).is_err());
+
+    let plan = convoy_core::worktree::plan_create(&workspace, &builder, "convoy/work", &idle).unwrap();
+    let directory = git
+        .create_worktree(&plan.project_path, &root, &plan.branch)
+        .unwrap();
+    convoy_core::worktree::record_create(&mut workspace, &builder, &directory, &plan.branch).unwrap();
+
+    let stored = workspace.session(&builder).unwrap().clone();
+    assert_eq!(stored.working_directory.as_deref(), Some(directory.as_path()));
+    assert_eq!(stored.branch.as_deref(), Some("convoy/work"));
+    assert!(stored.owns_worktree());
+    assert_eq!(workspace.state().activity[0].detail, "Created worktree on convoy/work");
+
+    // A folder the app did not create is refused, however it is pointed at.
+    let outside = fixture.path().join("elsewhere");
+    fs::create_dir(&outside).unwrap();
+    workspace
+        .update({
+            let builder = builder.clone();
+            let outside = outside.clone();
+            move |state| {
+                let session = state.sessions.iter_mut().find(|s| s.id == builder).unwrap();
+                session.working_directory = Some(outside);
+                Ok(())
+            }
+        })
+        .unwrap();
+    let error = convoy_core::worktree::plan_remove(&workspace, &builder, &root, &idle).unwrap_err();
+    assert_eq!(error.to_string(), "Only worktrees created by this app can be removed.");
+
+    workspace
+        .update({
+            let builder = builder.clone();
+            let directory = directory.clone();
+            move |state| {
+                let session = state.sessions.iter_mut().find(|s| s.id == builder).unwrap();
+                session.working_directory = Some(directory);
+                Ok(())
+            }
+        })
+        .unwrap();
+
+    // Removal is clean-only, and every session that used the folder is archived.
+    fs::write(directory.join("untracked.txt"), "keep me").unwrap();
+    let plan = convoy_core::worktree::plan_remove(&workspace, &builder, &root, &idle).unwrap();
+    assert_eq!(plan.linked, vec![builder.clone()]);
+    assert!(convoy_core::worktree::remove(&mut workspace, &git, &plan).is_err());
+    assert!(directory.join("untracked.txt").exists());
+    assert!(!workspace.session(&builder).unwrap().is_archived());
+
+    fs::remove_file(directory.join("untracked.txt")).unwrap();
+    convoy_core::worktree::remove(&mut workspace, &git, &plan).unwrap();
+    let stored = workspace.session(&builder).unwrap().clone();
+    assert!(stored.is_archived() && stored.worktree_removed());
+    assert!(!directory.exists());
+    assert!(git
+        .run(&repo, &["branch", "--list", "convoy/work"])
+        .unwrap()
+        .contains("convoy/work"));
+}
+
+#[test]
+fn a_review_swaps_the_agent_keeps_the_folder_and_points_back_at_its_builder() {
+    let (fixture, mut workspace, builder) = seeded();
+    let project = workspace.session(&builder).unwrap().project_id.clone();
+    workspace
+        .edit_project(
+            &project,
+            convoy_core::workspace::ProjectPatch {
+                review_template: Some("House rules: check the migration path.".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let brief = convoy_core::review::brief(&workspace, &builder, "\x1b[32mbuilt it\x1b[0m").unwrap();
+    assert!(brief.starts_with("House rules: check the migration path."));
+    assert!(brief.contains("Do not edit files"));
+    assert!(brief.contains("built it"));
+    assert!(!brief.contains('\x1b'));
+
+    let handoff = convoy_core::review::handoff(&workspace, &builder, brief).unwrap();
+    assert_eq!(handoff.agent, Agent::Codex, "a review uses the other provider");
+    assert!(handoff.title.starts_with("Review: "));
+    workspace.add_session(handoff).unwrap();
+
+    let review = workspace.state().sessions[1].clone();
+    assert_eq!(review.review_of.as_deref(), Some(builder.as_str()));
+    assert_eq!(
+        convoy_core::review::builder_of(&workspace, &review.id).unwrap(),
+        builder
+    );
+
+    // Feedback only flows from a review; a plain session has nowhere to send it.
+    let error = convoy_core::review::builder_of(&workspace, &builder).unwrap_err();
+    assert_eq!(error.to_string(), "This session is not linked to a builder.");
+
+    let _ = fixture;
+}
+
+#[test]
+fn quick_commands_stay_inside_the_project_they_were_scoped_to() {
+    let (_fixture, mut workspace, builder) = seeded();
+    let project = workspace.session(&builder).unwrap().project_id.clone();
+
+    workspace
+        .save_command(QuickCommand {
+            id: "global".into(),
+            title: "Tests".into(),
+            text: "npm test".into(),
+            submit: true,
+            project_id: None,
+            unknown: Default::default(),
+        })
+        .unwrap();
+    workspace
+        .save_command(QuickCommand {
+            id: "scoped".into(),
+            title: "Build".into(),
+            text: "cargo build".into(),
+            submit: false,
+            project_id: Some(project),
+            unknown: Default::default(),
+        })
+        .unwrap();
+
+    assert_eq!(
+        convoy_core::review::quick_command(&workspace, &builder, "global").unwrap(),
+        ("npm test".to_string(), true)
+    );
+    assert_eq!(
+        convoy_core::review::quick_command(&workspace, &builder, "scoped").unwrap(),
+        ("cargo build".to_string(), false)
+    );
+    assert!(convoy_core::review::quick_command(&workspace, &builder, "missing").is_err());
+}

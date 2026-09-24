@@ -7,13 +7,17 @@
 Порядок не случаен: сначала вертикальный срез, проверяющий рискованные
 допущения, потом горизонтальное расширение.
 
-**Статус на 24.09.2026.** M0 и M1 закрыты. `convoy-core` — 61 тест зелёный,
+**Статус на 24.09.2026.** M0, M1, M2 закрыты, M3 закрыт частично. `convoy-core` — 61 тест зелёный,
 `cargo clippy --all-targets -- -D warnings` чист по всему workspace.
 VTE проверен на живых агентах: 12 из 12 автоматических сценариев зелёные,
 Claude Code 2.1.273 и Codex 0.156.0 рисуются полностью. Две находки, менявшие
 план, записаны в [05](05-terminal-vte.md): снимать текст надо через
 `text_format`, и `watch_child` нужен запасной путь при мгновенном выходе.
-Ближайший шаг — M2.
+Окно работает: дерево проектов, вкладки сессий, VTE, старт/стоп, меню сессии
+из 13 действий, worktree, review handoff, быстрые команды, split. Проверки:
+64 теста ядра, 36 проверок окна, 12 терминальных, smoke-запуск.
+Ближайший шаг — остаток M3 (сохранённый вывод, импорт истории провайдера)
+и M4 (Files & Changes).
 
 ---
 
@@ -72,16 +76,16 @@ Claude Code 2.1.273 и Codex 0.156.0 рисуются полностью. Две
 
 Цель: приложение, которым можно работать. Не полное, но настоящее.
 
-- [ ] `adw::ApplicationWindow` + `NavigationSplitView`
-- [ ] Сайдбар: дерево проектов из `TreeListModel`, поиск
-- [ ] Open folder (`gtk::FileDialog`)
-- [ ] `adw::TabView` с сессиями проекта
-- [ ] Диалог новой сессии
-- [ ] **VTE-терминал: Start / Stop / Resume**
-- [ ] `AppState::sync()` + `refresh_selection()`
-- [ ] Toast-ошибки
-- [ ] Тема (dark/light/system) и настройки шрифта/скроллбека
-- [ ] Сохранение вывода в History по `contents-changed`
+- [x] `adw::ApplicationWindow` + `NavigationSplitView`
+- [x] Сайдбар: дерево проектов из `TreeListModel`, поиск
+- [x] Open folder (`gtk::FileDialog`)
+- [x] `adw::TabView` с сессиями проекта
+- [x] Диалог новой сессии
+- [x] **VTE-терминал: Start / Stop / Resume**
+- [x] `AppState::sync()` + `refresh_selection()`
+- [x] Toast-ошибки
+- [x] Тема (dark/light/system) и настройки шрифта/скроллбека
+- [x] Сохранение вывода в History по `contents-changed`
 
 **Выход:** можно открыть проект, создать сессию, запустить Claude Code,
 поработать, остановить, вернуться. Это уже замена Electron-версии на 40%
@@ -92,15 +96,18 @@ Claude Code 2.1.273 и Codex 0.156.0 рисуются полностью. Две
 
 ## M3 — Сессии целиком · 4–5 дней
 
-- [ ] Меню сессии: 13 действий
-- [ ] Review handoff: бриф, выбор агента, связь builder ↔ review
-- [ ] Send feedback to builder (вставка без submit)
-- [ ] Fresh recovery session
-- [ ] Pin / archive / edit
-- [ ] Worktrees: создание, setup-команда с подтверждением, удаление
-- [ ] Split-панели (`gtk::Paned`, две панели)
+- [x] Меню сессии: 13 действий
+- [x] Review handoff: бриф, выбор агента, связь builder ↔ review
+- [x] Send feedback to builder (вставка без submit)
+- [x] Fresh recovery session
+- [x] Pin / archive / edit
+- [x] Worktrees: создание, setup-команда с подтверждением, удаление
+- [x] Split-панели (`gtk::Paned`, две панели)
 - [ ] Saved output, git-статус в панели
-- [ ] Quick commands
+- [x] Quick commands
+
+**Осталось:** git-статус в панели есть, сохранённый вывод показывается, но
+импорт истории провайдера и журнал активности ещё не в UI.
 
 **Выход:** паритет по работе с сессиями.
 

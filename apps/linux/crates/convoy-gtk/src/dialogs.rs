@@ -7,7 +7,7 @@ use convoy_core::model::Agent;
 use convoy_core::workspace::NewSession;
 use std::rc::Rc;
 
-use crate::state::App;
+use crate::state::{background, App};
 use crate::window;
 
 /// Asks for the folder to add. Discovery runs afterwards, so choosing a
@@ -272,5 +272,576 @@ pub fn about(app: &Rc<App>) {
         .version(env!("CARGO_PKG_VERSION"))
         .comments("Run and review coding agents across projects.")
         .build();
+    dialog.present(Some(&app.window));
+}
+
+// ---------------------------------------------------------------------------
+// Session menu dialogs.
+// ---------------------------------------------------------------------------
+
+use convoy_core::model::Session;
+use convoy_core::workspace::SessionPatch;
+
+fn text_area(text: &str, editable: bool) -> (gtk::TextView, gtk::ScrolledWindow) {
+    let view = gtk::TextView::builder()
+        .wrap_mode(gtk::WrapMode::WordChar)
+        .editable(editable)
+        .monospace(!editable)
+        .top_margin(8)
+        .bottom_margin(8)
+        .left_margin(8)
+        .right_margin(8)
+        .build();
+    view.buffer().set_text(text);
+    let frame = gtk::ScrolledWindow::builder()
+        .child(&view)
+        .height_request(260)
+        .width_request(560)
+        .build();
+    frame.add_css_class("card");
+    (view, frame)
+}
+
+fn buffer_text(view: &gtk::TextView) -> String {
+    let buffer = view.buffer();
+    buffer
+        .text(&buffer.start_iter(), &buffer.end_iter(), false)
+        .to_string()
+}
+
+/// Name, notes and provider identity. The identity is what makes an exact
+/// resume possible, so it can only be changed while the session is stopped.
+pub fn edit_session(app: &Rc<App>, session: &Session) {
+    let running = app
+        .views
+        .borrow()
+        .get(&session.id)
+        .is_some_and(|view| view.running());
+
+    let title = adw::EntryRow::builder().title("Session name").build();
+    title.set_text(&session.title);
+
+    let provider = adw::EntryRow::builder()
+        .title("Provider session ID")
+        .sensitive(!running)
+        .build();
+    provider.set_text(&session.provider_id);
+    if running {
+        provider.set_tooltip_text(Some("Stop the session before changing its provider ID."));
+    }
+
+    let (notes_view, notes_frame) = text_area(session.notes.as_deref().unwrap_or(""), true);
+
+    let identity = adw::PreferencesGroup::new();
+    identity.add(&title);
+    identity.add(&provider);
+    let notes_group = adw::PreferencesGroup::builder().title("Notes").build();
+    notes_group.add(&notes_frame);
+
+    let body = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    body.append(&identity);
+    body.append(&notes_group);
+
+    let dialog = adw::AlertDialog::builder()
+        .heading("Edit session")
+        .extra_child(&body)
+        .build();
+    dialog.add_response("cancel", "Cancel");
+    dialog.add_response("save", "Save");
+    dialog.set_response_appearance("save", adw::ResponseAppearance::Suggested);
+    dialog.set_default_response(Some("save"));
+    dialog.set_close_response("cancel");
+
+    dialog.connect_response(None, {
+        let app = app.clone();
+        let id = session.id.clone();
+        let original = session.provider_id.clone();
+        move |_, response| {
+            if response != "save" {
+                return;
+            }
+            let mut patch = SessionPatch {
+                title: Some(title.text().to_string()),
+                notes: Some(buffer_text(&notes_view)),
+                ..Default::default()
+            };
+            if !running && provider.text() != original {
+                patch.provider_id = Some(provider.text().to_string());
+            }
+            let outcome = {
+                let mut workspace = app.workspace.borrow_mut();
+                workspace.edit_session(&id, patch, running).map(|_| ())
+            };
+            match outcome {
+                Ok(()) => {
+                    crate::window::rebuild_tabs(&app);
+                    app.sync();
+                }
+                Err(error) => app.error(error),
+            }
+        }
+    });
+    dialog.present(Some(&app.window));
+}
+
+/// Hands the work to the other agent. The brief is editable first: it carries
+/// terminal output, and the user decides what a reviewer gets to see.
+pub fn start_review(app: &Rc<App>, session: &Session) {
+    let output = crate::terminal::saved_output(app, &session.id);
+    let brief = match convoy_core::review::brief(&app.workspace.borrow(), &session.id, &output) {
+        Ok(brief) => brief,
+        Err(error) => {
+            app.error(error);
+            return;
+        }
+    };
+    let reviewer = crate::actions::reviewer_for(session);
+    let (view, frame) = text_area(&brief, true);
+
+    let dialog = adw::AlertDialog::builder()
+        .heading("Start review")
+        .body(format!(
+            "A new {} session will review this work in the same folder. \
+             It is told not to edit files.",
+            match reviewer {
+                Agent::Claude => "Claude Code",
+                Agent::Codex => "Codex",
+            }
+        ))
+        .extra_child(&frame)
+        .build();
+    dialog.add_response("cancel", "Cancel");
+    dialog.add_response("create", "Create review");
+    dialog.set_response_appearance("create", adw::ResponseAppearance::Suggested);
+    dialog.set_close_response("cancel");
+
+    dialog.connect_response(None, {
+        let app = app.clone();
+        let id = session.id.clone();
+        move |_, response| {
+            if response != "create" {
+                return;
+            }
+            let input = {
+                let workspace = app.workspace.borrow();
+                convoy_core::review::handoff(&workspace, &id, buffer_text(&view))
+            };
+            let created = match input {
+                Ok(input) => {
+                    let mut workspace = app.workspace.borrow_mut();
+                    workspace.add_session(input).map(|_| ())
+                }
+                Err(error) => Err(error),
+            };
+            match created {
+                Ok(()) => {
+                    crate::window::rebuild_tabs(&app);
+                    app.sync();
+                }
+                Err(error) => app.error(error),
+            }
+        }
+    });
+    dialog.present(Some(&app.window));
+}
+
+/// Findings go into the builder's prompt, not into its conversation: no Enter
+/// is sent, so nothing is submitted on the user's behalf.
+pub fn send_feedback(app: &Rc<App>, session: &Session) {
+    let builder = match convoy_core::review::builder_of(&app.workspace.borrow(), &session.id) {
+        Ok(builder) => builder,
+        Err(error) => {
+            app.error(error);
+            return;
+        }
+    };
+    let (view, frame) = text_area("", true);
+
+    let dialog = adw::AlertDialog::builder()
+        .heading("Send feedback to builder")
+        .body("The text is typed into the builder's terminal. Nothing is submitted for you.")
+        .extra_child(&frame)
+        .build();
+    dialog.add_response("cancel", "Cancel");
+    dialog.add_response("send", "Insert");
+    dialog.set_response_appearance("send", adw::ResponseAppearance::Suggested);
+    dialog.set_close_response("cancel");
+
+    dialog.connect_response(None, {
+        let app = app.clone();
+        move |_, response| {
+            if response != "send" {
+                return;
+            }
+            if crate::actions::insert(&app, &builder, &buffer_text(&view), false) {
+                app.toasts.add_toast(
+                    adw::Toast::builder()
+                        .title("Feedback inserted; press Enter in the builder to send it")
+                        .build(),
+                );
+            }
+        }
+    });
+    dialog.present(Some(&app.window));
+}
+
+/// The bounded excerpt kept on disk. Not a transcript: it is whatever the CLI
+/// printed, trimmed to the last 48,000 characters.
+pub fn saved_output(app: &Rc<App>, session: &Session) {
+    let text = crate::terminal::saved_output(app, &session.id);
+    let (_, frame) = text_area(&text, false);
+    let dialog = adw::AlertDialog::builder()
+        .heading("Saved output")
+        .body(format!("{} · bounded plain text, not a transcript", session.title))
+        .extra_child(&frame)
+        .build();
+    dialog.add_response("close", "Close");
+    dialog.set_close_response("close");
+    dialog.present(Some(&app.window));
+}
+
+/// Quota windows. Claude reports them through its hooks; Codex is asked
+/// directly, with no model request involved. A missing quota is reported as
+/// unavailable and never guessed as zero.
+pub fn usage(app: &Rc<App>, session: &Session) {
+    let dialog = adw::AlertDialog::builder()
+        .heading("Usage limits")
+        .body("Reading…")
+        .build();
+    dialog.add_response("close", "Close");
+    dialog.set_close_response("close");
+    dialog.present(Some(&app.window));
+
+    match session.agent {
+        Agent::Claude => {
+            let stored = convoy_core::telemetry::read(
+                &app.storage.telemetry(),
+                &session.id,
+                ".usage",
+            );
+            let now = convoy_core::provider::now_seconds();
+            let windows: Vec<String> = stored
+                .as_ref()
+                .and_then(|value| value.get("windows"))
+                .and_then(|value| value.as_array())
+                .map(|windows| {
+                    windows
+                        .iter()
+                        .filter(|window| {
+                            window
+                                .get("resetsAt")
+                                .and_then(|value| value.as_f64())
+                                .is_none_or(|resets| resets > now)
+                        })
+                        .map(describe_window)
+                        .collect()
+                })
+                .unwrap_or_default();
+            dialog.set_body(&render_usage(windows, "Claude reports usage through its status line. Enable it in Settings and relaunch the session."));
+        }
+        Agent::Codex => {
+            let account = {
+                let workspace = app.workspace.borrow();
+                convoy_core::session::prepare_account(&workspace, &app.storage, session)
+            };
+            let directory =
+                convoy_core::session::directory_for(&app.workspace.borrow(), &session.id);
+            match (account, directory) {
+                (Ok(account), Ok(directory)) => {
+                    let dialog = dialog.clone();
+                    background(
+                        app,
+                        move || {
+                            convoy_core::provider::codex::codex_limits(
+                                &account.env,
+                                &directory,
+                                convoy_core::provider::now_seconds(),
+                            )
+                        },
+                        move |_, windows| {
+                            let lines: Vec<String> = windows
+                                .iter()
+                                .map(|window| {
+                                    format!("{}: {:.0}%", window.name, window.percent)
+                                })
+                                .collect();
+                            dialog.set_body(&render_usage(
+                                lines,
+                                "Codex reported no active quota window.",
+                            ));
+                        },
+                    );
+                }
+                (Err(error), _) | (_, Err(error)) => dialog.set_body(&error.to_string()),
+            }
+        }
+    }
+}
+
+fn describe_window(window: &serde_json::Value) -> String {
+    let name = window
+        .get("name")
+        .and_then(|value| value.as_str())
+        .unwrap_or("window");
+    let percent = window
+        .get("percent")
+        .and_then(|value| value.as_f64())
+        .unwrap_or_default();
+    format!("{name}: {percent:.0}%")
+}
+
+fn render_usage(windows: Vec<String>, empty: &str) -> String {
+    if windows.is_empty() {
+        empty.to_string()
+    } else {
+        windows.join("\n")
+    }
+}
+
+/// An isolated branch for one session. The branch name is checked by Git
+/// itself, so anything it would refuse is refused here too.
+pub fn create_worktree(app: &Rc<App>, session: &Session) {
+    let suggestion = format!(
+        "convoy/{}",
+        session
+            .title
+            .to_lowercase()
+            .chars()
+            .map(|character| if character.is_ascii_alphanumeric() { character } else { '-' })
+            .collect::<String>()
+            .trim_matches('-')
+    );
+    let branch = adw::EntryRow::builder().title("New branch").build();
+    branch.set_text(&suggestion);
+    let group = adw::PreferencesGroup::new();
+    group.add(&branch);
+
+    let dialog = adw::AlertDialog::builder()
+        .heading("Create worktree")
+        .body("A separate checkout on a new branch. The project's own checkout is left where it is.")
+        .extra_child(&group)
+        .build();
+    dialog.add_response("cancel", "Cancel");
+    dialog.add_response("create", "Create");
+    dialog.set_response_appearance("create", adw::ResponseAppearance::Suggested);
+    dialog.set_close_response("cancel");
+
+    dialog.connect_response(None, {
+        let app = app.clone();
+        let id = session.id.clone();
+        move |_, response| {
+            if response != "create" {
+                return;
+            }
+            crate::window::create_worktree(&app, &id, &branch.text());
+        }
+    });
+    dialog.present(Some(&app.window));
+}
+
+/// Removal is clean-only and keeps the branch. Every session that used the
+/// folder is archived, because it no longer exists for them.
+pub fn remove_worktree(app: &Rc<App>, session: &Session) {
+    let plan = {
+        let workspace = app.workspace.borrow();
+        let busy = |id: &str| app.busy.borrow().contains(id) || is_running(app, id);
+        convoy_core::worktree::plan_remove(&workspace, &session.id, &app.storage.worktrees(), &busy)
+    };
+    let plan = match plan {
+        Ok(plan) => plan,
+        Err(error) => {
+            app.error(error);
+            return;
+        }
+    };
+
+    let dialog = adw::AlertDialog::builder()
+        .heading("Remove this worktree?")
+        .body(format!(
+            "Git removes {} only if it is clean. The branch is kept. \
+             All {} linked sessions will be archived.",
+            plan.directory.display(),
+            plan.linked.len()
+        ))
+        .build();
+    dialog.add_response("cancel", "Cancel");
+    dialog.add_response("remove", "Remove worktree");
+    dialog.set_response_appearance("remove", adw::ResponseAppearance::Destructive);
+    dialog.set_close_response("cancel");
+
+    dialog.connect_response(None, {
+        let app = app.clone();
+        move |_, response| {
+            if response != "remove" {
+                return;
+            }
+            crate::window::remove_worktree(&app, plan.clone());
+        }
+    });
+    dialog.present(Some(&app.window));
+}
+
+fn is_running(app: &Rc<App>, id: &str) -> bool {
+    app.views.borrow().get(id).is_some_and(|view| view.running())
+}
+
+/// Two terminals side by side. Exactly two, as in the Electron build: nesting
+/// more panes is a change to the model, not to the view.
+pub fn open_split(app: &Rc<App>, session: &Session) {
+    let others: Vec<Session> = app
+        .visible_sessions()
+        .into_iter()
+        .filter(|other| other.id != session.id)
+        .collect();
+    if others.is_empty() {
+        app.error("There is no other session to show beside this one.");
+        return;
+    }
+
+    let names: Vec<&str> = others.iter().map(|other| other.title.as_str()).collect();
+    let model = gtk::StringList::new(&names);
+    let choice = adw::ComboRow::builder()
+        .title("Second pane")
+        .model(&model)
+        .build();
+    let group = adw::PreferencesGroup::new();
+    group.add(&choice);
+
+    let dialog = adw::AlertDialog::builder()
+        .heading("Open split terminal")
+        .extra_child(&group)
+        .build();
+    dialog.add_response("cancel", "Cancel");
+    dialog.add_response("open", "Open");
+    dialog.set_response_appearance("open", adw::ResponseAppearance::Suggested);
+    dialog.set_close_response("cancel");
+
+    dialog.connect_response(None, {
+        let app = app.clone();
+        move |_, response| {
+            if response != "open" {
+                return;
+            }
+            let Some(chosen) = others.get(choice.selected() as usize) else {
+                return;
+            };
+            crate::window::open_split(&app, &chosen.id);
+        }
+    });
+    dialog.present(Some(&app.window));
+}
+
+/// Quick commands are saved text, sent into a running agent on demand.
+/// Submitting is opt-in per command: without it the text is only typed.
+pub fn quick_commands(app: &Rc<App>) {
+    let project = app.selected_project();
+    let page = adw::PreferencesPage::new();
+
+    let existing = adw::PreferencesGroup::builder()
+        .title("Saved commands")
+        .build();
+    let commands = app.workspace.borrow().state().quick_commands.clone();
+    if commands.is_empty() {
+        existing.add(
+            &adw::ActionRow::builder()
+                .title("Nothing saved yet")
+                .subtitle("Add one below.")
+                .build(),
+        );
+    }
+    for command in &commands {
+        let row = adw::ActionRow::builder()
+            .title(&command.title)
+            .subtitle(format!(
+                "{}{}",
+                convoy_core::json::head(&command.text, 80),
+                if command.submit { " · sends Enter" } else { "" }
+            ))
+            .build();
+        let remove = gtk::Button::builder()
+            .icon_name("user-trash-symbolic")
+            .valign(gtk::Align::Center)
+            .tooltip_text("Remove")
+            .build();
+        remove.add_css_class("flat");
+        remove.connect_clicked({
+            let app = app.clone();
+            let id = command.id.clone();
+            let row = row.clone();
+            move |_| {
+                let outcome = {
+                    let mut workspace = app.workspace.borrow_mut();
+                    workspace.remove_command(&id).map(|_| ())
+                };
+                match outcome {
+                    Ok(()) => {
+                        row.set_sensitive(false);
+                        app.sync();
+                    }
+                    Err(error) => app.error(error),
+                }
+            }
+        });
+        row.add_suffix(&remove);
+        existing.add(&row);
+    }
+
+    let title = adw::EntryRow::builder().title("Name").build();
+    let (text_view, text_frame) = text_area("", true);
+    let submit = adw::SwitchRow::builder()
+        .title("Send Enter")
+        .subtitle("Off by default: the text is typed, not submitted.")
+        .build();
+    let scoped = adw::SwitchRow::builder()
+        .title("Only this project")
+        .active(project.is_some())
+        .sensitive(project.is_some())
+        .build();
+    let add = gtk::Button::with_label("Add command");
+    add.add_css_class("suggested-action");
+
+    let fresh = adw::PreferencesGroup::builder().title("New command").build();
+    fresh.add(&title);
+    fresh.add(&text_frame);
+    fresh.add(&submit);
+    fresh.add(&scoped);
+    fresh.add(&add);
+
+    page.add(&existing);
+    page.add(&fresh);
+
+    let dialog = adw::PreferencesDialog::new();
+    dialog.add(&page);
+
+    add.connect_clicked({
+        let app = app.clone();
+        let dialog = dialog.clone();
+        move |_| {
+            let command = convoy_core::model::QuickCommand {
+                id: String::new(),
+                title: title.text().to_string(),
+                text: buffer_text(&text_view),
+                submit: submit.is_active(),
+                project_id: if scoped.is_active() {
+                    project.as_ref().map(|project| project.id.clone())
+                } else {
+                    None
+                },
+                unknown: Default::default(),
+            };
+            let outcome = {
+                let mut workspace = app.workspace.borrow_mut();
+                workspace.save_command(command).map(|_| ())
+            };
+            match outcome {
+                Ok(()) => {
+                    app.sync();
+                    dialog.close();
+                }
+                Err(error) => app.error(error),
+            }
+        }
+    });
+
     dialog.present(Some(&app.window));
 }

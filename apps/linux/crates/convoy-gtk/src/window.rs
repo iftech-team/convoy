@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::objects::SidebarItem;
-use crate::state::{App, Chrome, Selection};
+use crate::state::{background, App, Chrome, Selection};
 use crate::{dialogs, terminal};
 
 pub fn build(application: &adw::Application, storage: Storage) -> Option<Rc<App>> {
@@ -119,9 +119,19 @@ pub fn build(application: &adw::Application, storage: Storage) -> Option<Rc<App>
         .title("No project selected")
         .description("Open a folder to begin.")
         .build();
+    // Exactly two panes, as in the Electron build. The second is empty until
+    // a split is opened, and `gtk::Paned` can be nested later without changing
+    // the model.
+    let panes = gtk::Paned::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .start_child(&tabs)
+        .resize_start_child(true)
+        .shrink_start_child(false)
+        .build();
+
     let stack = gtk::Stack::new();
     stack.add_named(&empty, Some("empty"));
-    stack.add_named(&tabs, Some("terminals"));
+    stack.add_named(&panes, Some("terminals"));
     stack.set_vexpand(true);
 
     let start = gtk::Button::with_label("Start");
@@ -130,9 +140,27 @@ pub fn build(application: &adw::Application, storage: Storage) -> Option<Rc<App>
     let stop = gtk::Button::with_label("Stop");
     stop.add_css_class("destructive-action");
     stop.set_sensitive(false);
+    let quick_menu = gtk::gio::Menu::new();
+    let quick_button = gtk::MenuButton::builder()
+        .icon_name("media-playback-start-symbolic")
+        .tooltip_text("Quick commands")
+        .menu_model(&quick_menu)
+        .build();
+    let session_menu = gtk::MenuButton::builder()
+        .icon_name("view-more-symbolic")
+        .tooltip_text("Session actions")
+        .menu_model(&crate::actions::menu())
+        .build();
+    let git_status = gtk::Label::builder().xalign(1.0).hexpand(true).build();
+    git_status.add_css_class("dim-label");
+    git_status.add_css_class("caption");
+
     let actions = gtk::ActionBar::new();
     actions.pack_start(&start);
     actions.pack_start(&stop);
+    actions.pack_start(&quick_button);
+    actions.pack_start(&session_menu);
+    actions.pack_end(&git_status);
 
     let content_view = adw::ToolbarView::new();
     content_view.add_top_bar(&content_header);
@@ -174,7 +202,15 @@ pub fn build(application: &adw::Application, storage: Storage) -> Option<Rc<App>
         },
         rebuilding: Cell::new(false),
         search: RefCell::new(String::new()),
+        actions: gtk::gio::SimpleActionGroup::new(),
+        busy: RefCell::new(std::collections::HashSet::new()),
+        git_status,
+        split: RefCell::new(None),
+        panes,
+        quick_menu,
     });
+    window.insert_action_group("session", Some(&app.actions));
+    crate::actions::register(&app);
 
     wire(&app, &selection, &search, &start, &stop, &new_session);
     app.sync();
@@ -362,6 +398,7 @@ fn wire(
                 .map(|(id, _)| id.clone());
             app.selection.borrow_mut().session = id;
             app.refresh_selection();
+            crate::actions::refresh_git_status(&app);
         }
     });
 
@@ -430,7 +467,14 @@ pub fn rebuild_tabs(app: &Rc<App>) {
         }
     }
 
-    let sessions = app.visible_sessions();
+    // The session shown in the split pane is not also a tab: one terminal
+    // widget cannot have two parents.
+    let split = app.split.borrow().clone();
+    let sessions: Vec<_> = app
+        .visible_sessions()
+        .into_iter()
+        .filter(|session| Some(&session.id) != split.as_ref())
+        .collect();
     for session in &sessions {
         let view = terminal::ensure_view(app, session);
         let scroller = gtk::ScrolledWindow::builder()
@@ -450,4 +494,200 @@ pub fn rebuild_tabs(app: &Rc<App>) {
     } else {
         app.selection.borrow_mut().session = None;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Worktrees and the split view.
+// ---------------------------------------------------------------------------
+
+/// Creates a worktree off the main loop and binds it to its session. Git work
+/// blocks, and the UI must not.
+pub fn create_worktree(app: &Rc<App>, id: &str, branch: &str) {
+    let plan = {
+        let workspace = app.workspace.borrow();
+        let busy = |id: &str| {
+            app.busy.borrow().contains(id)
+                || app.views.borrow().get(id).is_some_and(|view| view.running())
+        };
+        convoy_core::worktree::plan_create(&workspace, id, branch, &busy)
+    };
+    let plan = match plan {
+        Ok(plan) => plan,
+        Err(error) => {
+            app.error(error);
+            return;
+        }
+    };
+
+    app.busy.borrow_mut().insert(id.to_string());
+    app.refresh_selection();
+
+    let root = app.storage.worktrees();
+    let project_path = plan.project_path.clone();
+    let branch = plan.branch.clone();
+    background(
+        app,
+        move || convoy_core::Git::default().create_worktree(&project_path, &root, &branch),
+        {
+            let plan = plan.clone();
+            move |app, directory: std::path::PathBuf| {
+                app.busy.borrow_mut().remove(&plan.session_id);
+                let recorded = convoy_core::worktree::record_create(
+                    &mut app.workspace.borrow_mut(),
+                    &plan.session_id,
+                    &directory,
+                    &plan.branch,
+                );
+                if let Err(error) = recorded {
+                    app.error(error);
+                    app.refresh_selection();
+                    return;
+                }
+                app.sync();
+                if !plan.shared_paths.is_empty() || plan.setup_command.is_some() {
+                    confirm_setup(app, &plan, &directory);
+                }
+            }
+        },
+    );
+}
+
+/// Shared files and a setup command are the project's own configuration, but
+/// the command runs with the user's permissions, so it is shown and confirmed
+/// before it runs.
+fn confirm_setup(
+    app: &Rc<App>,
+    plan: &convoy_core::worktree::CreatePlan,
+    directory: &std::path::Path,
+) {
+    let dialog = adw::AlertDialog::builder()
+        .heading("Run this project's worktree setup?")
+        .body(format!(
+            "Copies: {}\nCommand: {}\nFolder: {}",
+            if plan.shared_paths.is_empty() {
+                "none".to_string()
+            } else {
+                plan.shared_paths.join(", ")
+            },
+            plan.setup_command.as_deref().unwrap_or("none"),
+            directory.display()
+        ))
+        .build();
+    dialog.add_response("skip", "Skip setup");
+    dialog.add_response("run", "Run setup");
+    dialog.set_response_appearance("run", adw::ResponseAppearance::Suggested);
+    dialog.set_close_response("skip");
+
+    let repo = plan.project_path.clone();
+    let shared = plan.shared_paths.clone();
+    let command = plan.setup_command.clone();
+    let target = directory.to_path_buf();
+    dialog.connect_response(None, {
+        let app = app.clone();
+        move |_, response| {
+            if response != "run" {
+                return;
+            }
+            let (repo, shared, command, target) =
+                (repo.clone(), shared.clone(), command.clone(), target.clone());
+            background(
+                &app,
+                move || {
+                    convoy_core::worktree::setup(
+                        &repo,
+                        &target,
+                        &shared,
+                        command.as_deref(),
+                        &convoy_core::StdRunner,
+                    )
+                },
+                |app, ()| {
+                    app.toasts
+                        .add_toast(adw::Toast::builder().title("Worktree setup finished").build());
+                },
+            );
+        }
+    });
+    dialog.present(Some(&app.window));
+}
+
+pub fn remove_worktree(app: &Rc<App>, plan: convoy_core::worktree::RemovePlan) {
+    for id in &plan.linked {
+        app.busy.borrow_mut().insert(id.clone());
+    }
+    app.refresh_selection();
+    let linked = plan.linked.clone();
+    let directory = plan.directory.clone();
+    background(
+        app,
+        move || {
+            convoy_core::worktree::remove_checkout(&convoy_core::Git::default(), &plan)
+        },
+        move |app, ()| {
+            for id in &linked {
+                app.busy.borrow_mut().remove(id);
+            }
+            let outcome = convoy_core::worktree::record_remove(
+                &mut app.workspace.borrow_mut(),
+                &directory,
+            );
+            if let Err(error) = outcome {
+                app.error(error);
+            }
+            rebuild_tabs(app);
+            app.sync();
+        },
+    );
+}
+
+/// Shows a second session beside the current one.
+pub fn open_split(app: &Rc<App>, id: &str) {
+    let Some(session) = app
+        .workspace
+        .borrow()
+        .state()
+        .sessions
+        .iter()
+        .find(|session| session.id == id)
+        .cloned()
+    else {
+        return;
+    };
+    close_split(app);
+    // Claim the session first, then rebuild: that takes its terminal out of
+    // the tab strip so it can be parented here instead.
+    *app.split.borrow_mut() = Some(id.to_string());
+    rebuild_tabs(app);
+
+    let view = terminal::ensure_view(app, &session);
+    let scroller = gtk::ScrolledWindow::builder()
+        .child(&view.terminal)
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .build();
+    let label = gtk::Label::builder().label(&session.title).xalign(0.0).build();
+    label.add_css_class("caption-heading");
+    let bar = gtk::ActionBar::new();
+    bar.pack_start(&label);
+    let pane = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    pane.append(&bar);
+    pane.append(&scroller);
+
+    app.panes.set_end_child(Some(&pane));
+    app.panes.set_resize_end_child(true);
+    app.panes.set_shrink_end_child(false);
+    app.refresh_selection();
+}
+
+pub fn close_split(app: &Rc<App>) {
+    if let Some(pane) = app.panes.end_child() {
+        if let Ok(pane) = pane.downcast::<gtk::Box>() {
+            if let Some(scroller) = pane.last_child().and_downcast::<gtk::ScrolledWindow>() {
+                scroller.set_child(gtk::Widget::NONE);
+            }
+        }
+    }
+    app.panes.set_end_child(gtk::Widget::NONE);
+    *app.split.borrow_mut() = None;
+    rebuild_tabs(app);
+    app.refresh_selection();
 }
