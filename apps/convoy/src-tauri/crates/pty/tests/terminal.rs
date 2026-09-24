@@ -67,16 +67,18 @@ fn root() -> &'static std::path::Path {
     std::path::Path::new(if cfg!(windows) { "C:\\" } else { "/" })
 }
 
-/// Reads a line, echoes it back with a marker and exits 7.
+/// Says READY, reads a line, echoes it back with a marker and exits 7. The
+/// marker matters: PowerShell takes a second or two to reach `Read-Host`, and
+/// a test that guesses how long would be flaky on a loaded runner.
 #[cfg(unix)]
 fn read_and_exit() -> (&'static str, Vec<String>) {
-    let script = "read line; printf 'GOT:%s\\n' \"$line\"; exit 7";
+    let script = "printf 'READY\\n'; read line; printf 'GOT:%s\\n' \"$line\"; exit 7";
     ("/bin/sh", vec!["-c".into(), script.into()])
 }
 
 #[cfg(windows)]
 fn read_and_exit() -> (&'static str, Vec<String>) {
-    let script = "$line = Read-Host; Write-Output \"GOT:$line\"; exit 7";
+    let script = "Write-Output READY; $line = Read-Host; Write-Output \"GOT:$line\"; exit 7";
     (
         "powershell.exe",
         vec![
@@ -88,7 +90,7 @@ fn read_and_exit() -> (&'static str, Vec<String>) {
     )
 }
 
-/// A child that does nothing until it is stopped.
+/// A child that says READY and then does nothing until it is stopped.
 fn sleeps() -> (&'static str, Vec<String>) {
     if cfg!(windows) {
         (
@@ -97,11 +99,14 @@ fn sleeps() -> (&'static str, Vec<String>) {
                 "-NoLogo".into(),
                 "-NoProfile".into(),
                 "-Command".into(),
-                "Start-Sleep -Seconds 300".into(),
+                "Write-Output READY; Start-Sleep -Seconds 300".into(),
             ],
         )
     } else {
-        ("/bin/sh", vec!["-c".into(), "sleep 300".into()])
+        (
+            "/bin/sh",
+            vec!["-c".into(), "printf 'READY\\n'; sleep 300".into()],
+        )
     }
 }
 
@@ -141,8 +146,11 @@ fn a_command_runs_and_its_output_and_exit_code_come_back() {
     launch(&terminals, sink, "probe", read_and_exit());
 
     assert!(terminals.running("probe"));
-    // PowerShell takes a moment to reach its prompt; the pty buffers anyway.
-    std::thread::sleep(Duration::from_millis(600));
+    let ready = gather(&output, "READY", Duration::from_secs(25));
+    assert!(
+        ready.contains("READY"),
+        "the child never started: {ready:?}"
+    );
     terminals.write("probe", "hello\r\n").expect("write");
 
     let seen = gather(&output, "GOT:hello", Duration::from_secs(25));
@@ -169,11 +177,11 @@ fn writing_to_a_session_that_is_not_running_says_so() {
 #[test]
 fn stopping_ends_the_session_and_says_it_was_asked_for() {
     let terminals = Arc::new(Terminals::new());
-    let (sink, _output, endings) = Recorder::new();
+    let (sink, output, endings) = Recorder::new();
     launch(&terminals, sink, "idle", sleeps());
 
     assert!(terminals.running("idle"));
-    std::thread::sleep(Duration::from_millis(600));
+    gather(&output, "READY", Duration::from_secs(25));
     terminals.stop("idle");
 
     let how = endings
@@ -188,10 +196,10 @@ fn stopping_ends_the_session_and_says_it_was_asked_for() {
 #[test]
 fn hibernation_is_reported_apart_from_a_stop() {
     let terminals = Arc::new(Terminals::new());
-    let (sink, _output, endings) = Recorder::new();
+    let (sink, output, endings) = Recorder::new();
     launch(&terminals, sink, "dozing", sleeps());
 
-    std::thread::sleep(Duration::from_millis(600));
+    gather(&output, "READY", Duration::from_secs(25));
     terminals.hibernate("dozing");
 
     assert_eq!(

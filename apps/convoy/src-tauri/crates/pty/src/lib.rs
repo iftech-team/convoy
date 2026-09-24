@@ -134,22 +134,36 @@ impl Terminals {
             .try_clone_reader()
             .map_err(|error| error.to_string())?;
 
-        // Reading blocks, so it gets its own thread; the same thread reaps the
-        // child, which is how the exit code is obtained.
+        // Reading blocks, so it gets a thread of its own.
         let session_id = id.to_string();
-        let terminals = Arc::clone(self);
+        let reading = Arc::clone(&sink);
+        let reading_id = session_id.clone();
         std::thread::spawn(move || {
             let mut buffer = [0u8; 16 * 1024];
             loop {
                 match reader.read(&mut buffer) {
                     Ok(0) | Err(_) => break,
-                    Ok(read) => sink.data(&session_id, &String::from_utf8_lossy(&buffer[..read])),
+                    Ok(read) => {
+                        reading.data(&reading_id, &String::from_utf8_lossy(&buffer[..read]))
+                    }
                 }
             }
+        });
+
+        // Reaping gets another. Waiting for the reader to see EOF first would
+        // be simpler, and on Unix it works: the pty closes when the child
+        // goes. ConPTY does not, so a killed agent would never be reported and
+        // its task would sit in `building` for ever. The exit code comes from
+        // `wait`, and dropping the session afterwards closes the pty, which is
+        // what finally releases the reader.
+        let terminals = Arc::clone(self);
+        std::thread::spawn(move || {
             let code = child
                 .wait()
                 .map(|status| status.exit_code() as i32)
                 .unwrap_or(1);
+            // A moment for the reader to drain what the child wrote last.
+            std::thread::sleep(std::time::Duration::from_millis(150));
             sink.ended(&session_id, terminals.take(&session_id, code));
         });
 
@@ -240,50 +254,64 @@ impl Terminals {
             session.pid
         };
         let Some(pid) = pid else { return };
-        signal_group(pid, Signal::Hangup);
+        self.ask_to_stop(id, pid);
 
         let terminals = Arc::clone(self);
         let id = id.to_string();
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(1500));
             if terminals.running(&id) {
-                signal_group(pid, Signal::Kill);
+                insist(pid);
             }
         });
     }
 }
 
-enum Signal {
-    Hangup,
-    Kill,
+impl Terminals {
+    /// The first, polite half of a stop. On Unix the process group is hung up.
+    /// Windows has no process groups and `taskkill` without `/F` does nothing
+    /// to a console program, so the agent is sent the interrupt a person would
+    /// have typed — which is exactly what it is written to handle.
+    fn ask_to_stop(&self, id: &str, pid: u32) {
+        #[cfg(unix)]
+        {
+            let _ = id;
+            // Negative pid is the process group: the agent spawns its own
+            // children, and signalling only the leader would leave them.
+            unsafe {
+                libc::killpg(pid as i32, libc::SIGHUP);
+            }
+        }
+        #[cfg(windows)]
+        {
+            let _ = pid;
+            let _ = self.write(id, "\u{3}");
+        }
+    }
 }
 
+/// The second half, a second and a half later, for a child that ignored the
+/// first.
 #[cfg(unix)]
-fn signal_group(pid: u32, signal: Signal) {
-    let number = match signal {
-        Signal::Hangup => libc::SIGHUP,
-        Signal::Kill => libc::SIGKILL,
-    };
-    // Negative pid is the process group: the agent spawns its own children,
-    // and signalling only the leader would leave them running.
+fn insist(pid: u32) {
     unsafe {
-        libc::killpg(pid as i32, number);
+        libc::killpg(pid as i32, libc::SIGKILL);
     }
 }
 
 #[cfg(windows)]
-fn signal_group(pid: u32, signal: Signal) {
+fn insist(pid: u32) {
     use std::os::windows::process::CommandExt;
+    use std::process::Stdio;
 
     // ConPTY has no process groups, so the tree is walked by `taskkill /T`.
-    // Without `/F` it asks; with it, it does not. The two steps of `stop` map
-    // onto that, so an agent still gets its moment to save state.
+    // Convoy is a windowed program with no console of its own, so without
+    // CREATE_NO_WINDOW this flashes one up and takes the focus with it.
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut command = std::process::Command::new("taskkill");
-    command.args(["/PID", &pid.to_string(), "/T"]);
-    if matches!(signal, Signal::Kill) {
-        command.arg("/F");
-    }
-    // Convoy has no console of its own, so taskkill would flash one up.
-    let _ = command.creation_flags(CREATE_NO_WINDOW).status();
+    let _ = std::process::Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
 }
