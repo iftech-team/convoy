@@ -1,0 +1,484 @@
+// Convoy's front end.
+//
+// Deliberately without a framework for now: this is a prototype whose job is
+// to answer two questions — does it look right, and does the terminal feel
+// right on Linux. A framework would confound the second.
+
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import { icons } from "./icons.js";
+
+const state = {
+  projects: [],
+  storage: "",
+  running: [],
+  projectId: null,
+  sessions: [],
+  sessionId: null,
+  filter: "",
+  search: "",
+  tab: "sessions",
+  showArchived: false,
+};
+
+/** One xterm per session, kept across navigation so output is not lost. */
+const terminals = new Map();
+
+const app = document.querySelector("#app");
+const toasts = document.querySelector("#toasts");
+
+// ---------------------------------------------------------------- helpers --
+
+const escape = (value) =>
+  String(value ?? "").replace(
+    /[&<>"']/g,
+    (character) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        character
+      ],
+  );
+
+function toast(message, kind = "info") {
+  const element = document.createElement("div");
+  element.className = `toast${kind === "error" ? " toast--error" : ""}`;
+  element.textContent = message;
+  toasts.append(element);
+  setTimeout(() => element.remove(), kind === "error" ? 7000 : 4000);
+}
+
+async function call(command, args) {
+  try {
+    return await invoke(command, args);
+  } catch (error) {
+    toast(String(error), "error");
+    return null;
+  }
+}
+
+const project = () => state.projects.find((item) => item.id === state.projectId);
+const session = () => state.sessions.find((item) => item.id === state.sessionId);
+
+// ------------------------------------------------------------------ views --
+
+function sidebar() {
+  const groups = new Map();
+  const loose = [];
+  const needle = state.search.toLowerCase();
+  for (const item of state.projects) {
+    if (needle && !`${item.title} ${item.path}`.toLowerCase().includes(needle)) {
+      continue;
+    }
+    if (item.group) {
+      if (!groups.has(item.group)) groups.set(item.group, []);
+      groups.get(item.group).push(item);
+    } else {
+      loose.push(item);
+    }
+  }
+
+  const row = (item) => `
+    <button class="project" data-project="${escape(item.id)}"
+            aria-current="${item.id === state.projectId}">
+      <span class="project__icon">${escape(item.icon || "")}</span>
+      <span class="project__title">${escape(item.title)}</span>
+      ${item.running ? '<span class="project__running"></span>' : ""}
+      <span class="project__count">${item.sessions || ""}</span>
+    </button>`;
+
+  const sections = [
+    ...[...groups].map(
+      ([name, items]) =>
+        `<div class="sidebar__group">${escape(name)}</div>${items.map(row).join("")}`,
+    ),
+    ...loose.map(row),
+  ].join("");
+
+  return `
+    <aside class="sidebar">
+      <div class="sidebar__brand">
+        <span class="sidebar__mark">${icons.terminal}</span>
+        <span class="sidebar__name">Convoy</span>
+      </div>
+      <div class="sidebar__search">
+        ${icons.search}
+        <input id="project-search" type="search" placeholder="Find a project"
+               value="${escape(state.search)}" spellcheck="false" />
+      </div>
+      <div class="sidebar__label">Projects</div>
+      <div class="sidebar__list">${sections || emptySidebar()}</div>
+      <div class="sidebar__footer">
+        <button class="button" style="width:100%">${icons.folder} Open folder…</button>
+      </div>
+    </aside>`;
+}
+
+const emptySidebar = () =>
+  `<div style="padding:10px 8px;color:var(--text-faint);font-size:12.5px">
+     ${state.search ? "Nothing matches." : "No projects yet."}
+   </div>`;
+
+function header() {
+  const current = project();
+  if (!current) return "";
+  const tabs = ["Sessions", "Reviews", "Specs", "Tasks", "Docs"];
+  return `
+    <div class="header">
+      <div class="header__top">
+        <div class="header__titles">
+          <h1 class="header__name">
+            ${escape(current.title)}
+            ${current.group ? `<span class="badge">${escape(current.group)}</span>` : ""}
+          </h1>
+          <div class="header__path">${escape(current.path)}</div>
+        </div>
+        <div class="header__actions">
+          <button class="button button--icon" title="Settings">${icons.gear}</button>
+          <button class="button button--primary" data-action="new-session">
+            ${icons.plus} New session
+          </button>
+        </div>
+      </div>
+      <nav class="tabs">
+        ${tabs
+          .map(
+            (name, index) =>
+              `${index > 1 ? '<span class="tab__divider"></span>' : ""}
+               <button class="tab" data-tab="${name.toLowerCase()}"
+                       aria-selected="${state.tab === name.toLowerCase()}">${name}</button>`,
+          )
+          .join("")}
+      </nav>
+    </div>`;
+}
+
+function sessionList() {
+  const filtered = state.sessions.filter(
+    (item) =>
+      !state.filter ||
+      `${item.title} ${item.provider_id}`
+        .toLowerCase()
+        .includes(state.filter.toLowerCase()),
+  );
+
+  if (!state.sessions.length) {
+    return empty(
+      icons.review,
+      "No sessions yet",
+      "Start one to run Claude Code or Codex in this folder.",
+    );
+  }
+
+  const rows = filtered
+    .map((item) => {
+      const mark = item.agent === "claude" ? "✳" : "◉";
+      const meta = [
+        item.agent === "claude" ? "Claude Code" : "Codex",
+        item.running ? "running" : item.started ? "stopped" : "never started",
+        item.provider_id ? `<code>${escape(item.provider_id.slice(0, 8))}</code>` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      return `
+        <div class="row" data-session="${escape(item.id)}">
+          <span class="row__mark">${mark}</span>
+          <div class="row__body">
+            <div class="row__title">${escape(item.title)}</div>
+            <div class="row__meta">${meta}</div>
+          </div>
+          <div class="row__actions">
+            ${item.pinned ? '<span class="badge--muted badge">Pinned</span>' : ""}
+            ${
+              item.running
+                ? `<button class="button button--danger" data-stop="${escape(item.id)}">${icons.stop} Stop</button>`
+                : `<button class="button" data-start="${escape(item.id)}">${icons.play} ${item.started ? "Resume" : "Start"}</button>`
+            }
+            <button class="button button--quiet" data-open="${escape(item.id)}"
+                    title="Open the terminal">${icons.open}</button>
+          </div>
+        </div>`;
+    })
+    .join("");
+
+  return `
+    <div class="section">
+      <h2 class="section__title">Saved conversations
+        <span class="section__count">${filtered.length}</span>
+      </h2>
+      <span class="section__spacer"></span>
+      <div class="filter">
+        ${icons.search}
+        <input id="session-filter" type="search" placeholder="Filter by name or ID"
+               value="${escape(state.filter)}" spellcheck="false" />
+      </div>
+      <button class="button button--icon" data-action="refresh" title="Refresh">
+        ${icons.refresh}
+      </button>
+      <button class="button button--primary" data-action="new-session">
+        ${icons.plus} New session
+      </button>
+    </div>
+    <p class="section__hint">
+      Pick a session, start a new one, or resume any conversation Claude Code or
+      Codex saved for this folder — even ones started in a plain terminal.
+    </p>
+    <div class="list">${rows || emptyFilter()}</div>`;
+}
+
+const emptyFilter = () =>
+  `<div style="padding:28px;color:var(--text-muted);text-align:center">
+     Nothing matches “${escape(state.filter)}”.
+   </div>`;
+
+const empty = (mark, title, text) => `
+  <div class="empty">
+    <span class="empty__mark">${mark}</span>
+    <h2 class="empty__title">${escape(title)}</h2>
+    <p class="empty__text">${escape(text)}</p>
+  </div>`;
+
+function workbench() {
+  const current = session();
+  if (!current) return "";
+  const stateClass = current.running ? "state--running" : "state";
+  return `
+    <div class="workbench">
+      <div class="workbench__bar">
+        <span class="crumb">
+          ${escape(project()?.title ?? "")}
+          <span class="crumb__sep">/</span>
+          <span class="crumb__muted">${escape(current.title)}</span>
+        </span>
+        <span class="section__spacer"></span>
+        <span class="state ${stateClass}">
+          <span class="state__dot"></span>
+          ${current.running ? "Running" : current.started ? "Stopped" : "Not started"}
+        </span>
+        ${
+          current.running
+            ? `<button class="button button--danger" data-stop="${escape(current.id)}">${icons.stop} Stop</button>`
+            : `<button class="button" data-start="${escape(current.id)}">${icons.play} ${current.started ? "Resume" : "Start"}</button>`
+        }
+        <button class="button button--quiet" data-action="back" title="Back to the list">
+          ${icons.chevron}
+        </button>
+      </div>
+      <div class="terminal" id="terminal-host"></div>
+    </div>`;
+}
+
+function status() {
+  const running = state.running.length;
+  return `
+    <footer class="status">
+      <span class="status__item">${icons.limits} <strong>AI Limits</strong></span>
+      <span class="status__sep"></span>
+      <span class="status__item">${escape(state.storage)}</span>
+      <span class="status__spacer"></span>
+      <span class="status__item">${icons.terminal} ${running} running</span>
+      <span class="status__sep"></span>
+      <span class="status__item">${icons.awake} Awake</span>
+    </footer>`;
+}
+
+// ----------------------------------------------------------------- render --
+
+function render() {
+  const current = project();
+  const body = !current
+    ? empty(
+        icons.folder,
+        "No project selected",
+        "Choose a project on the left to see its sessions.",
+      )
+    : state.sessionId
+      ? workbench()
+      : state.tab === "sessions"
+        ? sessionList()
+        : empty(
+            icons.review,
+            `${state.tab[0].toUpperCase()}${state.tab.slice(1)}`,
+            "Not in this prototype yet — it exists to check the design and the terminal.",
+          );
+
+  app.innerHTML = `
+    <div class="shell">
+      ${sidebar()}
+      <main class="main">${header()}${body}</main>
+      ${status()}
+    </div>`;
+
+  if (state.sessionId) mountTerminal(state.sessionId);
+}
+
+// --------------------------------------------------------------- terminal --
+
+function terminalFor(id) {
+  if (terminals.has(id)) return terminals.get(id);
+
+  // The element lives outside the re-rendered tree and is moved into place.
+  // Rebuilding it would detach xterm from its canvas and lose the scrollback,
+  // which in a session that has been running for an hour is the whole point.
+  const host = document.createElement("div");
+  host.className = "terminal__surface";
+
+  const style = getComputedStyle(document.documentElement);
+  const terminal = new Terminal({
+    fontFamily: style.getPropertyValue("--font-mono").trim(),
+    fontSize: 13,
+    lineHeight: 1.35,
+    cursorBlink: true,
+    allowProposedApi: true,
+    scrollback: 10000,
+    // Matching the window rather than the usual black rectangle: an agent's
+    // output is prose to read, not a console to admire.
+    theme: {
+      background: style.getPropertyValue("--term-bg").trim(),
+      foreground: style.getPropertyValue("--term-fg").trim(),
+      cursor: style.getPropertyValue("--term-cursor").trim(),
+      selectionBackground: style.getPropertyValue("--term-selection").trim(),
+    },
+  });
+  const fit = new FitAddon();
+  terminal.loadAddon(fit);
+  terminal.loadAddon(new WebLinksAddon());
+
+  terminal.onData((data) => invoke("terminal_write", { id, data }).catch(() => {}));
+  terminal.onResize(({ cols, rows }) =>
+    invoke("terminal_resize", { id, cols, rows }).catch(() => {}),
+  );
+
+  const entry = { terminal, fit, host, opened: false };
+  terminals.set(id, entry);
+  return entry;
+}
+
+function mountTerminal(id) {
+  const slot = document.querySelector("#terminal-host");
+  if (!slot) return;
+  const entry = terminalFor(id);
+  slot.append(entry.host);
+  if (!entry.opened) {
+    entry.terminal.open(entry.host);
+    entry.opened = true;
+  }
+  requestAnimationFrame(() => {
+    entry.fit.fit();
+    entry.terminal.focus();
+  });
+}
+
+const refit = () => {
+  if (!state.sessionId) return;
+  terminals.get(state.sessionId)?.fit.fit();
+};
+
+// ------------------------------------------------------------------ data --
+
+async function loadWorkspace() {
+  const view = await call("workspace_read");
+  if (!view) return;
+  state.projects = view.projects;
+  state.running = view.running;
+  state.storage = view.storage;
+  if (!state.projectId && view.projects.length) {
+    state.projectId = view.projects[0].id;
+  }
+  await loadSessions();
+}
+
+async function loadSessions() {
+  if (!state.projectId) return render();
+  const sessions = await call("sessions_for", {
+    projectId: state.projectId,
+    archived: state.showArchived,
+  });
+  state.sessions = sessions ?? [];
+  render();
+}
+
+async function start(id) {
+  const { terminal, fit } = terminalFor(id);
+  state.sessionId = id;
+  render();
+  fit.fit();
+  await call("session_start", {
+    id,
+    cols: terminal.cols,
+    rows: terminal.rows,
+  });
+  await loadWorkspace();
+}
+
+// ---------------------------------------------------------------- events --
+
+app.addEventListener("click", async (event) => {
+  const target = event.target.closest("[data-project],[data-tab],[data-action],[data-start],[data-stop],[data-open],[data-session]");
+  if (!target) return;
+
+  if (target.dataset.project) {
+    state.projectId = target.dataset.project;
+    state.sessionId = null;
+    return loadSessions();
+  }
+  if (target.dataset.tab) {
+    state.tab = target.dataset.tab;
+    state.sessionId = null;
+    return render();
+  }
+  if (target.dataset.start) return start(target.dataset.start);
+  if (target.dataset.stop) {
+    await call("session_stop", { id: target.dataset.stop });
+    return;
+  }
+  if (target.dataset.open || target.dataset.session) {
+    state.sessionId = target.dataset.open || target.dataset.session;
+    return render();
+  }
+
+  switch (target.dataset.action) {
+    case "refresh":
+      return loadWorkspace();
+    case "back":
+      state.sessionId = null;
+      return render();
+    case "new-session":
+      return toast("The new-session dialog is not in this prototype yet.");
+  }
+});
+
+// Typing re-renders, so the caret has to be put back where it was. A
+// framework would do this; here it is four lines and no dependency.
+app.addEventListener("input", (event) => {
+  const field = event.target;
+  const keys = { "session-filter": "filter", "project-search": "search" };
+  const key = keys[field.id];
+  if (!key) return;
+  state[key] = field.value;
+  const caret = field.selectionStart;
+  render();
+  const restored = document.querySelector(`#${field.id}`);
+  if (restored) {
+    restored.focus();
+    restored.setSelectionRange(caret, caret);
+  }
+});
+
+window.addEventListener("resize", refit);
+
+await listen("terminal:data", ({ payload }) => {
+  terminalFor(payload.id).terminal.write(payload.data);
+});
+
+await listen("terminal:exit", async ({ payload }) => {
+  const entry = terminals.get(payload.id);
+  if (entry) {
+    const how = payload.stopped ? "stopped" : `exited with code ${payload.code}`;
+    entry.terminal.write(`\r\n\x1b[2m── session ${how} ──\x1b[0m\r\n`);
+  }
+  await loadWorkspace();
+});
+
+await loadWorkspace();
