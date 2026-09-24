@@ -1,0 +1,28 @@
+[package]
+name = "convoy-gtk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "convoy"
+path = "src/main.rs"
+
+[[bin]]
+name = "convoy-vte-probe"
+path = "src/bin/vte-probe.rs"
+
+[dependencies]
+convoy-core = { path = "../convoy-core" }
+gtk.workspace = true
+adw.workspace = true
+vte4.workspace = true
+sourceview.workspace = true
+glib.workspace = true
+gio.workspace = true
+async-channel.workspace = true
+pulldown-cmark.workspace = true
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,218 @@
+//! Ported from `test/files.test.cjs` — discovery, previews and every Git write.
+
+mod common;
+
+use common::fixture;
+use convoy_core::files::{discover, preview};
+use convoy_core::git::diff::digest;
+use convoy_core::git::mutate::Action;
+use convoy_core::git::{ReadRequest, Snapshot};
+use convoy_core::process::StdRunner;
+use convoy_core::worktree::setup;
+use convoy_core::Git;
+use std::fs;
+use std::path::Path;
+
+/// A repository with deterministic identity and line-ending handling.
+fn repository(path: &Path, autocrlf: &str) -> Git {
+    let git = Git::default();
+    fs::create_dir_all(path).unwrap();
+    git.run(path, &["init"]).unwrap();
+    git.run(path, &["config", "core.autocrlf", autocrlf]).unwrap();
+    git.run(path, &["config", "user.name", "Test"]).unwrap();
+    git.run(path, &["config", "user.email", "test@example.invalid"]).unwrap();
+    git.run(path, &["config", "commit.gpgSign", "false"]).unwrap();
+    git
+}
+
+fn change<'a>(snapshot: &'a Snapshot, name: &str) -> &'a convoy_core::git::status::Change {
+    snapshot
+        .changes
+        .iter()
+        .find(|change| change.path == name)
+        .unwrap_or_else(|| panic!("no status entry for {name}"))
+}
+
+#[test]
+fn discovery_stops_at_project_boundaries_and_skips_dependencies() {
+    let fixture = fixture();
+    for name in ["group/app", "node_modules/ignored"] {
+        let folder = fixture.path().join(name);
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(folder.join("package.json"), "{}").unwrap();
+    }
+    assert_eq!(discover(fixture.path()), vec![fixture.path().join("group/app")]);
+}
+
+#[test]
+fn preview_rejects_traversal_external_symlinks_binary_and_oversized_files() {
+    let fixture = fixture();
+    let root = fixture.path();
+    fs::write(root.join("text"), "hello").unwrap();
+    fs::write(root.join("binary"), [0u8, 1u8]).unwrap();
+    fs::write(root.join("large"), vec![b'A'; 1024 * 1024 + 1]).unwrap();
+
+    assert_eq!(preview(root, "text").unwrap(), "hello");
+    assert!(preview(root, "../outside").is_err());
+    assert!(preview(root, "binary").unwrap().contains("Binary"));
+    assert!(preview(root, "large").unwrap().contains("exceeds"));
+
+    std::os::unix::fs::symlink(std::env::temp_dir(), root.join("link")).unwrap();
+    assert!(
+        preview(root, "link").is_err(),
+        "a symlink out of the folder must not be readable"
+    );
+}
+
+#[test]
+fn git_panel_handles_unborn_repositories_spaced_paths_stage_commit_and_diffs() {
+    let fixture = fixture();
+    let root = fixture.path();
+    let git = repository(root, "false");
+    let name = "space name.txt";
+    fs::write(root.join(name), "one\n").unwrap();
+
+    assert!(change(&git.snapshot(root).unwrap(), name).untracked);
+
+    // Unstaging before the first commit must not need a HEAD.
+    git.mutate(root, &Action::Stage { path: name.into(), original: None }).unwrap();
+    git.mutate(root, &Action::Unstage { path: name.into(), original: None }).unwrap();
+    assert!(change(&git.snapshot(root).unwrap(), name).untracked);
+
+    git.mutate(root, &Action::StageAll).unwrap();
+    git.mutate(root, &Action::Commit { message: "Initial commit".into(), amend: false }).unwrap();
+
+    fs::write(root.join(name), "two\n").unwrap();
+    let diff = git.read(root, &ReadRequest::Unstaged { path: name.into() }).unwrap();
+    assert!(diff.contains("+two"), "{diff}");
+
+    git.mutate(root, &Action::Discard { path: name.into() }).unwrap();
+    assert_eq!(fs::read_to_string(root.join(name)).unwrap(), "one\n");
+    assert_eq!(git.snapshot(root).unwrap().log.len(), 1);
+
+    // A reset target is an object name, never a flag.
+    assert!(git.mutate(root, &Action::ResetMixed { commit: "--hard".into() }).is_err());
+}
+
+#[test]
+fn rename_records_carry_their_original_path() {
+    let parsed = convoy_core::git::status::parse("R  new name\0old name\0?? other\0");
+    assert_eq!(parsed.len(), 2);
+    assert_eq!(parsed[0].path, "new name");
+    assert_eq!(parsed[0].original.as_deref(), Some("old name"));
+    assert_eq!(parsed[1].path, "other");
+    assert!(parsed[1].untracked);
+}
+
+#[test]
+fn discard_hunk_rejects_stale_diffs_and_preserves_other_hunks() {
+    let fixture = fixture();
+    let root = fixture.path();
+    let git = repository(root, "false");
+
+    let before: String = (0..30).map(|index| format!("line {index}\n")).collect();
+    fs::write(root.join("text"), &before).unwrap();
+    git.mutate(root, &Action::StageAll).unwrap();
+    git.mutate(root, &Action::Commit { message: "Initial".into(), amend: false }).unwrap();
+
+    let edited = before
+        .replace("line 1\n", "first edit\n")
+        .replace("line 25\n", "second edit\n");
+    fs::write(root.join("text"), &edited).unwrap();
+
+    let diff = git.read(root, &ReadRequest::Unstaged { path: "text".into() }).unwrap();
+    let stale = git.mutate(
+        root,
+        &Action::DiscardHunk { path: "text".into(), hunk: 0, hash: "stale".into() },
+    );
+    assert!(stale.unwrap_err().to_string().contains("changed"));
+
+    git.mutate(
+        root,
+        &Action::DiscardHunk { path: "text".into(), hunk: 0, hash: digest(&diff) },
+    )
+    .unwrap();
+    assert_eq!(
+        fs::read_to_string(root.join("text")).unwrap(),
+        before.replace("line 25\n", "second edit\n"),
+        "only the first hunk is reverted"
+    );
+}
+
+#[test]
+fn staging_a_path_treats_git_wildcard_characters_literally() {
+    let fixture = fixture();
+    let root = fixture.path();
+    let git = repository(root, "false");
+    fs::write(root.join("[ab].txt"), "literal").unwrap();
+    fs::write(root.join("a.txt"), "other").unwrap();
+
+    git.mutate(root, &Action::Stage { path: "[ab].txt".into(), original: None }).unwrap();
+
+    let snapshot = git.snapshot(root).unwrap();
+    assert_eq!(change(&snapshot, "[ab].txt").index, 'A');
+    assert!(change(&snapshot, "a.txt").untracked, "the glob matched nothing else");
+}
+
+#[test]
+fn shared_file_setup_never_follows_destination_symlinks_or_overwrites_existing_files() {
+    let fixture = fixture();
+    let root = fixture.path();
+    let (repo, target, outside) = (root.join("repo"), root.join("target"), root.join("outside"));
+    for folder in [&repo, &target, &outside] {
+        fs::create_dir(folder).unwrap();
+    }
+    fs::write(repo.join("settings"), "source").unwrap();
+    fs::write(target.join("settings"), "keep").unwrap();
+
+    let shared = vec!["settings".to_string()];
+    assert!(setup(&repo, &target, &shared, None, &StdRunner).is_err());
+    assert_eq!(
+        fs::read_to_string(target.join("settings")).unwrap(),
+        "keep",
+        "a tracked file is never replaced"
+    );
+
+    fs::create_dir_all(repo.join("linked/nested")).unwrap();
+    fs::write(repo.join("linked/nested/file"), "source").unwrap();
+    std::os::unix::fs::symlink(&outside, target.join("linked")).unwrap();
+
+    let shared = vec!["linked/nested/file".to_string()];
+    assert!(setup(&repo, &target, &shared, None, &StdRunner).is_err());
+    assert_eq!(
+        fs::read_dir(&outside).unwrap().count(),
+        0,
+        "nothing was written through the symlink"
+    );
+}
+
+#[test]
+fn discard_and_hunk_discard_respect_git_crlf_checkout_settings() {
+    let fixture = fixture();
+    let root = fixture.path();
+    let git = repository(root, "true");
+
+    let before: String = (0..30).map(|index| format!("line {index}\r\n")).collect();
+    fs::write(root.join("text.txt"), &before).unwrap();
+    git.mutate(root, &Action::StageAll).unwrap();
+    git.mutate(root, &Action::Commit { message: "CRLF fixture".into(), amend: false }).unwrap();
+
+    fs::write(root.join("text.txt"), "changed\r\n").unwrap();
+    git.mutate(root, &Action::Discard { path: "text.txt".into() }).unwrap();
+    assert_eq!(fs::read_to_string(root.join("text.txt")).unwrap(), before);
+
+    let edited = before
+        .replace("line 1\r\n", "first edit\r\n")
+        .replace("line 25\r\n", "second edit\r\n");
+    fs::write(root.join("text.txt"), &edited).unwrap();
+    let diff = git.read(root, &ReadRequest::Unstaged { path: "text.txt".into() }).unwrap();
+    git.mutate(
+        root,
+        &Action::DiscardHunk { path: "text.txt".into(), hunk: 0, hash: digest(&diff) },
+    )
+    .unwrap();
+    assert_eq!(
+        fs::read_to_string(root.join("text.txt")).unwrap(),
+        before.replace("line 25\r\n", "second edit\r\n")
+    );
+}

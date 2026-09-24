@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Convoy
+GenericName=Coding agent workspace
+Comment=Run and review Claude Code and Codex sessions across projects
+Exec=convoy %U
+Icon=com.iftech.convoy.linux
+Terminal=false
+Categories=Development;IDE;
+Keywords=agent;claude;codex;terminal;git;
+StartupNotify=true
+StartupWMClass=convoy
