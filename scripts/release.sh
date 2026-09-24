@@ -13,6 +13,8 @@ current=$(sed -n "${plist_line}s/.*<string>\(.*\)<\/string>.*/\1/p" scripts/buil
 build=$(grep -o '<key>CFBundleVersion</key><string>[0-9]*' scripts/build-app.sh | grep -o '[0-9]*$')
 next_build=$((build + 1))
 [ -z "$(git status --porcelain)" ] || { echo "Working tree is dirty; commit first." >&2; exit 1; }
+# Other sessions may have pushed meanwhile; build the release on top of the current main.
+git pull --rebase origin main
 sed -i '' "s|<string>${current}</string>|<string>${version}</string>|; s|<key>CFBundleVersion</key><string>${build}</string>|<key>CFBundleVersion</key><string>${next_build}</string>|" scripts/build-app.sh
 git commit -qam "chore: version ${version}"
 git push origin HEAD
