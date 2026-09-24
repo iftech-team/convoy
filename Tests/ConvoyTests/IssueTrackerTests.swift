@@ -44,6 +44,12 @@ private func body(_ request: URLRequest) throws -> [String: Any] {
 
     #expect(TrackerClient.jql("PAY-12", mineOnly: true) == "key = PAY-12")
     #expect(TrackerClient.jql("project = PAY ORDER BY created", mineOnly: true) == "project = PAY ORDER BY created")
+    for query in ["project=PAY", "priority>=High", "created >= -7d", "summary~crash", "status!=Done", "assignee=currentUser()"] {
+        #expect(TrackerClient.jql(query, mineOnly: true) == query)
+    }
+    #expect(TrackerClient.jql("crash in login", mineOnly: true).contains("text ~ \"crash in login\""))
+    let explicit = try TrackerClient.request(for: server, secret: "pw", query: "project in (PAY, OPS)", mineOnly: true, rawJQL: true)
+    #expect(URLComponents(url: explicit.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "jql" }?.value == "project in (PAY, OPS)")
     #expect(TrackerClient.jql("say \"hi\"", mineOnly: false) == "statusCategory != Done AND text ~ \"say \\\"hi\\\"\" ORDER BY updated DESC")
 }
 
@@ -120,4 +126,32 @@ private func body(_ request: URLRequest) throws -> [String: Any] {
     // Saved workspaces keep the source link.
     let reloaded = try file.load()
     #expect(reloaded.tasks?.first { $0.source?.key == "ENG-1" }?.source?.url == "https://linear.app/x")
+}
+
+@Test @MainActor func sameKeyOnTwoSitesIsTwoIssues() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("convoy-origin-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let project = Project(name: "p", path: root.path)
+    let file = WorkspaceFile(url: root.appendingPathComponent("ws.json"))
+    try file.save(Workspace(projects: [project], selectedProjectID: project.id))
+    let store = Store(workspaceURL: file.url)
+    let one = TrackerConnection(kind: .jira, auth: .apiKey, name: "One", site: "https://one.atlassian.net")
+    let two = TrackerConnection(kind: .jira, auth: .apiKey, name: "Two", site: "https://two.atlassian.net")
+    let body = Data(#"{"issues":[{"key":"PROJ-1","fields":{"summary":"S"}}]}"#.utf8)
+    let fromOne = try TrackerClient.parse(.jira, data: body, site: one.siteURL)
+    let fromTwo = try TrackerClient.parse(.jira, data: body, site: two.siteURL)
+    let options = IssueImportOptions(agent: .claude, model: nil, mode: "pr")
+    #expect(store.importIssues(fromOne, from: one, into: project, options: options).created.count == 1)
+    #expect(store.importIssues(fromTwo, from: two, into: project, options: options).created.count == 1)
+    #expect(store.importIssues(fromOne, from: one, into: project, options: options).skipped == 1)
+    #expect(store.tasks.compactMap(\.source?.origin).sorted() == ["one.atlassian.net", "two.atlassian.net"])
+
+    let linear = TrackerConnection(kind: .linear, auth: .mcp, name: "L")
+    let pasted = TrackerClient.manualIssues("https://linear.app/Acme/issue/ENG-2/slug\nENG-3", kind: .linear)
+    #expect(TrackerClient.origin(of: pasted[0], in: linear) == "linear.app/acme")
+    #expect(TrackerClient.origin(of: pasted[1], in: linear) == "connection:\(linear.id.uuidString)")
+    let hosted = TrackerConnection(kind: .jira, auth: .mcp, name: "J", site: "https://corp.example/jira/")
+    #expect(TrackerClient.origin(of: TrackerIssue(key: "X-1", title: "X-1", url: "https://corp.example/jira/browse/X-1"), in: hosted) == "corp.example/jira")
+    #expect(TrackerClient.origin(of: TrackerIssue(key: "X-1", title: "X-1"), in: hosted) == "corp.example/jira")
 }

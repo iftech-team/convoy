@@ -79,12 +79,24 @@ struct IssueImportSheet: View {
     @State private var runNow = false
     @State private var loading = false
     @State private var message: String?
+    @State private var rawJQL = false
+    /// The in-flight search, its id, and the connection the shown results came from:
+    /// a late answer for a previous search or connection must never replace the current one.
+    @State private var searchTask: Task<Void, Never>?
+    @State private var searchID = UUID()
+    @State private var resultsFor: UUID?
 
     private var connection: TrackerConnection? { trackers.connections.first { $0.id == connectionID } ?? trackers.connections.first }
     private var isMCP: Bool { connection?.auth == .mcp }
-    private var candidates: [TrackerIssue] { isMCP ? TrackerClient.manualIssues(manual, kind: connection?.kind ?? .linear) : results }
+    private var candidates: [TrackerIssue] {
+        if isMCP { return TrackerClient.manualIssues(manual, kind: connection?.kind ?? .linear) }
+        return resultsFor != nil && resultsFor == connection?.id ? results : []
+    }
+    /// Keys of candidates already imported into this project from the same site.
     private var alreadyImported: Set<String> {
-        Set(store.tasks(for: project).compactMap { s in s.source.flatMap { $0.tracker == connection?.kind ? $0.key : nil } })
+        guard let connection else { return [] }
+        let existing = store.importedIdentities(in: project)
+        return Set(candidates.filter { existing.contains(store.importIdentity($0, from: connection)) }.map(\.key))
     }
     private var chosen: [TrackerIssue] { candidates.filter { selected.contains($0.key) && !alreadyImported.contains($0.key) } }
 
@@ -93,17 +105,26 @@ struct IssueImportSheet: View {
     }
 
     private func search() {
+        searchTask?.cancel()
+        let id = UUID()
+        searchID = id
+        loading = false
         guard let connection, !isMCP else { return }
         guard let secret = trackers.secret(for: connection), !secret.isEmpty else { message = "No saved credentials for “\(connection.name)”. Edit it in Settings → Integrations."; return }
+        let (query, mineOnly, rawJQL) = (query, mineOnly, connection.kind == .jira && rawJQL)
         loading = true; message = nil
-        Task {
-            do {
-                let found = try await TrackerClient.fetch(connection, secret: secret, query: query, mineOnly: mineOnly)
-                results = found
+        searchTask = Task {
+            let outcome: Result<[TrackerIssue], Error>
+            do { outcome = .success(try await TrackerClient.fetch(connection, secret: secret, query: query, mineOnly: mineOnly, rawJQL: rawJQL)) }
+            catch { outcome = .failure(error) }
+            guard !Task.isCancelled, searchID == id, self.connection?.id == connection.id else { return }
+            switch outcome {
+            case .success(let found):
+                results = found; resultsFor = connection.id
                 selected = Set(found.map(\.key)).subtracting(alreadyImported)
-                if found.isEmpty { message = "No matching open issues." }
-            } catch {
-                results = []; message = error.localizedDescription
+                message = found.isEmpty ? "No matching open issues." : nil
+            case .failure(let error):
+                results = []; resultsFor = connection.id; message = error.localizedDescription
             }
             loading = false
         }
@@ -138,6 +159,7 @@ struct IssueImportSheet: View {
             footer
         }
         .padding(24).frame(width: 720)
+        .onDisappear { searchTask?.cancel() }
         .onAppear {
             connectionID = connectionID ?? trackers.connections.first?.id
             mode = project.taskMode ?? "pr"
@@ -159,7 +181,7 @@ struct IssueImportSheet: View {
     private var sourceRow: some View {
         HStack(spacing: 10) {
             label("From")
-            Picker("", selection: Binding(get: { connection?.id }, set: { connectionID = $0; results = []; selected = []; overrides = [:]; message = nil; if !isMCP { search() } })) {
+            Picker("", selection: Binding(get: { connection?.id }, set: { connectionID = $0; results = []; resultsFor = nil; selected = []; overrides = [:]; message = nil; search() })) {
                 ForEach(trackers.connections) { c in Label("\(c.name) · \(c.auth.label(for: c.kind))", systemImage: c.kind.symbol).tag(Optional(c.id)) }
             }.labelsHidden().frame(maxWidth: 320)
             Spacer()
@@ -171,10 +193,14 @@ struct IssueImportSheet: View {
         HStack(spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.secondary)
-                TextField(connection?.kind == .jira ? "Text, issue key, or JQL" : "Title text or issue key, e.g. ENG-123", text: $query)
+                TextField(connection?.kind == .jira ? (rawJQL ? "JQL, e.g. project in (PAY, OPS)" : "Text, issue key, or JQL") : "Title text or issue key, e.g. ENG-123", text: $query)
                     .textFieldStyle(.plain).font(.system(size: 12.5)).onSubmit(search)
             }.padding(.horizontal, 8).frame(height: 28)
                 .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+            if connection?.kind == .jira {
+                Toggle("JQL", isOn: $rawJQL).toggleStyle(.checkbox).font(.system(size: 12))
+                    .help("Send the query to Jira exactly as written. Symbolic JQL such as project=PAY is detected automatically.")
+            }
             Toggle("Assigned to me", isOn: $mineOnly).toggleStyle(.checkbox).font(.system(size: 12)).onChange(of: mineOnly) { _, _ in search() }
             Button(action: search) { if loading { ProgressView().controlSize(.small) } else { Text("Search") } }.disabled(loading)
         }

@@ -49,6 +49,9 @@ struct TrackerConnection: Codable, Identifiable, Equatable, Sendable {
 struct IssueSource: Codable, Equatable, Sendable {
     var tracker: TrackerKind
     var key: String
+    /// Site or workspace the key belongs to (`acme.atlassian.net`, `linear.app/acme`):
+    /// the same key on two sites is two issues.
+    var origin: String?
     var url: String?
     /// Imported by key only; the agent must fetch the issue through MCP.
     var viaMCP: Bool?
@@ -141,8 +144,9 @@ struct TrackerError: LocalizedError { let message: String; var errorDescription:
 enum TrackerClient {
     static let pageSize = 50
 
-    /// Builds the search request. `query` is free text, an issue key, or (Jira) raw JQL; empty means open issues.
-    static func request(for connection: TrackerConnection, secret: String, query: String, mineOnly: Bool) throws -> URLRequest {
+    /// Builds the search request. `query` is free text, an issue key, or (Jira) JQL; `rawJQL` sends it
+    /// verbatim. Empty means open issues.
+    static func request(for connection: TrackerConnection, secret: String, query: String, mineOnly: Bool, rawJQL: Bool = false) throws -> URLRequest {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         switch connection.kind {
         case .linear:
@@ -159,7 +163,7 @@ enum TrackerClient {
             let path = connection.isJiraCloud ? "/rest/api/3/search/jql" : "/rest/api/2/search"
             var components = URLComponents(url: site.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
             components.queryItems = [
-                URLQueryItem(name: "jql", value: jql(q, mineOnly: mineOnly)),
+                URLQueryItem(name: "jql", value: rawJQL && !q.isEmpty ? q : jql(q, mineOnly: mineOnly)),
                 URLQueryItem(name: "maxResults", value: String(pageSize)),
                 URLQueryItem(name: "fields", value: "summary,description,status,priority"),
             ]
@@ -207,8 +211,24 @@ enum TrackerClient {
         return clauses.joined(separator: " AND ") + " ORDER BY updated DESC"
     }
 
+    /// Symbolic operators (`project=PAY`, `created >= -7d`), `ORDER BY`, or a function call. Word operators
+    /// such as `in`/`is` also occur in plain text, so those need the explicit JQL mode.
     static func looksLikeJQL(_ q: String) -> Bool {
-        q.range(of: #"(\s(=|!=|~|in|IN|is|IS)\s)|\bORDER BY\b|currentUser\(\)"#, options: .regularExpression) != nil
+        q.range(of: #"[\w\]\)"]\s*(!=|!~|>=|<=|=|~|<|>)\s*\S|\bORDER\s+BY\b|\b\w+\(\s*\)"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    /// `host[/path]` naming the site of a link: the Linear workspace slug, or a Jira context path before `/browse/`.
+    static func urlOrigin(_ url: String) -> String? {
+        guard let components = URLComponents(string: url), let host = components.host?.lowercased(), !host.isEmpty else { return nil }
+        let parts = components.path.split(separator: "/").map(String.init)
+        if host == "linear.app" { return parts.first.map { "\(host)/\($0.lowercased())" } }
+        let site = Array(parts.prefix { $0 != "browse" })
+        return site.isEmpty ? host : "\(host)/\(site.joined(separator: "/"))"
+    }
+
+    /// Which site an issue lives on: from its link, else the connection's Jira site, else the connection itself.
+    static func origin(of issue: TrackerIssue, in connection: TrackerConnection) -> String {
+        issue.url.flatMap(urlOrigin) ?? connection.siteURL.flatMap { urlOrigin($0.absoluteString) } ?? "connection:\(connection.id.uuidString)"
     }
 
     /// `ENG-123`, or a Linear/Jira URL that contains one.
@@ -281,8 +301,8 @@ enum TrackerClient {
         }
     }
 
-    static func fetch(_ connection: TrackerConnection, secret: String, query: String, mineOnly: Bool) async throws -> [TrackerIssue] {
-        let request = try request(for: connection, secret: secret, query: query, mineOnly: mineOnly)
+    static func fetch(_ connection: TrackerConnection, secret: String, query: String, mineOnly: Bool, rawJQL: Bool = false) async throws -> [TrackerIssue] {
+        let request = try request(for: connection, secret: secret, query: query, mineOnly: mineOnly, rawJQL: rawJQL)
         let (data, response) = try await URLSession.shared.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         switch code {
@@ -337,16 +357,25 @@ extension Store {
         var task = AgentTask(projectID: project.id, title: String(title.prefix(200)), details: details, mode: options.mode, agent: pick.agent)
         task.model = pick.model?.trimmingCharacters(in: .whitespaces).isEmpty == false ? pick.model : nil
         task.autoReview = options.autoReview
-        task.source = IssueSource(tracker: connection.kind, key: issue.key, url: issue.url, viaMCP: connection.auth == .mcp ? true : nil)
+        task.source = IssueSource(tracker: connection.kind, key: issue.key, origin: TrackerClient.origin(of: issue, in: connection),
+                                  url: issue.url, viaMCP: connection.auth == .mcp ? true : nil)
         return task
+    }
+
+    /// Tracker, site and key: what makes an imported issue the same issue.
+    func importIdentity(_ issue: TrackerIssue, from connection: TrackerConnection) -> String {
+        "\(connection.kind.rawValue)|\(TrackerClient.origin(of: issue, in: connection))|\(issue.key)"
+    }
+    func importedIdentities(in project: Project) -> Set<String> {
+        Set(tasks(for: project).compactMap { $0.source.map { "\($0.tracker.rawValue)|\($0.origin ?? "")|\($0.key)" } })
     }
 
     /// Creates tasks for the issues not already imported into `project`; returns (created, skipped).
     @discardableResult
     func importIssues(_ issues: [TrackerIssue], from connection: TrackerConnection, into project: Project, options: IssueImportOptions) -> (created: [AgentTask], skipped: Int) {
-        let existing = Set(tasks(for: project).compactMap { $0.source.map { "\($0.tracker.rawValue)/\($0.key)" } })
+        var existing = importedIdentities(in: project)
         var created: [AgentTask] = []
-        for issue in issues where !existing.contains("\(connection.kind.rawValue)/\(issue.key)") {
+        for issue in issues where existing.insert(importIdentity(issue, from: connection)).inserted {
             let task = task(importing: issue, from: connection, into: project, options: options)
             saveTask(task)
             created.append(task)
