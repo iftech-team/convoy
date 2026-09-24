@@ -236,6 +236,20 @@ pub fn settings(app: &Rc<App>) {
     session.add(&notifications);
     session.add(&keep_awake);
 
+    let keys = adw::PreferencesGroup::builder()
+        .title("Keyboard")
+        .description("Shortcuts are shared with the Electron build through the workspace file.")
+        .build();
+    let edit_keys = gtk::Button::with_label("Edit shortcuts…");
+    edit_keys.set_valign(gtk::Align::Center);
+    edit_keys.connect_clicked({
+        let app = app.clone();
+        move |_| shortcuts(&app)
+    });
+    let keys_row = adw::ActionRow::builder().title("Shortcuts").build();
+    keys_row.add_suffix(&edit_keys);
+    keys.add(&keys_row);
+
     let accounts = adw::PreferencesGroup::builder()
         .title("Accounts")
         .description("Each profile gets its own provider home, so sign-ins stay separate.")
@@ -259,6 +273,7 @@ pub fn settings(app: &Rc<App>) {
     page.add(&appearance);
     page.add(&behaviour);
     page.add(&session);
+    page.add(&keys);
     page.add(&accounts);
 
     let dialog = adw::PreferencesDialog::new();
@@ -1327,4 +1342,280 @@ fn kind_label(kind: convoy_core::model::ActivityKind) -> &'static str {
         ActivityKind::Hibernated => "hibernated",
         ActivityKind::Worktree => "worktree",
     }
+}
+
+/// The shortcut editor.
+///
+/// A shortcut is stored in the Electron notation so both builds read the same
+/// file, and the same rules apply: Primary is required, the modifier order is
+/// fixed, and no two actions may share a binding.
+pub fn shortcuts(app: &Rc<App>) {
+    let saved = app.workspace.borrow().settings().shortcuts.clone();
+    let group = adw::PreferencesGroup::builder()
+        .title("Shortcuts")
+        .description("Press a combination with Ctrl. Clear a field to restore its default.")
+        .build();
+
+    let rows: Vec<(String, adw::EntryRow)> = convoy_core::shortcuts::resolve(&saved)
+        .into_iter()
+        .map(|(action, stored, _)| {
+            let row = adw::EntryRow::builder()
+                .title(convoy_core::shortcuts::description(action))
+                .build();
+            row.set_text(&stored);
+            group.add(&row);
+            (action.to_string(), row)
+        })
+        .collect();
+
+    let page = adw::PreferencesPage::new();
+    page.add(&group);
+    let dialog = adw::PreferencesDialog::new();
+    dialog.add(&page);
+
+    let save = gtk::Button::with_label("Save shortcuts");
+    save.add_css_class("suggested-action");
+    save.connect_clicked({
+        let app = app.clone();
+        let dialog = dialog.clone();
+        let rows = rows.clone();
+        move |_| {
+            let mut shortcuts = std::collections::BTreeMap::new();
+            for (action, row) in &rows {
+                let value = row.text().trim().to_lowercase();
+                if value.is_empty() {
+                    continue;
+                }
+                if convoy_core::shortcuts::to_accelerator(&value).is_none() {
+                    app.error(format!(
+                        "{} is not a usable shortcut. Use the form mod+shift+p.",
+                        row.text()
+                    ));
+                    return;
+                }
+                shortcuts.insert(action.clone(), value);
+            }
+            let outcome = {
+                let mut workspace = app.workspace.borrow_mut();
+                workspace
+                    .save_settings(convoy_core::workspace::SettingsPatch {
+                        shortcuts: Some(shortcuts),
+                        ..Default::default()
+                    })
+                    .map(|_| ())
+            };
+            match outcome {
+                Ok(()) => {
+                    if let Some(application) = app.window.application().and_downcast::<adw::Application>() {
+                        crate::app::apply_shortcuts(&application, &app);
+                    }
+                    dialog.close();
+                }
+                // `Invalid or duplicate shortcut.` arrives here unchanged.
+                Err(error) => app.error(error),
+            }
+        }
+    });
+    group.set_header_suffix(Some(&save));
+    dialog.present(Some(&app.window));
+}
+
+/// Per-project settings: how it is shown, and what a new worktree gets.
+pub fn project_settings(app: &Rc<App>, project_id: &str) {
+    let Some(project) = app
+        .workspace
+        .borrow()
+        .state()
+        .projects
+        .iter()
+        .find(|project| project.id == project_id)
+        .cloned()
+    else {
+        return;
+    };
+
+    let title = adw::EntryRow::builder().title("Name").build();
+    title.set_text(&project.title);
+    let group_row = adw::EntryRow::builder().title("Group").build();
+    group_row.set_text(project.group.as_deref().unwrap_or(""));
+    let icon = adw::EntryRow::builder()
+        .title("Icon")
+        .tooltip_text("A single emoji, shown beside the name.")
+        .build();
+    icon.set_text(project.icon.as_deref().unwrap_or(""));
+
+    let identity = adw::PreferencesGroup::builder().title("Appearance").build();
+    identity.add(&title);
+    identity.add(&group_row);
+    identity.add(&icon);
+
+    let (shared_group, shared) = {
+        let (view, frame) = text_area(project.shared_paths.as_deref().unwrap_or(""), true);
+        let wrapper = adw::PreferencesGroup::builder()
+            .title("Shared files")
+            .description(
+                "One repository-relative path per line, copied into each new worktree. \
+                 Existing files are never replaced.",
+            )
+            .build();
+        wrapper.add(&frame);
+        (wrapper, view)
+    };
+
+    let setup = adw::EntryRow::builder().title("Setup command").build();
+    setup.set_text(project.setup_command.as_deref().unwrap_or(""));
+    let setup_group = adw::PreferencesGroup::builder()
+        .title("Worktree setup")
+        .description("Shown and confirmed before it runs. It runs with your permissions.")
+        .build();
+    setup_group.add(&setup);
+
+    let (review_group, review) = {
+        let (view, frame) = text_area(project.review_template.as_deref().unwrap_or(""), true);
+        let wrapper = adw::PreferencesGroup::builder()
+            .title("Review instructions")
+            .description("Prefixed to every review brief for this project.")
+            .build();
+        wrapper.add(&frame);
+        (wrapper, view)
+    };
+
+    let page = adw::PreferencesPage::new();
+    page.add(&identity);
+    page.add(&shared_group);
+    page.add(&setup_group);
+    page.add(&review_group);
+
+    let dialog = adw::PreferencesDialog::new();
+    dialog.add(&page);
+
+    let save = gtk::Button::with_label("Save");
+    save.add_css_class("suggested-action");
+    save.connect_clicked({
+        let app = app.clone();
+        let dialog = dialog.clone();
+        let id = project.id.clone();
+        move |_| {
+            let patch = convoy_core::workspace::ProjectPatch {
+                title: Some(title.text().to_string()),
+                group: Some(group_row.text().to_string()),
+                icon: Some(icon.text().to_string()),
+                setup_command: Some(setup.text().to_string()),
+                shared_paths: Some(buffer_text(&shared)),
+                review_template: Some(buffer_text(&review)),
+                ..Default::default()
+            };
+            let outcome = {
+                let mut workspace = app.workspace.borrow_mut();
+                workspace.edit_project(&id, patch).map(|_| ())
+            };
+            match outcome {
+                Ok(()) => {
+                    app.sync();
+                    dialog.close();
+                }
+                Err(error) => app.error(error),
+            }
+        }
+    });
+    identity.set_header_suffix(Some(&save));
+    dialog.present(Some(&app.window));
+}
+
+/// Removing a project forgets its sessions. The folder, its worktrees and the
+/// provider's own conversations are all left alone.
+pub fn remove_project(app: &Rc<App>, project_id: &str) {
+    let running = app.workspace.borrow().state().sessions.iter().any(|session| {
+        session.project_id == project_id
+            && app
+                .views
+                .borrow()
+                .get(&session.id)
+                .is_some_and(|view| view.running())
+    });
+    if running {
+        app.error("Stop project sessions first.");
+        return;
+    }
+
+    let dialog = adw::AlertDialog::builder()
+        .heading("Remove project and its saved sessions?")
+        .body("Files, worktrees and provider conversations remain on disk.")
+        .build();
+    dialog.add_response("cancel", "Cancel");
+    dialog.add_response("remove", "Remove");
+    dialog.set_response_appearance("remove", adw::ResponseAppearance::Destructive);
+    dialog.set_close_response("cancel");
+    dialog.connect_response(None, {
+        let app = app.clone();
+        let project_id = project_id.to_string();
+        move |_, response| {
+            if response != "remove" {
+                return;
+            }
+            let outcome = {
+                let mut workspace = app.workspace.borrow_mut();
+                workspace.remove_project(&project_id).map(|_| ())
+            };
+            match outcome {
+                Ok(()) => {
+                    if app.selection.borrow().project.as_deref() == Some(project_id.as_str()) {
+                        app.selection.borrow_mut().project = None;
+                        app.selection.borrow_mut().session = None;
+                    }
+                    crate::window::rebuild_tabs(&app);
+                    app.sync();
+                }
+                Err(error) => app.error(error),
+            }
+        }
+    });
+    dialog.present(Some(&app.window));
+}
+
+/// Points a project at a folder that moved. Sessions keep their identities.
+pub fn reconnect_project(app: &Rc<App>, project_id: &str) {
+    let running = app.workspace.borrow().state().sessions.iter().any(|session| {
+        session.project_id == project_id
+            && app
+                .views
+                .borrow()
+                .get(&session.id)
+                .is_some_and(|view| view.running())
+    });
+    if running {
+        app.error("Stop project sessions before reconnecting.");
+        return;
+    }
+
+    let chooser = gtk::FileDialog::builder()
+        .title("Reconnect project folder")
+        .build();
+    chooser.select_folder(Some(&app.window), gtk::gio::Cancellable::NONE, {
+        let app = app.clone();
+        let project_id = project_id.to_string();
+        move |result| {
+            let Ok(file) = result else { return };
+            let Some(path) = file.path().and_then(|path| std::fs::canonicalize(path).ok())
+            else {
+                return;
+            };
+            let outcome = {
+                let mut workspace = app.workspace.borrow_mut();
+                workspace
+                    .edit_project(
+                        &project_id,
+                        convoy_core::workspace::ProjectPatch {
+                            path: Some(path.to_string_lossy().into_owned()),
+                            ..Default::default()
+                        },
+                    )
+                    .map(|_| ())
+            };
+            match outcome {
+                Ok(()) => app.sync(),
+                Err(error) => app.error(error),
+            }
+        }
+    });
 }

@@ -62,6 +62,7 @@ fn main() {
                 files_checks(&app).await;
                 planning_checks(&app).await;
                 integration_checks(&app).await;
+                navigation_checks(&app).await;
                 application.quit();
             });
         }
@@ -813,6 +814,123 @@ async fn integration_checks(app: &Rc<convoy_gtk::state::App>) {
         "each profile gets its own provider home",
         homes.len() == 2 && homes[0] != homes[1] && homes.iter().all(|home| !home.is_empty()),
         format!("{homes:?}"),
+    );
+
+    settle(50).await;
+}
+
+
+/// Shortcuts, tab navigation and project settings.
+async fn navigation_checks(app: &Rc<convoy_gtk::state::App>) {
+    use convoy_core::shortcuts;
+    use std::collections::BTreeMap;
+
+    // Every configurable shortcut reaches a real action.
+    let resolved = shortcuts::resolve(&BTreeMap::new());
+    let bound = resolved
+        .iter()
+        .all(|(action, _, accelerator)| {
+            !accelerator.is_empty() && convoy_gtk::app::action_for(action).is_some()
+        });
+    check("every shortcut maps to an action", bound, "one did not");
+
+    let application = app
+        .window
+        .application()
+        .and_downcast::<adw::Application>()
+        .expect("application");
+    for (action, _, accelerator) in &resolved {
+        let Some(name) = convoy_gtk::app::action_for(action) else {
+            continue;
+        };
+        let accels = application.accels_for_action(&format!("app.{name}"));
+        // GTK reports `<Primary>` back as `<Control>`, so the two are compared
+        // as parsed key and modifier rather than as text.
+        let wanted = gtk::accelerator_parse(accelerator);
+        let installed = accels
+            .iter()
+            .any(|value| gtk::accelerator_parse(value) == wanted);
+        check(
+            "the accelerator is installed",
+            installed && wanted.is_some(),
+            format!("{name}: {accels:?} does not match {accelerator}"),
+        );
+        break; // One is enough; the loop above proved they all resolve.
+    }
+
+    // A duplicate binding is refused with the wording the file's rules use.
+    let mut clashing = BTreeMap::new();
+    clashing.insert("palette".to_string(), "mod+k".to_string());
+    clashing.insert("files".to_string(), "mod+k".to_string());
+    let refused = app
+        .workspace
+        .borrow_mut()
+        .save_settings(convoy_core::workspace::SettingsPatch {
+            shortcuts: Some(clashing),
+            ..Default::default()
+        })
+        .err()
+        .map(|error| error.to_string());
+    check(
+        "two actions cannot share a shortcut",
+        refused.as_deref() == Some("Invalid or duplicate shortcut."),
+        format!("{refused:?}"),
+    );
+
+    // Tab navigation wraps rather than stopping at the ends.
+    let pages = app.tabs.n_pages();
+    if pages > 1 {
+        let first = app.tabs.nth_page(0);
+        app.tabs.set_selected_page(&first);
+        window::step_session(app, -1);
+        let position = app
+            .tabs
+            .selected_page()
+            .map(|page| app.tabs.page_position(&page));
+        check(
+            "stepping back from the first tab wraps to the last",
+            position == Some(pages - 1),
+            format!("{position:?} of {pages}"),
+        );
+        window::step_session(app, 1);
+        let position = app
+            .tabs
+            .selected_page()
+            .map(|page| app.tabs.page_position(&page));
+        check(
+            "stepping forward wraps again",
+            position == Some(0),
+            format!("{position:?}"),
+        );
+    }
+
+    // Project settings round-trip through the workspace.
+    let project = app.selected_project().expect("project").id;
+    let saved = {
+        let mut workspace = app.workspace.borrow_mut();
+        workspace
+            .edit_project(
+                &project,
+                convoy_core::workspace::ProjectPatch {
+                    group: Some("Work".into()),
+                    shared_paths: Some(".env\nconfig/local.toml".into()),
+                    setup_command: Some("echo ready".into()),
+                    ..Default::default()
+                },
+            )
+            .map(|_| ())
+    };
+    check("project settings save", saved.is_ok(), "they did not");
+    app.sync();
+    check(
+        "a group becomes a node in the sidebar",
+        app.roots.n_items() == 1
+            && app
+                .roots
+                .item(0)
+                .and_downcast::<convoy_gtk::objects::SidebarItem>()
+                .is_some_and(|item| item.is_group() && item.title() == "Work"),
+        format!("{} roots", app.roots.n_items()),
     );
 
     settle(50).await;

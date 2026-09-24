@@ -93,6 +93,7 @@ pub struct App {
     /// a running agent would be worse than making the user wait.
     pub busy: RefCell<std::collections::HashSet<String>>,
     pub git_status: gtk::Label,
+    pub search_entry: gtk::SearchEntry,
     /// The session shown in the second pane, when the view is split.
     pub split: RefCell<Option<String>>,
     pub panes: gtk::Paned,

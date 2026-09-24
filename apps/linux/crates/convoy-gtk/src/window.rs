@@ -6,6 +6,7 @@
 //! prefix the Electron sidebar used.
 
 use adw::prelude::*;
+use gtk::gdk;
 use convoy_core::{Storage, Workspace};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -76,6 +77,7 @@ pub fn build(application: &adw::Application, storage: Storage) -> Option<Rc<App>
         .factory(&sidebar_factory())
         .build();
     list.add_css_class("navigation-sidebar");
+    attach_context_menu(&list, &selection);
 
     let menu = gtk::gio::Menu::new();
     menu.append(Some("Open folder…"), Some("app.open-folder"));
@@ -222,12 +224,14 @@ pub fn build(application: &adw::Application, storage: Storage) -> Option<Rc<App>
         wake_lock: Cell::new(0),
         busy: RefCell::new(std::collections::HashSet::new()),
         git_status,
+        search_entry: search.clone(),
         split: RefCell::new(None),
         panes,
         quick_menu,
     });
     window.insert_action_group("session", Some(&app.actions));
     crate::actions::register(&app);
+    crate::app::register_actions(application, &app);
 
     wire(&app, &selection, &search, &start, &stop, &new_session);
     crate::monitor::start(&app);
@@ -258,6 +262,97 @@ fn select_first_project(app: &Rc<App>, selection: &gtk::SingleSelection) {
         app.sync();
         return;
     }
+}
+
+/// Right-clicking a project offers what the Electron sidebar had no room for.
+fn attach_context_menu(list: &gtk::ListView, selection: &gtk::SingleSelection) {
+    let popover = gtk::PopoverMenu::from_model(None::<&gtk::gio::Menu>);
+    popover.set_parent(list);
+    popover.set_has_arrow(false);
+    popover.set_halign(gtk::Align::Start);
+
+    let gesture = gtk::GestureClick::builder()
+        .button(gdk::BUTTON_SECONDARY)
+        .build();
+    gesture.connect_pressed({
+        let list = list.clone();
+        let selection = selection.clone();
+        let popover = popover.clone();
+        move |gesture, _, x, y| {
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+            let Some(item) = row_at(&list, &selection, y) else {
+                return;
+            };
+            if item.is_group() {
+                return;
+            }
+            popover.set_menu_model(Some(&project_menu(&item.id())));
+            popover.set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+            popover.popup();
+        }
+    });
+    list.add_controller(gesture);
+}
+
+/// Which row is under the pointer. `ListView` does not expose a hit test, so
+/// the row is found by walking the children it has realised.
+fn row_at(
+    list: &gtk::ListView,
+    selection: &gtk::SingleSelection,
+    y: f64,
+) -> Option<SidebarItem> {
+    let mut child = list.first_child();
+    let mut index = 0u32;
+    while let Some(widget) = child {
+        // `compute_bounds` against the list is the supported replacement for
+        // the deprecated `allocation`.
+        let bounds = widget.compute_bounds(list);
+        let (top, height) = bounds
+            .map(|bounds| (bounds.y() as f64, bounds.height() as f64))
+            .unwrap_or((0.0, 0.0));
+        if height > 0.0 && y >= top && y < top + height {
+            selection.set_selected(index);
+            return selection
+                .item(index)
+                .and_downcast::<gtk::TreeListRow>()
+                .and_then(|row| row.item())
+                .and_downcast::<SidebarItem>();
+        }
+        child = widget.next_sibling();
+        index += 1;
+    }
+    None
+}
+
+fn project_menu(project_id: &str) -> gtk::gio::Menu {
+    let menu = gtk::gio::Menu::new();
+    let target = project_id.to_variant();
+    for (label, action) in [
+        ("New session…", "app.project-new-session"),
+        ("Project settings…", "app.project-settings"),
+    ] {
+        let item = gtk::gio::MenuItem::new(Some(label), None);
+        item.set_action_and_target_value(Some(action), Some(&target));
+        menu.append_item(&item);
+    }
+    let folder = gtk::gio::Menu::new();
+    for (label, action) in [
+        ("Show in Files", "app.project-show-files"),
+        ("Copy path", "app.project-copy-path"),
+        ("Reconnect folder…", "app.project-reconnect"),
+    ] {
+        let item = gtk::gio::MenuItem::new(Some(label), None);
+        item.set_action_and_target_value(Some(action), Some(&target));
+        folder.append_item(&item);
+    }
+    menu.append_section(None, &folder);
+
+    let danger = gtk::gio::Menu::new();
+    let item = gtk::gio::MenuItem::new(Some("Remove project…"), None);
+    item.set_action_and_target_value(Some("app.project-remove"), Some(&target));
+    danger.append_item(&item);
+    menu.append_section(None, &danger);
+    menu
 }
 
 /// Groups become real tree nodes: a group's children are its projects.
@@ -708,4 +803,25 @@ pub fn close_split(app: &Rc<App>) {
     *app.split.borrow_mut() = None;
     rebuild_tabs(app);
     app.refresh_selection();
+}
+
+
+/// Moves to the next or previous session tab, wrapping round.
+pub fn step_session(app: &Rc<App>, delta: i32) {
+    let pages = app.tabs.n_pages();
+    if pages == 0 {
+        return;
+    }
+    let current = app
+        .tabs
+        .selected_page()
+        .map(|page| app.tabs.page_position(&page))
+        .unwrap_or(0);
+    let next = (current + delta).rem_euclid(pages);
+    let page = app.tabs.nth_page(next);
+    app.tabs.set_selected_page(&page);
+}
+
+pub fn focus_search(app: &Rc<App>) {
+    app.search_entry.grab_focus();
 }

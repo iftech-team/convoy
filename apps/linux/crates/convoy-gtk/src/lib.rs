@@ -11,6 +11,7 @@ pub mod monitor;
 pub mod notify;
 pub mod objects;
 pub mod power;
+pub mod palette;
 pub mod paths;
 pub mod planning_ui;
 pub mod preview;

@@ -23,6 +23,7 @@ pub mod queue;
 pub mod repository;
 pub mod review;
 pub mod session;
+pub mod shortcuts;
 pub mod storage;
 pub mod telemetry;
 pub mod time;
