@@ -9,23 +9,42 @@
 //! **Do not run both builds against the same file at once** — each writes the
 //! whole document, so the last writer wins.
 
+use crate::Platform;
 use std::path::{Path, PathBuf};
 
 pub const STORAGE_NAME: &str = "Convoy Desktop Preview";
 
-/// `$XDG_CONFIG_HOME` when it is set to an absolute path, otherwise
-/// `~/.config`. This is what both `g_get_user_config_dir()` and Electron's
-/// `app.getPath('appData')` resolve to on Linux.
+/// Where per-user application data lives, by platform.
+///
+/// `$XDG_CONFIG_HOME` or `~/.config` on Unix; `%APPDATA%` on Windows. These
+/// are exactly what Electron's `app.getPath('appData')` resolves to, which is
+/// what lets the three builds share one file.
 pub fn config_root() -> PathBuf {
+    config_root_for(Platform::current())
+}
+
+pub fn config_root_for(platform: Platform) -> PathBuf {
+    if platform.is_windows() {
+        return std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .unwrap_or_else(|| home(platform).join("AppData").join("Roaming"));
+    }
     std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())
-        .unwrap_or_else(|| home().join(".config"))
+        .unwrap_or_else(|| home(platform).join(".config"))
 }
 
-fn home() -> PathBuf {
-    std::env::var_os("HOME")
+pub fn home(platform: Platform) -> PathBuf {
+    let name = if platform.is_windows() {
+        "USERPROFILE"
+    } else {
+        "HOME"
+    };
+    std::env::var_os(name)
         .map(PathBuf::from)
+        .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or_else(|| PathBuf::from("/"))
 }
 
@@ -91,7 +110,7 @@ mod tests {
 
     #[test]
     fn config_root_follows_the_xdg_variable_only_when_absolute() {
-        let root = config_root();
+        let root = config_root_for(Platform::Unix);
         assert!(root.is_absolute(), "{root:?}");
         match std::env::var_os("XDG_CONFIG_HOME") {
             Some(value) if Path::new(&value).is_absolute() => {

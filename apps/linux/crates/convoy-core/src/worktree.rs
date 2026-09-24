@@ -68,7 +68,10 @@ pub fn setup(
     }
 
     if let Some(command) = command.filter(|value| !value.trim().is_empty()) {
-        let spec = ProcessSpec::new("/bin/bash", vec!["-lc".into(), command.to_string()])
+        // The command is the project's own configuration but it runs with the
+        // user's permissions, so it is shown and confirmed before reaching
+        // here. Each platform gets the shell it actually has.
+        let spec = ProcessSpec::new(shell_program(), shell_arguments(command))
             .cwd(&target)
             .timeout(Duration::from_secs(120));
         let output = runner.run(&spec).map_err(|error| {
@@ -92,6 +95,27 @@ pub fn setup(
     Ok(())
 }
 
+fn shell_program() -> String {
+    if crate::Platform::current().is_windows() {
+        crate::telemetry::powershell()
+    } else {
+        "/bin/bash".to_string()
+    }
+}
+
+fn shell_arguments(command: &str) -> Vec<String> {
+    if crate::Platform::current().is_windows() {
+        vec![
+            "-NoLogo".into(),
+            "-NoProfile".into(),
+            "-Command".into(),
+            command.to_string(),
+        ]
+    } else {
+        vec!["-lc".into(), command.to_string()]
+    }
+}
+
 /// Recursive copy that preserves symlinks as symlinks and refuses to replace
 /// anything that already exists — `fs.cp` with `dereference: false`,
 /// `force: false` and `errorOnExist: true`.
@@ -101,8 +125,7 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
     }
     let metadata = fs::symlink_metadata(source)?;
     if metadata.file_type().is_symlink() {
-        let link = fs::read_link(source)?;
-        std::os::unix::fs::symlink(link, destination)?;
+        crate::fs::copy_link(source, destination)?;
     } else if metadata.is_dir() {
         fs::create_dir(destination)?;
         let mut entries: Vec<PathBuf> = fs::read_dir(source)?

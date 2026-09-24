@@ -19,7 +19,6 @@ use model::{
 };
 use serde_json::Value;
 use std::fs;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use validate::{validate, validate_settings, DAMAGED};
@@ -159,12 +158,7 @@ impl Workspace {
         let temporary = PathBuf::from(temporary);
         let outcome = (|| -> Result<()> {
             let body = serde_json::to_string_pretty(&value)?;
-            let mut handle = fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .mode(0o600)
-                .open(&temporary)?;
+            let mut handle = crate::fs::create_private(&temporary)?;
             std::io::Write::write_all(&mut handle, body.as_bytes())?;
             handle.sync_all()?;
             drop(handle);

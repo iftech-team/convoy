@@ -6,6 +6,7 @@ pub mod launch;
 pub mod transcripts;
 
 use crate::workspace::model::{Agent, Session};
+use crate::{Platform, Result};
 use launch::{agent_args, quote, LaunchSpec};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -14,9 +15,40 @@ use std::collections::BTreeMap;
 /// re-reads the user's profile and may otherwise discard them.
 const FORWARDED: [&str; 2] = ["CLAUDE_CONFIG_DIR", "CODEX_HOME"];
 
-/// `providerSpec()` — run `<agent> <args…>` through a login shell with the
-/// account bindings restored.
+/// `providerSpec()` — how the agent is actually invoked.
+///
+/// On Unix that is a login shell, so the agent sees the PATH and provider
+/// configuration the user gets in a terminal, with the account bindings
+/// restored because `-ilc` re-reads the profile. On Windows there is no such
+/// shell: the executable is resolved directly and the argument vector is
+/// passed literally, which is what keeps a prompt containing quotes, `&` or a
+/// newline intact through `.cmd` shims that would otherwise mangle it.
 pub fn provider_spec(agent: Agent, args: &[String], env: &BTreeMap<String, String>) -> LaunchSpec {
+    provider_spec_for(agent, args, env, Platform::current())
+        .unwrap_or_else(|_| unix_spec(agent, args, env))
+}
+
+/// As [`provider_spec`], for a stated platform, reporting a Windows agent that
+/// cannot be found rather than hiding it.
+pub fn provider_spec_for(
+    agent: Agent,
+    args: &[String],
+    env: &BTreeMap<String, String>,
+    platform: Platform,
+) -> Result<LaunchSpec> {
+    if platform.is_windows() {
+        let resolved = launch::windows_executable(agent, env)?;
+        let mut argv = resolved.prefix;
+        argv.extend(args.iter().cloned());
+        return Ok(LaunchSpec {
+            file: resolved.file,
+            args: argv,
+        });
+    }
+    Ok(unix_spec(agent, args, env))
+}
+
+fn unix_spec(agent: Agent, args: &[String], env: &BTreeMap<String, String>) -> LaunchSpec {
     let bindings: Vec<String> = FORWARDED
         .iter()
         .filter_map(|key| env.get(*key).map(|value| quote(&format!("{key}={value}"))))
@@ -42,6 +74,12 @@ pub fn session_spec(
     settings_file: Option<&str>,
     env: &BTreeMap<String, String>,
 ) -> LaunchSpec {
+    session_spec_for(session, settings_file, env, Platform::current())
+        .unwrap_or_else(|_| unix_spec(session.agent, &session_args(session, settings_file), env))
+}
+
+/// The arguments a session launches with, minus the agent name.
+fn session_args(session: &Session, settings_file: Option<&str>) -> Vec<String> {
     let mut args: Vec<String> = agent_args(session, session.started)
         .into_iter()
         .skip(1)
@@ -60,7 +98,19 @@ pub fn session_spec(
         .position(|arg| arg == "--")
         .unwrap_or(args.len());
     args.splice(separator..separator, flags);
-    provider_spec(session.agent, &args, env)
+    args
+}
+
+/// As [`session_spec`], for a stated platform. Returns the reason when a
+/// Windows agent cannot be found, so the user is told what to install.
+pub fn session_spec_for(
+    session: &Session,
+    settings_file: Option<&str>,
+    env: &BTreeMap<String, String>,
+    platform: Platform,
+) -> Result<LaunchSpec> {
+    let args = session_args(session, settings_file);
+    provider_spec_for(session.agent, &args, env, platform)
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -81,13 +81,20 @@ pub fn account_environment(
     Ok(Account { home, env })
 }
 
+/// Where `~/.claude` and `~/.codex` sit when no profile is bound. The
+/// variable differs by platform, and the caller's environment wins over this
+/// process's so a test can state it.
 fn default_home_root(source: &BTreeMap<String, String>) -> PathBuf {
+    let name = if crate::Platform::current().is_windows() {
+        "USERPROFILE"
+    } else {
+        "HOME"
+    };
     source
-        .get("HOME")
+        .get(name)
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
-        .unwrap_or_else(|| PathBuf::from("/"))
+        .unwrap_or_else(|| crate::storage::home(crate::Platform::current()))
 }
 
 /// `path.resolve()` — relative values are taken against the working directory.

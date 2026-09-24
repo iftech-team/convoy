@@ -120,3 +120,101 @@ pub fn agent_environment(source: &BTreeMap<String, String>) -> BTreeMap<String, 
 pub fn current_environment() -> BTreeMap<String, String> {
     std::env::vars().collect()
 }
+
+// ---------------------------------------------------------------------------
+// Windows.
+// ---------------------------------------------------------------------------
+
+/// A resolved Windows executable: the program, and anything that must precede
+/// the agent's own arguments.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resolved {
+    pub file: String,
+    pub prefix: Vec<String>,
+}
+
+/// The npm package each agent publishes, used when no native executable is on
+/// PATH.
+fn npm_entry(agent: Agent) -> &'static str {
+    match agent {
+        Agent::Claude => "@anthropic-ai/claude-code/cli.js",
+        Agent::Codex => "@openai/codex/bin/codex.js",
+    }
+}
+
+/// `windowsExecutable()` — finds the agent without going through a shell.
+///
+/// Windows has no login shell to ask, and `.cmd` shims mangle an argument
+/// vector: a prompt containing quotes, `&` or a newline does not survive one.
+/// So the native `.exe` is preferred, and failing that the npm package's entry
+/// script is run by `node` directly. Either way the arguments are passed
+/// literally.
+pub fn windows_executable(
+    agent: Agent,
+    env: &std::collections::BTreeMap<String, String>,
+) -> crate::Result<Resolved> {
+    // Windows environment names are case-insensitive, and `Path` is the usual
+    // spelling rather than `PATH`.
+    let path = env
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case("path"))
+        .map(|(_, value)| value.clone())
+        .unwrap_or_default();
+
+    let mut node: Option<String> = None;
+    for directory in path.split(';').filter(|part| !part.is_empty()) {
+        let directory = std::path::Path::new(directory);
+
+        let executable = directory.join(format!("{}.exe", agent.as_str()));
+        if executable.is_file() {
+            return Ok(Resolved {
+                file: executable.to_string_lossy().into_owned(),
+                prefix: Vec::new(),
+            });
+        }
+
+        // The package may sit under this directory's `node_modules`, or under
+        // its parent's — npm puts shims in `<prefix>` and packages one level up.
+        for root in [directory.join("node_modules"), parent_of(directory)] {
+            let script = root.join(npm_entry(agent));
+            if script.is_file() {
+                if node.is_none() {
+                    node = find_node(&path);
+                }
+                if let Some(node) = &node {
+                    return Ok(Resolved {
+                        file: node.clone(),
+                        prefix: vec![script.to_string_lossy().into_owned()],
+                    });
+                }
+            }
+        }
+    }
+
+    crate::bail!(
+        "{} was not found. Install the native CLI or its standard npm package and restart Convoy.",
+        agent.as_str()
+    )
+}
+
+fn parent_of(directory: &std::path::Path) -> std::path::PathBuf {
+    directory
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| directory.to_path_buf())
+}
+
+/// The npm fallback needs a Node to run the entry script with. Electron used
+/// its own binary in node mode; this build has no bundled Node, so the one on
+/// PATH is used.
+fn find_node(path: &str) -> Option<String> {
+    for directory in path.split(';').filter(|part| !part.is_empty()) {
+        for name in ["node.exe", "node"] {
+            let candidate = std::path::Path::new(directory).join(name);
+            if candidate.is_file() {
+                return Some(candidate.to_string_lossy().into_owned());
+            }
+        }
+    }
+    None
+}

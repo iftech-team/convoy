@@ -11,7 +11,6 @@ use crate::workspace::model::Session;
 use crate::{ensure, Result};
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 /// Excerpts are capped at 48,000 characters, matching the Electron build.
@@ -75,12 +74,7 @@ impl History {
         let file = self.file(id);
         let temporary = file.with_extension("txt.tmp");
         let body = plain(text);
-        let mut handle = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&temporary)?;
+        let mut handle = crate::fs::create_private(&temporary)?;
         handle.write_all(tail(&body, LIMIT).as_bytes())?;
         drop(handle);
         fs::rename(&temporary, &file)?;
