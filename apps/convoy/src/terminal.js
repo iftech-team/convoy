@@ -135,9 +135,12 @@ export async function wire() {
   await listen("terminal:exit", async ({ payload }) => {
     const entry = terminals.get(payload.id);
     if (entry) {
-      const how = payload.stopped
-        ? "stopped"
-        : `exited with code ${payload.code}`;
+      const how =
+        payload.cause === "hibernated"
+          ? "hibernated"
+          : payload.cause === "stopped"
+            ? "stopped"
+            : `exited with code ${payload.code}`;
       entry.terminal.write(`\r\n\x1b[2m── session ${how} ──\x1b[0m\r\n`);
     }
     state.agentState.delete(payload.id);

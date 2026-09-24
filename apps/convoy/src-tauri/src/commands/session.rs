@@ -175,7 +175,8 @@ pub fn session_start(
     let plan = workspace.act(|workspace| plan_launch(workspace, &storage, &id, &executable))?;
 
     let env: Vec<(String, String)> = plan.env.clone().into_iter().collect();
-    terminals.start(
+    crate::pty::start(
+        &terminals,
         &app,
         Launch {
             id: &id,

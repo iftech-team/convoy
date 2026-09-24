@@ -1290,9 +1290,10 @@ terminal.onExit(async (exit) => {
   const queued = state.queues.has(projectId);
 
   // A failure or a stop pauses the queue, and nothing resumes it but the user
-  // asking again — including a restart.
+  // asking again — including a restart. Hibernation is neither: the agent was
+  // idle, and the queue carries on when its own task next finishes.
   if (!exit.clean) {
-    if (queued) {
+    if (queued && exit.cause !== "hibernated") {
       state.queues.delete(projectId);
       toast("The queue is paused: the last task did not finish cleanly.", "bad");
       render();

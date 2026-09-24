@@ -55,13 +55,13 @@ jobs:
 
       - name: Lints
         working-directory: apps/convoy/src-tauri
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       # The terminal path without a window: a command runs, its output comes
       # back, input reaches it, and stopping takes the whole process tree.
-      - name: Terminal tests
+      - name: Tests
         working-directory: apps/convoy/src-tauri
-        run: cargo test
+        run: cargo test --workspace
 
       - name: Front end builds
         run: npm run build
@@ -136,31 +136,19 @@ jobs:
 
       - name: Lints
         working-directory: apps/convoy/src-tauri
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       # ConPTY rather than a pty: a command runs, input reaches it, the exit
-      # code comes back, and stopping clears the session.
+      # code comes back, stopping says it was asked for, and hibernating is
+      # reported apart from it.
       #
-      # The test binary is built into target\debug\deps, and nothing puts
-      # WebView2Loader.dll beside it — the copy for this architecture is left
-      # under the webview2-com-sys build directory. Windows searches the
-      # executable's own folder first, finds some other loader along the way,
-      # and the harness dies with STATUS_ENTRYPOINT_NOT_FOUND before a single
-      # test runs. Putting the right one next to the binary settles it.
+      # `convoy-pty` alone, because a test binary that links the web view
+      # cannot be loaded here at all — it dies with STATUS_ENTRYPOINT_NOT_FOUND
+      # before a single test runs. That is the reason the terminal is its own
+      # package.
       - name: Terminal tests
         working-directory: apps/convoy/src-tauri
-        shell: pwsh
-        run: |
-          cargo build --tests
-          $loader = Get-ChildItem -Recurse -Filter WebView2Loader.dll target\debug\build |
-            Where-Object { $_.FullName -like '*\x64\*' } | Select-Object -First 1
-          if ($loader) { Copy-Item $loader.FullName target\debug\deps\ -Force }
-          $exe = Get-ChildItem target\debug\deps\convoy_tauri-*.exe |
-            Sort-Object LastWriteTime -Descending | Select-Object -First 1
-          $dumpbin = Get-ChildItem "C:\Program Files*\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-          if ($exe -and $dumpbin) { & $dumpbin.FullName /dependents $exe.FullName }
-          cargo test
+        run: cargo test -p convoy-pty
 
       # The shared rules, run natively: PATH resolution, %APPDATA%, the status
       # line quoting. These have Windows branches that are exercised from Linux

@@ -510,12 +510,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "convoy-pty"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "portable-pty",
+]
+
+[[package]]
 name = "convoy-tauri"
 version = "0.1.0"
 dependencies = [
  "convoy-core",
- "libc",
- "portable-pty",
+ "convoy-pty",
  "serde",
  "serde_json",
  "tauri",
