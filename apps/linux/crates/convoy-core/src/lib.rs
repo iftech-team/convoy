@@ -14,6 +14,7 @@ pub mod git;
 pub mod hash;
 pub mod history;
 pub mod json;
+pub mod monitor;
 pub mod patterns;
 pub mod planning;
 pub mod process;

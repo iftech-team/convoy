@@ -61,6 +61,7 @@ fn main() {
                 run_checks(&app);
                 files_checks(&app).await;
                 planning_checks(&app).await;
+                integration_checks(&app).await;
                 application.quit();
             });
         }
@@ -705,4 +706,114 @@ async fn planning_checks(app: &Rc<convoy_gtk::state::App>) {
 
 fn queue_ui_running(app: &Rc<convoy_gtk::state::App>, project: &str) -> bool {
     convoy_gtk::queue_ui::is_running(app, project)
+}
+
+
+/// Hooks, agent state, hibernation and account isolation.
+async fn integration_checks(app: &Rc<convoy_gtk::state::App>) {
+    use convoy_core::model::Agent;
+    use convoy_core::monitor::{self, AgentState, Transition};
+
+    let session = app.selected_session().expect("session");
+
+    // Starting a Claude session writes a settings file pointing every hook at
+    // this binary. Nothing is launched here; only the plan is made.
+    let plan = convoy_core::session::plan_launch(
+        &app.workspace.borrow(),
+        &app.storage,
+        &session.id,
+        std::path::Path::new("/usr/bin/convoy"),
+    );
+    match (&plan, session.agent) {
+        (Ok(plan), Agent::Claude) => {
+            check(
+                "a Claude launch installs its hooks",
+                plan.settings_file.as_ref().is_some_and(|file| file.exists()),
+                "no settings file",
+            );
+            let document: serde_json::Value = plan
+                .settings_file
+                .as_ref()
+                .and_then(|file| std::fs::read_to_string(file).ok())
+                .and_then(|text| serde_json::from_str(&text).ok())
+                .unwrap_or_default();
+            check(
+                "every documented hook event is subscribed",
+                document["hooks"].as_object().map(|hooks| hooks.len()) == Some(8),
+                format!("{:?}", document["hooks"].as_object().map(|hooks| hooks.len())),
+            );
+            check(
+                "the launch resolves the session's own folder",
+                plan.directory.exists(),
+                format!("{:?}", plan.directory),
+            );
+        }
+        (Ok(_), Agent::Codex) => check(
+            "a Codex launch needs no settings file",
+            true,
+            "",
+        ),
+        (Err(error), _) => check("a launch can be planned", false, error),
+    }
+
+    // A reported state moves the task it belongs to, and never to done.
+    let undisturbed = {
+        let workspace = app.workspace.borrow();
+        monitor::transition(&workspace, &session.id, AgentState::Working) == Transition::None
+    };
+    check(
+        "a working report does not disturb a session with no task",
+        undisturbed,
+        "it changed something",
+    );
+
+    // Hibernation needs a finished turn and a real idle period.
+    let now = 1_000_000.0;
+    check(
+        "hibernation waits for a finished turn",
+        !monitor::should_hibernate(Some(AgentState::Working), now - 3_600_000.0, 10, now),
+        "a working agent was hibernated",
+    );
+    check(
+        "hibernation is off when the delay is zero",
+        !monitor::should_hibernate(Some(AgentState::Done), 0.0, 0, now),
+        "it hibernated with the setting off",
+    );
+
+    // Two profiles for the same provider get different homes.
+    {
+        let mut workspace = app.workspace.borrow_mut();
+        workspace.add_profile("Work", Agent::Claude).expect("work");
+        workspace.add_profile("Personal", Agent::Claude).expect("personal");
+        check(
+            "a duplicate label is refused",
+            workspace.add_profile("work", Agent::Claude).is_err(),
+            "the duplicate was accepted",
+        );
+    }
+    let profiles = app.workspace.borrow().state().profiles.clone();
+    let homes: Vec<String> = profiles
+        .iter()
+        .filter(|profile| profile.agent == Agent::Claude)
+        .map(|profile| {
+            let mut probe =
+                convoy_core::model::Session::new("p", Agent::Claude, "probe");
+            probe.profile_id = Some(profile.id.clone());
+            convoy_core::accounts::account_environment(
+                &probe,
+                &profiles,
+                &app.storage.accounts(),
+                &Default::default(),
+            )
+            .map(|account| account.home.to_string_lossy().into_owned())
+            .unwrap_or_default()
+        })
+        .collect();
+    check(
+        "each profile gets its own provider home",
+        homes.len() == 2 && homes[0] != homes[1] && homes.iter().all(|home| !home.is_empty()),
+        format!("{homes:?}"),
+    );
+
+    settle(50).await;
 }

@@ -79,6 +79,8 @@ pub fn build(application: &adw::Application, storage: Storage) -> Option<Rc<App>
 
     let menu = gtk::gio::Menu::new();
     menu.append(Some("Open folder…"), Some("app.open-folder"));
+    menu.append(Some("Import provider history…"), Some("app.import-history"));
+    menu.append(Some("Activity…"), Some("app.activity"));
     menu.append(Some("Settings"), Some("app.settings"));
     menu.append(Some("About Convoy"), Some("app.about"));
     let menu_button = gtk::MenuButton::builder()
@@ -217,6 +219,7 @@ pub fn build(application: &adw::Application, storage: Storage) -> Option<Rc<App>
         search: RefCell::new(String::new()),
         actions: gtk::gio::SimpleActionGroup::new(),
         queues: RefCell::new(std::collections::HashSet::new()),
+        wake_lock: Cell::new(0),
         busy: RefCell::new(std::collections::HashSet::new()),
         git_status,
         split: RefCell::new(None),
@@ -227,6 +230,7 @@ pub fn build(application: &adw::Application, storage: Storage) -> Option<Rc<App>
     crate::actions::register(&app);
 
     wire(&app, &selection, &search, &start, &stop, &new_session);
+    crate::monitor::start(&app);
     app.sync();
     select_first_project(&app, &selection);
     window.present();

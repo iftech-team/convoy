@@ -36,6 +36,13 @@ pub struct SessionView {
     pub stopping: Cell<bool>,
     pub saved_at: Cell<Instant>,
     pub save_pending: Cell<bool>,
+    /// What the agent last reported, and when. Claude reports through its
+    /// hooks; a Codex session simply shows as running.
+    pub agent_state: Cell<Option<convoy_core::monitor::AgentState>>,
+    pub status_at: Cell<f64>,
+    /// Set when the session is being stopped after an idle period rather than
+    /// by the user, so the exit is not recorded as a failure.
+    pub hibernating: Cell<bool>,
 }
 
 impl SessionView {
@@ -89,6 +96,9 @@ pub struct App {
     /// The session shown in the second pane, when the view is split.
     pub split: RefCell<Option<String>>,
     pub panes: gtk::Paned,
+    /// Holds the system awake while sessions run, when the setting asks for
+    /// it. `None` means nothing is being inhibited.
+    pub wake_lock: Cell<u32>,
     /// Rebuilt whenever the quick commands change, so the menu always matches
     /// what is saved and what the selected project is allowed to see.
     pub quick_menu: gtk::gio::Menu,

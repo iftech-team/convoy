@@ -43,11 +43,13 @@ pub fn run() -> glib::ExitCode {
 type Entry = (&'static str, &'static [&'static str], fn(&Rc<App>));
 
 fn register_actions(application: &adw::Application, app: &Rc<App>) {
-    let entries: [Entry; 7] = [
+    let entries: [Entry; 9] = [
         ("open-folder", &["<Primary>o"], dialogs::open_folder),
         ("new-session", &["<Primary>n"], dialogs::new_session),
         ("files", &["<Primary>b"], crate::files_ui::open),
         ("specs", &["<Primary>t"], crate::planning_ui::open),
+        ("import-history", &[], dialogs::import_history),
+        ("activity", &[], dialogs::activity),
         ("settings", &["<Primary>comma"], dialogs::settings),
         ("about", &[], dialogs::about),
         ("stop-session", &[], stop_selected),
@@ -64,6 +66,21 @@ fn register_actions(application: &adw::Application, app: &Rc<App>) {
             application.set_accels_for_action(&format!("app.{name}"), accels);
         }
     }
+
+    // Activated by clicking a notification, with the session id as its target.
+    let focus = gtk::gio::SimpleAction::new(
+        crate::notify::FOCUS_ACTION,
+        Some(glib::VariantTy::STRING),
+    );
+    focus.connect_activate({
+        let app = app.clone();
+        move |_, target| {
+            if let Some(id) = target.and_then(|value| value.str()) {
+                crate::notify::focus(&app, id);
+            }
+        }
+    });
+    application.add_action(&focus);
 
     let quit = gtk::gio::SimpleAction::new("quit", None);
     quit.connect_activate({

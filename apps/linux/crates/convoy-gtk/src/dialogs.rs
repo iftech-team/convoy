@@ -193,16 +193,73 @@ pub fn settings(app: &Rc<App>) {
         Agent::Codex => 1,
     });
 
+    let notifications = adw::SwitchRow::builder()
+        .title("Notify when an agent finishes or needs input")
+        .subtitle("Only while the window is not focused.")
+        .active(settings.notifications)
+        .build();
+
+    let awake_modes = gtk::StringList::new(&["Never", "Always", "While sessions run"]);
+    let keep_awake = adw::ComboRow::builder()
+        .title("Keep the system awake")
+        .subtitle("Prevents idle suspension, not closing the lid.")
+        .model(&awake_modes)
+        .build();
+    keep_awake.set_selected(match settings.keep_awake {
+        convoy_core::model::KeepAwake::Off => 0,
+        convoy_core::model::KeepAwake::Always => 1,
+        convoy_core::model::KeepAwake::Sessions => 2,
+    });
+
+    let hibernate = adw::SpinRow::with_range(0.0, 1440.0, 5.0);
+    hibernate.set_title("Stop an idle Claude session after");
+    hibernate.set_subtitle("Minutes after it reports a finished turn. 0 disables it.");
+    hibernate.set_value(settings.hibernate_minutes as f64);
+
+    let claude_usage = adw::SwitchRow::builder()
+        .title("Claude usage status line")
+        .subtitle(
+            "Replaces that launch's custom status line and takes effect on the next launch.",
+        )
+        .active(settings.claude_usage)
+        .build();
+
     let appearance = adw::PreferencesGroup::builder().title("Appearance").build();
     appearance.add(&theme);
     appearance.add(&font);
     appearance.add(&scrollback);
     let behaviour = adw::PreferencesGroup::builder().title("Agents").build();
     behaviour.add(&default_agent);
+    behaviour.add(&claude_usage);
+    behaviour.add(&hibernate);
+    let session = adw::PreferencesGroup::builder().title("Session").build();
+    session.add(&notifications);
+    session.add(&keep_awake);
+
+    let accounts = adw::PreferencesGroup::builder()
+        .title("Accounts")
+        .description("Each profile gets its own provider home, so sign-ins stay separate.")
+        .build();
+    let manage_accounts = gtk::Button::with_label("Manage accounts…");
+    manage_accounts.set_valign(gtk::Align::Center);
+    manage_accounts.connect_clicked({
+        let app = app.clone();
+        move |_| accounts_dialog(&app)
+    });
+    let accounts_row = adw::ActionRow::builder()
+        .title(format!(
+            "{} saved",
+            app.workspace.borrow().state().profiles.len()
+        ))
+        .build();
+    accounts_row.add_suffix(&manage_accounts);
+    accounts.add(&accounts_row);
 
     let page = adw::PreferencesPage::new();
     page.add(&appearance);
     page.add(&behaviour);
+    page.add(&session);
+    page.add(&accounts);
 
     let dialog = adw::PreferencesDialog::new();
     dialog.add(&page);
@@ -214,6 +271,10 @@ pub fn settings(app: &Rc<App>) {
         let font = font.clone();
         let scrollback = scrollback.clone();
         let default_agent = default_agent.clone();
+        let notifications = notifications.clone();
+        let keep_awake = keep_awake.clone();
+        let hibernate = hibernate.clone();
+        let claude_usage = claude_usage.clone();
         move || {
             let patch = convoy_core::workspace::SettingsPatch {
                 theme: Some(match theme.selected() {
@@ -228,6 +289,14 @@ pub fn settings(app: &Rc<App>) {
                 } else {
                     Agent::Codex
                 }),
+                notifications: Some(notifications.is_active()),
+                keep_awake: Some(match keep_awake.selected() {
+                    1 => convoy_core::model::KeepAwake::Always,
+                    2 => convoy_core::model::KeepAwake::Sessions,
+                    _ => convoy_core::model::KeepAwake::Off,
+                }),
+                hibernate_minutes: Some(hibernate.value() as i64),
+                claude_usage: Some(claude_usage.is_active()),
                 ..Default::default()
             };
             let outcome = {
@@ -239,6 +308,7 @@ pub fn settings(app: &Rc<App>) {
                 return;
             }
             crate::theme::apply(&app);
+            crate::power::refresh(&app);
             for view in app.views.borrow().values() {
                 crate::terminal::apply_settings(&app, &view.terminal);
             }
@@ -258,6 +328,22 @@ pub fn settings(app: &Rc<App>) {
         move |_| save()
     });
     default_agent.connect_selected_notify({
+        let save = save.clone();
+        move |_| save()
+    });
+    notifications.connect_active_notify({
+        let save = save.clone();
+        move |_| save()
+    });
+    keep_awake.connect_selected_notify({
+        let save = save.clone();
+        move |_| save()
+    });
+    hibernate.connect_value_notify({
+        let save = save.clone();
+        move |_| save()
+    });
+    claude_usage.connect_active_notify({
         let save = save.clone();
         move |_| save()
     });
@@ -844,4 +930,401 @@ pub fn quick_commands(app: &Rc<App>) {
     });
 
     dialog.present(Some(&app.window));
+}
+
+/// Account profiles.
+///
+/// Each profile is a separate provider home, so two subscriptions never share
+/// a sign-in. Removing a profile removes only Convoy's record of it: the
+/// credential files stay where they are, and a profile still bound to saved
+/// sessions cannot be removed at all.
+pub fn accounts_dialog(app: &Rc<App>) {
+    let page = adw::PreferencesPage::new();
+
+    let saved = adw::PreferencesGroup::builder()
+        .title("Profiles")
+        .description("Sign in through the provider's own interface inside the terminal.")
+        .build();
+    let profiles = app.workspace.borrow().state().profiles.clone();
+    if profiles.is_empty() {
+        saved.add(
+            &adw::ActionRow::builder()
+                .title("No profiles yet")
+                .subtitle("Without one, a session uses the provider's default home.")
+                .build(),
+        );
+    }
+    for profile in &profiles {
+        let bound = app
+            .workspace
+            .borrow()
+            .state()
+            .sessions
+            .iter()
+            .filter(|session| session.profile_id.as_deref() == Some(profile.id.as_str()))
+            .count();
+        let row = adw::ActionRow::builder()
+            .title(&profile.label)
+            .subtitle(format!(
+                "{} · {}",
+                match profile.agent {
+                    Agent::Claude => "Claude Code",
+                    Agent::Codex => "Codex",
+                },
+                match bound {
+                    0 => "not in use".to_string(),
+                    1 => "1 session".to_string(),
+                    count => format!("{count} sessions"),
+                }
+            ))
+            .build();
+        let remove = gtk::Button::builder()
+            .icon_name("user-trash-symbolic")
+            .valign(gtk::Align::Center)
+            .tooltip_text(if bound == 0 {
+                "Remove this profile record"
+            } else {
+                "Bound to saved sessions"
+            })
+            .sensitive(bound == 0)
+            .build();
+        remove.add_css_class("flat");
+        remove.connect_clicked({
+            let app = app.clone();
+            let id = profile.id.clone();
+            let row = row.clone();
+            move |_| {
+                let id = id.clone();
+                let outcome = {
+                    let mut workspace = app.workspace.borrow_mut();
+                    workspace
+                        .update(move |state| {
+                            state.profiles.retain(|profile| profile.id != id);
+                            Ok(())
+                        })
+                        .map(|_| ())
+                };
+                match outcome {
+                    Ok(()) => {
+                        row.set_sensitive(false);
+                        app.sync();
+                    }
+                    Err(error) => app.error(error),
+                }
+            }
+        });
+        row.add_suffix(&remove);
+        saved.add(&row);
+    }
+
+    let label = adw::EntryRow::builder().title("Label").build();
+    let agents = gtk::StringList::new(&["Claude Code", "Codex"]);
+    let agent = adw::ComboRow::builder()
+        .title("Provider")
+        .model(&agents)
+        .build();
+    let add = gtk::Button::with_label("Add profile");
+    add.add_css_class("suggested-action");
+    let fresh = adw::PreferencesGroup::builder().title("New profile").build();
+    fresh.add(&label);
+    fresh.add(&agent);
+    fresh.add(&add);
+
+    page.add(&saved);
+    page.add(&fresh);
+
+    let dialog = adw::PreferencesDialog::new();
+    dialog.add(&page);
+    add.connect_clicked({
+        let app = app.clone();
+        let dialog = dialog.clone();
+        move |_| {
+            let chosen = if agent.selected() == 0 {
+                Agent::Claude
+            } else {
+                Agent::Codex
+            };
+            let outcome = {
+                let mut workspace = app.workspace.borrow_mut();
+                workspace.add_profile(&label.text(), chosen).map(|_| ())
+            };
+            match outcome {
+                Ok(()) => {
+                    app.sync();
+                    dialog.close();
+                }
+                Err(error) => app.error(error),
+            }
+        }
+    });
+    dialog.present(Some(&app.window));
+}
+
+/// Conversations the provider already has for this folder.
+///
+/// Importing one records it as a session with that exact identity; it is not
+/// launched, and nothing is copied out of the provider's own storage.
+pub fn import_history(app: &Rc<App>) {
+    let Some(project) = app.selected_project() else {
+        app.error("Select a project first.");
+        return;
+    };
+
+    let agents = gtk::StringList::new(&["Claude Code", "Codex"]);
+    let agent = adw::ComboRow::builder().title("Provider").model(&agents).build();
+    let profiles = app.workspace.borrow().state().profiles.clone();
+    let mut names: Vec<String> = vec!["Default home".to_string()];
+    names.extend(profiles.iter().map(|profile| profile.label.clone()));
+    let profile_model =
+        gtk::StringList::new(&names.iter().map(String::as_str).collect::<Vec<_>>());
+    let profile = adw::ComboRow::builder()
+        .title("Account")
+        .model(&profile_model)
+        .build();
+
+    let chooser = adw::PreferencesGroup::new();
+    chooser.add(&agent);
+    chooser.add(&profile);
+
+    let found = adw::PreferencesGroup::builder()
+        .title("Conversations")
+        .description("Press Scan to look for conversations in this folder.")
+        .build();
+
+    let page = adw::PreferencesPage::new();
+    page.add(&chooser);
+    page.add(&found);
+
+    let dialog = adw::PreferencesDialog::new();
+    dialog.add(&page);
+
+    let scan = gtk::Button::with_label("Scan");
+    scan.add_css_class("suggested-action");
+    scan.connect_clicked({
+        let app = app.clone();
+        let found = found.clone();
+        let agent = agent.clone();
+        let profile = profile.clone();
+        let profiles = profiles.clone();
+        let project = project.clone();
+        move |_| {
+            let chosen = if agent.selected() == 0 {
+                Agent::Claude
+            } else {
+                Agent::Codex
+            };
+            let bound = profile
+                .selected()
+                .checked_sub(1)
+                .and_then(|index| profiles.get(index as usize))
+                .filter(|profile| profile.agent == chosen)
+                .map(|profile| profile.id.clone());
+
+            let mut probe = Session::new(project.id.clone(), chosen, "scan");
+            probe.profile_id = bound.clone();
+            let account = {
+                let workspace = app.workspace.borrow();
+                convoy_core::accounts::account_environment(
+                    &probe,
+                    &workspace.state().profiles,
+                    &app.storage.accounts(),
+                    &convoy_core::provider::launch::current_environment(),
+                )
+            };
+            let account = match account {
+                Ok(account) => account,
+                Err(error) => return app.error(error),
+            };
+            let path = project.path.clone();
+            let home = account.home.clone();
+            background(
+                &app,
+                move || Ok(convoy_core::provider::transcripts::scan(chosen, &home, &path)),
+                {
+                    let app = app.clone();
+                    let found = found.clone();
+                    let project = project.clone();
+                    let home = account.home.clone();
+                    let bound = bound.clone();
+                    move |_, transcripts: Vec<convoy_core::provider::transcripts::Transcript>| {
+                        show_transcripts(
+                            &app, &found, &project.id, chosen, &home, bound.clone(), &transcripts,
+                        );
+                    }
+                },
+            );
+        }
+    });
+    chooser.set_header_suffix(Some(&scan));
+    dialog.present(Some(&app.window));
+}
+
+fn show_transcripts(
+    app: &Rc<App>,
+    group: &adw::PreferencesGroup,
+    project_id: &str,
+    agent: Agent,
+    home: &std::path::Path,
+    profile_id: Option<String>,
+    transcripts: &[convoy_core::provider::transcripts::Transcript],
+) {
+    // `PreferencesGroup` has no clear, so rows are removed one by one.
+    while let Some(child) = group.first_child().and_downcast::<gtk::Widget>() {
+        if child.downcast_ref::<adw::ActionRow>().is_none() {
+            break;
+        }
+        group.remove(&child);
+    }
+    if transcripts.is_empty() {
+        group.add(
+            &adw::ActionRow::builder()
+                .title("Nothing found for this folder")
+                .subtitle("Conversations are matched by the folder the CLI ran in.")
+                .build(),
+        );
+        return;
+    }
+    for transcript in transcripts {
+        let row = adw::ActionRow::builder()
+            .title(&transcript.title)
+            .subtitle(&transcript.provider_id)
+            .build();
+        let import = gtk::Button::with_label("Import");
+        import.set_valign(gtk::Align::Center);
+        import.connect_clicked({
+            let app = app.clone();
+            let project_id = project_id.to_string();
+            let provider_id = transcript.provider_id.clone();
+            let title = transcript.title.clone();
+            let home = home.to_path_buf();
+            let profile_id = profile_id.clone();
+            let row = row.clone();
+            move |_| {
+                let outcome = import_one(
+                    &app,
+                    &project_id,
+                    agent,
+                    &provider_id,
+                    &title,
+                    &home,
+                    profile_id.clone(),
+                );
+                match outcome {
+                    Ok(()) => {
+                        row.set_sensitive(false);
+                        crate::window::rebuild_tabs(&app);
+                        app.sync();
+                    }
+                    Err(error) => app.error(error),
+                }
+            }
+        });
+        row.add_suffix(&import);
+        group.add(&row);
+    }
+}
+
+fn import_one(
+    app: &Rc<App>,
+    project_id: &str,
+    agent: Agent,
+    provider_id: &str,
+    title: &str,
+    home: &std::path::Path,
+    profile_id: Option<String>,
+) -> convoy_core::Result<()> {
+    let already = app.workspace.borrow().state().sessions.iter().any(|session| {
+        session.provider_id == provider_id
+            && session.agent == agent
+            && session.agent_home.as_deref() == Some(home)
+    });
+    if already {
+        return Ok(());
+    }
+
+    let mut input = NewSession::new(
+        project_id,
+        agent,
+        if title.trim().is_empty() {
+            "Imported session"
+        } else {
+            title
+        },
+    );
+    input.profile_id = profile_id;
+
+    let mut workspace = app.workspace.borrow_mut();
+    workspace.add_session(input)?;
+    let id = workspace
+        .state()
+        .sessions
+        .last()
+        .map(|session| session.id.clone())
+        .unwrap_or_default();
+    let provider_id = provider_id.to_string();
+    let home = home.to_path_buf();
+    workspace
+        .update(move |state| {
+            if let Some(session) = state.sessions.iter_mut().find(|session| session.id == id) {
+                // The conversation already exists, so the session is recorded
+                // as started: resuming it opens that exact conversation.
+                session.provider_id = provider_id;
+                session.started = true;
+                session.agent_home = Some(home);
+            }
+            Ok(())
+        })
+        .map(|_| ())
+}
+
+/// What the agents have been doing. Bounded to the last 200 events and stored
+/// with the workspace, so it survives a restart.
+pub fn activity(app: &Rc<App>) {
+    let group = adw::PreferencesGroup::builder()
+        .title("Recent activity")
+        .description("Newest first. Kept to the last 200 events.")
+        .build();
+
+    let workspace = app.workspace.borrow();
+    if workspace.state().activity.is_empty() {
+        group.add(
+            &adw::ActionRow::builder()
+                .title("Nothing yet")
+                .subtitle("Start a session to see it here.")
+                .build(),
+        );
+    }
+    for event in workspace.state().activity.iter().take(200) {
+        let when = glib::DateTime::from_iso8601(&event.at, None)
+            .ok()
+            .and_then(|value| value.format("%d %b %H:%M").ok())
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| event.at.clone());
+        group.add(
+            &adw::ActionRow::builder()
+                .title(format!("{} · {}", event.title, kind_label(event.kind)))
+                .subtitle(format!("{when} · {}", event.detail))
+                .build(),
+        );
+    }
+    drop(workspace);
+
+    let page = adw::PreferencesPage::new();
+    page.add(&group);
+    let dialog = adw::PreferencesDialog::new();
+    dialog.add(&page);
+    dialog.present(Some(&app.window));
+}
+
+fn kind_label(kind: convoy_core::model::ActivityKind) -> &'static str {
+    use convoy_core::model::ActivityKind;
+    match kind {
+        ActivityKind::Started => "started",
+        ActivityKind::Resumed => "resumed",
+        ActivityKind::Exited => "exited",
+        ActivityKind::Done => "finished a turn",
+        ActivityKind::Waiting => "needs attention",
+        ActivityKind::Hibernated => "hibernated",
+        ActivityKind::Worktree => "worktree",
+    }
 }

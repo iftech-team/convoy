@@ -44,6 +44,9 @@ pub fn ensure_view(app: &Rc<App>, session: &Session) -> Rc<SessionView> {
         stopping: Cell::new(false),
         saved_at: Cell::new(Instant::now()),
         save_pending: Cell::new(false),
+        agent_state: Cell::new(None),
+        status_at: Cell::new(0.0),
+        hibernating: Cell::new(false),
     });
     app.views
         .borrow_mut()
@@ -192,6 +195,7 @@ pub fn start(app: &Rc<App>, id: &str) {
                     });
                 }
 
+                crate::power::refresh(&app);
                 let outcome = mark_started(&mut app.workspace.borrow_mut(), &plan);
                 if let Err(error) = outcome {
                     // The process is already running but the workspace does
@@ -218,6 +222,7 @@ pub fn stop(app: &Rc<App>, id: &str) {
     }
     view.stopping.set(true);
     kill_group(pid, libc::SIGHUP);
+    crate::power::refresh(app);
 
     glib::timeout_add_local_once(Duration::from_millis(1500), {
         let view = view.clone();
@@ -357,17 +362,23 @@ fn exited(app: &Rc<App>, id: &str, status: i32) {
     } else {
         1
     };
-    let cause = if view.stopping.get() {
+    let cause = if view.hibernating.get() {
+        ExitCause::Hibernated
+    } else if view.stopping.get() {
         ExitCause::Stopped
     } else {
         ExitCause::Exited(code)
     };
     view.stopping.set(false);
+    view.hibernating.set(false);
+    view.agent_state.set(None);
+    view.status_at.set(0.0);
 
     if let Err(error) = finish_session(&mut app.workspace.borrow_mut(), id, cause) {
         app.error(error);
     }
     app.sync();
+    crate::power::refresh(app);
     crate::queue_ui::after_exit(app, id, cause);
 }
 
