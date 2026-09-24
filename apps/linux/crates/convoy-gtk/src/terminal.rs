@@ -368,6 +368,7 @@ fn exited(app: &Rc<App>, id: &str, status: i32) {
         app.error(error);
     }
     app.sync();
+    crate::queue_ui::after_exit(app, id, cause);
 }
 
 /// Writes straight to the pty master. Kept as the escape hatch for input that

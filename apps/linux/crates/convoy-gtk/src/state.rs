@@ -79,6 +79,9 @@ pub struct App {
     /// Actions of the session menu, enabled and disabled by
     /// [`App::refresh_selection`].
     pub actions: gtk::gio::SimpleActionGroup,
+    /// Projects whose task queue is running. Held in memory only: a restart
+    /// never silently resumes a queue.
+    pub queues: RefCell<std::collections::HashSet<String>>,
     /// Sessions in the middle of a worktree operation. A worktree moving under
     /// a running agent would be worse than making the user wait.
     pub busy: RefCell<std::collections::HashSet<String>>,

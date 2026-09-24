@@ -119,6 +119,13 @@ pub fn build(application: &adw::Application, storage: Storage) -> Option<Rc<App>
     let content_header = adw::HeaderBar::builder().title_widget(&title).build();
     content_header.pack_end(&new_session);
     content_header.pack_end(&files_button);
+    content_header.pack_end(
+        &gtk::Button::builder()
+            .icon_name("view-list-bullet-symbolic")
+            .tooltip_text("Specs & tasks")
+            .action_name("app.specs")
+            .build(),
+    );
 
     let empty = adw::StatusPage::builder()
         .icon_name("utilities-terminal-symbolic")
@@ -209,6 +216,7 @@ pub fn build(application: &adw::Application, storage: Storage) -> Option<Rc<App>
         rebuilding: Cell::new(false),
         search: RefCell::new(String::new()),
         actions: gtk::gio::SimpleActionGroup::new(),
+        queues: RefCell::new(std::collections::HashSet::new()),
         busy: RefCell::new(std::collections::HashSet::new()),
         git_status,
         split: RefCell::new(None),

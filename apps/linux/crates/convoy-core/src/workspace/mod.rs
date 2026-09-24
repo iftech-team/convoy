@@ -69,7 +69,7 @@ pub struct SessionPatch {
     pub pinned: Option<bool>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewSession {
     pub project_id: String,
     pub agent: Agent,

@@ -60,6 +60,7 @@ fn main() {
             glib::spawn_future_local(async move {
                 run_checks(&app);
                 files_checks(&app).await;
+                planning_checks(&app).await;
                 application.quit();
             });
         }
@@ -562,4 +563,146 @@ async fn files_checks(app: &Rc<convoy_gtk::state::App>) {
     );
 
     view.dialog.close();
+}
+
+
+/// Specifications, tasks and the queue, driven through the same calls the
+/// dialog makes.
+async fn planning_checks(app: &Rc<convoy_gtk::state::App>) {
+    use convoy_core::model::{PublishMode, TaskStatus};
+    use convoy_core::planning::{SpecInput, TaskInput};
+    use convoy_core::queue::{self, Step};
+
+    let project = app.selected_project().expect("project").id;
+
+    // A specification starts as a draft, and a task cannot be prepared from it.
+    {
+        let mut workspace = app.workspace.borrow_mut();
+        workspace
+            .save_spec(SpecInput {
+                project_id: project.clone(),
+                title: "Sign-in".into(),
+                acceptance: "Reachable by keyboard".into(),
+                ..SpecInput::default()
+            })
+            .expect("spec");
+    }
+    let spec = app
+        .workspace
+        .borrow()
+        .state()
+        .specs
+        .last()
+        .expect("spec")
+        .clone();
+    check(
+        "a new specification is a draft at revision 1",
+        spec.revision == 1 && !spec.approved(),
+        format!("revision {} approved {}", spec.revision, spec.approved()),
+    );
+
+    {
+        let mut workspace = app.workspace.borrow_mut();
+        workspace
+            .save_task(TaskInput {
+                id: None,
+                project_id: project.clone(),
+                spec_id: Some(spec.id.clone()),
+                title: "Add focus ring".into(),
+                details: "Make the button focusable".into(),
+                findings: String::new(),
+                agent: convoy_core::model::Agent::Claude,
+                mode: PublishMode::None,
+                auto_review: false,
+            })
+            .expect("task");
+    }
+    let task = app.workspace.borrow().state().tasks.last().expect("task").clone();
+
+    let blocked = app.workspace.borrow_mut().prepare_task(&task.id, None).is_err();
+    check(
+        "an unapproved specification blocks preparation",
+        blocked,
+        "the task was prepared anyway",
+    );
+
+    app.workspace
+        .borrow_mut()
+        .approve_spec(&spec.id, 1)
+        .expect("approve");
+    let prepared = app.workspace.borrow_mut().prepare_task(&task.id, None).is_ok();
+    check("an approved specification allows it", prepared, "it was refused");
+
+    let session = app
+        .workspace
+        .borrow()
+        .state()
+        .tasks
+        .iter()
+        .find(|other| other.id == task.id)
+        .and_then(|other| other.session_id.clone());
+    check(
+        "the brief carries the specification",
+        session
+            .as_ref()
+            .and_then(|id| app.workspace.borrow().session(id).ok().map(|s| s.prompt.clone()))
+            .is_some_and(|prompt| prompt.contains("Reachable by keyboard")),
+        "the brief did not mention the acceptance criteria",
+    );
+
+    // A clean exit reaches review, and accepting it stays a separate step.
+    let session = session.expect("session");
+    convoy_core::session::finish_session(
+        &mut app.workspace.borrow_mut(),
+        &session,
+        convoy_core::session::ExitCause::Exited(0),
+    )
+    .expect("finish");
+    let status = app
+        .workspace
+        .borrow()
+        .state()
+        .tasks
+        .iter()
+        .find(|other| other.id == task.id)
+        .map(|other| other.status);
+    check(
+        "a clean exit reaches review, not done",
+        status == Some(TaskStatus::Review),
+        format!("{status:?}"),
+    );
+
+    // The queue is not running, so nothing starts on its own.
+    check(
+        "the queue is idle until it is started",
+        !queue_ui_running(app, &project),
+        "a queue was running",
+    );
+    let idle = |_: &str| false;
+    check(
+        "a task awaiting review is not queued again",
+        queue::next_step(&app.workspace.borrow(), &project, &idle) == Step::Empty,
+        "the queue offered something to run",
+    );
+
+    app.workspace
+        .borrow_mut()
+        .set_task_status(&task.id, TaskStatus::Done)
+        .expect("accept");
+    check(
+        "an approved specification allows the task to be accepted",
+        app.workspace
+            .borrow()
+            .state()
+            .tasks
+            .iter()
+            .any(|other| other.id == task.id && other.status == TaskStatus::Done),
+        "the task was not accepted",
+    );
+
+    settle(50).await;
+}
+
+fn queue_ui_running(app: &Rc<convoy_gtk::state::App>, project: &str) -> bool {
+    convoy_gtk::queue_ui::is_running(app, project)
 }

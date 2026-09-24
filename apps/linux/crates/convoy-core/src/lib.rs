@@ -18,6 +18,7 @@ pub mod patterns;
 pub mod planning;
 pub mod process;
 pub mod provider;
+pub mod queue;
 pub mod repository;
 pub mod review;
 pub mod session;
