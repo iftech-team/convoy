@@ -334,6 +334,25 @@ impl App {
             object.set_running(running);
             object.set_pinned(session.is_pinned());
             object.set_archived(session.is_archived());
+
+            // The tab is where a session is actually seen, so it carries the
+            // same three facts the sidebar row does.
+            if let Some(view) = views.get(&session.id) {
+                if let Some(page) = view.page.borrow().as_ref() {
+                    page.set_title(&tab_title(session, view.agent_state.get()));
+                    page.set_loading(
+                        running
+                            && view.agent_state.get()
+                                == Some(convoy_core::monitor::AgentState::Working),
+                    );
+                    page.set_indicator_icon(
+                        indicator(running, view.agent_state.get())
+                            .map(gtk::gio::ThemedIcon::new)
+                            .as_ref(),
+                    );
+                    page.set_indicator_tooltip(&indicator_tooltip(running, view.agent_state.get()));
+                }
+            }
             index += 1;
         }
         while self.sessions.n_items() > index {
@@ -454,6 +473,43 @@ impl App {
         enable("git-status", session.is_some());
         enable("split", has_others);
         enable("unsplit", self.split.borrow().is_some());
+    }
+}
+
+/// `★ name` for a pinned session; the agent's state follows when it has one.
+fn tab_title(session: &Session, state: Option<convoy_core::monitor::AgentState>) -> String {
+    let pin = if session.is_pinned() { "★ " } else { "" };
+    match state {
+        Some(state) if state.notable() => format!("{pin}{} · {}", session.title, state.as_str()),
+        _ => format!("{pin}{}", session.title),
+    }
+}
+
+/// An attention state earns an icon; merely running is shown by the spinner.
+fn indicator(
+    running: bool,
+    state: Option<convoy_core::monitor::AgentState>,
+) -> Option<&'static str> {
+    use convoy_core::monitor::AgentState;
+    if !running {
+        return None;
+    }
+    match state {
+        Some(AgentState::Waiting) => Some("dialog-question-symbolic"),
+        Some(AgentState::Done) => Some("object-select-symbolic"),
+        _ => None,
+    }
+}
+
+fn indicator_tooltip(running: bool, state: Option<convoy_core::monitor::AgentState>) -> String {
+    use convoy_core::monitor::AgentState;
+    if !running {
+        return String::new();
+    }
+    match state {
+        Some(AgentState::Waiting) => "Needs input or permission".to_string(),
+        Some(AgentState::Done) => "Finished a turn; acceptance is still yours".to_string(),
+        _ => "Running".to_string(),
     }
 }
 

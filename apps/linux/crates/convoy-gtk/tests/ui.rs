@@ -346,6 +346,19 @@ fn session_menu_checks(app: &Rc<convoy_gtk::state::App>, project: &str) {
         app.visible_sessions().first().map(|first| first.id.clone()) == Some(review.id.clone()),
         "the pinned session was not first",
     );
+    let starred = app.views.borrow().get(&review.id).and_then(|view| {
+        view.page
+            .borrow()
+            .as_ref()
+            .map(|page| page.title().to_string())
+    });
+    check(
+        "the tab says it is pinned",
+        starred
+            .as_deref()
+            .is_some_and(|title| title.starts_with("★ ")),
+        format!("{starred:?}"),
+    );
 
     let before = app.tabs.n_pages();
     activate(app, "archive");
