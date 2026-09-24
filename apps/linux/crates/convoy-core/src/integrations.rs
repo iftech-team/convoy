@@ -640,6 +640,7 @@ impl Integrations {
             serde_json::to_string_pretty(&self.connections)?.as_bytes(),
         )?;
         handle.sync_all()?;
+        drop(handle);
         std::fs::rename(&temporary, &self.file)?;
         Ok(())
     }

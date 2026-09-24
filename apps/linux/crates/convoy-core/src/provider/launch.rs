@@ -70,28 +70,41 @@ pub fn agent_args(session: &Session, resume: bool) -> Vec<String> {
 /// provider configuration the user gets in a terminal. `$SHELL` is not used:
 /// it may be fish, which cannot execute POSIX syntax.
 pub fn launch_spec(session: &Session, resume: bool, bindings: &Bindings) -> LaunchSpec {
-    let args = agent_args(session, resume);
-    let bound = bindings.pairs();
-    let prefix = if bound.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "env {} ",
-            bound
-                .iter()
-                .map(|pair| quote(pair))
-                .collect::<Vec<_>>()
-                .join(" ")
-        )
-    };
-    let command = args
-        .iter()
-        .map(|arg| quote(arg))
-        .collect::<Vec<_>>()
-        .join(" ");
-    LaunchSpec {
-        file: "/bin/bash".into(),
-        args: vec!["-ilc".into(), format!("exec {prefix}{command}")],
+    #[cfg(windows)]
+    {
+        let _ = bindings; // Account environment is supplied separately to the Windows child.
+        let args = agent_args(session, resume);
+        return crate::platform::windows_provider(
+            session.agent.as_str(),
+            &args[1..],
+            &current_environment(),
+        );
+    }
+    #[cfg(not(windows))]
+    {
+        let args = agent_args(session, resume);
+        let bound = bindings.pairs();
+        let prefix = if bound.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "env {} ",
+                bound
+                    .iter()
+                    .map(|pair| quote(pair))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            )
+        };
+        let command = args
+            .iter()
+            .map(|arg| quote(arg))
+            .collect::<Vec<_>>()
+            .join(" ");
+        LaunchSpec {
+            file: "/bin/bash".into(),
+            args: vec!["-ilc".into(), format!("exec {prefix}{command}")],
+        }
     }
 }
 

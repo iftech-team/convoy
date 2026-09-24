@@ -83,11 +83,10 @@ pub fn account_environment(
 
 fn default_home_root(source: &BTreeMap<String, String>) -> PathBuf {
     source
-        .get("HOME")
+        .get(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
-        .unwrap_or_else(|| PathBuf::from("/"))
+        .unwrap_or_else(crate::storage::home)
 }
 
 /// `path.resolve()` — relative values are taken against the working directory.

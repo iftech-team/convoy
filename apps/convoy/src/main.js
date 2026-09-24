@@ -136,7 +136,7 @@ function sidebar() {
       <div class="sidebar__label">Projects</div>
       <div class="sidebar__list">${sections || emptySidebar()}</div>
       <div class="sidebar__footer">
-        <button class="button" style="width:100%">${icons.folder} Open folder…</button>
+        <button class="button" data-action="open-folder" style="width:100%">${icons.folder} Open folder…</button>
       </div>
     </aside>`;
 }
@@ -183,11 +183,11 @@ function header() {
 
 function sessionList() {
   const filtered = state.sessions.filter(
-    (item) =>
+    (item) => (state.tab !== "reviews" || item.review_of) && (
       !state.filter ||
       `${item.title} ${item.provider_id}`
         .toLowerCase()
-        .includes(state.filter.toLowerCase()),
+        .includes(state.filter.toLowerCase())),
   );
 
   if (!state.sessions.length) {
@@ -288,6 +288,9 @@ function workbench() {
             ? `<button class="button button--danger" data-stop="${escape(current.id)}">${icons.stop} Stop</button>`
             : `<button class="button" data-start="${escape(current.id)}">${icons.play} ${current.started ? "Resume" : "Start"}</button>`
         }
+        ${current.review_of
+          ? '<button class="button" data-action="feedback">Send findings to builder…</button>'
+          : '<button class="button" data-action="review">Review changes</button>'}
         <button class="button button--quiet" data-action="back" title="Back to the list">
           ${icons.chevron}
         </button>
@@ -461,7 +464,7 @@ function render() {
       )
     : state.sessionId
       ? workbench()
-      : state.tab === "sessions"
+      : (state.tab === "sessions" || state.tab === "reviews")
         ? sessionList()
         : state.tab === "tasks"
           ? tasks.taskList()
@@ -484,6 +487,19 @@ function render() {
   }
   if (state.dialog?.kind === "settings") {
     app.insertAdjacentHTML("beforeend", settingsDialog());
+  }
+  if (["folder", "feedback"].includes(state.dialog?.kind)) {
+    const feedback = state.dialog.kind === "feedback";
+    app.insertAdjacentHTML("beforeend", `
+      <div class="scrim"><form class="modal" id="text-dialog" role="dialog" aria-modal="true" aria-label="${feedback ? "Send findings to builder" : "Open folder"}">
+        <div class="modal__head"><div class="modal__title">${feedback ? "Send findings to builder" : "Open folder"}</div></div>
+        <div class="modal__body"><label class="field"><span class="field__label">${feedback ? "Findings" : "Full folder path"}</span>
+          ${feedback ? '<textarea id="dialog-text" required maxlength="32000"></textarea>' : '<input id="dialog-text" required spellcheck="false" />'}
+          <span class="field__note">${feedback ? "Start or resume the builder first. Findings are pasted into its terminal; you press Enter to send." : "Existing projects and saved sessions are kept."}</span>
+        </label></div>
+        <div class="modal__foot"><button type="button" class="button" data-dismiss="1">Cancel</button><button class="button button--primary" type="submit">${feedback ? "Paste into builder" : "Open"}</button></div>
+      </form></div>`);
+    document.querySelector("#dialog-text")?.focus();
   }
   const extra = tasks.dialog();
   if (extra) app.insertAdjacentHTML("beforeend", extra);
@@ -756,6 +772,24 @@ app.addEventListener("click", async (event) => {
   }
 
   switch (target.dataset.action) {
+    case "open-folder":
+      state.dialog = { kind: "folder" }; return render();
+    case "review": {
+      const id = state.sessionId;
+      const terminal = terminals.get(id)?.terminal;
+      const buffer = terminal?.buffer.active;
+      let output = "";
+      if (buffer) {
+        for (let line = Math.max(0, buffer.length - 1000); line < buffer.length; line++) {
+          output += (buffer.getLine(line)?.translateToString(true) ?? "") + "\n";
+        }
+      }
+      const review = await call("review_create", { id, output: output.slice(-48000) });
+      if (review) { state.sessionId = review; await loadSessions(); }
+      return;
+    }
+    case "feedback":
+      state.dialog = { kind: "feedback", reviewId: state.sessionId }; return render();
     case "refresh":
       return loadWorkspace();
     case "back":
@@ -802,6 +836,7 @@ addEventListener("keydown", (event) => {
     render();
   }
   if (event.key === "Enter" && event.target.tagName === "INPUT") {
+    if (state.dialog.kind === "folder") return;
     event.preventDefault();
     if (tasks.onEnter(event.target)) return;
     if (state.dialog.kind === "settings") saveSettings();
@@ -856,3 +891,20 @@ await listen("terminal:exit", async ({ payload }) => {
 
 await loadSettings();
 await loadWorkspace();
+
+app.addEventListener("submit", async (event) => {
+  if (event.target.id !== "text-dialog") return;
+  event.preventDefault();
+  const dialog = state.dialog;
+  const text = document.querySelector("#dialog-text").value;
+  const button = event.target.querySelector('[type="submit"]');
+  button.disabled = true;
+  if (dialog.kind === "folder") {
+    const id = await call("project_add", { path: text });
+    if (id) { state.projectId = id; state.sessionId = null; state.dialog = null; await loadWorkspace(); }
+  } else {
+    const id = await call("review_feedback", { id: dialog.reviewId, text });
+    if (id) { state.sessionId = id; state.dialog = null; await loadSessions(); }
+  }
+  button.disabled = false;
+});

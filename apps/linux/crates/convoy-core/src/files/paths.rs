@@ -87,6 +87,7 @@ mod tests {
         assert!(revision("HEAD~1").is_err());
     }
 
+    #[cfg(unix)]
     #[test]
     fn trash_resolves_the_parent_not_the_file() {
         let directory = tempfile::Builder::new()

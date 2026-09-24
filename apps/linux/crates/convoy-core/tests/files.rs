@@ -50,6 +50,7 @@ fn discovery_stops_at_project_boundaries_and_skips_dependencies() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn preview_rejects_traversal_external_symlinks_binary_and_oversized_files() {
     let fixture = fixture();
@@ -223,6 +224,7 @@ fn staging_a_path_treats_git_wildcard_characters_literally() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn shared_file_setup_never_follows_destination_symlinks_or_overwrites_existing_files() {
     let fixture = fixture();

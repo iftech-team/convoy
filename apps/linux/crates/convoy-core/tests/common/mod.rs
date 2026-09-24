@@ -51,5 +51,12 @@ pub fn same_state(left: &State, right: &State) -> bool {
 
 /// Permission-based failure tests cannot work for a user that bypasses them.
 pub fn is_root() -> bool {
-    unsafe { libc::geteuid() == 0 }
+    #[cfg(unix)]
+    {
+        unsafe { libc::geteuid() == 0 }
+    }
+    #[cfg(not(unix))]
+    {
+        false
+    }
 }

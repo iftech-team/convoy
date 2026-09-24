@@ -68,7 +68,8 @@ pub fn setup(
     }
 
     if let Some(command) = command.filter(|value| !value.trim().is_empty()) {
-        let spec = ProcessSpec::new("/bin/bash", vec!["-lc".into(), command.to_string()])
+        let shell = crate::platform::setup_shell(command);
+        let spec = ProcessSpec::new(shell.file, shell.args)
             .cwd(&target)
             .timeout(Duration::from_secs(120));
         let output = runner.run(&spec).map_err(|error| {
@@ -102,7 +103,7 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
     let metadata = fs::symlink_metadata(source)?;
     if metadata.file_type().is_symlink() {
         let link = fs::read_link(source)?;
-        std::os::unix::fs::symlink(link, destination)?;
+        crate::platform::symlink(&link, destination, source.is_dir())?;
     } else if metadata.is_dir() {
         fs::create_dir(destination)?;
         let mut entries: Vec<PathBuf> = fs::read_dir(source)?

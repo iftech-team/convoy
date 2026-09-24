@@ -35,6 +35,9 @@ pub fn run() {
         .manage(tasks::Trackers::default())
         .invoke_handler(tauri::generate_handler![
             commands::workspace_read,
+            commands::project_add,
+            commands::review_create,
+            commands::review_feedback,
             commands::sessions_for,
             commands::settings_read,
             commands::settings_save,

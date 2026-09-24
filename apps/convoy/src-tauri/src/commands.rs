@@ -373,3 +373,56 @@ pub fn terminal_resize(
 ) -> Result<(), String> {
     terminals.resize(&id, cols, rows)
 }
+
+/// Preserve the existing schema and reuse an already imported folder.
+#[tauri::command]
+pub fn project_add(path: String, workspace: State<'_, Workspace>) -> Result<String, String> {
+    let directory = std::fs::canonicalize(path.trim()).map_err(|e| e.to_string())?;
+    workspace.with(|workspace| {
+        let state = workspace
+            .add_project(&directory)
+            .map_err(|e| e.to_string())?;
+        state
+            .projects
+            .iter()
+            .find(|p| p.path == directory)
+            .map(|p| p.id.clone())
+            .ok_or_else(|| "Could not open project.".into())
+    })
+}
+
+#[tauri::command]
+pub fn review_create(
+    id: String,
+    output: String,
+    workspace: State<'_, Workspace>,
+) -> Result<String, String> {
+    workspace.with(|workspace| {
+        let prompt =
+            convoy_core::review::brief(workspace, &id, &output).map_err(|e| e.to_string())?;
+        let input =
+            convoy_core::review::handoff(workspace, &id, prompt).map_err(|e| e.to_string())?;
+        let state = workspace.add_session(input).map_err(|e| e.to_string())?;
+        state
+            .sessions
+            .last()
+            .map(|s| s.id.clone())
+            .ok_or_else(|| "Could not create review.".into())
+    })
+}
+
+/// Paste reviewed text into the builder without submitting it.
+#[tauri::command]
+pub fn review_feedback(
+    id: String,
+    text: String,
+    workspace: State<'_, Workspace>,
+    terminals: State<'_, Arc<Terminals>>,
+) -> Result<String, String> {
+    let builder = workspace.with(|workspace| {
+        convoy_core::review::builder_of(workspace, &id).map_err(|e| e.to_string())
+    })?;
+    let text = convoy_core::history::paste(&text, false).map_err(|e| e.to_string())?;
+    terminals.write(&builder, &text)?;
+    Ok(builder)
+}

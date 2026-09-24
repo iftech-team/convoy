@@ -12,7 +12,7 @@ use crate::Result;
 use serde_json::{json, Map, Value};
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
+
 use std::path::{Path, PathBuf};
 
 /// The events Convoy subscribes to. Each maps to one agent state.
@@ -148,11 +148,10 @@ pub fn configuration(
     }
 
     let file = with_suffix(&output, ".settings.json");
-    let mut handle = fs::OpenOptions::new()
+    let mut handle = crate::platform::private_file_options()
         .write(true)
         .create(true)
         .truncate(true)
-        .mode(0o600)
         .open(&file)?;
     handle.write_all(serde_json::to_string(&Value::Object(document))?.as_bytes())?;
     drop(handle);

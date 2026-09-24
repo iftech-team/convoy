@@ -14,6 +14,7 @@ pub const STORAGE_NAME: &str = "Convoy Desktop Preview";
 
 /// `$XDG_CONFIG_HOME` when it is set to an absolute path, otherwise
 /// `~/.config`. This is what `g_get_user_config_dir()` resolves to on Linux.
+#[cfg(not(windows))]
 pub fn config_root() -> PathBuf {
     std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -21,10 +22,22 @@ pub fn config_root() -> PathBuf {
         .unwrap_or_else(|| home().join(".config"))
 }
 
-fn home() -> PathBuf {
-    std::env::var_os("HOME")
+#[cfg(windows)]
+pub fn config_root() -> PathBuf {
+    std::env::var_os("APPDATA")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"))
+        .filter(|path| path.is_absolute())
+        .unwrap_or_else(|| home().join("AppData/Roaming"))
+}
+
+pub(crate) fn home() -> PathBuf {
+    #[cfg(windows)]
+    let key = "USERPROFILE";
+    #[cfg(not(windows))]
+    let key = "HOME";
+    std::env::var_os(key)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
 }
 
 #[derive(Debug, Clone)]
@@ -92,6 +105,7 @@ mod tests {
         assert!(storage.accounts().ends_with("accounts"));
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn config_root_follows_the_xdg_variable_only_when_absolute() {
         let root = config_root();

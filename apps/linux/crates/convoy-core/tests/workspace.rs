@@ -7,6 +7,7 @@ use convoy_core::patterns::is_uuid;
 use convoy_core::workspace::model::Agent;
 use convoy_core::workspace::Workspace;
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
 #[test]
@@ -56,6 +57,7 @@ fn invalid_mutations_leave_both_memory_and_disk_untouched() {
     assert_eq!(workspace.state().sessions.len(), 0);
 }
 
+#[cfg(unix)]
 #[test]
 fn failed_writes_do_not_commit_mutations_in_memory() {
     if is_root() {

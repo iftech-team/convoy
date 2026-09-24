@@ -328,21 +328,36 @@ mod tests {
             }
         });
 
-        let env: Vec<(String, String)> = vec![
-            ("PATH".into(), std::env::var("PATH").unwrap_or_default()),
-            ("TERM".into(), "xterm-256color".into()),
-        ];
+        let env: Vec<(String, String)> = std::env::vars().collect();
+        let cwd = std::env::current_dir().unwrap();
+        let (program, args) = if cfg!(windows) {
+            (
+                "powershell.exe",
+                vec![
+                    "-NoLogo".into(),
+                    "-NoProfile".into(),
+                    "-Command".into(),
+                    "$line = [Console]::ReadLine(); [Console]::WriteLine('GOT:' + $line); exit 7"
+                        .into(),
+                ],
+            )
+        } else {
+            (
+                "/bin/sh",
+                vec![
+                    "-c".into(),
+                    "read line; printf 'GOT:%s\\n' \"$line\"; exit 7".into(),
+                ],
+            )
+        };
         terminals
             .start(
                 app.handle(),
                 Launch {
                     id: "probe",
-                    program: "/bin/sh",
-                    args: &[
-                        "-c".to_string(),
-                        "read line; printf 'GOT:%s\\n' \"$line\"; exit 7".to_string(),
-                    ],
-                    cwd: std::path::Path::new("/"),
+                    program,
+                    args: &args,
+                    cwd: &cwd,
                     env: &env,
                     cols: 80,
                     rows: 24,
@@ -352,7 +367,9 @@ mod tests {
 
         assert!(terminals.running("probe"));
         std::thread::sleep(Duration::from_millis(200));
-        terminals.write("probe", "hello\n").expect("write");
+        terminals
+            .write("probe", if cfg!(windows) { "hello\r" } else { "hello\n" })
+            .expect("write");
 
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut seen = String::new();
@@ -372,6 +389,7 @@ mod tests {
 
     /// Stopping signals the process group, so an agent's own children go with
     /// it rather than surviving as orphans.
+    #[cfg(target_os = "linux")]
     #[test]
     fn stopping_takes_the_whole_process_tree() {
         let app = tauri::test::mock_app();

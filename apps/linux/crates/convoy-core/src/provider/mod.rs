@@ -6,31 +6,41 @@ pub mod launch;
 pub mod transcripts;
 
 use crate::workspace::model::{Agent, Session};
-use launch::{agent_args, quote, LaunchSpec};
+#[cfg(not(windows))]
+use launch::quote;
+use launch::{agent_args, LaunchSpec};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
 /// Environment keys forwarded explicitly into the login shell, because `-ilc`
 /// re-reads the user's profile and may otherwise discard them.
+#[cfg(not(windows))]
 const FORWARDED: [&str; 2] = ["CLAUDE_CONFIG_DIR", "CODEX_HOME"];
 
 /// `providerSpec()` — run `<agent> <args…>` through a login shell with the
 /// account bindings restored.
 pub fn provider_spec(agent: Agent, args: &[String], env: &BTreeMap<String, String>) -> LaunchSpec {
-    let bindings: Vec<String> = FORWARDED
-        .iter()
-        .filter_map(|key| env.get(*key).map(|value| quote(&format!("{key}={value}"))))
-        .collect();
-    let command: Vec<String> = std::iter::once(agent.as_str().to_string())
-        .chain(args.iter().cloned())
-        .map(|arg| quote(&arg))
-        .collect();
-    LaunchSpec {
-        file: "/bin/bash".into(),
-        args: vec![
-            "-ilc".into(),
-            format!("exec env {} {}", bindings.join(" "), command.join(" ")),
-        ],
+    #[cfg(windows)]
+    {
+        return crate::platform::windows_provider(agent.as_str(), args, env);
+    }
+    #[cfg(not(windows))]
+    {
+        let bindings: Vec<String> = FORWARDED
+            .iter()
+            .filter_map(|key| env.get(*key).map(|value| quote(&format!("{key}={value}"))))
+            .collect();
+        let command: Vec<String> = std::iter::once(agent.as_str().to_string())
+            .chain(args.iter().cloned())
+            .map(|arg| quote(&arg))
+            .collect();
+        LaunchSpec {
+            file: "/bin/bash".into(),
+            args: vec![
+                "-ilc".into(),
+                format!("exec env {} {}", bindings.join(" "), command.join(" ")),
+            ],
+        }
     }
 }
 
