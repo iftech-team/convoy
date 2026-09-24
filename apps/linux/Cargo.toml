@@ -17,10 +17,20 @@ uuid = { version = "1", features = ["v4"] }
 regex = "1"
 tempfile = "3"
 libc = "0.2"
-gtk = { package = "gtk4", version = "0.11", features = ["v4_18"] }
-adw = { package = "libadwaita", version = "0.9", features = ["v1_7"] }
-vte4 = { version = "0.10", features = ["v0_84", "gtk_v4_18"] }
-sourceview = { package = "sourceview5", version = "0.11", features = ["v5_12"] }
+# The lowest versions that carry every API this client uses, so it builds on
+# a stable distribution rather than only on a rolling one. Ubuntu 24.04 ships
+# GTK 4.14, libadwaita 1.5, VTE 0.76 and GtkSourceView 5.10, and that is the
+# floor CI holds us to.
+#
+#   gtk 4.10   FileDialog, FileLauncher
+#   adw 1.5    Dialog, AlertDialog, PreferencesDialog, AboutDialog
+#   vte 0.76   text_format, which is the only way to read an agent's screen
+#              back: a row range returns nothing for a UI drawn by absolute
+#              cursor positioning
+gtk = { package = "gtk4", version = "0.11", features = ["v4_10"] }
+adw = { package = "libadwaita", version = "0.9", features = ["v1_5"] }
+vte4 = { version = "0.10", features = ["v0_76"] }
+sourceview = { package = "sourceview5", version = "0.11" }
 glib = "0.22"
 gio = "0.22"
 async-channel = "2"
