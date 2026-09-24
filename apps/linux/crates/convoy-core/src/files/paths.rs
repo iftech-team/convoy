@@ -87,6 +87,8 @@ mod tests {
         assert!(revision("HEAD~1").is_err());
     }
 
+    /// Uses a symlink, which is how the escape is attempted on Unix.
+    #[cfg(unix)]
     #[test]
     fn trash_resolves_the_parent_not_the_file() {
         let directory = tempfile::Builder::new()

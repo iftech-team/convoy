@@ -105,3 +105,59 @@ jobs:
           name: convoy-tauri-linux
           path: apps/convoy/src-tauri/target/release/convoy-tauri
           if-no-files-found: error
+
+  # Windows is half the point of this client, so it is built where it runs.
+  # The launch path, the terminal and the stop path all have Windows branches
+  # that no amount of Linux CI would compile.
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/convoy/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/convoy/src-tauri
+
+      - run: npm ci
+
+      - name: Formatting
+        working-directory: apps/convoy/src-tauri
+        run: cargo fmt --all -- --check
+
+      - name: Lints
+        working-directory: apps/convoy/src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      # ConPTY rather than a pty: a command runs, input reaches it, the exit
+      # code comes back, and stopping clears the session.
+      - name: Terminal tests
+        working-directory: apps/convoy/src-tauri
+        run: cargo test
+
+      # The shared rules, run natively: PATH resolution, %APPDATA%, the status
+      # line quoting. These have Windows branches that are exercised from Linux
+      # by passing a platform, and here by actually being on one.
+      - name: Core tests
+        working-directory: apps/linux
+        run: cargo test -p convoy-core
+
+      - run: npm run build
+
+      - name: Build the installer
+        run: npm run tauri build -- --bundles nsis
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: convoy-windows-installer
+          path: apps/convoy/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error

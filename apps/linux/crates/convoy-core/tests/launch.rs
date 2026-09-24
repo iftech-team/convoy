@@ -1,6 +1,8 @@
 //! Ported from `test/core.test.cjs` and `test/provider.test.cjs` — how a
-//! provider CLI is actually invoked. The Windows cases are dropped: this build
-//! targets Linux and the Electron preview remains the Windows implementation.
+//! provider CLI is actually invoked on Unix, down to the login shell and the
+//! argv the child receives. `tests/windows.rs` is the counterpart, and it runs
+//! from either platform because the platform is a parameter there.
+#![cfg(unix)]
 
 mod common;
 

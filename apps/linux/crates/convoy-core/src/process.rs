@@ -116,6 +116,15 @@ impl ProcessRunner for StdRunner {
         if let Some(env) = &spec.env {
             command.env_clear().envs(env);
         }
+        #[cfg(windows)]
+        {
+            // Convoy is a windowed program with no console of its own, so
+            // every git call would flash a console up and take the focus with
+            // it. There are a lot of git calls.
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
         let mut child = command.spawn()?;
 
         if let Some(input) = &spec.stdin {
@@ -185,7 +194,9 @@ fn drain<R: Read + Send + 'static>(
     receiver
 }
 
-#[cfg(test)]
+/// The timeout, the output cap and the capture are platform-independent Rust,
+/// so they are proved with a Unix shell rather than written twice.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

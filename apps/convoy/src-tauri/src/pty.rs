@@ -274,12 +274,20 @@ fn signal_group(pid: u32, signal: Signal) {
 }
 
 #[cfg(windows)]
-fn signal_group(pid: u32, _signal: Signal) {
-    // ConPTY has no process groups; closing the pty ends the job object, and
-    // this is the blunt fallback for a child that ignores it.
-    let _ = std::process::Command::new("taskkill")
-        .args(["/PID", &pid.to_string(), "/T", "/F"])
-        .status();
+fn signal_group(pid: u32, signal: Signal) {
+    use std::os::windows::process::CommandExt;
+
+    // ConPTY has no process groups, so the tree is walked by `taskkill /T`.
+    // Without `/F` it asks; with it, it does not. The two steps of `stop` map
+    // onto that, so an agent still gets its moment to save state.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut command = std::process::Command::new("taskkill");
+    command.args(["/PID", &pid.to_string(), "/T"]);
+    if matches!(signal, Signal::Kill) {
+        command.arg("/F");
+    }
+    // Convoy has no console of its own, so taskkill would flash one up.
+    let _ = command.creation_flags(CREATE_NO_WINDOW).status();
 }
 
 #[cfg(test)]
@@ -287,6 +295,36 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
     use tauri::Listener;
+
+    /// A child that reads one line, echoes it back and exits 7. The shell
+    /// differs per platform; what is being tested does not.
+    #[cfg(unix)]
+    fn read_and_exit() -> (&'static str, Vec<String>) {
+        (
+            "/bin/sh",
+            vec![
+                "-c".into(),
+                "read line; printf 'GOT:%s\\n' \"$line\"; exit 7".into(),
+            ],
+        )
+    }
+
+    #[cfg(windows)]
+    fn read_and_exit() -> (&'static str, Vec<String>) {
+        (
+            "powershell.exe",
+            vec![
+                "-NoLogo".into(),
+                "-NoProfile".into(),
+                "-Command".into(),
+                "$line = Read-Host; Write-Output \"GOT:$line\"; exit 7".into(),
+            ],
+        )
+    }
+
+    fn root() -> &'static std::path::Path {
+        std::path::Path::new(if cfg!(windows) { "C:\\" } else { "/" })
+    }
 
     /// The whole terminal path without a window: a command runs, its output
     /// comes back, input reaches it, and the exit code survives.
@@ -319,17 +357,15 @@ mod tests {
             ("PATH".into(), std::env::var("PATH").unwrap_or_default()),
             ("TERM".into(), "xterm-256color".into()),
         ];
+        let (program, args) = read_and_exit();
         terminals
             .start(
                 app.handle(),
                 Launch {
                     id: "probe",
-                    program: "/bin/sh",
-                    args: &[
-                        "-c".to_string(),
-                        "read line; printf 'GOT:%s\\n' \"$line\"; exit 7".to_string(),
-                    ],
-                    cwd: std::path::Path::new("/"),
+                    program,
+                    args: &args,
+                    cwd: root(),
                     env: &env,
                     cols: 80,
                     rows: 24,
@@ -358,7 +394,10 @@ mod tests {
     }
 
     /// Stopping signals the process group, so an agent's own children go with
-    /// it rather than surviving as orphans.
+    /// it rather than surviving as orphans. Windows has no process groups;
+    /// `taskkill /T` walks the tree there, and `stopping_ends_the_session`
+    /// covers what can be asserted without a pid table to read.
+    #[cfg(unix)]
     #[test]
     fn stopping_takes_the_whole_process_tree() {
         let app = tauri::test::mock_app();
@@ -414,5 +453,53 @@ mod tests {
             !std::path::Path::new(&format!("/proc/{child}")).exists(),
             "grandchild {child} survived the stop"
         );
+    }
+
+    /// Stopping ends the session and the exit event arrives, so the UI leaves
+    /// "running" behind rather than waiting for a process that is gone.
+    #[cfg(windows)]
+    #[test]
+    fn stopping_ends_the_session() {
+        let app = tauri::test::mock_app();
+        let terminals = Arc::new(Terminals::new());
+        let (exits, exited) = std::sync::mpsc::channel::<i32>();
+        app.handle().listen("terminal:exit", move |event| {
+            if serde_json::from_str::<serde_json::Value>(event.payload()).is_ok() {
+                let _ = exits.send(0);
+            }
+        });
+
+        let env = vec![(
+            "PATH".to_string(),
+            std::env::var("PATH").unwrap_or_default(),
+        )];
+        terminals
+            .start(
+                app.handle(),
+                Launch {
+                    id: "idle",
+                    program: "powershell.exe",
+                    args: &[
+                        "-NoLogo".into(),
+                        "-NoProfile".into(),
+                        "-Command".into(),
+                        "Start-Sleep -Seconds 300".into(),
+                    ],
+                    cwd: root(),
+                    env: &env,
+                    cols: 80,
+                    rows: 24,
+                },
+            )
+            .expect("spawn");
+
+        assert!(terminals.running("idle"));
+        std::thread::sleep(Duration::from_millis(400));
+        terminals.stop("idle");
+
+        exited
+            .recv_timeout(Duration::from_secs(10))
+            .expect("no exit event after stop");
+        assert!(!terminals.running("idle"), "the session was not cleared");
     }
 }
