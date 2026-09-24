@@ -85,9 +85,10 @@ runs unit, renderer, PTY and application-lifecycle checks using harmless shell
 fixtures. Tests never send a model request or publish a branch/PR.
 
 This remains a preview: target Windows desktop/provider validation, signing and
-updates are release work. The Electron layout is not a pixel-for-pixel SwiftUI
-copy: Git uses a dialog, groups use labels, Markdown is basic, and splits have two
-panes. Native macOS release scripts remain independent. See
+updates are release work. The Electron chrome follows the native app's design
+(tab strip, breadcrumb session header, sidebar tree, sheets, palette, status bar
+and the shared colour tokens), but Git, Specs & tasks and History still open as
+sheets rather than embedded panels, Markdown is basic, and splits have two panes. Native macOS release scripts remain independent. See
 [port validation](../../docs/port/status.md) for what was actually run.
 
 ## Storage and boundaries
