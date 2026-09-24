@@ -1,645 +1,674 @@
-// Convoy's front end.
-//
-// Deliberately without a framework for now: this is a prototype whose job is
-// to answer two questions — does it look right, and does the terminal feel
-// right on Linux. A framework would confound the second.
+// Bootstrap, rendering and every action the window offers.
 
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import { WebLinksAddon } from "@xterm/addon-web-links";
-import { icons } from "./icons.js";
-
-const state = {
-  settings: { theme: "system", default_agent: "claude" },
-  dialog: null,
-  projects: [],
-  storage: "",
-  running: [],
-  projectId: null,
-  sessions: [],
-  sessionId: null,
-  filter: "",
-  search: "",
-  tab: "sessions",
-  showArchived: false,
-};
-
-/** One xterm per session, kept across navigation so output is not lost. */
-const terminals = new Map();
+import { open as openDialogNative, save as saveDialogNative } from "@tauri-apps/plugin-dialog";
+import {
+  applyTheme,
+  attempt,
+  call,
+  changed,
+  done,
+  isRunning,
+  loadPlanning,
+  loadSessions,
+  loadSettings,
+  loadWorkspace,
+  observe,
+  project,
+  session,
+  state,
+  toast,
+  visibleSessions,
+} from "./state.js";
+import { escape, numberValue, value } from "./ui.js";
+import { dialogView } from "./dialogs.js";
+import * as terminal from "./terminal.js";
+import {
+  header,
+  quickMenu,
+  reviewsView,
+  sessionMenu,
+  sessionsView,
+  sidebar,
+  status,
+  workbench,
+} from "./views.js";
+import { filesView, remoteMenu } from "./views-files.js";
+import { activityView, specsView, tasksView } from "./views-planning.js";
 
 const app = document.querySelector("#app");
-const toasts = document.querySelector("#toasts");
 
-// ---------------------------------------------------------------- helpers --
-
-const escape = (value) =>
-  String(value ?? "").replace(
-    /[&<>"']/g,
-    (character) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        character
-      ],
-  );
-
-function toast(message, kind = "info") {
-  const element = document.createElement("div");
-  element.className = `toast${kind === "error" ? " toast--error" : ""}`;
-  element.textContent = message;
-  toasts.append(element);
-  setTimeout(() => element.remove(), kind === "error" ? 7000 : 4000);
-}
-
-// `undefined` means the call failed, never `null`: a command returning unit
-// resolves to `null`, and using that as the failure signal made a successful
-// save look like a rejected one.
-async function call(command, args) {
-  try {
-    return await invoke(command, args);
-  } catch (error) {
-    toast(String(error), "error");
-    return undefined;
-  }
-}
-
-// True when the call went through, for commands that return nothing.
-async function callDone(command, args) {
-  return (await call(command, args)) !== undefined;
-}
-
-const project = () => state.projects.find((item) => item.id === state.projectId);
-const session = () => state.sessions.find((item) => item.id === state.sessionId);
-
-// ------------------------------------------------------------------ views --
-
-function sidebar() {
-  const groups = new Map();
-  const loose = [];
-  const needle = state.search.toLowerCase();
-  for (const item of state.projects) {
-    if (needle && !`${item.title} ${item.path}`.toLowerCase().includes(needle)) {
-      continue;
-    }
-    if (item.group) {
-      if (!groups.has(item.group)) groups.set(item.group, []);
-      groups.get(item.group).push(item);
-    } else {
-      loose.push(item);
-    }
-  }
-
-  const sessionLinks = (item) =>
-    item.id !== state.projectId
-      ? ""
-      : state.sessions
-          .map(
-            (entry) => `
-        <button class="session-link${entry.running ? " session-link--running" : ""}"
-                data-open="${escape(entry.id)}"
-                aria-current="${entry.id === state.sessionId}">
-          <span class="session-link__dot"></span>
-          <span class="session-link__title">${escape(entry.title)}</span>
-        </button>`,
-          )
-          .join("");
-
-  const row = (item) => `
-    <button class="project" data-project="${escape(item.id)}"
-            aria-current="${item.id === state.projectId}">
-      <span class="project__icon">${escape(item.icon || "")}</span>
-      <span class="project__title">${escape(item.title)}</span>
-      ${item.running ? '<span class="project__running"></span>' : ""}
-      <span class="project__count">${item.sessions || ""}</span>
-    </button>${sessionLinks(item)}`;
-
-  const sections = [
-    ...[...groups].map(
-      ([name, items]) =>
-        `<div class="sidebar__group">${escape(name)}</div>${items.map(row).join("")}`,
-    ),
-    ...loose.map(row),
-  ].join("");
-
-  return `
-    <aside class="sidebar">
-      <div class="sidebar__brand">
-        <span class="sidebar__mark">${icons.terminal}</span>
-        <span class="sidebar__name">Convoy</span>
-      </div>
-      <div class="sidebar__search">
-        ${icons.search}
-        <input id="project-search" type="search" placeholder="Find a project"
-               value="${escape(state.search)}" spellcheck="false" />
-      </div>
-      <div class="sidebar__label">Projects</div>
-      <div class="sidebar__list">${sections || emptySidebar()}</div>
-      <div class="sidebar__footer">
-        <button class="button" style="width:100%">${icons.folder} Open folder…</button>
-      </div>
-    </aside>`;
-}
-
-const emptySidebar = () =>
-  `<div style="padding:10px 8px;color:var(--text-faint);font-size:12.5px">
-     ${state.search ? "Nothing matches." : "No projects yet."}
-   </div>`;
-
-function header() {
-  const current = project();
-  if (!current) return "";
-  const tabs = ["Sessions", "Reviews", "Specs", "Tasks", "Docs"];
-  return `
-    <div class="header">
-      <div class="header__top">
-        <div class="header__titles">
-          <h1 class="header__name">
-            ${escape(current.title)}
-            ${current.group ? `<span class="badge">${escape(current.group)}</span>` : ""}
-          </h1>
-          <div class="header__path">${escape(current.path)}</div>
-        </div>
-        <div class="header__actions">
-          <button class="button button--icon" data-action="settings"
-                  title="Settings">${icons.gear}</button>
-          <button class="button button--primary" data-action="new-session">
-            ${icons.plus} New session
-          </button>
-        </div>
-      </div>
-      <nav class="tabs">
-        ${tabs
-          .map(
-            (name, index) =>
-              `${index > 1 ? '<span class="tab__divider"></span>' : ""}
-               <button class="tab" data-tab="${name.toLowerCase()}"
-                       aria-selected="${state.tab === name.toLowerCase()}">${name}</button>`,
-          )
-          .join("")}
-      </nav>
+// A thrown error used to leave a black window and no clue about it. Painting
+// the message is the difference between "Convoy is broken" and a line the user
+// can act on — a corrupt workspace file says so.
+function fatal(detail) {
+  app.innerHTML = `
+    <div class="fatal">
+      <h1>Convoy could not start</h1>
+      <pre>${escape(detail)}</pre>
+      <p>The workspace file is at ${escape(state.storage ?? "its usual place")}.</p>
     </div>`;
 }
 
-function sessionList() {
-  const filtered = state.sessions.filter(
-    (item) =>
-      !state.filter ||
-      `${item.title} ${item.provider_id}`
-        .toLowerCase()
-        .includes(state.filter.toLowerCase()),
-  );
-
-  if (!state.sessions.length) {
-    return empty(
-      icons.review,
-      "No sessions yet",
-      "Start one to run Claude Code or Codex in this folder.",
-    );
-  }
-
-  const rows = filtered
-    .map((item) => {
-      const mark = item.agent === "claude" ? "✳" : "◉";
-      const meta = [
-        item.agent === "claude" ? "Claude Code" : "Codex",
-        item.running ? "running" : item.started ? "stopped" : "never started",
-        item.provider_id ? `<code>${escape(item.provider_id.slice(0, 8))}</code>` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      return `
-        <div class="row" data-session="${escape(item.id)}">
-          <span class="row__mark">${mark}</span>
-          <div class="row__body">
-            <div class="row__title">${escape(item.title)}</div>
-            <div class="row__meta">${meta}</div>
-          </div>
-          <div class="row__actions">
-            ${item.pinned ? '<span class="badge--muted badge">Pinned</span>' : ""}
-            ${
-              item.running
-                ? `<button class="button button--danger" data-stop="${escape(item.id)}">${icons.stop} Stop</button>`
-                : `<button class="button" data-start="${escape(item.id)}">${icons.play} ${item.started ? "Resume" : "Start"}</button>`
-            }
-            <button class="button button--quiet" data-open="${escape(item.id)}"
-                    title="Open the terminal">${icons.open}</button>
-          </div>
-        </div>`;
-    })
-    .join("");
-
-  return `
-    <div class="section">
-      <h2 class="section__title">Saved conversations
-        <span class="section__count">${filtered.length}</span>
-      </h2>
-      <span class="section__spacer"></span>
-      <div class="filter">
-        ${icons.search}
-        <input id="session-filter" type="search" placeholder="Filter by name or ID"
-               value="${escape(state.filter)}" spellcheck="false" />
-      </div>
-      <button class="button button--icon" data-action="refresh" title="Refresh">
-        ${icons.refresh}
-      </button>
-      <button class="button button--primary" data-action="new-session">
-        ${icons.plus} New session
-      </button>
-    </div>
-    <p class="section__hint">
-      Pick a session, start a new one, or resume any conversation Claude Code or
-      Codex saved for this folder — even ones started in a plain terminal.
-    </p>
-    <div class="list">${rows || emptyFilter()}</div>`;
-}
-
-const emptyFilter = () =>
-  `<div style="padding:28px;color:var(--text-muted);text-align:center">
-     Nothing matches “${escape(state.filter)}”.
-   </div>`;
-
-const empty = (mark, title, text) => `
-  <div class="empty">
-    <span class="empty__mark">${mark}</span>
-    <h2 class="empty__title">${escape(title)}</h2>
-    <p class="empty__text">${escape(text)}</p>
-  </div>`;
-
-function workbench() {
-  const current = session();
-  if (!current) return "";
-  const stateClass = current.running ? "state--running" : "state";
-  return `
-    <div class="workbench">
-      <div class="workbench__bar">
-        <span class="crumb">
-          ${escape(project()?.title ?? "")}
-          <span class="crumb__sep">/</span>
-          <span class="crumb__muted">${escape(current.title)}</span>
-        </span>
-        <span class="section__spacer"></span>
-        <span class="state ${stateClass}">
-          <span class="state__dot"></span>
-          ${current.running ? "Running" : current.started ? "Stopped" : "Not started"}
-        </span>
-        ${
-          current.running
-            ? `<button class="button button--danger" data-stop="${escape(current.id)}">${icons.stop} Stop</button>`
-            : `<button class="button" data-start="${escape(current.id)}">${icons.play} ${current.started ? "Resume" : "Start"}</button>`
-        }
-        <button class="button button--quiet" data-action="back" title="Back to the list">
-          ${icons.chevron}
-        </button>
-      </div>
-      <div class="terminal" id="terminal-host"></div>
-    </div>`;
-}
-
-function newSessionDialog() {
-  const draft = state.dialog;
-  const agent = (name, label) => `
-    <button data-agent="${name}" aria-pressed="${draft.agent === name}">${label}</button>`;
-  return `
-    <div class="scrim" data-dismiss="1">
-      <div class="modal" role="dialog" aria-modal="true" aria-label="New session">
-        <div class="modal__head">
-          <div class="modal__title">New session</div>
-          <div class="modal__hint">In ${escape(project()?.title ?? "")}</div>
-        </div>
-        <div class="modal__body">
-          <label class="field">
-            <span class="field__label">Name</span>
-            <input id="draft-title" value="${escape(draft.title)}" spellcheck="false" />
-          </label>
-          <div class="field">
-            <span class="field__label">Agent</span>
-            <div class="choice">
-              ${agent("claude", "Claude Code")}
-              ${agent("codex", "Codex")}
-            </div>
-          </div>
-          <label class="field">
-            <span class="field__label">Model</span>
-            <input id="draft-model" value="${escape(draft.model)}"
-                   placeholder="Leave empty for the CLI default" spellcheck="false" />
-          </label>
-          <label class="field">
-            <span class="field__label">First message</span>
-            <textarea id="draft-prompt" spellcheck="false"
-                      placeholder="Optional. Sent once, on the first launch only.">${escape(draft.prompt)}</textarea>
-            <span class="field__note">Resuming never replays it.</span>
-          </label>
-        </div>
-        <div class="modal__foot">
-          <button class="button" data-dismiss="1">Cancel</button>
-          <button class="button button--primary" data-action="create">Create</button>
-        </div>
-      </div>
-    </div>`;
-}
-
-function settingsDialog() {
-  const draft = state.dialog.settings;
-  const segment = (key, options) => `
-    <div class="segmented">
-      ${options
-        .map(
-          ([value, label]) =>
-            `<button data-set="${key}" data-value="${value}"
-                     aria-pressed="${draft[key] === value}">${label}</button>`,
-        )
-        .join("")}
-    </div>`;
-
-  const setting = (title, hint, control) => `
-    <div class="setting">
-      <div class="setting__text">
-        <div class="setting__title">${escape(title)}</div>
-        ${hint ? `<div class="setting__hint">${escape(hint)}</div>` : ""}
-      </div>
-      <div class="setting__control">${control}</div>
-    </div>`;
-
-  return `
-    <div class="scrim" data-dismiss="1">
-      <div class="modal" role="dialog" aria-modal="true" aria-label="Settings">
-        <div class="modal__head">
-          <div class="modal__title">Settings</div>
-          <div class="modal__hint">Shared with the other builds through the workspace file.</div>
-        </div>
-        <div class="modal__body">
-          <div class="group">
-            <div class="group__label">Appearance</div>
-            ${setting(
-              "Theme",
-              "System follows the desktop.",
-              segment("theme", [
-                ["system", "System"],
-                ["light", "Light"],
-                ["dark", "Dark"],
-              ]),
-            )}
-            ${setting(
-              "Font size",
-              "Terminal text, 10 to 24.",
-              `<input type="number" id="set-font" min="10" max="24" step="1"
-                      value="${draft.font_size}" />`,
-            )}
-            ${setting(
-              "Scrollback",
-              "Lines kept per terminal, 1000 to 50000.",
-              `<input type="number" id="set-scrollback" min="1000" max="50000" step="1000"
-                      value="${draft.scrollback}" />`,
-            )}
-          </div>
-          <div class="group">
-            <div class="group__label">Agents</div>
-            ${setting(
-              "Default agent",
-              "Preselected for a new session.",
-              segment("default_agent", [
-                ["claude", "Claude Code"],
-                ["codex", "Codex"],
-              ]),
-            )}
-            ${setting(
-              "Claude usage status line",
-              "Replaces that launch's own status line. Takes effect next launch.",
-              `<button class="switch" data-toggle="claude_usage"
-                       aria-pressed="${draft.claude_usage}"
-                       aria-label="Claude usage status line"></button>`,
-            )}
-          </div>
-        </div>
-        <p class="modal__note">
-          State lives in <code>${escape(state.storage)}</code>.
-          Notifications, hibernation and keep-awake are not in this build yet.
-        </p>
-        <div class="modal__foot">
-          <button class="button" data-dismiss="1">Cancel</button>
-          <button class="button button--primary" data-action="save-settings">Save</button>
-        </div>
-      </div>
-    </div>`;
-}
-
-function status() {
-  const running = state.running.length;
-  return `
-    <footer class="status">
-      <span class="status__item">${icons.limits} <strong>AI Limits</strong></span>
-      <span class="status__sep"></span>
-      <span class="status__item">${escape(state.storage)}</span>
-      <span class="status__spacer"></span>
-      <span class="status__item">${icons.terminal} ${running} running</span>
-      <span class="status__sep"></span>
-      <span class="status__item">${icons.awake} Awake</span>
-    </footer>`;
-}
+window.addEventListener("error", (event) => fatal(event.error?.stack ?? event.message));
+window.addEventListener("unhandledrejection", (event) =>
+  fatal(event.reason?.stack ?? String(event.reason)),
+);
 
 // ----------------------------------------------------------------- render --
 
+function content() {
+  if (state.files) return filesView();
+  if (!project()) {
+    return `<div class="empty">
+      <span class="empty__mark">📁</span>
+      <h2 class="empty__title">No project selected</h2>
+      <p class="empty__text">Open a folder to begin.</p>
+    </div>`;
+  }
+  if (state.sessionId) return workbench();
+  switch (state.tab) {
+    case "reviews":
+      return reviewsView();
+    case "specs":
+      return specsView();
+    case "tasks":
+      return tasksView();
+    case "activity":
+      return activityView();
+    default:
+      return sessionsView();
+  }
+}
+
 function render() {
-  const current = project();
-  const body = !current
-    ? empty(
-        icons.folder,
-        "No project selected",
-        "Choose a project on the left to see its sessions.",
-      )
-    : state.sessionId
-      ? workbench()
-      : state.tab === "sessions"
-        ? sessionList()
-        : empty(
-            icons.review,
-            `${state.tab[0].toUpperCase()}${state.tab.slice(1)}`,
-            "Not in this prototype yet — it exists to check the design and the terminal.",
-          );
+  const caret = document.activeElement?.id;
+  const position = document.activeElement?.selectionStart;
 
   app.innerHTML = `
     <div class="shell">
       ${sidebar()}
-      <main class="main">${header()}${body}</main>
+      <main class="main">${state.files ? "" : header()}${content()}</main>
       ${status()}
     </div>`;
 
-  if (state.dialog?.kind === "session") {
-    app.insertAdjacentHTML("beforeend", newSessionDialog());
-    document.querySelector("#draft-title")?.focus();
+  if (state.menu === "session") app.insertAdjacentHTML("beforeend", sessionMenu());
+  if (state.menu === "quick") app.insertAdjacentHTML("beforeend", quickMenu());
+  if (state.menu === "remote") app.insertAdjacentHTML("beforeend", remoteMenu());
+  if (state.dialog) app.insertAdjacentHTML("beforeend", dialogView());
+
+  if (state.sessionId && !state.files) terminal.mount(state.sessionId);
+
+  // Typing re-renders, so the caret goes back where it was.
+  if (caret) {
+    const restored = document.querySelector(`#${caret}`);
+    if (restored) {
+      restored.focus();
+      if (position != null && restored.setSelectionRange) {
+        try {
+          restored.setSelectionRange(position, position);
+        } catch {
+          /* a number input has no selection range */
+        }
+      }
+    }
+  } else if (state.dialog) {
+    document.querySelector(".modal input, .modal textarea")?.focus();
   }
-  if (state.dialog?.kind === "settings") {
-    app.insertAdjacentHTML("beforeend", settingsDialog());
-  }
-  if (state.sessionId) mountTerminal(state.sessionId);
 }
 
-// --------------------------------------------------------------- terminal --
+observe(render);
 
-function terminalFor(id) {
-  if (terminals.has(id)) return terminals.get(id);
+// -------------------------------------------------------------- selection --
 
-  // The element lives outside the re-rendered tree and is moved into place.
-  // Rebuilding it would detach xterm from its canvas and lose the scrollback,
-  // which in a session that has been running for an hour is the whole point.
-  const host = document.createElement("div");
-  host.className = "terminal__surface";
-
-  const style = getComputedStyle(document.documentElement);
-  const terminal = new Terminal({
-    fontFamily: style.getPropertyValue("--font-mono").trim(),
-    fontSize: 13,
-    lineHeight: 1.35,
-    cursorBlink: true,
-    allowProposedApi: true,
-    scrollback: 10000,
-    // Matching the window rather than the usual black rectangle: an agent's
-    // output is prose to read, not a console to admire.
-    theme: {
-      background: style.getPropertyValue("--term-bg").trim(),
-      foreground: style.getPropertyValue("--term-fg").trim(),
-      cursor: style.getPropertyValue("--term-cursor").trim(),
-      selectionBackground: style.getPropertyValue("--term-selection").trim(),
-    },
-  });
-  const fit = new FitAddon();
-  terminal.loadAddon(fit);
-  terminal.loadAddon(new WebLinksAddon());
-
-  terminal.onData((data) => invoke("terminal_write", { id, data }).catch(() => {}));
-  terminal.onResize(({ cols, rows }) =>
-    invoke("terminal_resize", { id, cols, rows }).catch(() => {}),
-  );
-
-  const entry = { terminal, fit, host, opened: false };
-  terminals.set(id, entry);
-  return entry;
+async function selectProject(id) {
+  if (state.projectId === id) return;
+  state.projectId = id;
+  state.sessionId = null;
+  state.files = null;
+  state.planning = null;
+  await loadSessions();
+  if (state.tab === "specs" || state.tab === "tasks") await loadPlanning();
 }
 
-function mountTerminal(id) {
-  const slot = document.querySelector("#terminal-host");
-  if (!slot) return;
-  const entry = terminalFor(id);
-  slot.append(entry.host);
-  if (!entry.opened) {
-    entry.terminal.open(entry.host);
-    entry.opened = true;
-  }
-  requestAnimationFrame(() => {
-    entry.fit.fit();
-    entry.terminal.focus();
-  });
+function openSession(id) {
+  state.sessionId = id;
+  state.files = null;
+  render();
+  refreshGitStatus();
 }
 
-const refit = () => {
-  if (!state.sessionId) return;
-  terminals.get(state.sessionId)?.fit.fit();
+async function refreshGitStatus() {
+  const current = session();
+  if (!current) return;
+  const result = await attempt("git_status", { id: current.id });
+  state.gitStatus = result.ok
+    ? `${result.value.branch} · ${result.value.changed_files} changed`
+    : "";
+  const label = document.querySelector("#git-status");
+  if (label) label.textContent = state.gitStatus;
+}
+
+// ------------------------------------------------------------- dialogs ----
+
+const closeDialog = () => {
+  state.dialog = null;
+  state.menu = null;
+  render();
 };
 
-// ------------------------------------------------------------------ data --
+const openModal = (dialog) => {
+  state.dialog = dialog;
+  state.menu = null;
+  render();
+};
 
-async function loadSettings() {
-  const settings = await call("settings_read");
-  if (!settings) return;
-  state.settings = settings;
-  // "system" means whatever the desktop says; the other two are explicit.
-  const root = document.documentElement;
-  if (settings.theme === "system") root.removeAttribute("data-theme");
-  else root.setAttribute("data-theme", settings.theme);
-}
-
-async function loadWorkspace() {
-  const view = await call("workspace_read");
-  if (!view) return;
-  state.projects = view.projects;
-  state.running = view.running;
-  state.storage = view.storage;
-  if (!state.projectId && view.projects.length) {
-    state.projectId = view.projects[0].id;
+/// Reads whatever the open dialog's fields currently hold, so a re-render
+/// caused by a toggle does not lose typing.
+function captureDraft() {
+  const dialog = state.dialog;
+  if (!dialog) return;
+  const read = (id, key) => {
+    const element = document.querySelector(`#${id}`);
+    if (element) dialog[key] = element.value;
+  };
+  read("draft-title", "title");
+  read("draft-model", "model");
+  read("draft-prompt", "prompt");
+  read("draft-notes", "notes");
+  read("draft-provider", "provider_id");
+  read("draft-brief", "brief");
+  read("draft-branch", "branch");
+  read("draft-label", "label");
+  read("draft-text", "text");
+  read("draft-group", "group");
+  read("draft-icon", "icon");
+  read("draft-shared", "shared_paths");
+  read("draft-setup", "setup_command");
+  read("draft-review", "review_template");
+  for (const key of ["title", "problem", "requirements", "acceptance", "constraints", "plan"]) {
+    read(`spec-${key}`, key);
   }
-  await loadSessions();
+  for (const key of ["title", "details", "findings"]) {
+    read(`task-${key}`, key);
+  }
+  if (dialog.kind === "settings") {
+    dialog.settings.font_size = numberValue("set-font", dialog.settings.font_size);
+    dialog.settings.scrollback = numberValue("set-scrollback", dialog.settings.scrollback);
+    dialog.settings.hibernate_minutes = numberValue(
+      "set-hibernate",
+      dialog.settings.hibernate_minutes,
+    );
+  }
 }
 
-async function loadSessions() {
-  if (!state.projectId) return render();
-  const sessions = await call("sessions_for", {
-    projectId: state.projectId,
-    archived: state.showArchived,
+// -------------------------------------------------------------- actions ---
+
+const ACTIONS = {
+  // projects
+  "open-folder": openFolder,
+  settings: openSettings,
+  accounts: openAccounts,
+  "import-history": openTranscripts,
+  "project-settings": openProjectSettings,
+  "remove-project": () =>
+    openModal({ kind: "remove-project", id: state.projectId, path: project()?.path ?? "" }),
+  "confirm-remove-project": async () => {
+    const id = state.dialog.id;
+    if (await done("project_remove", { id })) {
+      state.projectId = null;
+      closeDialog();
+      await loadWorkspace();
+    }
+  },
+  "reveal-project": () => call("path_reveal", { path: project()?.path ?? "" }),
+  "copy-path": async () => {
+    await navigator.clipboard.writeText(project()?.path ?? "");
+    toast("Path copied");
+  },
+  "reconnect-project": reconnectProject,
+
+  // sessions
+  "new-session": () =>
+    openModal({
+      kind: "session",
+      title: project()?.title ?? "Session",
+      agent: state.settings.default_agent,
+      model: "",
+      prompt: "",
+    }),
+  "create-session": createSession,
+  "edit-session": openEditSession,
+  "save-session": saveSession,
+  "pin-session": async () => {
+    const current = session();
+    state.menu = null;
+    if (await done("session_pin", { id: current.id, pinned: !current.pinned })) {
+      await loadSessions();
+    }
+  },
+  "archive-session": async () => {
+    const current = session();
+    state.menu = null;
+    if (await done("session_archive", { id: current.id, archived: !current.archived })) {
+      if (!current.archived) state.sessionId = null;
+      else state.showArchived = true;
+      await loadSessions();
+    }
+  },
+  "recover-session": async () => {
+    const id = await call("session_recover", { id: session().id });
+    state.menu = null;
+    if (!id) return;
+    await loadSessions();
+    openSession(id);
+  },
+  "start-review": openReview,
+  "create-review": createReview,
+  "send-feedback": () => openModal({ kind: "feedback" }),
+  "insert-feedback": insertFeedback,
+  "saved-output": openSavedOutput,
+  usage: openUsage,
+  "git-status": async () => {
+    state.menu = null;
+    render();
+    await refreshGitStatus();
+  },
+  back: () => {
+    state.sessionId = null;
+    render();
+  },
+  refresh: () => loadWorkspace(),
+  "refresh-activity": loadActivity,
+
+  // menus
+  "session-menu": () => {
+    state.menu = "session";
+    render();
+  },
+  "quick-menu": () => {
+    state.menu = "quick";
+    render();
+  },
+  "manage-commands": () =>
+    openModal({ kind: "commands", title: "", text: "", submit: false, scoped: true }),
+  "add-command": addQuickCommand,
+
+  // worktrees
+  "create-worktree": () =>
+    openModal({ kind: "worktree", branch: suggestBranch(session()?.title ?? "") }),
+  "confirm-worktree": confirmWorktree,
+  "confirm-setup": async () => {
+    const id = state.dialog.id;
+    closeDialog();
+    if (await done("worktree_setup", { id })) toast("Worktree setup finished");
+  },
+  "remove-worktree": openRemoveWorktree,
+  "confirm-remove-worktree": async () => {
+    const id = state.dialog.id;
+    closeDialog();
+    if (await done("worktree_remove", { id })) {
+      state.sessionId = null;
+      await loadWorkspace();
+    }
+  },
+
+  // settings
+  "save-settings": saveSettings,
+  "add-profile": addProfile,
+  "scan-transcripts": scanTranscripts,
+
+  // planning
+  "new-spec": () =>
+    openModal({
+      kind: "spec",
+      title: "",
+      problem: "",
+      requirements: "",
+      acceptance: "",
+      constraints: "",
+      plan: "",
+    }),
+  "save-spec": saveSpec,
+  "approve-spec": approveSpec,
+  "new-task": () =>
+    openModal({
+      kind: "task",
+      title: "",
+      details: "",
+      findings: "",
+      agent: state.settings.default_agent,
+      mode: "none",
+      auto_review: false,
+      spec_id: "",
+    }),
+  "save-task": saveTask,
+  "queue-start": startQueue,
+  "queue-stop": () => {
+    state.queues.delete(state.projectId);
+    render();
+  },
+  "confirm-queue": async () => {
+    closeDialog();
+    state.queues.add(state.projectId);
+    await advanceQueue(state.projectId);
+  },
+
+  // files
+  files: () => openFiles(),
+  "files-close": () => {
+    state.files = null;
+    render();
+  },
+  "files-refresh": () => loadFiles(),
+  "files-split": async () => {
+    state.files.sideBySide = !state.files.sideBySide;
+    await readSelection();
+  },
+  "files-remote": () => {
+    state.menu = "remote";
+    render();
+  },
+  stage: () => mutate({ action: "stage", path: selectedPath(), original: selectedOriginal() }),
+  unstage: () => mutate({ action: "unstage", path: selectedPath(), original: selectedOriginal() }),
+  "stage-all": () => mutate({ action: "stageAll" }),
+  discard: () =>
+    confirmThen("Discard changes to this file?", selectedPath(), () =>
+      mutate({ action: "discard", path: selectedPath() }),
+    ),
+  trash: trashFile,
+  "discard-hunk": openHunkChoice,
+  "confirm-hunk": confirmHunk,
+  commit: () => commit(false),
+  amend: () =>
+    confirmThen(
+      "Amend the latest commit?",
+      "The previous commit is replaced. Do not amend something already pushed.",
+      () => commit(true),
+    ),
+  generate: generateMessage,
+  fetch: () => mutate({ action: "fetch" }),
+  pull: () => mutate({ action: "pull" }),
+  push: () => mutate({ action: "push" }),
+  pr: createPullRequest,
+  revert: () =>
+    confirmThen("Revert this commit?", selectedCommit(), () =>
+      mutate({ action: "revert", commit: selectedCommit() }),
+    ),
+  "reset-soft": () =>
+    confirmThen("Reset to this commit, keeping the index?", selectedCommit(), () =>
+      mutate({ action: "resetSoft", commit: selectedCommit() }),
+    ),
+  "reset-mixed": () =>
+    confirmThen("Reset to this commit and clear the index?", selectedCommit(), () =>
+      mutate({ action: "resetMixed", commit: selectedCommit() }),
+    ),
+  "switch-branch": () =>
+    state.files.branch ? mutate({ action: "switch", branch: state.files.branch }) : null,
+  "new-branch": () => openModal({ kind: "branch", branch: "" }),
+  "confirm-branch": async () => {
+    const branch = value("draft-branch");
+    closeDialog();
+    await mutate({ action: "branch", branch });
+  },
+  "confirm-generic": async () => {
+    const run = state.dialog.run;
+    closeDialog();
+    await run();
+  },
+  "copy-markdown": async () => {
+    await navigator.clipboard.writeText(state.dialog.text);
+    toast("Copied");
+  },
+};
+
+// --------------------------------------------------------------- handlers --
+
+app.addEventListener("click", async (event) => {
+  const target = event.target.closest(
+    "[data-action],[data-project],[data-tab],[data-start],[data-stop],[data-open]," +
+      "[data-set],[data-toggle],[data-dismiss],[data-quick],[data-files-view]," +
+      "[data-change],[data-file],[data-commit],[data-branch],[data-task],[data-spec]," +
+      "[data-approve],[data-export],[data-prepare],[data-status],[data-remove-profile]," +
+      "[data-remove-command],[data-import],[data-task-view],[data-palette]",
+  );
+  if (!target) return;
+  const data = target.dataset;
+
+  if (data.dismiss) {
+    if (event.target.closest(".modal, .menu") && !target.classList.contains("button")) return;
+    return closeDialog();
+  }
+  if (data.action) {
+    const handler = ACTIONS[data.action];
+    if (handler) return handler();
+    return;
+  }
+  if (data.project) return selectProject(data.project);
+  if (data.tab) {
+    state.tab = data.tab;
+    state.sessionId = null;
+    state.files = null;
+    render();
+    if (data.tab === "specs" || data.tab === "tasks") await loadPlanning();
+    if (data.tab === "activity") await loadActivity();
+    return;
+  }
+  if (data.start) return terminal.start(data.start);
+  if (data.stop) return terminal.stop(data.stop);
+  if (data.open) return openSession(data.open);
+  if (data.quick) {
+    state.menu = null;
+    render();
+    return done("quick_command_send", {
+      sessionId: state.sessionId,
+      commandId: data.quick,
+    });
+  }
+  if (data.set) {
+    captureDraft();
+    if (state.dialog.kind === "settings") state.dialog.settings[data.set] = data.value;
+    else state.dialog[fieldFor(data.set)] = data.value;
+    return render();
+  }
+  if (data.toggle) {
+    captureDraft();
+    const key = data.toggle;
+    if (state.dialog.kind === "settings") {
+      state.dialog.settings[key] = !state.dialog.settings[key];
+    } else {
+      state.dialog[key] = !state.dialog[key];
+    }
+    return render();
+  }
+  if (data.filesView) {
+    state.files.view = data.filesView;
+    state.files.selection = null;
+    state.files.preview = null;
+    return render();
+  }
+  if (data.change || data.file) {
+    const path = data.change ?? data.file;
+    const change = state.files.snapshot?.changes.find((item) => item.path === path);
+    state.files.selection = data.file
+      ? { kind: "file", path }
+      : change?.untracked
+        ? { kind: "untracked", path }
+        : change?.staged
+          ? { kind: "staged", path }
+          : { kind: "unstaged", path };
+    return readSelection();
+  }
+  if (data.commit) {
+    state.files.selection = { kind: "commit", commit: data.commit };
+    return readSelection();
+  }
+  if (data.branch) {
+    state.files.branch = data.branch;
+    return render();
+  }
+  if (data.taskView) {
+    state.taskView = data.taskView;
+    return render();
+  }
+  if (data.task) return openTask(data.task);
+  if (data.spec) return openSpec(data.spec);
+  if (data.approve) {
+    if (await done("spec_approve", { id: data.approve, revision: Number(data.revision) })) {
+      await loadPlanning();
+    }
+    return;
+  }
+  if (data.export) return exportSpec(data.export);
+  if (data.prepare) return prepareTask(data.prepare);
+  if (data.status) return setTaskStatus(data.status);
+  if (data.removeProfile) {
+    if (await done("profile_remove", { id: data.removeProfile })) await loadProfiles();
+    return render();
+  }
+  if (data.removeCommand) {
+    if (await done("quick_command_remove", { id: data.removeCommand })) await loadSessions();
+    return render();
+  }
+  if (data.import) return importTranscript(data.import, data.title);
+  if (data.palette) return runPalette(Number(data.palette));
+});
+
+const fieldFor = (key) =>
+  ({ agent: "agent", spec: "spec_id", mode: "mode", profile: "profile", hunk: "hunk" })[key] ?? key;
+
+app.addEventListener("input", (event) => {
+  const field = event.target;
+  if (field.id === "session-filter") {
+    state.filter = field.value;
+    return render();
+  }
+  if (field.id === "project-search") {
+    state.search = field.value;
+    return render();
+  }
+  if (field.id === "commit-message") {
+    state.files.message = field.value;
+    return;
+  }
+  if (field.id === "palette-input") {
+    state.dialog.query = field.value;
+    state.dialog.results = paletteResults(field.value);
+    state.dialog.index = 0;
+    return render();
+  }
+});
+
+app.addEventListener("change", async (event) => {
+  if (event.target.dataset.toggleState) {
+    state[event.target.dataset.toggleState] = event.target.checked;
+    await loadSessions();
+  }
+});
+
+addEventListener("keydown", async (event) => {
+  if (event.key === "Escape") {
+    if (state.menu || state.dialog) return closeDialog();
+    return;
+  }
+  if (state.dialog?.kind === "palette") {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      const count = state.dialog.results.length || 1;
+      state.dialog.index = (state.dialog.index + step + count) % count;
+      return render();
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      return runPalette(state.dialog.index);
+    }
+    return;
+  }
+  const primary = event.metaKey || event.ctrlKey;
+  if (primary && event.key === "k") {
+    event.preventDefault();
+    return openPalette();
+  }
+  if (primary && event.key === "n") {
+    event.preventDefault();
+    return ACTIONS["new-session"]();
+  }
+  if (primary && event.key === "b") {
+    event.preventDefault();
+    return openFiles();
+  }
+  if (primary && event.key === ",") {
+    event.preventDefault();
+    return openSettings();
+  }
+  if (primary && event.key === "f") {
+    event.preventDefault();
+    return document.querySelector("#project-search")?.focus();
+  }
+  if (event.key === "Enter" && state.dialog && event.target.tagName === "INPUT") {
+    const confirmAction = document
+      .querySelector(".modal__foot .button--primary, .modal__foot .button--danger-solid")
+      ?.getAttribute("data-action");
+    if (confirmAction && ACTIONS[confirmAction]) {
+      event.preventDefault();
+      ACTIONS[confirmAction]();
+    }
+  }
+});
+
+addEventListener("resize", terminal.refit);
+
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (state.settings.theme === "system") terminal.applySettings();
+});
+
+// ------------------------------------------------------------ operations --
+
+async function openFolder() {
+  const chosen = await openDialogNative({ directory: true, multiple: false });
+  if (!chosen) return;
+  const added = await call("project_open", { path: chosen });
+  if (added === undefined) return;
+  if (added > 1) toast(`Added ${added} projects`);
+  await loadWorkspace();
+}
+
+async function reconnectProject() {
+  const chosen = await openDialogNative({ directory: true, multiple: false });
+  if (!chosen) return;
+  if (await done("project_reconnect", { id: state.projectId, path: chosen })) {
+    await loadWorkspace();
+  }
+}
+
+async function openProjectSettings() {
+  const detail = await call("project_detail", { id: state.projectId });
+  if (!detail) return;
+  openModal({ kind: "project", ...detail });
+}
+
+async function saveProject() {
+  captureDraft();
+  const dialog = state.dialog;
+  const saved = await done("project_edit", {
+    id: dialog.id,
+    input: {
+      title: dialog.title,
+      group: dialog.group,
+      icon: dialog.icon,
+      setup_command: dialog.setup_command,
+      shared_paths: dialog.shared_paths,
+      review_template: dialog.review_template,
+    },
   });
-  state.sessions = sessions ?? [];
-  render();
+  if (!saved) return;
+  closeDialog();
+  await loadWorkspace();
 }
-
-function openDialog() {
-  if (!state.projectId) return;
-  state.dialog = {
-    kind: "session",
-    title: project()?.title ?? "Session",
-    agent: state.settings.default_agent || "claude",
-    model: "",
-    prompt: "",
-  };
-  render();
-}
-
-function openSettings() {
-  state.dialog = { kind: "settings", settings: { ...state.settings } };
-  render();
-}
-
-// Numbers come back out of their inputs before anything else reads them.
-function readSettings() {
-  const number = (id, fallback) => {
-    const value = Number(document.querySelector(id)?.value);
-    return Number.isFinite(value) ? Math.round(value) : fallback;
-  };
-  state.dialog.settings = {
-    ...state.dialog.settings,
-    font_size: number("#set-font", state.settings.font_size),
-    scrollback: number("#set-scrollback", state.settings.scrollback),
-  };
-}
-
-async function saveSettings() {
-  readSettings();
-  const input = state.dialog.settings;
-  if (!(await callDone("settings_save", { input }))) return;
-  state.dialog = null;
-  await loadSettings();
-  applyTerminalSettings();
-  render();
-  toast("Settings saved");
-}
-
-// Font size and scrollback reach terminals that are already open, so the
-// change is visible without restarting a session.
-function applyTerminalSettings() {
-  const style = getComputedStyle(document.documentElement);
-  for (const entry of terminals.values()) {
-    entry.terminal.options.fontSize = state.settings.font_size;
-    entry.terminal.options.scrollback = state.settings.scrollback;
-    entry.terminal.options.theme = {
-      background: style.getPropertyValue("--term-bg").trim(),
-      foreground: style.getPropertyValue("--term-fg").trim(),
-      cursor: style.getPropertyValue("--term-cursor").trim(),
-      selectionBackground: style.getPropertyValue("--term-selection").trim(),
-    };
-    entry.fit.fit();
-  }
-}
-
-function readDraft() {
-  const value = (id) => document.querySelector(id)?.value ?? "";
-  state.dialog = {
-    ...state.dialog,
-    title: value("#draft-title"),
-    model: value("#draft-model"),
-    prompt: value("#draft-prompt"),
-  };
-}
+ACTIONS["save-project"] = saveProject;
 
 async function createSession() {
-  readDraft();
+  captureDraft();
   const draft = state.dialog;
   const id = await call("session_create", {
     projectId: state.projectId,
@@ -649,149 +678,566 @@ async function createSession() {
     model: draft.model,
   });
   if (!id) return;
-  state.dialog = null;
+  closeDialog();
   await loadWorkspace();
-  // Selected but not started. Launching an agent is always an explicit act —
-  // a first message is passed on the command line and acted on at once.
-  state.sessionId = id;
-  render();
+  // Selected but not started: launching an agent is always an explicit act,
+  // and a first message is acted on the moment it runs.
+  openSession(id);
 }
 
-async function start(id) {
-  const { terminal, fit } = terminalFor(id);
-  state.sessionId = id;
-  render();
-  fit.fit();
-  await callDone("session_start", {
-    id,
-    cols: terminal.cols,
-    rows: terminal.rows,
+async function openEditSession() {
+  const current = session();
+  const detail = await call("session_detail", { id: current.id });
+  if (!detail) return;
+  openModal({ kind: "edit-session", ...detail });
+}
+
+async function saveSession() {
+  captureDraft();
+  const dialog = state.dialog;
+  const input = { title: dialog.title, notes: dialog.notes };
+  if (!dialog.running) input.provider_id = dialog.provider_id;
+  if (!(await done("session_edit", { id: dialog.id, input }))) return;
+  closeDialog();
+  await loadSessions();
+}
+
+async function openReview() {
+  const current = session();
+  state.menu = null;
+  const brief = await call("review_brief", { id: current.id });
+  if (brief === undefined) return;
+  openModal({
+    kind: "review",
+    id: current.id,
+    brief,
+    reviewer: current.agent === "claude" ? "codex" : "claude",
   });
-  await loadWorkspace();
 }
 
-// ---------------------------------------------------------------- events --
+async function createReview() {
+  captureDraft();
+  const dialog = state.dialog;
+  const id = await call("review_create", { id: dialog.id, prompt: dialog.brief });
+  if (!id) return;
+  closeDialog();
+  await loadSessions();
+  openSession(id);
+}
 
-app.addEventListener("click", async (event) => {
-  const target = event.target.closest(
-    "[data-project],[data-tab],[data-action],[data-start],[data-stop],[data-open]," +
-      "[data-session],[data-agent],[data-dismiss],[data-set],[data-toggle]",
-  );
-  if (!target) return;
-  // Clicking the panel itself must not dismiss it; only the scrim behind.
-  if (target.dataset.dismiss && event.target.closest(".modal") && !target.classList.contains("button")) {
-    return;
+async function insertFeedback() {
+  captureDraft();
+  const text = value("draft-feedback") || state.dialog.feedback || "";
+  const builder = await call("review_builder", { id: state.sessionId });
+  if (!builder) return;
+  if (await terminal.paste(builder, text, false)) {
+    closeDialog();
+    toast("Feedback inserted; press Enter in the builder to send it");
   }
+}
 
-  if (target.dataset.project) {
-    state.projectId = target.dataset.project;
-    state.sessionId = null;
-    return loadSessions();
-  }
-  if (target.dataset.tab) {
-    state.tab = target.dataset.tab;
-    state.sessionId = null;
-    return render();
-  }
-  if (target.dataset.start) return start(target.dataset.start);
-  if (target.dataset.stop) {
-    await callDone("session_stop", { id: target.dataset.stop });
-    return;
-  }
-  if (target.dataset.open || target.dataset.session) {
-    state.sessionId = target.dataset.open || target.dataset.session;
-    return render();
-  }
+async function openSavedOutput() {
+  const current = session();
+  state.menu = null;
+  const text = await call("session_output", { id: current.id });
+  if (text === undefined) return;
+  openModal({ kind: "output", title: current.title, text: text || "Nothing saved yet." });
+}
 
-  switch (target.dataset.action) {
-    case "refresh":
-      return loadWorkspace();
-    case "back":
-      state.sessionId = null;
-      return render();
-    case "new-session":
-      return openDialog();
-    case "create":
-      return createSession();
-    case "settings":
-      return openSettings();
-    case "save-settings":
-      return saveSettings();
-  }
-
-  if (target.dataset.set) {
-    readSettings();
-    state.dialog.settings[target.dataset.set] = target.dataset.value;
-    return render();
-  }
-  if (target.dataset.toggle) {
-    readSettings();
-    const key = target.dataset.toggle;
-    state.dialog.settings[key] = !state.dialog.settings[key];
-    return render();
-  }
-
-  if (target.dataset.agent) {
-    readDraft();
-    state.dialog = { ...state.dialog, agent: target.dataset.agent };
-    return render();
-  }
-  if (target.dataset.dismiss) {
-    state.dialog = null;
-    return render();
-  }
-});
-
-// Escape closes the dialog, Enter in a single-line field submits it.
-addEventListener("keydown", (event) => {
-  if (!state.dialog) return;
-  if (event.key === "Escape") {
-    state.dialog = null;
-    render();
-  }
-  if (event.key === "Enter" && event.target.tagName === "INPUT") {
-    event.preventDefault();
-    if (state.dialog.kind === "settings") saveSettings();
-    else createSession();
-  }
-});
-
-// Typing re-renders, so the caret has to be put back where it was. A
-// framework would do this; here it is four lines and no dependency.
-app.addEventListener("input", (event) => {
-  const field = event.target;
-  const keys = { "session-filter": "filter", "project-search": "search" };
-  const key = keys[field.id];
-  if (!key) return;
-  state[key] = field.value;
-  const caret = field.selectionStart;
+async function openUsage() {
+  const current = session();
+  openModal({ kind: "usage", loading: true });
+  const usage = await call("usage_read", { id: current.id });
+  if (!state.dialog || state.dialog.kind !== "usage") return;
+  state.dialog = { kind: "usage", loading: false, ...(usage ?? { windows: [], note: "" }) };
   render();
-  const restored = document.querySelector(`#${field.id}`);
-  if (restored) {
-    restored.focus();
-    restored.setSelectionRange(caret, caret);
+}
+
+const suggestBranch = (title) =>
+  `convoy/${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "work"}`;
+
+async function confirmWorktree() {
+  captureDraft();
+  const branch = state.dialog.branch;
+  const id = state.sessionId;
+  const plan = await call("worktree_create", { id, branch });
+  if (!plan) return;
+  await loadSessions();
+  if (plan.shared_paths.length || plan.setup_command) {
+    openModal({
+      kind: "worktree-setup",
+      id,
+      shared: plan.shared_paths,
+      command: plan.setup_command ?? "",
+      directory: plan.directory,
+    });
+  } else {
+    closeDialog();
+    toast(`Worktree created on ${plan.branch}`);
   }
-});
+}
 
-window.addEventListener("resize", refit);
+async function openRemoveWorktree() {
+  state.menu = null;
+  const plan = await call("worktree_plan_remove", { id: state.sessionId });
+  if (!plan) return;
+  openModal({ kind: "remove-worktree", id: state.sessionId, ...plan });
+}
 
-// The desktop can change its colour scheme while the app is open.
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-  if (state.settings.theme === "system") applyTerminalSettings();
-});
+async function openSettings() {
+  await loadProfiles();
+  openModal({ kind: "settings", settings: { ...state.settings } });
+}
 
-await listen("terminal:data", ({ payload }) => {
-  terminalFor(payload.id).terminal.write(payload.data);
-});
+async function saveSettings() {
+  captureDraft();
+  if (!(await done("settings_save", { input: state.dialog.settings }))) return;
+  closeDialog();
+  await loadSettings();
+  terminal.applySettings();
+  await applyKeepAwake();
+  render();
+  toast("Settings saved");
+}
 
-await listen("terminal:exit", async ({ payload }) => {
-  const entry = terminals.get(payload.id);
-  if (entry) {
-    const how = payload.stopped ? "stopped" : `exited with code ${payload.code}`;
-    entry.terminal.write(`\r\n\x1b[2m── session ${how} ──\x1b[0m\r\n`);
+async function loadProfiles() {
+  state.profiles = (await call("profiles_read")) ?? [];
+}
+
+async function openAccounts() {
+  await loadProfiles();
+  openModal({ kind: "accounts", label: "", agent: state.settings.default_agent });
+}
+
+async function addProfile() {
+  captureDraft();
+  const dialog = state.dialog;
+  if (!(await done("profile_add", { label: dialog.label, agent: dialog.agent }))) return;
+  await loadProfiles();
+  state.dialog.label = "";
+  render();
+}
+
+async function openTranscripts() {
+  await loadProfiles();
+  openModal({
+    kind: "transcripts",
+    agent: state.settings.default_agent,
+    profile: "",
+    found: null,
+    scanning: false,
+  });
+}
+
+async function scanTranscripts() {
+  const dialog = state.dialog;
+  dialog.scanning = true;
+  render();
+  const found = await call("transcripts_scan", {
+    projectId: state.projectId,
+    agent: dialog.agent,
+    profileId: dialog.profile || null,
+  });
+  dialog.scanning = false;
+  dialog.found = found ?? [];
+  render();
+}
+
+async function importTranscript(providerId, title) {
+  const dialog = state.dialog;
+  const id = await call("transcripts_import", {
+    projectId: state.projectId,
+    agent: dialog.agent,
+    providerId,
+    title: title ?? "",
+    profileId: dialog.profile || null,
+  });
+  if (!id) return;
+  await loadSessions();
+  toast("Imported");
+}
+
+async function addQuickCommand() {
+  captureDraft();
+  const dialog = state.dialog;
+  const saved = await done("quick_command_save", {
+    id: "",
+    title: dialog.title,
+    text: dialog.text,
+    submit: dialog.submit,
+    projectId: dialog.scoped ? state.projectId : null,
+  });
+  if (!saved) return;
+  await loadSessions();
+  state.dialog.title = "";
+  state.dialog.text = "";
+  render();
+}
+
+async function loadActivity() {
+  state.activity = (await call("activity_read")) ?? [];
+  render();
+}
+
+// ------------------------------------------------------------- planning ---
+
+function openSpec(id) {
+  const spec = state.planning?.specs.find((item) => item.id === id);
+  if (!spec) return;
+  openModal({ kind: "spec", ...spec });
+}
+
+async function saveSpec() {
+  captureDraft();
+  const dialog = state.dialog;
+  const saved = await done("spec_save", {
+    input: {
+      id: dialog.id ?? null,
+      project_id: state.projectId,
+      title: dialog.title,
+      problem: dialog.problem,
+      requirements: dialog.requirements,
+      acceptance: dialog.acceptance,
+      constraints: dialog.constraints,
+      plan: dialog.plan,
+    },
+  });
+  if (!saved) return;
+  closeDialog();
+  await loadPlanning();
+}
+
+async function approveSpec() {
+  const dialog = state.dialog;
+  if (!(await done("spec_approve", { id: dialog.id, revision: dialog.revision }))) return;
+  closeDialog();
+  await loadPlanning();
+}
+
+async function exportSpec(id) {
+  const text = await call("spec_markdown", { id });
+  if (text === undefined) return;
+  const path = await saveDialogNative({
+    defaultPath: "specification.md",
+    filters: [{ name: "Markdown", extensions: ["md"] }],
+  });
+  if (!path) {
+    return openModal({ kind: "markdown", title: "Specification", text });
   }
-  await loadWorkspace();
+  const { writeTextFile } = await import("@tauri-apps/plugin-fs");
+  try {
+    await writeTextFile(path, text);
+    toast(`Exported to ${path}`);
+  } catch (error) {
+    toast(error, "error");
+  }
+}
+
+function openTask(id) {
+  const task = state.planning?.tasks.find((item) => item.id === id);
+  if (!task) return;
+  openModal({ kind: "task", ...task });
+}
+
+async function saveTask() {
+  captureDraft();
+  const dialog = state.dialog;
+  const saved = await done("task_save", {
+    input: {
+      id: dialog.id ?? null,
+      project_id: state.projectId,
+      spec_id: dialog.spec_id || null,
+      title: dialog.title,
+      details: dialog.details,
+      findings: dialog.findings,
+      agent: dialog.agent,
+      mode: dialog.mode,
+      auto_review: dialog.auto_review,
+    },
+  });
+  if (!saved) return;
+  closeDialog();
+  await loadPlanning();
+}
+
+async function setTaskStatus(status) {
+  const id = state.dialog.id;
+  if (!(await done("task_status", { id, status }))) return;
+  closeDialog();
+  await loadPlanning();
+}
+
+async function prepareTask(id) {
+  const sessionId = await call("task_prepare", { id, profileId: null });
+  if (!sessionId) return;
+  await loadSessions();
+  await loadPlanning();
+  openSession(sessionId);
+}
+
+async function startQueue() {
+  const summary = await call("queue_summary", { projectId: state.projectId });
+  if (!summary?.length) return toast("No queued tasks.");
+  openModal({ kind: "queue", summary });
+}
+
+/// Starts the next queued task. The rules are the core's; this supplies the
+/// clock and the starting.
+async function advanceQueue(projectId) {
+  if (!state.queues.has(projectId)) return;
+  await loadPlanning();
+  const next = state.planning?.tasks.find((task) => task.status === "queued");
+  if (!next) {
+    state.queues.delete(projectId);
+    return render();
+  }
+  const sessionId = await call("task_prepare", { id: next.id, profileId: null });
+  if (!sessionId) {
+    state.queues.delete(projectId);
+    return render();
+  }
+  await loadSessions();
+  await terminal.start(sessionId);
+}
+
+// ---------------------------------------------------------------- files ---
+
+async function openFiles() {
+  const id = state.sessionId ?? state.projectId;
+  if (!id) return;
+  state.files = {
+    id,
+    view: "changes",
+    snapshot: null,
+    selection: null,
+    preview: null,
+    hash: "",
+    sideBySide: false,
+    message: "",
+    branch: null,
+  };
+  render();
+  await loadFiles();
+}
+
+async function loadFiles() {
+  if (!state.files) return;
+  const snapshot = await call("files_snapshot", { id: state.files.id });
+  if (!snapshot || !state.files) return;
+  state.files.snapshot = snapshot;
+  render();
+  if (state.files.selection) await readSelection();
+}
+
+/// A generation counter makes a slow read harmless: if the selection has moved
+/// on by the time it returns, the result is dropped.
+let generation = 0;
+async function readSelection() {
+  const files = state.files;
+  if (!files?.selection) return render();
+  generation += 1;
+  const mine = generation;
+  render();
+  const preview = await call("files_read", {
+    id: files.id,
+    selection: files.selection,
+    sideBySide: files.sideBySide,
+  });
+  if (mine !== generation || !state.files) return;
+  state.files.preview = preview ?? null;
+  state.files.hash = preview?.hash ?? "";
+  render();
+}
+
+const selectedPath = () => state.files?.selection?.path ?? "";
+const selectedCommit = () => state.files?.selection?.commit ?? "";
+const selectedOriginal = () =>
+  state.files?.snapshot?.changes.find((change) => change.path === selectedPath())?.original ?? null;
+
+function confirmThen(title, body, run) {
+  openModal({ kind: "confirm", title, body, confirmLabel: "Continue", danger: true, run });
+}
+
+async function mutate(mutation) {
+  if (!state.files) return;
+  if (mutation.path === "" && "path" in mutation) return toast("Select a file first.");
+  if (mutation.commit === "" && "commit" in mutation) return toast("Select a commit first.");
+  state.menu = null;
+  const output = await call("files_mutate", { id: state.files.id, mutation });
+  if (output === undefined) return;
+  if (output.trim()) toast(output.trim().slice(0, 160));
+  await loadFiles();
+}
+
+async function trashFile() {
+  const path = selectedPath();
+  if (!path) return toast("Select a file first.");
+  confirmThen("Move untracked file to Trash?", path, async () => {
+    if (await done("files_trash", { id: state.files.id, path })) await loadFiles();
+  });
+}
+
+async function openHunkChoice() {
+  const path = selectedPath();
+  if (!path || state.files.selection.kind !== "unstaged") {
+    return toast("Hunks can only be discarded from unstaged changes.");
+  }
+  const hunks = await call("files_hunks", { id: state.files.id, path });
+  if (!hunks?.length) return toast("This hunk cannot be discarded separately.");
+  openModal({ kind: "hunk", path, hunks, hunk: 0 });
+}
+
+async function confirmHunk() {
+  const dialog = state.dialog;
+  const hunk = Number(dialog.hunk ?? 0);
+  const path = dialog.path;
+  const hash = state.files.hash;
+  closeDialog();
+  await mutate({ action: "discardHunk", path, hunk, hash });
+}
+
+async function commit(amend) {
+  const message = document.querySelector("#commit-message")?.value ?? state.files.message;
+  state.files.message = message;
+  await mutate({ action: "commit", message, amend });
+  state.files.message = "";
+  render();
+}
+
+async function generateMessage() {
+  const existing = document.querySelector("#commit-message")?.value ?? "";
+  const run = async () => {
+    toast("Asking Claude for a commit message…");
+    const message = await call("commit_generate", { id: state.files.id });
+    if (message === undefined) return;
+    state.files.message = message;
+    render();
+  };
+  if (existing.trim()) {
+    return confirmThen(
+      "Replace the message you have written?",
+      "Generating asks Claude for a new message for the staged diff.",
+      run,
+    );
+  }
+  await run();
+}
+
+async function createPullRequest() {
+  state.menu = null;
+  const url = await call("pr_create", { id: state.files.id });
+  if (url) toast(url);
+}
+
+// -------------------------------------------------------------- palette ---
+
+function paletteEntries() {
+  const entries = [
+    ["New session", "Action", () => ACTIONS["new-session"]()],
+    ["Open folder", "Action", openFolder],
+    ["Files & Changes", "Action", openFiles],
+    ["Project settings", "Action", openProjectSettings],
+    ["Import provider history", "Action", openTranscripts],
+    ["Accounts", "Action", openAccounts],
+    ["Settings", "Action", openSettings],
+    ["Activity", "Action", async () => {
+      state.tab = "activity";
+      state.sessionId = null;
+      render();
+      await loadActivity();
+    }],
+  ];
+  for (const item of state.projects) {
+    entries.push([item.title, "Project", () => selectProject(item.id)]);
+  }
+  for (const item of visibleSessions()) {
+    entries.push([item.title, "Session", () => openSession(item.id)]);
+  }
+  return entries.map(([title, kind, run]) => ({ title, kind, run }));
+}
+
+const paletteResults = (query) => {
+  const needle = query.toLowerCase();
+  return paletteEntries().filter(
+    (entry) =>
+      !needle ||
+      entry.title.toLowerCase().includes(needle) ||
+      entry.kind.toLowerCase().includes(needle),
+  );
+};
+
+function openPalette() {
+  openModal({ kind: "palette", query: "", results: paletteResults(""), index: 0 });
+  document.querySelector("#palette-input")?.focus();
+}
+
+function runPalette(index) {
+  const entry = state.dialog?.results?.[index];
+  closeDialog();
+  entry?.run();
+}
+
+// -------------------------------------------------------------- monitor ---
+
+/// The two-second check of what each running agent reports through its hooks.
+/// Terminal text is never used to guess whether an agent has finished.
+async function monitorTick() {
+  if (!state.running.length) return;
+  const report = await call("monitor_tick");
+  if (!report) return;
+  let touched = false;
+  for (const entry of report.states) {
+    if (state.agentState.get(entry.id) !== entry.state) {
+      state.agentState.set(entry.id, entry.state);
+      touched = true;
+      if (entry.notable) notify(entry);
+    }
+  }
+  for (const id of report.hibernate) {
+    await terminal.stop(id);
+  }
+  if (report.changed) await loadSessions();
+  else if (touched) render();
+}
+
+async function notify(entry) {
+  if (!state.settings.notifications || document.hasFocus()) return;
+  const { isPermissionGranted, requestPermission, sendNotification } = await import(
+    "@tauri-apps/plugin-notification"
+  );
+  let granted = await isPermissionGranted();
+  if (!granted) granted = (await requestPermission()) === "granted";
+  if (!granted) return;
+  sendNotification({
+    title: entry.state === "done" ? "Agent finished a turn" : "Agent needs your attention",
+    body: entry.title,
+  });
+}
+
+async function applyKeepAwake() {
+  await call("keep_awake", {
+    wanted:
+      state.settings.keep_awake === "always" ||
+      (state.settings.keep_awake === "sessions" && state.running.length > 0),
+  });
+}
+
+terminal.onExit(async () => {
+  await applyKeepAwake();
+  const projectId = state.projectId;
+  if (state.queues.has(projectId)) await advanceQueue(projectId);
 });
 
-await loadSettings();
-await loadWorkspace();
+// ------------------------------------------------------------- bootstrap --
+
+try {
+  await terminal.wire();
+  await loadSettings();
+  applyTheme();
+  await loadWorkspace({ required: true });
+  await applyKeepAwake();
+  setInterval(monitorTick, 2000);
+  setInterval(applyKeepAwake, 10000);
+} catch (error) {
+  fatal(error?.stack ?? String(error));
+}
