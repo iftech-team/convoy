@@ -426,3 +426,57 @@ pub fn review_feedback(
     terminals.write(&builder, &text)?;
     Ok(builder)
 }
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+    use tauri::Manager;
+
+    #[test]
+    fn folders_and_reviews_survive_reopening_the_existing_workspace() {
+        let directory =
+            std::env::temp_dir().join(format!("convoy-flow-{}", convoy_core::workspace::new_id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let storage = Storage::new(directory.join("state"));
+        let app = tauri::test::mock_app();
+        app.manage(Workspace {
+            storage: storage.clone(),
+            inner: Mutex::new(None),
+        });
+        let project = project_add(directory.to_string_lossy().into_owned(), app.state()).unwrap();
+        let again = project_add(directory.to_string_lossy().into_owned(), app.state()).unwrap();
+        assert_eq!(project, again);
+        let builder = session_create(
+            project,
+            "claude".into(),
+            "Fix login".into(),
+            "Handle expired tokens".into(),
+            "sonnet".into(),
+            app.state(),
+        )
+        .unwrap();
+        let review = review_create(builder.clone(), "Tests pass".into(), app.state()).unwrap();
+        let reloaded = CoreWorkspace::load(storage.workspace_file()).unwrap();
+        assert_eq!(reloaded.state().projects.len(), 1);
+        assert_eq!(
+            reloaded.session(&builder).unwrap().model.as_deref(),
+            Some("sonnet")
+        );
+        assert_eq!(reloaded.session(&review).unwrap().agent, Agent::Codex);
+        assert_eq!(
+            convoy_core::review::builder_of(&reloaded, &review).unwrap(),
+            builder
+        );
+        assert!(reloaded
+            .session(&review)
+            .unwrap()
+            .prompt
+            .contains("Tests pass"));
+        assert_eq!(
+            convoy_core::session::directory_for(&reloaded, &review).unwrap(),
+            convoy_core::session::directory_for(&reloaded, &builder).unwrap()
+        );
+        drop(app);
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+}

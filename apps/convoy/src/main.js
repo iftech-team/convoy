@@ -494,7 +494,7 @@ function render() {
       <div class="scrim"><form class="modal" id="text-dialog" role="dialog" aria-modal="true" aria-label="${feedback ? "Send findings to builder" : "Open folder"}">
         <div class="modal__head"><div class="modal__title">${feedback ? "Send findings to builder" : "Open folder"}</div></div>
         <div class="modal__body"><label class="field"><span class="field__label">${feedback ? "Findings" : "Full folder path"}</span>
-          ${feedback ? '<textarea id="dialog-text" required maxlength="32000"></textarea>' : '<input id="dialog-text" required spellcheck="false" />'}
+          ${feedback ? `<textarea id="dialog-text" aria-label="Findings" required maxlength="32000">${escape(state.dialog.text || "")}</textarea>` : `<input id="dialog-text" aria-label="Full folder path" required spellcheck="false" value="${escape(state.dialog.text || "")}" />`}
           <span class="field__note">${feedback ? "Start or resume the builder first. Findings are pasted into its terminal; you press Enter to send." : "Existing projects and saved sessions are kept."}</span>
         </label></div>
         <div class="modal__foot"><button type="button" class="button" data-dismiss="1">Cancel</button><button class="button button--primary" type="submit">${feedback ? "Paste into builder" : "Open"}</button></div>
@@ -570,7 +570,7 @@ function mountTerminal(id) {
   }
   requestAnimationFrame(() => {
     entry.fit.fit();
-    entry.terminal.focus();
+    if (!state.dialog && state.sessionId === id) entry.terminal.focus();
   });
 }
 
@@ -848,6 +848,7 @@ addEventListener("keydown", (event) => {
 // framework would do this; here it is four lines and no dependency.
 app.addEventListener("input", (event) => {
   const field = event.target;
+  if (field.id === "dialog-text" && state.dialog) { state.dialog.text = field.value; return; }
   if (tasks.onInput(field)) return;
   const keys = { "session-filter": "filter", "project-search": "search" };
   const key = keys[field.id];
