@@ -91,13 +91,15 @@ fn build(application: &adw::Application) {
     dump.connect_clicked({
         let terminal = terminal.clone();
         move |_| {
-            // Row 0 is the oldest row still in the scrollback, so this is the
-            // whole buffer, not just the visible screen.
-            let last = terminal.vadjustment().upper() as i64;
-            let (text, _) = terminal.text_range_format(Format::Text, 0, 0, last, -1);
-            let text = text.map(|value| value.to_string()).unwrap_or_default();
+            // `text_format` and not `text_range_format`: agents draw their UI
+            // with absolute cursor positioning, and a row range returns none
+            // of it. See docs/plan-refactor/05-terminal-vte.md.
+            let text = terminal
+                .text_format(Format::Text)
+                .map(|value| value.to_string())
+                .unwrap_or_default();
             println!(
-                "[probe] text_range_format: {} chars, last 200: {:?}",
+                "[probe] text_format: {} chars, last 200: {:?}",
                 text.chars().count(),
                 convoy_core::json::tail(&text, 200)
             );
@@ -198,9 +200,19 @@ fn build(application: &adw::Application) {
             let terminal = terminal.clone();
             move |result| match result {
                 Ok(child) => {
-                    // Without watch_child there is no `child-exited` signal.
-                    terminal.watch_child(child);
                     pid.set(child.0);
+                    // Without a watch there is no `child-exited` signal and no
+                    // exit code. VTE drops the pty the moment the child is
+                    // gone, and `watch_child` asserts without one, so a
+                    // command that fails instantly needs the GLib watch
+                    // instead. Exactly one watch per pid.
+                    if terminal.pty().is_some() {
+                        terminal.watch_child(child);
+                    } else {
+                        glib::child_watch_add_local(child, |_, status| {
+                            println!("[probe] glib child-watch: status {status}, exit {}", status >> 8);
+                        });
+                    }
                     println!("[probe] pid {}", child.0);
                 }
                 Err(error) => eprintln!("[probe] spawn failed: {error}"),

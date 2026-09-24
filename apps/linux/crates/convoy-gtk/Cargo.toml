@@ -13,6 +13,10 @@ path = "src/main.rs"
 name = "convoy-vte-probe"
 path = "src/bin/vte-probe.rs"
 
+[[bin]]
+name = "convoy-vte-selftest"
+path = "src/bin/vte-selftest.rs"
+
 [dependencies]
 convoy-core = { path = "../convoy-core" }
 gtk.workspace = true
@@ -26,3 +30,4 @@ pulldown-cmark.workspace = true
 libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true

@@ -29,9 +29,22 @@ cargo run --bin convoy
 Debian/Ubuntu need `libgtk-4-dev libadwaita-1-dev libvte-2.91-gtk4-dev
 libgtksourceview-5-dev`.
 
-## Terminal probe
+## Terminal checks
 
-Before trusting VTE with the product's core, run a real agent in it:
+Everything a machine can decide about VTE is decided by the selftest, which
+launches the real agent CLIs through the same `session_spec` the app uses:
+
+```sh
+xvfb-run -a cargo run --bin convoy-vte-selftest
+```
+
+It covers output fidelity, all three input routes, bracketed paste, the
+alternate screen, exit codes for both instant and normal exits, `killpg`
+reaching the whole process tree, resize, and character width. It exits
+non-zero if any check fails.
+
+What a machine cannot judge — mouse reporting and redraw under load — is left
+to the interactive probe:
 
 ```sh
 cargo run --bin convoy-vte-probe                  # login shell
@@ -39,10 +52,9 @@ cargo run --bin convoy-vte-probe -- claude
 cargo run --bin convoy-vte-probe -- codex --no-alt-screen
 ```
 
-Check alt-screen entry and exit, colours, emoji and CJK width, mouse reporting,
-bracketed paste and resize. The buttons exercise the three things the port
-needs from a PTY beyond drawing: reading the buffer back, writing into the
-child, and killing the process group.
+Read the buffer back with `text_format`, never `text_range_format`: agents draw
+their interface with absolute cursor positioning, which a row range does not
+return. That mistake would have produced empty review briefs.
 
 ## Storage
 
@@ -59,7 +71,7 @@ document; the last writer wins.
 - `convoy-core` — done: workspace, validation, migration, Git, files, previews,
   providers, launch, accounts, planning, history, telemetry hooks, worktree
   setup, transcripts, Codex usage, repository tools.
-- `convoy-gtk` — skeleton and terminal probe. The window currently reports the
-  storage path and workspace summary; the real UI is M2 onwards.
+- `convoy-gtk` — skeleton, terminal probe and selftest. The window currently
+  reports the storage path and workspace summary; the real UI is M2 onwards.
 
 Tests never send a model request and never publish a branch or pull request.

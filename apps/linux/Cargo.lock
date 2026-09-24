@@ -126,6 +126,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sourceview5",
+ "tempfile",
  "vte4",
 ]
 

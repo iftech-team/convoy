@@ -19,6 +19,7 @@ pub mod planning;
 pub mod process;
 pub mod provider;
 pub mod repository;
+pub mod session;
 pub mod storage;
 pub mod telemetry;
 pub mod time;
