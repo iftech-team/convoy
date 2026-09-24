@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Convoy</title>
+    <link rel="stylesheet" href="/src/styles/tokens.css" />
+    <link rel="stylesheet" href="/node_modules/@xterm/xterm/css/xterm.css" />
+    <link rel="stylesheet" href="/src/styles/app.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      // A web view has no visible console. Anything that stops the app from
+      // starting is painted into the page instead, so a screenshot shows it.
+      const show = (what) => {
+        const app = document.querySelector("#app");
+        if (!app || app.dataset.failed) return;
+        app.dataset.failed = "1";
+        app.innerHTML =
+          '<pre style="padding:24px;font:12px/1.5 ui-monospace,monospace;' +
+          'color:#b4232a;white-space:pre-wrap"></pre>';
+        app.firstChild.textContent = String(what);
+      };
+      addEventListener("error", (event) =>
+        show(event.error?.stack || event.message));
+      addEventListener("unhandledrejection", (event) =>
+        show(event.reason?.stack || event.reason));
+    </script>
+    <div class="toasts" id="toasts"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

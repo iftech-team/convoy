@@ -1,0 +1,55 @@
+# Maintainer: if(tech) <support@example.invalid>
+pkgname=convoy
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Run and review Claude Code and Codex sessions across projects'
+arch=('x86_64' 'aarch64')
+url='https://github.com/iftech-team/convoy'
+license=('MIT')
+# VTE supplies the terminal, GtkSourceView the diff highlighting. Git and the
+# agent CLIs are run, not linked, so they are optional at install time.
+depends=('gtk4' 'libadwaita' 'vte4' 'gtksourceview5' 'glibc' 'gcc-libs')
+makedepends=('cargo' 'git')
+optdepends=(
+  'git: repository operations'
+  'github-cli: creating pull requests'
+  'claude-code: the Claude agent'
+  'codex: the Codex agent'
+)
+source=("git+$url.git#tag=v$pkgver")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "$srcdir/convoy/apps/linux"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$srcdir/convoy/apps/linux"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release --bin convoy
+}
+
+check() {
+  cd "$srcdir/convoy/apps/linux"
+  export RUSTUP_TOOLCHAIN=stable
+  # The core suite needs no display; the window checks are left to CI, which
+  # has xvfb available.
+  cargo test --frozen --release -p convoy-core
+}
+
+package() {
+  cd "$srcdir/convoy/apps/linux"
+  install -Dm755 target/release/convoy "$pkgdir/usr/bin/convoy"
+  install -Dm644 data/com.iftech.convoy.linux.desktop \
+    "$pkgdir/usr/share/applications/com.iftech.convoy.linux.desktop"
+  install -Dm644 data/com.iftech.convoy.linux.metainfo.xml \
+    "$pkgdir/usr/share/metainfo/com.iftech.convoy.linux.metainfo.xml"
+  install -Dm644 data/icons/hicolor/scalable/apps/com.iftech.convoy.linux.svg \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/com.iftech.convoy.linux.svg"
+  install -Dm644 data/icons/hicolor/symbolic/apps/com.iftech.convoy.linux-symbolic.svg \
+    "$pkgdir/usr/share/icons/hicolor/symbolic/apps/com.iftech.convoy.linux-symbolic.svg"
+  install -Dm644 "$srcdir/convoy/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

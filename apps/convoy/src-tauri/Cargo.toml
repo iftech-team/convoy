@@ -1,0 +1,39 @@
+[package]
+name = "convoy-tauri"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+
+[lib]
+name = "convoy_tauri"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Every rule already lives here, with no toolkit dependency. That is what makes
+# swapping the front end cost three days rather than three months.
+convoy-core = { path = "../../linux/crates/convoy-core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# wezterm's pty layer: a real pty on Unix and ConPTY on Windows, which is the
+# piece that makes one terminal implementation serve both.
+portable-pty = "0.9"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+#  gives a real AppHandle, so the terminal tests go
+# through the same event channel the window uses.
+tauri = { version = "2", features = ["test"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"

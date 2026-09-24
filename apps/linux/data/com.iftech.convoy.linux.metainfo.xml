@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.iftech.convoy.linux</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Convoy</name>
+  <developer id="com.iftech">
+    <name>if(tech)</name>
+  </developer>
+  <summary>Run and review coding agents across projects</summary>
+
+  <description>
+    <p>
+      Convoy runs Claude Code and Codex sessions in real terminals, keeps each
+      conversation attached to the project it belongs to, and makes reviewing
+      the result part of the same workflow.
+    </p>
+    <p>
+      Sessions resume exactly where they left off, worktrees keep parallel work
+      apart, and Files &amp; Changes shows the diff with syntax highlighting and
+      a side-by-side reader. Specifications are revised and approved before
+      tasks are prepared from them, and a finished task moves to review rather
+      than to done — accepting work stays a decision you make.
+    </p>
+    <p>
+      Agents run with your own permissions and sign in through their own
+      interfaces. Convoy never copies your credentials and never submits a
+      message on your behalf.
+    </p>
+  </description>
+
+  <url type="homepage">https://github.com/iftech-team/convoy</url>
+  <url type="bugtracker">https://github.com/iftech-team/convoy/issues</url>
+
+  <launchable type="desktop-id">com.iftech.convoy.linux.desktop</launchable>
+  <provides>
+    <binary>convoy</binary>
+  </provides>
+
+  <categories>
+    <category>Development</category>
+    <category>IDE</category>
+  </categories>
+
+  <requires>
+    <display_length compare="ge">760</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.1.0" date="2026-09-24">
+      <description>
+        <p>First native Linux build, replacing the Electron preview.</p>
+      </description>
+    </release>
+  </releases>
+</component>
