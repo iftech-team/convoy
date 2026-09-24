@@ -80,7 +80,6 @@ app.whenReady().then(async () => {
   await evaluate(`document.getElementById('git-message').value = 'My draft'; document.getElementById('git-generate').click()`);
   await until(`document.getElementById('files-progress').textContent === 'Generating commit message…'`);
   await evaluate(`document.getElementById('files-dialog').close()`);
-  await delay(30);
   await evaluate(`document.getElementById('files-open').click()`);
   await until(`document.querySelector('#files-list button') !== null`);
   generated.resolve('Late generated message');
@@ -90,7 +89,7 @@ app.whenReady().then(async () => {
   const pendingRead = deferred(); readReply = () => pendingRead.promise;
   await evaluate(`document.querySelector('#files-list button').click()`);
   await until(`document.getElementById('file-preview').textContent === 'Loading…'`);
-  await evaluate(`document.getElementById('files-dialog').close()`); await delay(30);
+  await evaluate(`document.getElementById('files-dialog').close()`);
   await evaluate(`document.getElementById('files-open').click()`);
   await until(`document.querySelector('#files-list button') !== null`);
   pendingRead.resolve({ text: 'Stale result', hash: 'old' }); await delay(50);

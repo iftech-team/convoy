@@ -138,12 +138,15 @@ export function installFiles({ api, $, button, perform, context }) {
     if (!list.childElementCount) { const empty = document.createElement('p'); empty.textContent = query ? 'No matching entries. Try another filter.' : tab === 'changes' ? 'Working tree clean. No changes to review.' : tab === 'log' ? 'No commits yet.' : 'No entries to display.'; list.append(empty); }
   }
   $('files-open').onclick = () => perform(async () => {
+    // The close event can be deferred until after a quick reopen (notably in hidden windows).
+    // Preserve the previous draft before resetting fields for this dialog lifetime.
+    if (target) drafts.set(target, $('git-message').value);
     target = context(); if (!target) throw new Error('Open a project first.');
     lifetime++; snapshotGeneration++; clearPreview();
     selectedCommit = undefined; data = undefined; list.replaceChildren(); $('files-filter').value = ''; $('files-branch').textContent = '';
     $('git-message').value = drafts.get(target) || ''; $('git-amend').checked = false; dialog.showModal(); await load();
   });
-  dialog.addEventListener('close', () => { lifetime++; snapshotGeneration++; clearPreview(); loading = false; drafts.set(target, $('git-message').value); });
+  dialog.addEventListener('close', () => { if (dialog.open) return; lifetime++; snapshotGeneration++; clearPreview(); loading = false; drafts.set(target, $('git-message').value); });
   $('files-refresh').onclick = () => perform(load);
   $('files-filter').oninput = () => { if (data) draw(); };
   for (const node of document.querySelectorAll('[data-git-tab]')) node.onclick = () => { tab = node.dataset.gitTab; selectedCommit = undefined; clearPreview(); if (data) draw(); };
