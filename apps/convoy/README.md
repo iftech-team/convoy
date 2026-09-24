@@ -31,6 +31,29 @@ The open question this prototype exists to answer is **input latency on Linux**,
 where the web view is WebKitGTK rather than the Chromium-based WebView2 or
 WKWebView the other two platforms get. Measure before building further.
 
+## What it costs
+
+Release build, one window, three session tabs, no agent running, measured with
+`scripts/memory.sh`.
+
+| | Electron preview | GTK client | This |
+|---|---|---|---|
+| Processes | 7 | 1 | 3 |
+| RSS | 745 MB | 167 MB | 417 MB |
+| Unique (PSS) | ~400–500 MB (estimated) | 65 MB | 137 MB |
+| Artifact | 122 MB AppImage | 3.6 MB binary | 8.9 MB binary |
+
+**A browser engine is not free.** This costs roughly twice the GTK client in
+resident memory, and that is the price of the design, stated plainly. It is
+still well under Electron, and in three processes rather than seven, because
+the web view is the system's rather than a bundled copy of Chromium.
+
+Two caveats on the numbers. The GTK and Tauri figures come from the same Xvfb
+setup, where there is no GPU and both fall back to software rendering; the
+Electron figure was taken on a real desktop session and is not measured the
+same way. And on Windows and macOS the web view is WebView2 and WKWebView,
+which are not WebKitGTK — these numbers describe Linux only.
+
 ## Run it
 
 ```sh
