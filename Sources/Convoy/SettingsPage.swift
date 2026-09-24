@@ -13,6 +13,7 @@ struct SettingsPage: View {
         ("Terminal", "terminal", ["font", "size", "scrollback", "lines", "snapshot"]),
         ("Agents", "sparkles", ["claude", "codex", "hooks", "status", "working", "waiting", "done", "status line", "hibernate", "sleep", "idle", "review", "template", "brief", "default agent", "yolo", "permissions", "skip", "trust", "folder"]),
         ("Accounts", "person.crop.circle", ["account", "login", "switch", "hot swap", "claude", "codex"]),
+        ("Integrations", "link", ["linear", "jira", "atlassian", "issues", "import", "api key", "token", "mcp", "tracker"]),
         ("Quick Commands", "bolt", ["prompt", "preset", "command", "snippet", "quick"]),
         ("Git", "arrow.triangle.branch", ["branch", "worktree", "dirty", "poll", "refresh", "setup", "install", "hooks"]),
         ("Notifications", "bell", ["notify", "sound", "badge", "waiting", "finished", "done", "focus"]),
@@ -64,6 +65,7 @@ struct SettingsPage: View {
                     case "Terminal": TerminalSettings()
                     case "Agents": AgentSettings()
                     case "Accounts": AccountSettings()
+                    case "Integrations": IntegrationSettings()
                     case "Quick Commands": QuickCommandSettings()
                     case "Git": GitSettings()
                     case "Notifications": NotificationSettings()

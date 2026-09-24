@@ -81,6 +81,12 @@ Right-click a project/group to remove its app records after confirmation. Files 
 
 The **Specs** tab retains requirements, acceptance criteria, approval revisions, task assignments, findings and Markdown export. Changes to an approved spec invalidate its approval and mark completed tasks for reassessment. Specs are currently stored in the workspace; Markdown export is a snapshot. Repository synchronization/import is not implemented.
 
+## Linear and Jira import
+
+**Settings → Integrations** holds tracker connections. Linear connects with a personal API key; Jira with an email plus API token (Cloud), a personal access token (Data Center), or a username and password (Server/Data Center basic auth). Either tracker can instead use the agent's own MCP server: Convoy stores no credentials and the task prompt tells the agent to fetch the issue with its Linear or Atlassian MCP tools. Secrets are kept in the macOS Keychain.
+
+On the Tasks page, **Import** searches open issues (assigned to you by default; Jira also accepts raw JQL), or takes pasted issue keys and links for MCP connections. Choose one agent and model for the whole import, or override them per issue, then queue the tasks or run them immediately. Imported tasks keep a link to their issue and are not imported twice into the same project.
+
 ## Tests
 
 ```sh

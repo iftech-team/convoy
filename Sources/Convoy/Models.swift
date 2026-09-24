@@ -78,6 +78,8 @@ struct AgentTask: Codable, Identifiable, Equatable, Sendable {
     var model: String?
     /// Tasks that must be Done before this one may run.
     var dependsOn: [UUID]?
+    /// Set when the task was imported from Linear or Jira.
+    var source: IssueSource?
 }
 
 /// Saved terminal command or agent prompt; `projectID == nil` means global.

@@ -45,6 +45,12 @@ enum TaskPrompt {
         var lines: [String] = []
         lines.append("Task: \(task.title)")
         if !task.details.trimmingCharacters(in: .whitespaces).isEmpty { lines.append("\n\(task.details)") }
+        if let source = task.source {
+            lines.append("\nSource issue: \(source.tracker.rawValue) \(source.key)\(source.url.map { " — \($0)" } ?? "")")
+            if source.viaMCP == true {
+                lines.append("Fetch the full \(source.key) issue (description, acceptance criteria, comments) with your \(source.tracker.rawValue) MCP tools before changing anything, and treat it as the task definition. If those tools are not available, say so and stop.")
+            }
+        }
         lines.append("")
         if docExists { lines.append("Before changing anything, read .specdesk/PROJECT.md for project context and conventions.") }
         if let spec = task.spec { lines.append("The work must satisfy the specification in \(spec). Read it first and treat its acceptance criteria as the definition of done.") }
@@ -188,6 +194,7 @@ struct TasksPanel: View {
     @State private var editing: AgentTask?
     @State private var collapsed: Set<AgentTask.Status> = []
     @State private var hideDone = false
+    @State private var importing = false
 
     private var all: [AgentTask] {
         (project.map { store.tasks(for: $0) } ?? store.tasks).sorted { $0.createdAt > $1.createdAt }
@@ -218,6 +225,8 @@ struct TasksPanel: View {
                         .toggleStyle(.switch).controlSize(.small).help("Start the next queued task when one finishes")
                 }
                 if project != nil || store.project != nil {
+                    Button { importing = true } label: { Label("Import", systemImage: "square.and.arrow.down") }
+                        .help("Import issues from Linear or Jira")
                     Button { newTask() } label: { Label(project == nil ? "New task in \(store.project?.name ?? "")" : "New task", systemImage: "plus") }.buttonStyle(.borderedProminent)
                         .help("New task (\(store.keys.display("project.newTask")))")
                 }
@@ -239,6 +248,7 @@ struct TasksPanel: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: store.newTaskRequest) { _, _ in if editing == nil { newTask() } }
         .sheet(item: $editing) { task in TaskSheet(task: task) }
+        .sheet(isPresented: $importing) { if let p = project ?? store.project { IssueImportSheet(project: p) } }
     }
 
     // MARK: List
@@ -371,6 +381,7 @@ private struct TaskActionsMenu: View {
             }
             if let rid = task.reviewSessionID, let project = meta.project { Button { store.openSession(rid, in: project.id) } label: { Label("Open reviewer", systemImage: "checkmark.bubble") } }
             if let url = task.prURL, let link = URL(string: url) { Button { NSWorkspace.shared.open(link) } label: { Label("Open pull request", systemImage: "arrow.triangle.pull") } }
+            if let source = task.source, let url = source.url, let link = URL(string: url) { Button { NSWorkspace.shared.open(link) } label: { Label("Open \(source.key) in \(source.tracker.rawValue)", systemImage: "arrow.up.forward.square") } }
             Divider()
             Button { editing = task } label: { Label("Edit…", systemImage: "pencil") }
             Menu("Set status") {
@@ -409,6 +420,7 @@ private struct TaskRow: View {
                     .padding(.horizontal, 6).padding(.vertical, 2).background((meta.needsYou ? Color.orange : Color.secondary).opacity(0.12), in: Capsule())
             }
             Spacer(minLength: 12)
+            if let source = task.source { IssueSourceBadge(source: source) }
             if let url = task.prURL, let link = URL(string: url) {
                 Link(destination: link) { Image(systemName: "arrow.triangle.pull").font(.system(size: 11)) }.help(url)
             }
@@ -469,6 +481,7 @@ private struct TaskCardView: View {
                 }
                 if let b = task.branch { Label(b, systemImage: "arrow.triangle.branch").font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
                 if let spec = task.spec { Image(systemName: "doc.text").font(.system(size: 10)).foregroundStyle(.tertiary).help(spec) }
+                if let source = task.source { IssueSourceBadge(source: source) }
                 Spacer()
                 if let url = task.prURL, let link = URL(string: url) { Link(destination: link) { Image(systemName: "arrow.triangle.pull").font(.system(size: 11)) }.help(url) }
                 switch task.status {
@@ -529,12 +542,9 @@ struct TaskSheet: View {
         }.buttonStyle(.plain)
     }
 
-    private static let claudeModels: [(String, String)] = [("opus", "Opus · most capable"), ("sonnet", "Sonnet · balanced"), ("haiku", "Haiku · fastest")]
-    private static let codexModels: [(String, String)] = [("gpt-5-codex", "GPT-5 Codex"), ("gpt-5", "GPT-5"), ("o3", "o3")]
-
     /// Editable model field: pick a preset from the menu or type any model id the CLI accepts.
     private var modelField: some View {
-        let presets = task.agent == .claude ? Self.claudeModels : Self.codexModels
+        let presets = ModelPresets.for(task.agent)
         let binding = Binding(get: { task.model ?? "" }, set: { task.model = $0.isEmpty ? nil : $0 })
         return HStack(spacing: 6) {
             Image(systemName: "cpu").foregroundStyle(.tertiary).font(.system(size: 10))
