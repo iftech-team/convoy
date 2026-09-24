@@ -13,7 +13,7 @@ use tauri::{AppHandle, State};
 use crate::pty::Terminals;
 
 pub struct Workspace {
-    storage: Storage,
+    pub(crate) storage: Storage,
     inner: Mutex<Option<CoreWorkspace>>,
 }
 
@@ -27,7 +27,7 @@ impl Workspace {
 
     /// Opens the workspace on first use and keeps it. A damaged or future file
     /// is reported rather than replaced, so the error reaches the user intact.
-    fn with<T>(
+    pub(crate) fn with<T>(
         &self,
         action: impl FnOnce(&mut CoreWorkspace) -> Result<T, String>,
     ) -> Result<T, String> {

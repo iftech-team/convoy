@@ -4,13 +4,16 @@
 
 pub mod markdown;
 
+use crate::integrations::{self, Connection, Issue, IssueSource, TrackerAuth};
 use crate::json::utf16_len;
+use crate::patterns::MODEL;
 use crate::workspace::model::{
     Agent, Profile, PublishMode, Session, Spec, State, Task, TaskStatus,
 };
 use crate::workspace::{find_spec, find_task_index, new_id, provider_id_for, Workspace};
 use crate::{bail, ensure, Result};
 pub use markdown::markdown;
+use std::collections::BTreeMap;
 
 /// `text()` from planning.cjs, for values already known to be strings.
 fn text(value: &str, max: usize, required: bool) -> Result<()> {
@@ -44,6 +47,48 @@ pub struct TaskInput {
     pub agent: Agent,
     pub mode: PublishMode,
     pub auto_review: bool,
+}
+
+/// Options for [`Workspace::import_issues`]. `overrides` replaces the agent
+/// and model for single issues, keyed by issue key.
+#[derive(Debug, Clone)]
+pub struct ImportOptions {
+    pub agent: Agent,
+    pub model: String,
+    pub mode: PublishMode,
+    pub auto_review: bool,
+    pub overrides: BTreeMap<String, (Agent, String)>,
+}
+
+/// The origin of an imported task, as the agent reads it in its brief.
+fn source_note(source: &IssueSource) -> String {
+    let link = source
+        .url
+        .as_deref()
+        .map(|url| format!(" — {url}"))
+        .unwrap_or_default();
+    let mut note = format!(
+        "\n\nSource issue: {} {}{link}",
+        source.tracker.label(),
+        source.key
+    );
+    if source.via_mcp == Some(true) {
+        note.push_str(&format!(
+            "\nFetch the full {} issue (description, acceptance criteria, comments) with your {} MCP tools before changing anything, and treat it as the task definition. If those tools are not available, say so and stop.",
+            source.key,
+            source.tracker.label()
+        ));
+    }
+    note
+}
+
+fn model_name(model: &str) -> Result<Option<String>> {
+    let model = model.trim();
+    ensure!(
+        utf16_len(model) <= 100 && MODEL.is_match(model),
+        "Invalid model name."
+    );
+    Ok((!model.is_empty()).then(|| model.to_string()))
 }
 
 const PR_NOTE: &str = "Commit your changes, push the current branch and create a pull request with gh pr create --fill. Report its URL. Do not merge.";
@@ -177,6 +222,8 @@ impl Workspace {
                     session_id: None,
                     spec_revision: None,
                     last_error: None,
+                    model: None,
+                    source: None,
                     unknown: Default::default(),
                 }),
             }
@@ -264,8 +311,9 @@ impl Workspace {
                 .as_ref()
                 .map(|spec| markdown(spec, &state.tasks))
                 .unwrap_or_default();
+            let origin = task.source.as_ref().map(source_note).unwrap_or_default();
             let prompt = format!(
-                "{preamble}\n## Current task\n{}\n\n{}\n\nVerify the changes and report your results. {publication}",
+                "{preamble}\n## Current task\n{}\n\n{}{origin}\n\nVerify the changes and report your results. {publication}",
                 task.title, task.details
             );
             ensure!(
@@ -280,7 +328,7 @@ impl Workspace {
                 prompt,
                 provider_id: provider_id_for(task.agent),
                 started: false,
-                model: None,
+                model: task.model.clone(),
                 notes: None,
                 branch: None,
                 archived: None,
@@ -298,6 +346,120 @@ impl Workspace {
             state.sessions.push(session);
             state.tasks[index].session_id = Some(session_id);
             state.tasks[index].spec_revision = revision;
+            Ok(())
+        })
+    }
+
+    /// Creates a queued task for every issue not already imported into the
+    /// project from the same tracker. Returns (created, skipped).
+    pub fn import_issues(
+        &mut self,
+        project_id: &str,
+        connection: &Connection,
+        issues: &[Issue],
+        options: &ImportOptions,
+    ) -> Result<(usize, usize)> {
+        ensure!(
+            self.state()
+                .projects
+                .iter()
+                .any(|project| project.id == project_id),
+            "Project not found."
+        );
+        let default_model = model_name(&options.model)?;
+        let mut picks = BTreeMap::new();
+        for (key, (agent, model)) in &options.overrides {
+            picks.insert(key.clone(), (*agent, model_name(model)?));
+        }
+        let mut created = Vec::new();
+        {
+            let mut seen: std::collections::HashSet<String> = self
+                .state()
+                .tasks
+                .iter()
+                .filter(|task| task.project_id == project_id)
+                .filter_map(|task| task.source.as_ref())
+                .filter(|source| source.tracker == connection.kind)
+                .map(|source| format!("{}\n{}", source.origin.as_deref().unwrap_or(""), source.key))
+                .collect();
+            for issue in issues {
+                let origin = issue
+                    .origin
+                    .clone()
+                    .unwrap_or_else(|| integrations::origin(issue, connection));
+                if issue.key.trim().is_empty() || !seen.insert(format!("{origin}\n{}", issue.key)) {
+                    continue;
+                }
+                let title = if issue.title.is_empty() || issue.title == issue.key {
+                    issue.key.clone()
+                } else {
+                    format!("{}: {}", issue.key, issue.title)
+                };
+                let title: String = title.chars().take(200).collect();
+                let mut details = issue.details.clone();
+                if utf16_len(&details) > 12_000 {
+                    details = details.chars().take(12_000).collect::<String>()
+                        + "\n…(truncated; see the issue)";
+                }
+                let (agent, model) = picks
+                    .get(&issue.key)
+                    .cloned()
+                    .unwrap_or((options.agent, default_model.clone()));
+                created.push(Task {
+                    id: new_id(),
+                    project_id: project_id.to_string(),
+                    title,
+                    details,
+                    findings: String::new(),
+                    agent,
+                    status: TaskStatus::Queued,
+                    mode: options.mode,
+                    auto_review: options.auto_review,
+                    spec_id: None,
+                    session_id: None,
+                    spec_revision: None,
+                    last_error: None,
+                    model,
+                    source: Some(IssueSource {
+                        tracker: connection.kind,
+                        key: issue.key.clone(),
+                        origin: Some(origin),
+                        url: issue.url.clone(),
+                        via_mcp: (connection.auth == TrackerAuth::Mcp).then_some(true),
+                    }),
+                    unknown: Default::default(),
+                });
+            }
+        }
+        let count = created.len();
+        if count > 0 {
+            self.update(move |state| {
+                state.tasks.extend(created);
+                Ok(())
+            })?;
+        }
+        Ok((count, issues.len() - count))
+    }
+
+    /// Changes who builds a task and with which model. A prepared session keeps
+    /// the old choice, so it is detached and the next run prepares a new one.
+    pub fn set_task_agent(&mut self, id: &str, agent: Agent, model: &str) -> Result<&State> {
+        let model = model_name(model)?;
+        let id = id.to_string();
+        self.update(move |state| {
+            let Some(index) = find_task_index(state, &id) else {
+                bail!("Task not found.")
+            };
+            let task = &mut state.tasks[index];
+            ensure!(
+                task.status != TaskStatus::Building,
+                "Stop the task session before editing the task."
+            );
+            if task.agent != agent || task.model != model {
+                task.agent = agent;
+                task.model = model;
+                task.session_id = None;
+            }
             Ok(())
         })
     }

@@ -7,6 +7,7 @@
 
 mod commands;
 mod pty;
+mod tasks;
 
 use std::sync::Arc;
 
@@ -31,6 +32,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(Arc::new(pty::Terminals::new()))
         .manage(commands::Workspace::new())
+        .manage(tasks::Trackers::default())
         .invoke_handler(tauri::generate_handler![
             commands::workspace_read,
             commands::sessions_for,
@@ -43,6 +45,16 @@ pub fn run() {
             commands::session_stop,
             commands::terminal_write,
             commands::terminal_resize,
+            tasks::integrations_list,
+            tasks::integration_save,
+            tasks::integration_remove,
+            tasks::issues_search,
+            tasks::issues_parse_keys,
+            tasks::issues_import,
+            tasks::tasks_for,
+            tasks::task_prepare,
+            tasks::task_agent,
+            tasks::task_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Convoy");

@@ -13,7 +13,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 /// One running agent: the pty it owns, the handle to write into it, and the
 /// process-group leader used to stop the whole tree.
@@ -162,6 +162,19 @@ impl Terminals {
                 .map(|status| status.exit_code() as i32)
                 .unwrap_or(1);
             let stopped = terminals.take(&session_id);
+            // A task built by this session moves to review or failed, by the
+            // same rules as every other build. Absent in the pty tests.
+            if let Some(workspace) = handle.try_state::<crate::commands::Workspace>() {
+                let cause = if stopped {
+                    convoy_core::session::ExitCause::Stopped
+                } else {
+                    convoy_core::session::ExitCause::Exited(code)
+                };
+                let _ = workspace.with(|workspace| {
+                    convoy_core::session::finish_session(workspace, &session_id, cause)
+                        .map_err(|error| error.to_string())
+                });
+            }
             let _ = handle.emit(
                 "terminal:exit",
                 Exit {

@@ -329,6 +329,12 @@ pub struct Task {
     pub spec_revision: Option<u64>,
     #[serde(rename = "lastError", default, skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
+    /// CLI model for the task's session; `None` is the agent's default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Set when the task was imported from Linear or Jira.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<crate::integrations::IssueSource>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }

@@ -13,6 +13,7 @@ pub mod files;
 pub mod git;
 pub mod hash;
 pub mod history;
+pub mod integrations;
 pub mod json;
 pub mod monitor;
 pub mod patterns;

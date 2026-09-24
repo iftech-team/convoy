@@ -54,6 +54,25 @@ Electron figure was taken on a real desktop session and is not measured the
 same way. And on Windows and macOS the web view is WebView2 and WKWebView,
 which are not WebKitGTK — these numbers describe Linux only.
 
+## Tasks and Linear/Jira import
+
+The Tasks tab lists a project's tasks and imports them from Linear or Jira
+(**Linear & Jira…** in the tab or in Settings). Linear connects with a personal
+API key; Jira with an email and API token (Cloud), a personal access token
+(Data Center) or a username and password (Server basic auth). Either can use
+the agent's own MCP server instead, in which case Convoy stores nothing and the
+task brief tells the agent to fetch the issue with its MCP tools.
+
+Choose one agent and model for the whole import or override them per issue,
+then queue the tasks or run them at once. The same key from two different
+sites is two issues; the same issue is never imported twice into a project.
+Jira queries with symbolic operators (`project=PAY`) are sent as JQL; tick
+**JQL** to send anything else verbatim.
+
+Requests, parsing and import rules live in `convoy-core::integrations`.
+Connections are saved in `integrations.json` beside `workspace.json`, created
+owner-only (0600) — plain text, not an OS keychain.
+
 ## Run it
 
 ```sh

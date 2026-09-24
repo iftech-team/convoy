@@ -34,7 +34,11 @@ button {
   cursor: pointer;
 }
 
-input {
+/* Textareas and selects too: left to the browser, they take the desktop's
+   colour scheme and turn white-on-white under a light theme on a dark desktop. */
+input,
+textarea,
+select {
   font: inherit;
   color: inherit;
 }
@@ -1041,4 +1045,154 @@ input {
   .switch::after {
     transition: none;
   }
+}
+
+/* ------------------------------------------------ Linear & Jira import -- */
+
+.modal--wide {
+  width: min(760px, 100%);
+}
+
+.modal select,
+.import__search input:not([type="checkbox"]) {
+  padding: 7px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+
+.import__source,
+.import__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.import__source select,
+.import__search input:not([type="checkbox"]) {
+  flex: 1;
+  min-width: 0;
+}
+
+.import__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.import__list {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.import__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.import__row:last-child {
+  border-bottom: none;
+}
+
+.import__row--done {
+  opacity: 0.55;
+}
+
+.import__key {
+  flex: none;
+  width: 84px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.import__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.import__title > div:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import__meta {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.import__pick {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  opacity: 0.6;
+}
+
+.import__pick--custom,
+.import__pick:focus-within,
+.import__row:hover .import__pick {
+  opacity: 1;
+}
+
+.import__pick select,
+.import__pick input {
+  width: 112px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}
+
+.import__pick input {
+  font-family: var(--font-mono);
+}
+
+.import__empty {
+  padding: 28px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.import__empty--error {
+  color: var(--state-failed);
+}
+
+.import__defaults {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.import__defaults input {
+  font-family: var(--font-mono);
+}
+
+.modal__foot .import__check + .import__check {
+  margin-left: 6px;
+}
+
+/* `.field input` stretches every input; a checkbox in a row must not. */
+.field .import__row > input[type="checkbox"],
+.import__check input[type="checkbox"] {
+  flex: none;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  box-shadow: none;
 }

@@ -23,6 +23,8 @@ serde_json = "1"
 # wezterm's pty layer: a real pty on Unix and ConPTY on Windows, which is the
 # piece that makes one terminal implementation serve both.
 portable-pty = "0.9"
+# Linear and Jira searches. Blocking and small; run off the main thread.
+ureq = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

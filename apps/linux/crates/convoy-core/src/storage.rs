@@ -68,6 +68,11 @@ impl Storage {
         self.root.join("accounts")
     }
 
+    /// Linear and Jira connections, secrets included; written owner-only.
+    pub fn integrations(&self) -> PathBuf {
+        self.root.join("integrations.json")
+    }
+
     /// Worktrees Convoy created itself, and may therefore remove.
     pub fn worktrees(&self) -> PathBuf {
         self.root.join("worktrees")

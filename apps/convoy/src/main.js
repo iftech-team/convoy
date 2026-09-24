@@ -10,6 +10,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { icons } from "./icons.js";
+import { installTasks } from "./tasks.js";
 
 const state = {
   settings: { theme: "system", default_agent: "claude" },
@@ -410,6 +411,14 @@ function settingsDialog() {
                        aria-label="Claude usage status line"></button>`,
             )}
           </div>
+          <div class="group">
+            <div class="group__label">Integrations</div>
+            ${setting(
+              "Linear & Jira",
+              "Import issues as tasks with an API key, a Jira login, or the agent’s MCP server.",
+              `<button class="button" data-action="integrations">Manage…</button>`,
+            )}
+          </div>
         </div>
         <p class="modal__note">
           State lives in <code>${escape(state.storage)}</code>.
@@ -440,6 +449,9 @@ function status() {
 // ----------------------------------------------------------------- render --
 
 function render() {
+  // Dialogs re-render while typing; put the caret back where it was.
+  const active = document.activeElement;
+  const focus = active?.id ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
   const current = project();
   const body = !current
     ? empty(
@@ -451,7 +463,9 @@ function render() {
       ? workbench()
       : state.tab === "sessions"
         ? sessionList()
-        : empty(
+        : state.tab === "tasks"
+          ? tasks.taskList()
+          : empty(
             icons.review,
             `${state.tab[0].toUpperCase()}${state.tab.slice(1)}`,
             "Not in this prototype yet — it exists to check the design and the terminal.",
@@ -470,6 +484,19 @@ function render() {
   }
   if (state.dialog?.kind === "settings") {
     app.insertAdjacentHTML("beforeend", settingsDialog());
+  }
+  const extra = tasks.dialog();
+  if (extra) app.insertAdjacentHTML("beforeend", extra);
+  if (focus && state.dialog) {
+    const field = document.getElementById(focus.id);
+    if (field) {
+      field.focus();
+      try {
+        field.setSelectionRange(focus.start, focus.end);
+      } catch {
+        // Selects and checkboxes have no caret.
+      }
+    }
   }
   if (state.sessionId) mountTerminal(state.sessionId);
 }
@@ -567,6 +594,7 @@ async function loadSessions() {
     archived: state.showArchived,
   });
   state.sessions = sessions ?? [];
+  await tasks.loadTasks();
   render();
 }
 
@@ -670,14 +698,38 @@ async function start(id) {
   await loadWorkspace();
 }
 
+// Starts a session without opening it: used to run several imported tasks
+// at once. The terminal is sized again when it is first shown.
+async function launch(id) {
+  const { terminal } = terminalFor(id);
+  return callDone("session_start", { id, cols: terminal.cols, rows: terminal.rows });
+}
+
+const tasks = installTasks({
+  state,
+  escape,
+  icons,
+  call,
+  callDone,
+  toast,
+  render,
+  loadWorkspace,
+  start,
+  launch,
+});
+
 // ---------------------------------------------------------------- events --
 
 app.addEventListener("click", async (event) => {
   const target = event.target.closest(
     "[data-project],[data-tab],[data-action],[data-start],[data-stop],[data-open]," +
-      "[data-session],[data-agent],[data-dismiss],[data-set],[data-toggle]",
+      "[data-session],[data-agent],[data-dismiss],[data-set],[data-toggle]," +
+      "[data-task-run],[data-task-done],[data-task-edit],[data-issue],[data-conn-add]," +
+      "[data-conn-edit],[data-conn-remove],[data-conn-auth]",
   );
   if (!target) return;
+  if (target.tagName === "SELECT" || (target.tagName === "INPUT" && !target.dataset.issue)) return;
+  if (await tasks.onClick(target)) return;
   // Clicking the panel itself must not dismiss it; only the scrim behind.
   if (target.dataset.dismiss && event.target.closest(".modal") && !target.classList.contains("button")) {
     return;
@@ -751,8 +803,9 @@ addEventListener("keydown", (event) => {
   }
   if (event.key === "Enter" && event.target.tagName === "INPUT") {
     event.preventDefault();
+    if (tasks.onEnter(event.target)) return;
     if (state.dialog.kind === "settings") saveSettings();
-    else createSession();
+    else if (state.dialog.kind === "session") createSession();
   }
 });
 
@@ -760,6 +813,7 @@ addEventListener("keydown", (event) => {
 // framework would do this; here it is four lines and no dependency.
 app.addEventListener("input", (event) => {
   const field = event.target;
+  if (tasks.onInput(field)) return;
   const keys = { "session-filter": "filter", "project-search": "search" };
   const key = keys[field.id];
   if (!key) return;
@@ -770,6 +824,13 @@ app.addEventListener("input", (event) => {
   if (restored) {
     restored.focus();
     restored.setSelectionRange(caret, caret);
+  }
+});
+
+app.addEventListener("change", (event) => {
+  const field = event.target;
+  if (field.tagName === "SELECT" || field.type === "checkbox") {
+    if (!field.dataset.issue) tasks.onChange(field);
   }
 });
 
