@@ -8,6 +8,9 @@
 use super::Workspace;
 use convoy_core::model::{Agent, PublishMode, TaskStatus};
 use convoy_core::planning::{markdown, SpecInput, TaskInput};
+use convoy_core::queue::Completion;
+#[cfg(test)]
+use convoy_core::session::ExitCause;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -233,10 +236,135 @@ pub fn task_prepare(
 
 /// What the queue would run, in order, with what each task will publish. Shown
 /// before it starts: running agents costs money and can publish.
+/// What a finished session means for the queue. Called after every exit, not
+/// only while a queue is running: a single task with automatic review set is
+/// still handed on when it finishes.
+#[derive(serde::Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum AfterExit {
+    /// Not a task session, or the task is not awaiting review.
+    Nothing,
+    /// The specification moved on while the task ran. The queue stops.
+    Superseded,
+    /// Accepted into review; the queue may pull the next task.
+    Continue,
+    /// A review session was created and is waiting to be started.
+    Review { session: String },
+}
+
+#[tauri::command]
+pub fn queue_after_exit(
+    id: String,
+    clean: bool,
+    workspace: State<'_, Workspace>,
+) -> Result<AfterExit, String> {
+    after_exit(&workspace, &id, clean)
+}
+
+/// The rule itself, apart from Tauri's state extractor so a test can reach it.
+pub fn after_exit(workspace: &Workspace, id: &str, clean: bool) -> Result<AfterExit, String> {
+    // A failure or a stop pauses the queue, and the caller does that; there is
+    // nothing to hand on.
+    if !clean {
+        return Ok(AfterExit::Nothing);
+    }
+    let history = convoy_core::history::History::new(workspace.storage.history());
+    workspace.act(|core| {
+        core.session(id)?;
+        // The excerpt is context for the reviewer, never instructions.
+        let output = history.read(id).unwrap_or_default();
+        match convoy_core::queue::on_clean_exit(core, id, &output)? {
+            Completion::Nothing => Ok(AfterExit::Nothing),
+            Completion::Superseded => {
+                convoy_core::queue::mark_superseded(core, id)?;
+                Ok(AfterExit::Superseded)
+            }
+            Completion::Continue => Ok(AfterExit::Continue),
+            Completion::Review(handoff) => {
+                let state = core.add_session(*handoff)?;
+                let session = state
+                    .sessions
+                    .last()
+                    .map(|session| session.id.clone())
+                    .unwrap_or_default();
+                Ok(AfterExit::Review { session })
+            }
+        }
+    })
+}
+
 #[tauri::command]
 pub fn queue_summary(
     project_id: String,
     workspace: State<'_, Workspace>,
 ) -> Result<Vec<String>, String> {
     workspace.with(|workspace| Ok(convoy_core::queue::summary(workspace, &project_id)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use convoy_core::model::{Agent, PublishMode, TaskStatus};
+    use convoy_core::{Storage, Workspace as CoreWorkspace};
+
+    /// A task marked for automatic review hands its work to the other agent
+    /// when it finishes, and the review session it creates is the one the
+    /// caller is told to start.
+    #[test]
+    fn a_finished_task_marked_for_review_is_handed_to_the_other_agent() {
+        let root = std::env::temp_dir().join(format!("convoy-handoff-{}", std::process::id()));
+        let project = root.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let storage = Storage::new(root.join("state"));
+
+        let mut core = CoreWorkspace::load(storage.workspace_file()).unwrap();
+        core.add_project(&project).unwrap();
+        let project_id = core.state().projects[0].id.clone();
+        core.save_task(TaskInput {
+            id: None,
+            project_id,
+            spec_id: None,
+            title: "Something to review".into(),
+            details: String::new(),
+            findings: String::new(),
+            agent: Agent::Claude,
+            mode: PublishMode::None,
+            auto_review: true,
+        })
+        .unwrap();
+        let task_id = core.state().tasks[0].id.clone();
+        core.prepare_task(&task_id, None).unwrap();
+        let builder = core.state().tasks[0].session_id.clone().unwrap();
+        // The exit rules have already run by the time the queue is asked.
+        convoy_core::session::finish_session(&mut core, &builder, ExitCause::Exited(0)).unwrap();
+        assert_eq!(core.state().tasks[0].status, TaskStatus::Review);
+        drop(core);
+
+        let workspace = Workspace::at(storage.clone());
+        let step = after_exit(&workspace, &builder, true).unwrap();
+        let AfterExit::Review { session } = step else {
+            panic!("no review was handed on");
+        };
+
+        let core = CoreWorkspace::load(storage.workspace_file()).unwrap();
+        let review = core
+            .state()
+            .sessions
+            .iter()
+            .find(|item| item.id == session)
+            .expect("the review session was not saved");
+        assert_eq!(review.review_of.as_deref(), Some(builder.as_str()));
+        assert_eq!(
+            review.agent,
+            Agent::Codex,
+            "a review goes to the other agent"
+        );
+
+        // One review per builder: a second exit must not spawn another.
+        assert!(matches!(
+            after_exit(&workspace, &builder, true).unwrap(),
+            AfterExit::Continue
+        ));
+        std::fs::remove_dir_all(&root).ok();
+    }
 }

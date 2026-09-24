@@ -1285,17 +1285,37 @@ async function applyKeepAwake() {
 
 terminal.onExit(async (exit) => {
   await applyKeepAwake();
-  // The queue only moves on after a clean exit. A failure or a stop pauses it,
-  // and nothing resumes it but the user asking again — including a restart.
   const projectId =
     state.sessions.find((item) => item.id === exit.id)?.project_id ?? state.projectId;
-  if (!state.queues.has(projectId)) return;
+  const queued = state.queues.has(projectId);
+
+  // A failure or a stop pauses the queue, and nothing resumes it but the user
+  // asking again — including a restart.
   if (!exit.clean) {
+    if (queued) {
+      state.queues.delete(projectId);
+      toast("The queue is paused: the last task did not finish cleanly.", "bad");
+      render();
+    }
+    return;
+  }
+
+  // What a clean exit means is decided in the core, and it is asked on every
+  // exit: a single task with automatic review set is handed on whether or not
+  // a queue is running.
+  const step = await call("queue_after_exit", { id: exit.id, clean: true });
+  if (!step) return;
+  if (step.kind === "superseded") {
     state.queues.delete(projectId);
-    toast("The queue is paused: the last task did not finish cleanly.", "bad");
+    toast("The specification changed while the task ran. It is back in changes.", "bad");
+    await loadPlanning();
     return render();
   }
-  await advanceQueue(projectId);
+  if (step.kind === "review") {
+    await loadSessions();
+    await terminal.start(step.session);
+  }
+  if (queued && step.kind !== "nothing") await advanceQueue(projectId);
 });
 
 // ------------------------------------------------------------- bootstrap --

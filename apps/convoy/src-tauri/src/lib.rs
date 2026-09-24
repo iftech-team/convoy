@@ -89,6 +89,7 @@ pub fn run() {
             commands::planning::task_status,
             commands::planning::task_prepare,
             commands::planning::queue_summary,
+            commands::planning::queue_after_exit,
             commands::integrations::profiles_read,
             commands::integrations::profile_add,
             commands::integrations::profile_remove,

@@ -154,12 +154,12 @@ jobs:
           cargo build --tests
           $loader = Get-ChildItem -Recurse -Filter WebView2Loader.dll target\debug\build |
             Where-Object { $_.FullName -like '*\x64\*' } | Select-Object -First 1
-          if ($loader) {
-            Write-Host "loader: $($loader.FullName)"
-            Copy-Item $loader.FullName target\debug\deps\ -Force
-          } else {
-            Write-Host "no WebView2Loader.dll found under target\debug\build"
-          }
+          if ($loader) { Copy-Item $loader.FullName target\debug\deps\ -Force }
+          $exe = Get-ChildItem target\debug\deps\convoy_tauri-*.exe |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          $dumpbin = Get-ChildItem "C:\Program Files*\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if ($exe -and $dumpbin) { & $dumpbin.FullName /dependents $exe.FullName }
           cargo test
 
       # The shared rules, run natively: PATH resolution, %APPDATA%, the status
