@@ -5,6 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[lib]
+name = "convoy_gtk"
+path = "src/lib.rs"
+
 [[bin]]
 name = "convoy"
 path = "src/main.rs"
@@ -31,3 +35,11 @@ libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
+
+[[test]]
+name = "ui"
+path = "tests/ui.rs"
+# GTK must run on the main thread, and only one instance may be initialised
+# per process, so this target supplies its own main rather than using the
+# default test harness.
+harness = false

@@ -3,9 +3,6 @@
 //! One process: no renderer, no IPC bridge, no bundled browser. All rules live
 //! in `convoy-core`; this crate shows them and passes input back.
 
-mod app;
-mod paths;
-
 use convoy_core::telemetry::hook;
 use std::path::Path;
 
@@ -22,5 +19,5 @@ fn main() -> glib::ExitCode {
         }
         return glib::ExitCode::SUCCESS;
     }
-    app::run()
+    convoy_gtk::run()
 }
