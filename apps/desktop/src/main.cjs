@@ -41,7 +41,7 @@ function boot() {
   const worktreeRoot = path.join(app.getPath('userData'), 'worktrees');
   const page = pathToFileURL(path.join(__dirname, '../build/index.html')).href;
   const win = new BrowserWindow({ width: 1200, height: 800, minWidth: 760, minHeight: 500,
-    backgroundColor: '#111318', title: 'Convoy Preview',
+    backgroundColor: '#111318', title: 'Convoy',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   win.removeMenu();
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));

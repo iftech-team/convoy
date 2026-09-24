@@ -1,3 +1,4 @@
+import { installUsage } from './usage-ui.js';
 import { installNavigation } from './navigation.js';
 import { installFiles } from './files-ui.js';
 import { Terminal } from '@xterm/xterm';
@@ -68,12 +69,17 @@ function terminal(id) {
   $('terminals').append(host);
   const label = button('', false, () => focusPane(id)); label.className = 'pane-label';
   const surface = document.createElement('div'); surface.className = 'terminal-surface'; host.append(label, surface);
+  const ready = document.createElement('section'); ready.className = 'session-ready';
+  const heading = document.createElement('h2'); heading.textContent = 'Ready to start';
+  const description = document.createElement('p'); description.textContent = 'Your session is saved. Start the agent to open its terminal and begin working.';
+  const launch = button('Start agent', false, () => { focusPane(id); $('start').click(); });
+  ready.append(heading, description, launch); host.append(ready);
   const term = new Terminal({ cursorBlink: true, fontSize: state.settings.fontSize, scrollback: state.settings.scrollback, theme: theme() });
   const fit = new FitAddon(); term.loadAddon(fit); term.open(surface);
   surface.addEventListener('pointerdown', () => { if (sessionID !== id) focusPane(id); });
   surface.addEventListener('focusin', () => { if (sessionID !== id) focusPane(id); });
   term.onData(data => { if (state.running.includes(id)) api.write(id, data).catch(showError); });
-  const entry = { term, fit, host, label }; terminals.set(id, entry); return entry;
+  const entry = { term, fit, host, label, ready, launch }; terminals.set(id, entry); return entry;
 }
 let fitFrame;
 function scheduleFit() {
@@ -105,16 +111,38 @@ function render() {
   const session = selected();
   const query = $('search').value.toLowerCase();
   const visible = s => ($('show-archived').checked || !s.archived) && (!query || `${s.title} ${s.notes || ''}`.toLowerCase().includes(query));
-  $('projects').replaceChildren(...state.projects.filter(p => !query || p.title.toLowerCase().includes(query) || state.sessions.some(s => s.projectID === p.id && visible(s))).map(p => button(`${p.group ? p.group + " / " : ""}${p.icon || ""} ${p.title}`.trim(), p.id === projectID, () => {
-    projectID = p.id; sessionID = state.sessions.find(s => s.projectID === p.id && visible(s))?.id; render();
-  })));
+  const projects = state.projects.filter(p => !query || p.title.toLowerCase().includes(query) || state.sessions.some(s => s.projectID === p.id && visible(s)));
+  $('projects-empty').hidden = projects.length > 0;
+  $('projects-empty').textContent = state.projects.length ? 'No matching projects or sessions.' : 'No projects yet. Open a repository to get started.';
+  $('projects').replaceChildren(...projects.map(p => {
+    const group = document.createElement('div'); group.className = 'project-group';
+    const row = button(p.title, p.id === projectID, () => {
+      projectID = p.id; sessionID = state.sessions.find(s => s.projectID === p.id && visible(s))?.id; render();
+    });
+    row.classList.add('project-row'); row.title = p.path;
+    const count = document.createElement('span'); count.className = 'project-count';
+    count.textContent = state.sessions.filter(s => s.projectID === p.id && !s.archived).length;
+    row.append(count); group.append(row);
+    if (p.group) { const label = document.createElement('small'); label.className = 'project-group-label'; label.textContent = p.group; group.prepend(label); }
+    const children = state.sessions.filter(s => s.projectID === p.id && visible(s)).sort((a,b) => Number(!!b.pinned) - Number(!!a.pinned));
+    if (p.id === projectID || query) for (const item of children) {
+      const child = button(item.title, item.id === sessionID, () => openSession(item.id));
+      child.classList.add('sidebar-session');
+      child.dataset.running = String(state.running.includes(item.id));
+      const detail = document.createElement('small');
+      detail.textContent = [item.agent === 'claude' ? 'Claude' : 'Codex', item.pinned ? 'Pinned' : '', item.archived ? 'Archived' : '', state.running.includes(item.id) ? agentStates.get(item.id) || 'Running' : ''].filter(Boolean).join(' · ');
+      child.append(detail); group.append(child);
+    }
+    return group;
+  }));
+  $('show-archived').closest('label').hidden = !project;
   $('project-title').textContent = project?.title || 'Your agent workspace';
   $('project-path').textContent = session?.workingDirectory || project?.path || 'Open a folder to get started';
   $('new-session').disabled = !project;
   for (const id of ['planning', 'provider-history', 'project-settings', 'files-open']) $(id).disabled = !project;
   const hasSessions = state.sessions.some(s => s.projectID === projectID && !s.archived);
   $('empty-title').textContent = !project ? 'A home for your coding agents' : hasSessions ? 'Choose a session to continue' : 'Start your first session';
-  $('empty-description').textContent = !project ? 'Open a project folder to keep your Claude Code and Codex sessions together.' : hasSessions ? 'Select a saved session above, or create a new one for your next task.' : `Create a Claude Code or Codex session for ${project.title}. You choose when to launch it.`;
+  $('empty-description').textContent = !project ? 'Open a project folder to keep your Claude Code and Codex sessions together.' : hasSessions ? 'Select a saved session above, or create a new one for your next task.' : `Create a Claude Code or Codex session for ${project.title}. The agent launches as soon as you create it.`;
   $('empty-action').textContent = project ? 'New session' : 'Open folder';
   $('sessions').replaceChildren(...state.sessions.filter(s => s.projectID === projectID && visible(s)).sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned)).map(s =>
     button(`${s.pinned ? '★ ' : ''}${state.running.includes(s.id) ? '● ' : ''}${s.title}${agentStates.has(s.id) && state.running.includes(s.id) ? ' · ' + agentStates.get(s.id) : ''}${s.archived ? ' · archived' : ''}`, s.id === sessionID, () => openSession(s.id))));
@@ -132,8 +160,8 @@ function render() {
     terminal(session.id);
     const profile = state.profiles.find(p => p.id === session.profileID);
     $('session-label').textContent = (session.agent === 'claude' ? 'Claude Code' : 'Codex') + ` · ${profile?.label || 'System account'}` + (session.archived ? ' · archived' : '');
-    $('start').textContent = state.running.includes(session.id) ? 'Running' : session.started ? (session.agent === 'codex' && !session.providerID ? 'Open resume picker' : 'Resume') : 'Start';
-    $('start').disabled = state.running.includes(session.id) || !!session.archived || !!session.worktreeRemoved;
+    $('start').textContent = startingSessions.has(session.id) ? 'Starting…' : state.running.includes(session.id) ? 'Running' : session.started ? (session.agent === 'codex' && !session.providerID ? 'Open resume picker' : 'Resume') : 'Start';
+    $('start').disabled = startingSessions.has(session.id) || state.running.includes(session.id) || !!session.archived || !!session.worktreeRemoved;
     $('stop').disabled = !state.running.includes(session.id);
     $('insert-prompt').hidden = !session.prompt;
     $('insert-prompt').disabled = !state.running.includes(session.id);
@@ -149,12 +177,16 @@ function render() {
   $('terminals').classList.toggle('split', panes.length === 2);
   for (const [id, entry] of terminals) {
     entry.host.hidden = !panes.includes(id);
-    entry.label.textContent = state.sessions.find(s => s.id === id)?.title || 'Session';
+    const savedSession = state.sessions.find(s => s.id === id);
+    entry.label.textContent = savedSession?.title || 'Session';
+    entry.ready.hidden = !savedSession || savedSession.started || state.running.includes(id) || startingSessions.has(id);
+    entry.launch.textContent = savedSession?.agent === 'claude' ? 'Start Claude Code' : 'Start Codex';
+    entry.launch.disabled = !!savedSession?.archived || !!savedSession?.worktreeRemoved;
     entry.label.hidden = panes.length !== 2;
     entry.host.classList.toggle('focused-pane', sessionID === id);
     entry.host.style.order = String(panes.indexOf(id));
   }
-  $('status').textContent = `${state.running.length} running · Sessions and recent output saved locally · Preview`;
+  $('status').textContent = `${state.running.length} running · Sessions and recent output saved locally`;
   applySettings(); scheduleFit();
   if ($('planning-dialog').open) renderPlanning();
 }
@@ -176,20 +208,36 @@ $('new-session').onclick = newSession;
 $('empty-action').onclick = () => (projectID ? $('new-session') : $('open-folder')).click();
 $('cancel').onclick = () => $('session-dialog').close();
 for (const node of document.querySelectorAll('[data-close]')) node.onclick = () => $(node.dataset.close).close();
+let creatingSession = false;
+const startingSessions = new Set();
 $('session-form').onsubmit = event => {
   event.preventDefault();
+  if (creatingSession) return;
+  creatingSession = true;
+  const submit = event.target.querySelector('[type="submit"]'); submit.disabled = true;
   perform(async () => {
-    const details = Object.fromEntries(new FormData(event.target));
-    const next = await api.createSession({ ...details, projectID, ...(reviewOf ? { reviewOf } : {}) });
-    sessionID = next.sessions.at(-1).id; $('session-dialog').close(); update(next);
+    try {
+      const details = Object.fromEntries(new FormData(event.target));
+      const next = await api.createSession({ ...details, projectID, ...(reviewOf ? { reviewOf } : {}) });
+      const id = next.sessions.at(-1).id;
+      sessionID = id; $('session-dialog').close(); update(next);
+      await startSession(id);
+    } finally { creatingSession = false; submit.disabled = false; }
   });
 };
-$('start').onclick = () => perform(async () => {
-  const id = sessionID;
-  terminal(id).term.writeln('\r\n\x1b[90mStarting agent…\x1b[0m');
-  update(await api.start(id));
-  if (sessionID === id) { fitActive(); terminal(id).term.focus(); }
-});
+async function startSession(id) {
+  if (!id || startingSessions.has(id) || state.running.includes(id)) return;
+  startingSessions.add(id);
+  const entry = terminal(id);
+  entry.ready.hidden = true; entry.launch.disabled = true;
+  if (sessionID === id) { $('start').disabled = true; $('start').textContent = 'Starting…'; }
+  entry.term.writeln('\r\n\x1b[90mStarting agent…\x1b[0m');
+  try {
+    update(await api.start(id));
+    if (sessionID === id) { fitActive(); entry.term.focus(); }
+  } finally { startingSessions.delete(id); render(); }
+}
+$('start').onclick = () => perform(() => startSession(sessionID));
 $('stop').onclick = () => perform(() => api.stop(sessionID));
 $('recover-session').onclick = () => perform(async () => {
   const next = await api.recover(sessionID); update(next); openSession(next.sessions.at(-1).id);
@@ -233,9 +281,7 @@ $('session-menu').onchange = event => {
       if (!session.reviewOf) throw new Error('Choose a review session linked to a builder.');
       showText(session.id, 'feedback', 'Please address these review findings, verify the changes, and report what you fixed.\n\n' + (await api.history(session.id)).slice(-18000));
     } else if (action === 'usage') {
-      $('usage-value').textContent = 'Loading usage…'; $('usage-dialog').showModal();
-      const result = await api.usage(session.id);
-      $('usage-value').textContent = result.windows.length ? result.windows.map(w => `${w.name}: ${Math.round(w.percent)}% used${w.resetsAt ? ' · resets ' + new Date(w.resetsAt * 1000).toLocaleString() : ''}`).join('\n') : 'Usage is unavailable. Claude reports limits after a supported status-line update.';
+      openUsage(session.id);
     } else if (action === 'history') {
       $('history-value').textContent = await api.history(session.id) || 'No saved output yet.'; $('history-dialog').showModal();
     } else if (action === 'worktree') {
@@ -432,3 +478,5 @@ $('provider-history-form').onsubmit = event => { event.preventDefault(); perform
   $('transcript-list').replaceChildren(...entries.map(item => button(item.title, false, () => perform(async () => { update(await api.importTranscript(item.providerID)); $('provider-history-dialog').close(); openSession(state.sessions.find(s => s.providerID === item.providerID).id); }))));
   if (!entries.length) $('transcript-list').textContent = 'No saved conversations found for this folder and account.';
 }); };
+
+const openUsage = installUsage({ $, api, state: () => state, selected: () => sessionID });

@@ -8,16 +8,16 @@ const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'convoy-ui-'));
 app.setPath('userData', path.join(directory, 'profile'));
 app.whenReady().then(async () => {
   const state = { projects: [{ id: 'p', title: 'Example project', path: directory }], sessions: [], running: [], quickCommands: [], profiles: [], specs: [], tasks: [] };
-  let sentCommand;
+  let sentCommand, failStart = false;
   ipcMain.handle('files:snapshot', () => ({ branch: 'main', changes: [{ path: 'test.js', index: ' ', worktree: 'M' }], files: ['test.js'], log: [], branches: ['main'] }));
   ipcMain.handle('files:read', () => ({ text: 'diff --git a/test.js b/test.js\n--- a/test.js\n+++ b/test.js\n@@ -1 +1 @@\n-before\n+after\n', hash: 'fixture' }));
   ipcMain.handle('workspace:read', () => state);
   ipcMain.handle('session:create', (_event, details) => {
-    state.sessions.push({ ...details, id: state.sessions.length ? 'review' : 's', started: false, providerID: '' });
+    state.sessions.push({ ...details, id: state.sessions.length ? 'review' + (state.sessions.length > 1 ? state.sessions.length : '') : 's', started: false, providerID: '' });
     return state;
   });
   ipcMain.handle('terminal:resize', () => {});
-  ipcMain.handle('terminal:start', () => { state.running = ['s']; state.sessions[0].started = true; return state; });
+  ipcMain.handle('terminal:start', (_event, id) => { if (failStart) throw new Error('Fixture launch failed'); if (!state.running.includes(id)) state.running.push(id); state.sessions.find(s => s.id === id).started = true; return state; });
   ipcMain.handle('settings:save', (_event, settings) => { state.settings = settings; return state; });
   ipcMain.handle('session:edit', (_event, id, patch) => { Object.assign(state.sessions.find(s => s.id === id), patch); return state; });
   ipcMain.handle('review:brief', () => 'Please review the builder changes.');
@@ -49,7 +49,8 @@ app.whenReady().then(async () => {
   assert.equal(await evaluate('document.getElementById("session-dialog").open'), true);
   await evaluate(`document.querySelector('[name="title"]').value = 'Smoke session'; document.getElementById('session-form').requestSubmit()`);
   await until('document.getElementById("sessions").textContent.includes("Smoke session")');
-  await evaluate('document.getElementById("start").click()');
+  await until("document.querySelector('.session-ready').hidden");
+  assert.equal(state.running.includes('s'), true, 'Creating a session starts its agent without another click');
   await until('document.getElementById("start").disabled');
   win.webContents.send('terminal:data', { id: 's', data: '\r\nConvoy terminal renderer is connected.\r\n' });
   await until('document.querySelector(".xterm-screen") !== null');
@@ -89,7 +90,7 @@ app.whenReady().then(async () => {
   await until('document.querySelectorAll(".terminal-host:not([hidden])").length === 2');
   await evaluate('document.querySelectorAll(".terminal-host:not([hidden]) .pane-label")[0].click()');
   await until('document.getElementById("session-label").textContent.includes("Claude Code")');
-  assert.equal(state.running.length, 1);
+  assert.equal(state.running.length, 2);
   assert.ok(await evaluate('[...document.querySelectorAll(".terminal-host:not([hidden])")].every(n => n.clientWidth > 100 && n.clientHeight > 100)'));
   if (process.env.CONVOY_TEST_SCREENSHOT) {
     await new Promise(resolve => setTimeout(resolve, 200));
@@ -102,7 +103,7 @@ app.whenReady().then(async () => {
   await until('window.innerWidth > 900');
   await menu('unsplit');
   await until('document.querySelectorAll(".terminal-host:not([hidden])").length === 1');
-  assert.equal(state.running.length, 1);
+  assert.equal(state.running.length, 2);
   await evaluate('document.getElementById("accounts").click()');
   await evaluate(`document.getElementById('profile-form').elements.label.value = 'Work'; document.getElementById('profile-form').elements.agent.value = 'codex'; document.getElementById('profile-form').requestSubmit()`);
   await until('document.getElementById("profile-list").textContent.includes("Work")');
@@ -135,6 +136,14 @@ app.whenReady().then(async () => {
   if (process.env.CONVOY_TEST_SCREENSHOT) fs.writeFileSync(process.env.CONVOY_TEST_SCREENSHOT + '.files.png', (await win.webContents.capturePage()).toPNG());
   await evaluate("document.getElementById('files-dialog').close(); document.getElementById('palette-open').click(); document.getElementById('palette-search').value = 'settings'; document.getElementById('palette-search').dispatchEvent(new Event('input')); document.querySelector('#palette-list button').click()");
   assert.equal(await evaluate("document.getElementById('settings-dialog').open"), true);
+  failStart = true;
+  await evaluate("document.getElementById('settings-dialog').close(); document.getElementById('new-session').click()");
+  const countBeforeFailure = state.sessions.length;
+  await evaluate("document.querySelector('#session-form [name=title]').value = 'Launch failure'; document.getElementById('session-form').requestSubmit(); document.getElementById('session-form').requestSubmit()");
+  await until("document.getElementById('error').textContent.includes('Fixture launch failed')");
+  assert.equal(state.sessions.length, countBeforeFailure + 1, 'Duplicate submits must not create duplicate sessions');
+  assert.equal(state.sessions.at(-1).started, false, 'A launch failure preserves the saved session for retry');
+  assert.equal(await evaluate("document.getElementById('start').disabled"), false);
   console.log('Renderer settings, reviews, split focus, account creation, spec approval, and task preparation passed');
   win.destroy();
   app.exit(0);

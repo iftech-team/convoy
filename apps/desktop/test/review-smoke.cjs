@@ -15,6 +15,8 @@ app.whenReady().then(async () => {
   let readReply = (_id, request) => ({ text: `${request.kind} preview`, hash: 'fixture' });
   let mutateReply = () => true;
   let resizeCount = 0, lastRequest;
+  let usageReply = () => ({ at: Date.now(), windows: [{ name: 'five_hour', percent: 42, resetsAt: Math.floor(Date.now() / 1000) + 3600 }] });
+  ipcMain.handle('usage:read', () => usageReply());
   ipcMain.handle('workspace:read', () => state);
   ipcMain.handle('files:snapshot', () => snapshotReply());
   ipcMain.handle('files:read', (event, id, request) => { lastRequest = request; return readReply(id, request); });
@@ -47,6 +49,30 @@ app.whenReady().then(async () => {
   win.webContents.send('terminal:data', { id: 's', data: 'Fixture agent is ready.\r\n' });
   await capture('02-session');
 
+  assert.equal(await evaluate('document.title'), 'Convoy');
+  assert.equal(await evaluate("document.querySelectorAll('#projects .sidebar-session').length"), 1);
+  await evaluate("document.getElementById('limits-open').click()");
+  await until("document.querySelector('#usage-value progress')?.value === 42");
+  await capture('05-limits');
+  // Closing and reopening while a provider is still loading must ignore the older result.
+  const pendingUsage = deferred(); usageReply = () => pendingUsage.promise;
+  await evaluate("document.getElementById('usage-refresh').click()");
+  await until("document.getElementById('usage-refresh').disabled");
+  await evaluate("document.getElementById('usage-dialog').close()");
+  usageReply = () => ({ windows: [] });
+  await evaluate("document.getElementById('limits-open').click()");
+  await until("document.getElementById('usage-value').textContent.includes('No usage reported')");
+  pendingUsage.resolve({ windows: [{ name: 'five_hour', percent: 99 }] });
+  await delay(60);
+  assert.equal(await evaluate("document.querySelectorAll('#usage-value progress').length"), 0);
+  usageReply = () => { throw new Error('Fixture account offline'); };
+  await evaluate("document.getElementById('usage-refresh').click()");
+  await until("document.getElementById('usage-value').textContent.includes('Fixture account offline')");
+  assert.equal(await evaluate("document.getElementById('usage-refresh').disabled"), false);
+  await evaluate("document.getElementById('usage-dialog').close()");
+  await evaluate("document.documentElement.dataset.theme = 'light'");
+  await capture('06-light-sidebar');
+  await evaluate("document.documentElement.dataset.theme = 'dark'");
   await evaluate(`document.getElementById('files-open').click()`);
   await until(`document.querySelector('#files-list button') !== null`);
   await evaluate(`document.querySelector('#files-list button').click()`);
@@ -128,6 +154,11 @@ app.whenReady().then(async () => {
   win.webContents.send('terminal:data', { id: 's', data: 'late output' }); await delay(50);
   assert.equal(await evaluate(`document.querySelectorAll('.terminal-host').length`), 0);
   assert(await evaluate(`document.getElementById('files-open').disabled`));
+  await evaluate("document.getElementById('limits-open').click()");
+  await until("document.getElementById('usage-value').textContent.includes('Create or select')");
+  assert.equal(await evaluate("document.getElementById('usage-refresh').disabled"), true);
+  await evaluate("document.getElementById('usage-dialog').close()");
+  await capture('07-empty-compact');
   console.log('Git race, staged preview, draft preservation, compact layout, terminal resize and cleanup regressions passed');
   win.destroy(); app.exit(0);
 }).catch(error => { console.error(error); app.exit(1); });

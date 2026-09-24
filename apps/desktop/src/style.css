@@ -128,3 +128,71 @@ html[data-theme="light"] .badge, html[data-theme="light"] aside h2, html[data-th
 #session-recovery { margin: 0 16px 12px; padding: 12px 16px; border: 1px solid #b88b3c; border-radius: 8px; overflow: auto; max-height: 35vh; }
 #session-recovery p { margin: 0 0 8px; }
 #session-recovery .hint { margin: 8px 0 0; }
+
+/* Shared native palette and compact workspace navigation. */
+:root { background: #0e0f10; --surface: #141517; --raised: #17181a; --border: #ffffff12; --accent: #8c99eb; }
+aside { width: 250px; padding: 14px 10px 10px; gap: 12px; background: var(--surface); border-color: var(--border); }
+aside header { height: 32px; padding: 0 6px; gap: 8px; font-size: 15px; }
+aside header img { border-radius: 6px; }
+#search { width: 100%; background: #ffffff08; border-color: transparent; padding: 7px 9px; font-size: 12px; }
+.sidebar-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 6px; }
+.sidebar-heading h2 { margin: 0; letter-spacing: .7px; }
+.sidebar-heading button { padding: 4px 6px; background: transparent; border-color: transparent; color: var(--accent); font-size: 11px; }
+#projects { display: block; min-height: 0; flex: 1; }
+.project-group { margin-bottom: 8px; }
+#projects button { display: block; width: 100%; padding: 7px 9px; border-radius: 6px; font-size: 12px; }
+#projects .project-row { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; }
+.project-count { color: #969ca9; font-size: 10px; font-weight: 400; flex-shrink: 0; }
+#projects .sidebar-session { width: calc(100% - 16px); margin: 3px 0 0 16px; border-left: 1px solid var(--border); border-radius: 0 5px 5px 0; }
+.sidebar-session small { font-size: 10px; margin-top: 3px; }
+#projects button:hover, .footer-actions button:hover { background: #ffffff08; }
+#projects button.selected { background: #8c99eb18; border-color: #8c99eb30; }
+#projects .sidebar-session[data-running="true"] small { color: #8ec8ab; }
+.project-group-label { margin: 9px; font-size: 10px; }
+#projects-empty { margin: 0 8px; }
+#projects:empty { flex: 0; }
+#discover-projects { margin-top: auto; background: transparent; border-color: transparent; text-align: left; font-size: 12px; color: #a0a7b5; padding: 7px 9px; }
+aside footer { margin-top: 0; padding: 10px 4px 0; border-top: 1px solid var(--border); }
+.footer-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin-bottom: 8px; }
+.footer-actions button, #settings { text-align: left; background: transparent; border-color: transparent; padding: 6px; font-size: 12px; }
+.footer-caption { float: right; font-size: 10px; line-height: 30px; }
+.toolbar { min-height: 65px; padding: 12px 20px; border-color: var(--border); }
+.toolbar strong { font-size: 13px; }
+.toolbar small { font-size: 11px; }
+.header-actions button { padding: 7px 10px; font-size: 12px; background: var(--raised); border-color: var(--border); }
+#new-session, #start, #empty-action { background: #5e6ad2; border-color: #7c86de; color: #fff; }
+#sessions { background: var(--raised); padding: 7px 12px; }
+#sessions:empty { padding: 0; }
+#sessions button { font-size: 12px; padding: 6px 10px; background: transparent; border-color: transparent; }
+#sessions button.selected { background: #8c99eb18; border-color: #8c99eb30; }
+.archive-toggle { font-size: 11px; margin-top: 8px; }
+.status-bar { display: flex; align-items: center; gap: 12px; min-height: 35px; padding: 4px 12px; border-top: 1px solid var(--border); background: var(--raised); flex-shrink: 0; }
+#limits-open { background: transparent; border: 0; padding: 4px 0; color: var(--accent); font-size: 11px; font-weight: 600; white-space: nowrap; }
+#limits-summary { color: #969ca9; font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
+.status { margin-left: auto; border: 0; padding: 0; white-space: nowrap; font-size: 10px; }
+.usage-window { display: grid; gap: 10px; margin: 20px 0; white-space: normal; }
+.usage-window strong { font-size: 13px; }
+.usage-window progress { width: 100%; height: 7px; accent-color: #8c99eb; }
+.usage-window small { white-space: normal; }
+#usage-value { font-size: 13px; line-height: 1.6; white-space: normal; }
+#usage-session { width: 100%; }
+#empty h1 { font-size: 23px; }
+html[data-theme="light"] { --surface: #f3f3f5; --raised: #f6f6f8; --border: #00000012; --accent: #5e6ad2; }
+html[data-theme="light"] #search { background: #00000005; }
+html[data-theme="light"] .header-actions button { background: var(--raised); }
+html[data-theme="light"] #new-session { background: #5e6ad2; }
+html[data-theme="light"] #projects .sidebar-session[data-running="true"] small { color: #28754a; }
+@media (max-width: 900px) {
+  aside { width: 215px; }
+  .toolbar { padding: 10px 14px; gap: 10px; }
+  .status { max-width: 32%; overflow: hidden; text-overflow: ellipsis; }
+  .footer-caption { display: none; }
+}
+
+.session-ready { position: absolute; inset: 35px 0 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #0e0f10; padding: 24px; text-align: center; overflow: auto; }
+.session-ready h2 { font-size: 20px; margin: 0; }
+.session-ready p { max-width: 390px; font-size: 13px; }
+.session-ready button { background: #5e6ad2; border-color: #7c86de; color: white; }
+html[data-theme="light"] .session-ready { background: #fafbfe; }
+html[data-theme="light"] .footer-actions button, html[data-theme="light"] .sidebar-heading button { background: transparent; border-color: transparent; }
+html[data-theme="light"] .sidebar-heading button { color: var(--accent); }

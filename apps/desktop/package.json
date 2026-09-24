@@ -28,7 +28,7 @@
   },
   "build": {
     "appId": "com.iftech.convoy.desktop",
-    "productName": "Convoy Preview",
+    "productName": "Convoy",
     "directories": {
       "output": "release"
     },
