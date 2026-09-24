@@ -57,6 +57,7 @@ pub fn run() {
             commands::session::session_recover,
             commands::session::session_start,
             commands::session::session_stop,
+            commands::session::session_hibernate,
             commands::session::session_output,
             commands::session::terminal_write,
             commands::session::terminal_resize,
@@ -65,7 +66,6 @@ pub fn run() {
             commands::session::review_create,
             commands::session::review_builder,
             commands::session::git_status,
-            commands::session::activity_record,
             commands::session::worktree_create,
             commands::session::worktree_setup,
             commands::session::worktree_plan_remove,
@@ -96,7 +96,6 @@ pub fn run() {
             commands::integrations::transcripts_import,
             commands::integrations::activity_read,
             commands::integrations::usage_read,
-            commands::integrations::running_sessions,
             monitor::monitor_tick,
             power::keep_awake,
         ])

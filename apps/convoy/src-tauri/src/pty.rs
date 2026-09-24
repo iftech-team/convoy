@@ -8,12 +8,13 @@
 //! emit thousands of lines a second, and a poll would either lag behind it or
 //! spin.
 
+use convoy_core::session::ExitCause;
 use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 /// One running agent: the pty it owns, the handle to write into it, and the
 /// process-group leader used to stop the whole tree.
@@ -22,6 +23,9 @@ struct Session {
     writer: Box<dyn Write + Send>,
     pid: Option<u32>,
     stopping: bool,
+    /// Hibernation stops a session too, but it is not a failure: the task it
+    /// belongs to goes to review rather than being marked failed.
+    hibernating: bool,
 }
 
 #[derive(Default)]
@@ -56,6 +60,8 @@ pub struct Exit {
     pub code: i32,
     /// True when the user asked for it, so the UI does not report a failure.
     pub stopped: bool,
+    /// Whether the queue may pull the next task. A failure or a stop pauses it.
+    pub clean: bool,
 }
 
 impl Terminals {
@@ -161,13 +167,26 @@ impl Terminals {
                 .wait()
                 .map(|status| status.exit_code() as i32)
                 .unwrap_or(1);
-            let stopped = terminals.take(&session_id);
+            let cause = terminals.take(&session_id, code);
+
+            // The exit rules run here rather than in the web view. A clean exit
+            // sends the task to review and a failure pauses the queue, and
+            // neither should depend on a window being able to answer.
+            if let Some(workspace) = handle.try_state::<crate::commands::Workspace>() {
+                if let Err(error) = workspace
+                    .act(|core| convoy_core::session::finish_session(core, &session_id, cause))
+                {
+                    let _ = handle.emit("terminal:trouble", error);
+                }
+            }
+
             let _ = handle.emit(
                 "terminal:exit",
                 Exit {
                     id: session_id,
                     code,
-                    stopped,
+                    stopped: cause != ExitCause::Exited(code),
+                    clean: convoy_core::session::completed_cleanly(cause),
                 },
             );
         });
@@ -180,6 +199,7 @@ impl Terminals {
                     writer,
                     pid,
                     stopping: false,
+                    hibernating: false,
                 },
             );
         }
@@ -187,13 +207,19 @@ impl Terminals {
     }
 
     /// Removes a finished session and reports whether its exit was asked for.
-    fn take(&self, id: &str) -> bool {
-        self.sessions
+    /// Removes the session and says how it ended, which is what decides the
+    /// fate of the task behind it.
+    fn take(&self, id: &str, code: i32) -> ExitCause {
+        let session = self
+            .sessions
             .lock()
             .ok()
-            .and_then(|mut sessions| sessions.remove(id))
-            .map(|session| session.stopping)
-            .unwrap_or(false)
+            .and_then(|mut sessions| sessions.remove(id));
+        match session {
+            Some(session) if session.hibernating => ExitCause::Hibernated,
+            Some(session) if session.stopping => ExitCause::Stopped,
+            _ => ExitCause::Exited(code),
+        }
     }
 
     pub fn write(&self, id: &str, data: &str) -> Result<(), String> {
@@ -227,6 +253,17 @@ impl Terminals {
     /// Stops the process group, so the agent's own children go with it, then
     /// insists after a grace period. Takes `Arc<Self>` because the follow-up
     /// runs on its own thread and has to keep the registry alive.
+    /// Stopping because the agent has been idle since it reported a finished
+    /// turn. The process ends the same way; the bookkeeping does not.
+    pub fn hibernate(self: &Arc<Self>, id: &str) {
+        if let Ok(mut sessions) = self.sessions.lock() {
+            if let Some(session) = sessions.get_mut(id) {
+                session.hibernating = true;
+            }
+        }
+        self.stop(id);
+    }
+
     pub fn stop(self: &Arc<Self>, id: &str) {
         let pid = {
             let Ok(mut sessions) = self.sessions.lock() else {

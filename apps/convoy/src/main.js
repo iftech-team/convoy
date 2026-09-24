@@ -41,11 +41,14 @@ const app = document.querySelector("#app");
 // the message is the difference between "Convoy is broken" and a line the user
 // can act on — a corrupt workspace file says so.
 function fatal(detail) {
+  const where = state.storage
+    ? `<p>The workspace file is at <code>${escape(state.storage)}</code>.</p>`
+    : "";
   app.innerHTML = `
     <div class="fatal">
       <h1>Convoy could not start</h1>
       <pre>${escape(detail)}</pre>
-      <p>The workspace file is at ${escape(state.storage ?? "its usual place")}.</p>
+      ${where}
     </div>`;
 }
 
@@ -1194,7 +1197,7 @@ async function monitorTick() {
     }
   }
   for (const id of report.hibernate) {
-    await terminal.stop(id);
+    await terminal.hibernate(id);
   }
   if (report.changed) await loadSessions();
   else if (touched) render();
@@ -1222,10 +1225,19 @@ async function applyKeepAwake() {
   });
 }
 
-terminal.onExit(async () => {
+terminal.onExit(async (exit) => {
   await applyKeepAwake();
-  const projectId = state.projectId;
-  if (state.queues.has(projectId)) await advanceQueue(projectId);
+  // The queue only moves on after a clean exit. A failure or a stop pauses it,
+  // and nothing resumes it but the user asking again — including a restart.
+  const projectId =
+    state.sessions.find((item) => item.id === exit.id)?.project_id ?? state.projectId;
+  if (!state.queues.has(projectId)) return;
+  if (!exit.clean) {
+    state.queues.delete(projectId);
+    toast("The queue is paused: the last task did not finish cleanly.", "bad");
+    return render();
+  }
+  await advanceQueue(projectId);
 });
 
 // ------------------------------------------------------------- bootstrap --

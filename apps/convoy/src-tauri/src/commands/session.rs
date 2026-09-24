@@ -1,7 +1,7 @@
 //! Sessions: creating them, editing them, running them, and handing work on.
 
 use super::{directory_or_project, view_of, SessionView, Workspace};
-use convoy_core::model::{ActivityKind, Agent};
+use convoy_core::model::Agent;
 use convoy_core::session::{mark_started, plan_launch};
 use convoy_core::workspace::{NewSession, SessionPatch};
 use serde::Deserialize;
@@ -203,6 +203,13 @@ pub fn session_stop(id: String, terminals: State<'_, Arc<Terminals>>) {
     terminals.stop(&id);
 }
 
+/// Stopping an agent that has been idle since it said it was finished. The
+/// task behind it goes to review, not to failed: nothing went wrong.
+#[tauri::command]
+pub fn session_hibernate(id: String, terminals: State<'_, Arc<Terminals>>) {
+    terminals.hibernate(&id);
+}
+
 #[tauri::command]
 pub fn terminal_write(
     id: String,
@@ -301,26 +308,6 @@ pub fn git_status(id: String, workspace: State<'_, Workspace>) -> Result<GitStat
         branch: status.branch,
         changed_files: status.changed_files,
     })
-}
-
-#[tauri::command]
-pub fn activity_record(
-    id: String,
-    kind: String,
-    detail: String,
-    workspace: State<'_, Workspace>,
-) -> Result<(), String> {
-    let kind = match kind.as_str() {
-        "started" => ActivityKind::Started,
-        "resumed" => ActivityKind::Resumed,
-        "exited" => ActivityKind::Exited,
-        "done" => ActivityKind::Done,
-        "waiting" => ActivityKind::Waiting,
-        "hibernated" => ActivityKind::Hibernated,
-        "worktree" => ActivityKind::Worktree,
-        other => return Err(format!("Unknown activity: {other}")),
-    };
-    workspace.act(|workspace| workspace.record(kind, &id, &detail).map(|_| ()))
 }
 
 // ---------------------------------------------------------------------------

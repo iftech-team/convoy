@@ -105,6 +105,13 @@ export async function stop(id) {
   await done("session_stop", { id });
 }
 
+/// Stopping an agent that has gone idle since it reported a finished turn.
+/// The process ends the same way, but the task it belongs to goes to review
+/// rather than being recorded as a failure.
+export async function hibernate(id) {
+  await done("session_hibernate", { id });
+}
+
 /// Text typed into a running agent, bracketed and without an Enter unless
 /// asked for.
 export async function paste(id, text, submit = false) {
@@ -120,6 +127,10 @@ export async function wire() {
   await listen("terminal:data", ({ payload }) => {
     terminalFor(payload.id).terminal.write(payload.data);
   });
+
+  // The exit rules are applied in the backend, where they do not depend on a
+  // window being there to answer. If one of them fails, say so.
+  await listen("terminal:trouble", ({ payload }) => toast(String(payload), "bad"));
 
   await listen("terminal:exit", async ({ payload }) => {
     const entry = terminals.get(payload.id);

@@ -4,10 +4,7 @@
 use super::{directory_or_project, Workspace};
 use convoy_core::model::Agent;
 use serde::Serialize;
-use std::sync::Arc;
 use tauri::State;
-
-use crate::pty::Terminals;
 
 #[derive(Serialize)]
 pub struct ProfileView {
@@ -286,11 +283,4 @@ pub fn usage_read(id: String, workspace: State<'_, Workspace>) -> Result<UsageVi
             .collect(),
         note,
     })
-}
-
-/// Which sessions currently have a process, for the front end to reconcile
-/// after a reload.
-#[tauri::command]
-pub fn running_sessions(terminals: State<'_, Arc<Terminals>>) -> Vec<String> {
-    terminals.ids()
 }
