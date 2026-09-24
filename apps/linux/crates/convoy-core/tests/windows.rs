@@ -175,12 +175,18 @@ fn a_unix_launch_still_goes_through_a_login_shell() {
 fn storage_lands_where_each_platform_keeps_application_data() {
     // Both resolve to what Electron's `app.getPath('appData')` gives, which is
     // what lets the three builds read one file.
+    // Rooted by the rules of the platform named, not of the one running the
+    // test: `Path::is_absolute` would answer the wrong question on either.
     let unix = convoy_core::storage::config_root_for(Platform::Unix);
-    assert!(unix.is_absolute(), "{unix:?}");
+    assert!(unix.to_string_lossy().starts_with('/'), "{unix:?}");
 
     let windows = convoy_core::storage::config_root_for(Platform::Windows);
     assert!(
         windows.ends_with("Roaming") || std::env::var_os("APPDATA").is_some(),
+        "{windows:?}"
+    );
+    assert!(
+        convoy_core::storage::rooted_anywhere(&windows),
         "{windows:?}"
     );
 }
