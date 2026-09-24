@@ -27,13 +27,34 @@ pub fn config_root_for(platform: Platform) -> PathBuf {
     if platform.is_windows() {
         return std::env::var_os("APPDATA")
             .map(PathBuf::from)
-            .filter(|path| path.is_absolute())
+            .filter(|path| rooted(path, platform))
             .unwrap_or_else(|| home(platform).join("AppData").join("Roaming"));
     }
     std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
-        .filter(|path| path.is_absolute())
+        .filter(|path| rooted(path, platform))
         .unwrap_or_else(|| home(platform).join(".config"))
+}
+
+/// Whether a path is rooted **for the named platform**, rather than for
+/// whichever one this is running on. `Path::is_absolute` answers the host's
+/// question: `C:\\Users` is not absolute on Linux and `/home/me` is not
+/// absolute on Windows, so using it here would make each platform's rules
+/// testable only from that platform — the thing passing a platform exists to
+/// avoid.
+fn rooted(path: &Path, platform: Platform) -> bool {
+    let text = path.to_string_lossy();
+    let bytes = text.as_bytes();
+    if platform.is_windows() {
+        let drive = bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && (bytes[2] == b'\\' || bytes[2] == b'/');
+        // A UNC share is rooted too.
+        drive || text.starts_with("\\\\")
+    } else {
+        text.starts_with('/')
+    }
 }
 
 pub fn home(platform: Platform) -> PathBuf {
@@ -111,12 +132,26 @@ mod tests {
     #[test]
     fn config_root_follows_the_xdg_variable_only_when_absolute() {
         let root = config_root_for(Platform::Unix);
-        assert!(root.is_absolute(), "{root:?}");
+        assert!(root.to_string_lossy().starts_with('/'), "{root:?}");
         match std::env::var_os("XDG_CONFIG_HOME") {
-            Some(value) if Path::new(&value).is_absolute() => {
+            Some(value) if rooted(Path::new(&value), Platform::Unix) => {
                 assert_eq!(root, PathBuf::from(value))
             }
             _ => assert!(root.ends_with(".config")),
         }
+    }
+
+    /// Each platform's idea of a rooted path, judged from either of them.
+    #[test]
+    fn rootedness_is_decided_by_the_named_platform_not_the_host() {
+        assert!(rooted(Path::new("/home/me"), Platform::Unix));
+        assert!(!rooted(Path::new("home/me"), Platform::Unix));
+        assert!(!rooted(Path::new("C:\\Users\\me"), Platform::Unix));
+
+        assert!(rooted(Path::new("C:\\Users\\me"), Platform::Windows));
+        assert!(rooted(Path::new("D:/Users/me"), Platform::Windows));
+        assert!(rooted(Path::new("\\\\server\\share"), Platform::Windows));
+        assert!(!rooted(Path::new("/home/me"), Platform::Windows));
+        assert!(!rooted(Path::new("C:relative"), Platform::Windows));
     }
 }

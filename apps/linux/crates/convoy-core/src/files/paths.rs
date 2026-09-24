@@ -8,11 +8,30 @@ use crate::{bail, Result};
 use std::path::{Component, Path, PathBuf};
 
 /// `relative()` — a repository-relative path with no traversal, no NUL and no
-/// absolute prefix. Returned unchanged so callers keep the original spelling,
+/// root of any kind. Returned unchanged so callers keep the original spelling,
 /// which Git needs for `--literal-pathspecs`.
+///
+/// The rules are Windows's and Unix's together, on both platforms.
+/// `Path::is_absolute` answers only the host's question, and on Windows
+/// `/etc/passwd` is not absolute — it is rooted on the current drive, and
+/// `root.join("/etc/passwd")` throws the root away and lands outside the
+/// repository. A path is also judged the same way wherever it is read, so a
+/// `workspace.json` written on one platform cannot smuggle something past the
+/// other.
 pub fn relative(value: &str) -> Result<&str> {
+    let bytes = value.as_bytes();
+    let rooted = matches!(bytes.first(), Some(b'/') | Some(b'\\'));
+    // `C:\file` is not relative at all, and `C:file` is relative to wherever
+    // that drive happens to be, which is not here.
+    let drive = bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic();
     let traversal = value.split(['/', '\\']).any(|segment| segment == "..");
-    if value.is_empty() || value.contains('\0') || Path::new(value).is_absolute() || traversal {
+    if value.is_empty()
+        || value.contains('\0')
+        || rooted
+        || drive
+        || traversal
+        || Path::new(value).is_absolute()
+    {
         bail!("Invalid repository path.")
     }
     Ok(value)
@@ -73,6 +92,11 @@ mod tests {
         assert!(relative("src/main.rs").is_ok());
         assert!(relative("../outside").is_err());
         assert!(relative("/etc/passwd").is_err());
+        // Rooted on the current drive rather than absolute, which Windows does
+        // not call absolute and `join` throws the root away for.
+        assert!(relative("\\windows\\system32\\drivers\\etc\\hosts").is_err());
+        assert!(relative("C:\\Windows").is_err());
+        assert!(relative("C:relative").is_err());
         assert!(relative("a/../../b").is_err());
         assert!(relative("").is_err());
         assert!(relative("with\0nul").is_err());
