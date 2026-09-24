@@ -51,13 +51,21 @@ function toast(message, kind = "info") {
   setTimeout(() => element.remove(), kind === "error" ? 7000 : 4000);
 }
 
+// `undefined` means the call failed, never `null`: a command returning unit
+// resolves to `null`, and using that as the failure signal made a successful
+// save look like a rejected one.
 async function call(command, args) {
   try {
     return await invoke(command, args);
   } catch (error) {
     toast(String(error), "error");
-    return null;
+    return undefined;
   }
+}
+
+// True when the call went through, for commands that return nothing.
+async function callDone(command, args) {
+  return (await call(command, args)) !== undefined;
 }
 
 const project = () => state.projects.find((item) => item.id === state.projectId);
@@ -152,7 +160,8 @@ function header() {
           <div class="header__path">${escape(current.path)}</div>
         </div>
         <div class="header__actions">
-          <button class="button button--icon" title="Settings">${icons.gear}</button>
+          <button class="button button--icon" data-action="settings"
+                  title="Settings">${icons.gear}</button>
           <button class="button button--primary" data-action="new-session">
             ${icons.plus} New session
           </button>
@@ -329,6 +338,91 @@ function newSessionDialog() {
     </div>`;
 }
 
+function settingsDialog() {
+  const draft = state.dialog.settings;
+  const segment = (key, options) => `
+    <div class="segmented">
+      ${options
+        .map(
+          ([value, label]) =>
+            `<button data-set="${key}" data-value="${value}"
+                     aria-pressed="${draft[key] === value}">${label}</button>`,
+        )
+        .join("")}
+    </div>`;
+
+  const setting = (title, hint, control) => `
+    <div class="setting">
+      <div class="setting__text">
+        <div class="setting__title">${escape(title)}</div>
+        ${hint ? `<div class="setting__hint">${escape(hint)}</div>` : ""}
+      </div>
+      <div class="setting__control">${control}</div>
+    </div>`;
+
+  return `
+    <div class="scrim" data-dismiss="1">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="Settings">
+        <div class="modal__head">
+          <div class="modal__title">Settings</div>
+          <div class="modal__hint">Shared with the other builds through the workspace file.</div>
+        </div>
+        <div class="modal__body">
+          <div class="group">
+            <div class="group__label">Appearance</div>
+            ${setting(
+              "Theme",
+              "System follows the desktop.",
+              segment("theme", [
+                ["system", "System"],
+                ["light", "Light"],
+                ["dark", "Dark"],
+              ]),
+            )}
+            ${setting(
+              "Font size",
+              "Terminal text, 10 to 24.",
+              `<input type="number" id="set-font" min="10" max="24" step="1"
+                      value="${draft.font_size}" />`,
+            )}
+            ${setting(
+              "Scrollback",
+              "Lines kept per terminal, 1000 to 50000.",
+              `<input type="number" id="set-scrollback" min="1000" max="50000" step="1000"
+                      value="${draft.scrollback}" />`,
+            )}
+          </div>
+          <div class="group">
+            <div class="group__label">Agents</div>
+            ${setting(
+              "Default agent",
+              "Preselected for a new session.",
+              segment("default_agent", [
+                ["claude", "Claude Code"],
+                ["codex", "Codex"],
+              ]),
+            )}
+            ${setting(
+              "Claude usage status line",
+              "Replaces that launch's own status line. Takes effect next launch.",
+              `<button class="switch" data-toggle="claude_usage"
+                       aria-pressed="${draft.claude_usage}"
+                       aria-label="Claude usage status line"></button>`,
+            )}
+          </div>
+        </div>
+        <p class="modal__note">
+          State lives in <code>${escape(state.storage)}</code>.
+          Notifications, hibernation and keep-awake are not in this build yet.
+        </p>
+        <div class="modal__foot">
+          <button class="button" data-dismiss="1">Cancel</button>
+          <button class="button button--primary" data-action="save-settings">Save</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 function status() {
   const running = state.running.length;
   return `
@@ -370,9 +464,12 @@ function render() {
       ${status()}
     </div>`;
 
-  if (state.dialog) {
+  if (state.dialog?.kind === "session") {
     app.insertAdjacentHTML("beforeend", newSessionDialog());
     document.querySelector("#draft-title")?.focus();
+  }
+  if (state.dialog?.kind === "settings") {
+    app.insertAdjacentHTML("beforeend", settingsDialog());
   }
   if (state.sessionId) mountTerminal(state.sessionId);
 }
@@ -476,12 +573,59 @@ async function loadSessions() {
 function openDialog() {
   if (!state.projectId) return;
   state.dialog = {
+    kind: "session",
     title: project()?.title ?? "Session",
     agent: state.settings.default_agent || "claude",
     model: "",
     prompt: "",
   };
   render();
+}
+
+function openSettings() {
+  state.dialog = { kind: "settings", settings: { ...state.settings } };
+  render();
+}
+
+// Numbers come back out of their inputs before anything else reads them.
+function readSettings() {
+  const number = (id, fallback) => {
+    const value = Number(document.querySelector(id)?.value);
+    return Number.isFinite(value) ? Math.round(value) : fallback;
+  };
+  state.dialog.settings = {
+    ...state.dialog.settings,
+    font_size: number("#set-font", state.settings.font_size),
+    scrollback: number("#set-scrollback", state.settings.scrollback),
+  };
+}
+
+async function saveSettings() {
+  readSettings();
+  const input = state.dialog.settings;
+  if (!(await callDone("settings_save", { input }))) return;
+  state.dialog = null;
+  await loadSettings();
+  applyTerminalSettings();
+  render();
+  toast("Settings saved");
+}
+
+// Font size and scrollback reach terminals that are already open, so the
+// change is visible without restarting a session.
+function applyTerminalSettings() {
+  const style = getComputedStyle(document.documentElement);
+  for (const entry of terminals.values()) {
+    entry.terminal.options.fontSize = state.settings.font_size;
+    entry.terminal.options.scrollback = state.settings.scrollback;
+    entry.terminal.options.theme = {
+      background: style.getPropertyValue("--term-bg").trim(),
+      foreground: style.getPropertyValue("--term-fg").trim(),
+      cursor: style.getPropertyValue("--term-cursor").trim(),
+      selectionBackground: style.getPropertyValue("--term-selection").trim(),
+    };
+    entry.fit.fit();
+  }
 }
 
 function readDraft() {
@@ -518,7 +662,7 @@ async function start(id) {
   state.sessionId = id;
   render();
   fit.fit();
-  await call("session_start", {
+  await callDone("session_start", {
     id,
     cols: terminal.cols,
     rows: terminal.rows,
@@ -530,7 +674,8 @@ async function start(id) {
 
 app.addEventListener("click", async (event) => {
   const target = event.target.closest(
-    "[data-project],[data-tab],[data-action],[data-start],[data-stop],[data-open],[data-session],[data-agent],[data-dismiss]",
+    "[data-project],[data-tab],[data-action],[data-start],[data-stop],[data-open]," +
+      "[data-session],[data-agent],[data-dismiss],[data-set],[data-toggle]",
   );
   if (!target) return;
   // Clicking the panel itself must not dismiss it; only the scrim behind.
@@ -550,7 +695,7 @@ app.addEventListener("click", async (event) => {
   }
   if (target.dataset.start) return start(target.dataset.start);
   if (target.dataset.stop) {
-    await call("session_stop", { id: target.dataset.stop });
+    await callDone("session_stop", { id: target.dataset.stop });
     return;
   }
   if (target.dataset.open || target.dataset.session) {
@@ -568,6 +713,22 @@ app.addEventListener("click", async (event) => {
       return openDialog();
     case "create":
       return createSession();
+    case "settings":
+      return openSettings();
+    case "save-settings":
+      return saveSettings();
+  }
+
+  if (target.dataset.set) {
+    readSettings();
+    state.dialog.settings[target.dataset.set] = target.dataset.value;
+    return render();
+  }
+  if (target.dataset.toggle) {
+    readSettings();
+    const key = target.dataset.toggle;
+    state.dialog.settings[key] = !state.dialog.settings[key];
+    return render();
   }
 
   if (target.dataset.agent) {
@@ -590,7 +751,8 @@ addEventListener("keydown", (event) => {
   }
   if (event.key === "Enter" && event.target.tagName === "INPUT") {
     event.preventDefault();
-    createSession();
+    if (state.dialog.kind === "settings") saveSettings();
+    else createSession();
   }
 });
 
@@ -612,6 +774,11 @@ app.addEventListener("input", (event) => {
 });
 
 window.addEventListener("resize", refit);
+
+// The desktop can change its colour scheme while the app is open.
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (state.settings.theme === "system") applyTerminalSettings();
+});
 
 await listen("terminal:data", ({ payload }) => {
   terminalFor(payload.id).terminal.write(payload.data);

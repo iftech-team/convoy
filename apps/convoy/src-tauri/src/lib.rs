@@ -35,6 +35,7 @@ pub fn run() {
             commands::workspace_read,
             commands::sessions_for,
             commands::settings_read,
+            commands::settings_save,
             commands::session_create,
             commands::session_archive,
             commands::session_pin,

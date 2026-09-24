@@ -6,7 +6,7 @@
 
 use convoy_core::model::{Agent, Session};
 use convoy_core::{Storage, Workspace as CoreWorkspace};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, State};
 
@@ -288,10 +288,50 @@ pub struct SettingsView {
     default_agent: String,
     font_size: i64,
     scrollback: i64,
+    claude_usage: bool,
+    storage: String,
+}
+
+/// What the settings dialog sends back. One struct rather than eight loose
+/// arguments, and every value is re-checked by the core before it is stored.
+#[derive(Deserialize)]
+pub struct SettingsInput {
+    pub theme: String,
+    pub default_agent: String,
+    pub font_size: i64,
+    pub scrollback: i64,
+    pub claude_usage: bool,
+}
+
+#[tauri::command]
+pub fn settings_save(input: SettingsInput, workspace: State<'_, Workspace>) -> Result<(), String> {
+    let theme = match input.theme.as_str() {
+        "dark" => convoy_core::model::Theme::Dark,
+        "light" => convoy_core::model::Theme::Light,
+        "system" => convoy_core::model::Theme::System,
+        other => return Err(format!("Unknown theme: {other}")),
+    };
+    let default_agent = Agent::parse(&input.default_agent).ok_or("Unknown agent.")?;
+    workspace.with(|workspace| {
+        workspace
+            .save_settings(convoy_core::workspace::SettingsPatch {
+                theme: Some(theme),
+                default_agent: Some(default_agent),
+                font_size: Some(input.font_size),
+                scrollback: Some(input.scrollback),
+                claude_usage: Some(input.claude_usage),
+                ..Default::default()
+            })
+            .map(|_| ())
+            // "Invalid settings." and the rest arrive unchanged: the wording
+            // is already reviewed and the user is the one who reads it.
+            .map_err(|error| error.to_string())
+    })
 }
 
 #[tauri::command]
 pub fn settings_read(workspace: State<'_, Workspace>) -> Result<SettingsView, String> {
+    let storage = workspace.storage.root().to_string_lossy().into_owned();
     workspace.with(|workspace| {
         let settings = workspace.settings();
         Ok(SettingsView {
@@ -304,6 +344,8 @@ pub fn settings_read(workspace: State<'_, Workspace>) -> Result<SettingsView, St
             default_agent: settings.default_agent.as_str().to_string(),
             font_size: settings.font_size,
             scrollback: settings.scrollback,
+            claude_usage: settings.claude_usage,
+            storage: storage.clone(),
         })
     })
 }
