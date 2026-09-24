@@ -7,6 +7,7 @@ import {
   field,
   group,
   modal,
+  plural,
   segmented,
   setting,
   textArea,
@@ -177,7 +178,7 @@ const removeWorktree = (dialog) =>
     title: "Remove this worktree?",
     body: `<p class="modal__hint">
       Git removes <code>${escape(dialog.directory)}</code> only if it is clean.
-      The branch is kept. All ${dialog.linked} linked sessions will be archived.
+      The branch is kept. ${plural(dialog.linked, "linked session")} will be archived.
     </p>`,
     foot: foot("Remove worktree", "confirm-remove-worktree", "danger-solid"),
   });
@@ -419,7 +420,7 @@ const taskForm = (dialog) => {
 
 const queueConfirm = (dialog) =>
   modal({
-    title: `Run ${dialog.summary.length} queued tasks?`,
+    title: `Run ${plural(dialog.summary.length, "queued task")}?`,
     body: `
       <ul class="plain-list">
         ${dialog.summary.map((line) => `<li>${escape(line)}</li>`).join("")}
