@@ -34,6 +34,7 @@ async function preview(root, name) {
   } finally { await file.close(); }
 }
 async function fileContent(root, name) {
+  root = await repositoryRoot(root) || root;
   relative(name);
   const types = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
   const type = types[path.extname(name).toLowerCase()];
@@ -71,8 +72,13 @@ function parseStatus(raw) {
   }
   return result;
 }
+async function repositoryRoot(directory) {
+  return git(directory, ['rev-parse', '--show-toplevel']).then(value => value.replace(/[\r\n]+$/, ''), () => undefined);
+}
 async function snapshot(root) {
-  if (!await git(root, ['rev-parse', '--is-inside-work-tree']).then(() => true, () => false)) return { branch: 'Folder', changes: [], files: await folderFiles(root), log: [], branches: [] };
+  const top = await repositoryRoot(root);
+  if (!top) return { isRepo: false, branch: 'Folder', changes: [], files: await folderFiles(root), log: [], branches: [] };
+  root = top;
   const [status, branch, files, log, branches] = await Promise.all([
     git(root, ['status', '--porcelain=v1', '-z']),
     git(root, ['symbolic-ref', '--short', '-q', 'HEAD']).catch(() => git(root, ['rev-parse', '--short', 'HEAD'])),
@@ -80,11 +86,12 @@ async function snapshot(root) {
     git(root, ['log', '-100', '--format=%H%x00%h%x00%s%x00%an%x00%aI']).catch(() => ''),
     git(root, ['for-each-ref', '--format=%(refname:short)', 'refs/heads', 'refs/remotes'])
   ]);
-  return { branch: branch.trim(), changes: parseStatus(status), files: [...new Set(files.split('\0').filter(Boolean))].sort(),
+  return { isRepo: true, branch: branch.trim(), changes: parseStatus(status), files: [...new Set(files.split('\0').filter(Boolean))].sort(),
     log: log.trim().split('\n').filter(Boolean).map(line => { const [id, short, subject, author, date] = line.split('\0'); return { id, short, subject, author, date }; }), branches: branches.trim().split('\n').filter(Boolean) };
 }
 function revision(value) { if (typeof value !== 'string' || !/^[0-9a-f]{40,64}$/.test(value)) throw new Error('Invalid commit.'); return value; }
 async function read(root, request) {
+  root = await repositoryRoot(root) || root;
   if (request.kind === 'file') return preview(root, request.path);
   if (request.kind === 'commit') return git(root, ['show', '--format=fuller', '--no-ext-diff', '--no-textconv', revision(request.commit), '--']);
   const name = relative(request.path);
@@ -106,6 +113,7 @@ function hunks(text) {
 }
 const digest = text => createHash('sha256').update(text).digest('hex');
 async function mutate(root, action, value = {}) {
+  root = await repositoryRoot(root) || root;
   const paths = () => [relative(value.path), ...(value.original ? [relative(value.original)] : [])];
   switch (action) {
     case 'discardHunk': {
@@ -144,4 +152,4 @@ async function mutate(root, action, value = {}) {
     default: throw new Error('Unknown Git action.');
   }
 }
-module.exports = { discover, preview, parseStatus, snapshot, read, mutate, relative, fileContent, hunks, digest };
+module.exports = { repositoryRoot, discover, preview, parseStatus, snapshot, read, mutate, relative, fileContent, hunks, digest };

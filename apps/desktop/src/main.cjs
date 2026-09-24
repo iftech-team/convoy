@@ -118,7 +118,8 @@ function boot() {
   handle('files:snapshot', id => files.snapshot(directoryFor(id)));
   handle('files:read', async (id, request) => { if (request.kind === 'file' && request.structured) return files.fileContent(directoryFor(id), request.path); const text = await files.read(directoryFor(id), request); return request.structured ? { text, hash: files.digest(text) } : text; });
   handle('files:mutate', async (id, action, value) => {
-    const directory = directoryFor(id);
+    const requestedDirectory = directoryFor(id);
+    const directory = await files.repositoryRoot(requestedDirectory) || requestedDirectory;
     if (repositories.has(directory)) throw new Error('Wait for the current Git operation.');
     repositories.set(directory, true);
     try {

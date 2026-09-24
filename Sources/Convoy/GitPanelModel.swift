@@ -126,7 +126,17 @@ final class GitPanelModel: ObservableObject {
         if counts != self.counts { self.counts = counts }
         inFlight = false; refreshing = false
         if let target, target.isWorkingTree {
-            if snapshot?.files.contains(where: { $0.path == target.path }) == true { loadDiff() } else { self.target = nil }
+            if let file = snapshot?.files.first(where: { $0.path == target.path }) {
+                let stillAvailable: Bool
+                switch target {
+                case .staged: stillAvailable = file.hasStaged && !file.conflicted
+                case .unstaged: stillAvailable = file.hasUnstaged && !file.conflicted && !file.isUntracked
+                case .untracked: stillAvailable = file.isUntracked
+                case .conflicted: stillAvailable = file.conflicted
+                case .commit: stillAvailable = true
+                }
+                if stillAvailable { loadDiff() } else { self.target = defaultTarget(for: file) }
+            } else { self.target = nil }
         }
         if target == nil, tab == .changes, let first = snapshot?.files.first { target = defaultTarget(for: first) }
         if firstResolve || tab != .changes { loadTabData() }

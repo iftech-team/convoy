@@ -110,3 +110,17 @@ html[data-theme="light"] .toolbar, html[data-theme="light"] .status { border-col
 #files-dialog button { padding: 6px 9px; }
 #git-commit-form, #git-branch-form { flex-wrap: wrap; }
 #file-preview { border-color: #8792a340; }
+
+:root { --border: #343943; }
+html[data-theme="light"] { --border: #d6dce7; }
+html[data-theme="light"] .badge, html[data-theme="light"] aside h2, html[data-theme="light"] .muted { color: #53617a; }
+#empty-description { max-width: 480px; }
+#empty-action { background: #3854a4; border-color: #536fc0; color: white; }
+#files-progress { min-height: 1.7em; margin: 10px 0 0; font-size: 12px; }
+.file-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.file-row button:first-child { width: 100%; }
+.split-diff th { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+#git-commit-form label:first-child { min-width: 180px; }
+#git-commit-form input:not([type="checkbox"]), #git-branch-form input { min-width: 0; width: 100%; }
+#git-commit-form .archive-toggle { white-space: nowrap; }
+.split-diff .diff-meta td { width: auto; text-align: left; opacity: .75; }

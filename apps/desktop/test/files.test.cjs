@@ -80,3 +80,23 @@ test('discard and hunk discard respect Git CRLF checkout settings', async t => {
   await mutate(dir, 'discardHunk', { path: 'text.txt', hunk: 0, hash: digest(diff) });
   assert.equal(fs.readFileSync(path.join(dir, 'text.txt'), 'utf8'), before.replace('line 25\r\n', 'second edit\r\n'));
 });
+
+test('Git panel uses repository-relative paths when opened from a subfolder', async t => {
+  const dir = fixture(t), sub = path.join(dir, 'src');
+  fs.mkdirSync(sub);
+  await git(dir, ['init']); await git(dir, ['config', 'core.autocrlf', 'false']);
+  await git(dir, ['config', 'user.name', 'Test']); await git(dir, ['config', 'user.email', 'test@example.invalid']);
+  fs.writeFileSync(path.join(sub, 'file.txt'), 'before\n');
+  fs.writeFileSync(path.join(dir, 'root.txt'), 'root\n');
+  await mutate(dir, 'stageAll'); await mutate(dir, 'commit', { message: 'Initial' });
+  fs.writeFileSync(path.join(sub, 'file.txt'), 'after\n');
+  const status = await snapshot(sub);
+  assert.deepEqual(status.files, ['root.txt', 'src/file.txt']);
+  assert.match(await read(sub, { kind: 'unstaged', path: 'src/file.txt' }), /\+after/);
+  assert.equal((await require('../src/files.cjs').fileContent(sub, 'root.txt')).text, 'root\n');
+  await mutate(sub, 'stage', { path: 'src/file.txt' });
+  assert.equal((await snapshot(sub)).changes[0].index, 'M');
+  await mutate(sub, 'unstage', { path: 'src/file.txt' });
+  await mutate(sub, 'discard', { path: 'src/file.txt' });
+  assert.equal(fs.readFileSync(path.join(sub, 'file.txt'), 'utf8'), 'before\n');
+});

@@ -12,7 +12,7 @@
     "start": "npm run build && electron .",
     "test": "node --test test/*.test.cjs",
     "test:pty": "electron test/pty-smoke.cjs",
-    "test:ui": "npm run build && electron test/ui-smoke.cjs",
+    "test:ui": "npm run build && electron test/ui-smoke.cjs && electron test/review-smoke.cjs",
     "test:app": "npm run build && electron test/app-smoke.cjs",
     "package": "npm run build && electron-builder --publish never"
   },

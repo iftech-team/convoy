@@ -63,6 +63,8 @@ private func write(_ text: String, to path: String) throws { try text.write(toFi
     model.stage(["a.txt", "sub/new.txt"])
     #expect(await waitUntil { model.status?.staged.map(\.path) == ["a.txt", "sub/new.txt"] && model.status?.unstaged.isEmpty == true })
     #expect(model.counts[.staged("a.txt")] == LineCounts(added: 1, removed: 1))
+    #expect(model.target == .staged("a.txt"), "keep the selected file visible after staging")
+    #expect(await waitUntil { !model.diffLoading && model.diff?.additions == 1 })
     #expect(!model.canCommit, "no message yet")
     model.message = "second"
     #expect(model.canCommit)

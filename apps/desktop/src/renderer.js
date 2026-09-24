@@ -11,6 +11,7 @@ let state = { projects: [], sessions: [], running: [], settings: defaults, quick
 let projectID, sessionID, reviewOf, editID, textTarget, textMode, worktreeID, commandID;
 let panes = [], specID, taskID, prepareID;
 const terminals = new Map();
+const removedSessions = new Set();
 const gitInfo = new Map();
 const agentStates = new Map();
 const colorPreference = matchMedia('(prefers-color-scheme: light)');
@@ -29,7 +30,13 @@ async function perform(action) {
   for (const node of document.querySelectorAll('.modal-error')) node.remove();
   try { return await action(); } catch (error) { showError(error); }
 }
-function update(next) { if (next) { state = { ...next, settings: { ...defaults, ...next.settings }, quickCommands: next.quickCommands || [], specs: next.specs || [], tasks: next.tasks || [], profiles: next.profiles || [], activity: next.activity || [] }; render(); if ($('planning-dialog').open) renderPlanning(); } }
+function update(next) { if (next) {
+  const saved = new Set(next.sessions.map(s => s.id));
+  for (const [id, entry] of terminals) if (!saved.has(id)) { removedSessions.add(id); entry.term.dispose(); entry.host.remove(); terminals.delete(id); gitInfo.delete(id); agentStates.delete(id); }
+  // A resumed PTY starts with fresh dimensions, even if its hidden pane never moved.
+  for (const [id, entry] of terminals) if (!next.running.includes(id) || !state.running.includes(id)) entry.size = undefined;
+  panes = panes.filter(id => saved.has(id));
+  state = { ...next, settings: { ...defaults, ...next.settings }, quickCommands: next.quickCommands || [], specs: next.specs || [], tasks: next.tasks || [], profiles: next.profiles || [], activity: next.activity || [] }; render(); } }
 function button(label, selected, click) {
   const node = document.createElement('button');
   node.type = 'button'; node.textContent = label;
@@ -45,13 +52,16 @@ function theme() {
 }
 function applySettings() {
   document.documentElement.dataset.theme = theme().background === '#fafbfe' ? 'light' : 'dark';
+  const key = JSON.stringify([state.settings.fontSize, state.settings.scrollback, theme()]);
   for (const entry of terminals.values()) {
+    if (entry.settingsKey === key) continue;
+    entry.settingsKey = key;
     entry.term.options.fontSize = state.settings.fontSize;
     entry.term.options.scrollback = state.settings.scrollback;
     entry.term.options.theme = theme();
   }
 }
-colorPreference.addEventListener('change', () => { applySettings(); requestAnimationFrame(fitActive); });
+colorPreference.addEventListener('change', () => { applySettings(); scheduleFit(); });
 function terminal(id) {
   if (terminals.has(id)) return terminals.get(id);
   const host = document.createElement('div'); host.className = 'terminal-host'; host.hidden = id !== sessionID;
@@ -63,12 +73,21 @@ function terminal(id) {
   surface.addEventListener('pointerdown', () => { if (sessionID !== id) focusPane(id); });
   surface.addEventListener('focusin', () => { if (sessionID !== id) focusPane(id); });
   term.onData(data => { if (state.running.includes(id)) api.write(id, data).catch(showError); });
-  term.onResize(({ cols, rows }) => api.resize(id, cols, rows).catch(showError));
   const entry = { term, fit, host, label }; terminals.set(id, entry); return entry;
+}
+let fitFrame;
+function scheduleFit() {
+  if (fitFrame !== undefined) return;
+  fitFrame = requestAnimationFrame(() => { fitFrame = undefined; fitActive(); });
 }
 function fitActive() {
   for (const [id, entry] of terminals) if (!entry.host.hidden && entry.host.clientWidth > 0) {
-    entry.fit.fit(); api.resize(id, entry.term.cols, entry.term.rows).catch(showError);
+    entry.fit.fit();
+    const size = `${state.running.includes(id)}:${entry.term.cols}:${entry.term.rows}`;
+    if (entry.size !== size) {
+      entry.size = size;
+      if (state.running.includes(id)) api.resize(id, entry.term.cols, entry.term.rows).catch(showError);
+    }
   }
 }
 function focusPane(id) { sessionID = id; projectID = state.sessions.find(s => s.id === id).projectID; render(); }
@@ -92,7 +111,11 @@ function render() {
   $('project-title').textContent = project?.title || 'Your agent workspace';
   $('project-path').textContent = session?.workingDirectory || project?.path || 'Open a folder to get started';
   $('new-session').disabled = !project;
-  $('planning').disabled = !project;
+  for (const id of ['planning', 'provider-history', 'project-settings', 'files-open']) $(id).disabled = !project;
+  const hasSessions = state.sessions.some(s => s.projectID === projectID && !s.archived);
+  $('empty-title').textContent = !project ? 'A home for your coding agents' : hasSessions ? 'Choose a session to continue' : 'Start your first session';
+  $('empty-description').textContent = !project ? 'Open a project folder to keep your Claude Code and Codex sessions together.' : hasSessions ? 'Select a saved session above, or create a new one for your next task.' : `Create a Claude Code or Codex session for ${project.title}. You choose when to launch it.`;
+  $('empty-action').textContent = project ? 'New session' : 'Open folder';
   $('sessions').replaceChildren(...state.sessions.filter(s => s.projectID === projectID && visible(s)).sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned)).map(s =>
     button(`${s.pinned ? '★ ' : ''}${state.running.includes(s.id) ? '● ' : ''}${s.title}${agentStates.has(s.id) && state.running.includes(s.id) ? ' · ' + agentStates.get(s.id) : ''}${s.archived ? ' · archived' : ''}`, s.id === sessionID, () => openSession(s.id))));
   $('session-actions').hidden = !session; $('session-context').hidden = !session;
@@ -101,7 +124,7 @@ function render() {
     terminal(session.id);
     const profile = state.profiles.find(p => p.id === session.profileID);
     $('session-label').textContent = (session.agent === 'claude' ? 'Claude Code' : 'Codex') + ` · ${profile?.label || 'System account'}` + (session.archived ? ' · archived' : '');
-    $('start').textContent = session.started ? (session.agent === 'codex' && !session.providerID ? 'Open resume picker' : 'Resume') : 'Start';
+    $('start').textContent = state.running.includes(session.id) ? 'Running' : session.started ? (session.agent === 'codex' && !session.providerID ? 'Open resume picker' : 'Resume') : 'Start';
     $('start').disabled = state.running.includes(session.id) || !!session.archived || !!session.worktreeRemoved;
     $('stop').disabled = !state.running.includes(session.id);
     $('insert-prompt').hidden = !session.prompt;
@@ -124,7 +147,7 @@ function render() {
     entry.host.style.order = String(panes.indexOf(id));
   }
   $('status').textContent = `${state.running.length} running · Sessions and recent output saved locally · Preview`;
-  applySettings(); requestAnimationFrame(fitActive);
+  applySettings(); scheduleFit();
   if ($('planning-dialog').open) renderPlanning();
 }
 $('search').oninput = render;
@@ -142,6 +165,7 @@ function newSession() {
   $('session-form-title').textContent = 'New session'; $('session-dialog').showModal();
 }
 $('new-session').onclick = newSession;
+$('empty-action').onclick = () => (projectID ? $('new-session') : $('open-folder')).click();
 $('cancel').onclick = () => $('session-dialog').close();
 for (const node of document.querySelectorAll('[data-close]')) node.onclick = () => $(node.dataset.close).close();
 $('session-form').onsubmit = event => {
@@ -269,10 +293,10 @@ $('command-form').onsubmit = event => {
   });
 };
 
-api.onData(({ id, data }) => terminal(id).term.write(data));
-api.onExit(({ id, exitCode }) => terminal(id).term.writeln(`\r\n\x1b[90mSession stopped (exit ${exitCode}). Use Resume to continue.\x1b[0m`));
+api.onData(({ id, data }) => { if (!removedSessions.has(id)) terminal(id).term.write(data); });
+api.onExit(({ id, exitCode }) => { if (!removedSessions.has(id)) terminal(id).term.writeln(`\r\n\x1b[90mSession stopped (exit ${exitCode}). Use Resume to continue.\x1b[0m`); });
 api.onChange(update); api.onError(showError);
-new ResizeObserver(fitActive).observe($('terminals'));
+new ResizeObserver(scheduleFit).observe($('terminals'));
 perform(async () => update(await api.read()));
 
 function profileOptions(select, agent) {
@@ -300,6 +324,7 @@ $('activity').onclick = () => {
   $('activity-dialog').showModal();
 };
 function renderPlanning() {
+  $('run-queue').textContent = state.queues?.includes(projectID) ? 'Pause queue' : 'Run queue';
   $('spec-list').replaceChildren(...state.specs.filter(s => s.projectID === projectID).map(spec => {
     const row = document.createElement('div'); row.className = 'planning-row';
     const label = document.createElement('strong'); label.textContent = `${spec.title} · r${spec.revision} · ${spec.approvedRevision === spec.revision ? 'Approved' : 'Draft'}`;
