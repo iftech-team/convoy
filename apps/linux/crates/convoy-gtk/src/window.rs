@@ -220,6 +220,7 @@ pub fn build(application: &adw::Application, storage: Storage) -> Option<Rc<App>
         rebuilding: Cell::new(false),
         search: RefCell::new(String::new()),
         actions: gtk::gio::SimpleActionGroup::new(),
+        show_archived: Cell::new(false),
         queues: RefCell::new(std::collections::HashSet::new()),
         wake_lock: Cell::new(0),
         busy: RefCell::new(std::collections::HashSet::new()),
@@ -234,6 +235,7 @@ pub fn build(application: &adw::Application, storage: Storage) -> Option<Rc<App>
     crate::app::register_actions(application, &app);
 
     wire(&app, &selection, &search, &start, &stop, &new_session);
+    guard_close(&app);
     crate::monitor::start(&app);
     app.sync();
     select_first_project(&app, &selection);
@@ -829,4 +831,61 @@ pub fn step_session(app: &Rc<App>, delta: i32) {
 
 pub fn focus_search(app: &Rc<App>) {
     app.search_entry.grab_focus();
+}
+
+/// Closing the window stops every agent, so it asks first. Without this a
+/// misplaced click would end work in progress with no warning.
+fn guard_close(app: &Rc<App>) {
+    let confirmed = Rc::new(Cell::new(false));
+    app.window.connect_close_request({
+        let app = app.clone();
+        let confirmed = confirmed.clone();
+        move |window| {
+            let running = app
+                .views
+                .borrow()
+                .values()
+                .filter(|view| view.running())
+                .count();
+            if running == 0 || confirmed.get() {
+                return glib::Propagation::Proceed;
+            }
+
+            let dialog = adw::AlertDialog::builder()
+                .heading("Stop running sessions and quit?")
+                .body(format!(
+                    "{running} agent {} will stop. Saved sessions can be resumed \
+                     after reopening Convoy.",
+                    if running == 1 { "process" } else { "processes" }
+                ))
+                .build();
+            dialog.add_response("stay", "Keep working");
+            dialog.add_response("quit", "Stop and quit");
+            dialog.set_response_appearance("quit", adw::ResponseAppearance::Destructive);
+            dialog.set_close_response("stay");
+            dialog.connect_response(None, {
+                let app = app.clone();
+                let confirmed = confirmed.clone();
+                let window = window.clone();
+                move |_, response| {
+                    if response != "quit" {
+                        return;
+                    }
+                    confirmed.set(true);
+                    let ids: Vec<String> = app.views.borrow().keys().cloned().collect();
+                    for id in ids {
+                        terminal::stop(&app, &id);
+                    }
+                    // Long enough for SIGHUP, and for the SIGKILL that follows
+                    // it, to be delivered and reaped.
+                    glib::timeout_add_local_once(std::time::Duration::from_millis(1800), {
+                        let window = window.clone();
+                        move || window.close()
+                    });
+                }
+            });
+            dialog.present(Some(window));
+            glib::Propagation::Stop
+        }
+    });
 }

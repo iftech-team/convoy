@@ -63,6 +63,11 @@ pub fn new_session(app: &Rc<App>) {
         Agent::Codex => 1,
     });
 
+    let model = adw::EntryRow::builder()
+        .title("Model")
+        .tooltip_text("Optional. Passed to the CLI as --model; leave empty for its default.")
+        .build();
+
     let prompt = gtk::TextView::builder()
         .wrap_mode(gtk::WrapMode::WordChar)
         .top_margin(8)
@@ -79,6 +84,7 @@ pub fn new_session(app: &Rc<App>) {
     let group = adw::PreferencesGroup::new();
     group.add(&title);
     group.add(&agent);
+    group.add(&model);
     let prompt_group = adw::PreferencesGroup::builder()
         .title("First message")
         .description("Optional. Sent once, on the first launch only.")
@@ -104,6 +110,7 @@ pub fn new_session(app: &Rc<App>) {
         let title = title.clone();
         let agent = agent.clone();
         let prompt = prompt.clone();
+        let model = model.clone();
         move |_, response| {
             if response != "create" {
                 return;
@@ -122,6 +129,7 @@ pub fn new_session(app: &Rc<App>) {
                 title.text().to_string(),
             );
             input.prompt = text;
+            input.model = model.text().trim().to_string();
 
             let created = {
                 let mut workspace = app.workspace.borrow_mut();

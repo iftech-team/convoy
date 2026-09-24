@@ -86,6 +86,10 @@ pub struct App {
     /// Actions of the session menu, enabled and disabled by
     /// [`App::refresh_selection`].
     pub actions: gtk::gio::SimpleActionGroup,
+    /// Whether archived sessions are listed. Off by default: archiving is how
+    /// a session gets out of the way, and most of the time it should stay
+    /// there. Held in memory, like the Electron checkbox it replaces.
+    pub show_archived: Cell<bool>,
     /// Projects whose task queue is running. Held in memory only: a restart
     /// never silently resumes a queue.
     pub queues: RefCell<std::collections::HashSet<String>>,
@@ -184,11 +188,12 @@ impl App {
         };
         let needle = self.search.borrow().to_lowercase();
         let workspace = self.workspace.borrow();
+        let archived = self.show_archived.get();
         let mut sessions: Vec<Session> = workspace
             .state()
             .sessions
             .iter()
-            .filter(|session| session.project_id == project && !session.is_archived())
+            .filter(|session| session.project_id == project && (archived || !session.is_archived()))
             .filter(|session| needle.is_empty() || session.title.to_lowercase().contains(&needle))
             .cloned()
             .collect();
@@ -449,7 +454,8 @@ impl App {
         enable("recover", idle);
         enable("edit", session.is_some());
         enable("pin", session.is_some());
-        enable("archive", idle);
+        // Restoring is always available; archiving needs the session stopped.
+        enable("archive", idle || session.is_some_and(Session::is_archived));
         enable("review", session.is_some());
         enable(
             "feedback",
@@ -518,7 +524,9 @@ fn describe(session: &Session, running: bool) -> String {
         Agent::Claude => "Claude Code",
         Agent::Codex => "Codex",
     };
-    let state = if running {
+    let state = if session.is_archived() {
+        "archived"
+    } else if running {
         "running"
     } else if session.started {
         "stopped"

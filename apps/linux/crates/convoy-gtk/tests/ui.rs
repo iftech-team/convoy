@@ -378,6 +378,41 @@ fn session_menu_checks(app: &Rc<convoy_gtk::state::App>, project: &str) {
         "the session disappeared from the workspace",
     );
 
+    // Archiving must not be a one-way trip: the list can include archived
+    // sessions again, and restoring brings one back.
+    activate(app, "show-archived");
+    check(
+        "archived sessions can be listed again",
+        app.visible_sessions()
+            .iter()
+            .any(|other| other.id == review.id),
+        "the archived session stayed hidden",
+    );
+    app.selection.borrow_mut().session = Some(review.id.clone());
+    app.refresh_selection();
+    activate(app, "archive");
+    check(
+        "an archived session can be restored",
+        app.workspace
+            .borrow()
+            .session(&review.id)
+            .is_ok_and(|other| !other.is_archived()),
+        "it stayed archived",
+    );
+    activate(app, "show-archived");
+    check(
+        "a restored session is visible without the toggle",
+        app.visible_sessions()
+            .iter()
+            .any(|other| other.id == review.id),
+        "it vanished again",
+    );
+
+    // Back to archived, so the counts the later checks expect still hold.
+    app.selection.borrow_mut().session = Some(review.id.clone());
+    app.refresh_selection();
+    activate(app, "archive");
+
     let _ = project;
     app.selection.borrow_mut().session = Some(session.id);
     app.refresh_selection();

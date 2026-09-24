@@ -19,7 +19,11 @@ pub fn menu() -> gtk::gio::Menu {
     let session = gtk::gio::Menu::new();
     session.append(Some("Edit session…"), Some("session.edit"));
     session.append(Some("Pin or unpin"), Some("session.pin"));
-    session.append(Some("Archive session"), Some("session.archive"));
+    session.append(Some("Archive or restore"), Some("session.archive"));
+    session.append(
+        Some("Show archived sessions"),
+        Some("session.show-archived"),
+    );
     session.append(Some("Fresh recovery session"), Some("session.recover"));
     menu.append_section(None, &session);
 
@@ -89,6 +93,25 @@ pub fn register(app: &Rc<App>) {
         app.actions.add_action(&action);
     }
 
+    // A checkmark rather than a command: the list either includes archived
+    // sessions or it does not.
+    let archived = gtk::gio::SimpleAction::new_stateful(
+        "show-archived",
+        None,
+        &app.show_archived.get().to_variant(),
+    );
+    archived.connect_activate({
+        let app = app.clone();
+        move |action, _| {
+            let next = !app.show_archived.get();
+            app.show_archived.set(next);
+            action.set_state(&next.to_variant());
+            window::rebuild_tabs(&app);
+            app.sync();
+        }
+    });
+    app.actions.add_action(&archived);
+
     // Quick commands carry the command id as the action target, so one action
     // serves the whole menu however it changes.
     let quick = gtk::gio::SimpleAction::new("quick", Some(glib::VariantTy::STRING));
@@ -133,14 +156,33 @@ fn pin(app: &Rc<App>, session: &Session) {
     app.sync();
 }
 
+/// Archiving hides a session; restoring brings it back. Neither deletes
+/// anything, and a running session cannot be archived at all.
 fn archive(app: &Rc<App>, session: &Session) {
+    let restoring = session.is_archived();
     let patch = SessionPatch {
-        archived: Some(true),
+        archived: Some(!restoring),
         ..Default::default()
     };
     apply(app, &session.id, patch);
+    if restoring {
+        // A restored session is of no use while archived ones are hidden.
+        app.show_archived.set(true);
+        refresh_archived_state(app);
+    }
     window::rebuild_tabs(app);
     app.sync();
+}
+
+/// Keeps the menu's checkmark in step with what the list is showing.
+fn refresh_archived_state(app: &Rc<App>) {
+    if let Some(action) = app
+        .actions
+        .lookup_action("show-archived")
+        .and_downcast::<gtk::gio::SimpleAction>()
+    {
+        action.set_state(&app.show_archived.get().to_variant());
+    }
 }
 
 fn apply(app: &Rc<App>, id: &str, patch: SessionPatch) {

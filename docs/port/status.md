@@ -97,10 +97,16 @@ GtkSourceView). Feature parity with the Electron preview, minus Windows.
 
 ### Not yet validated
 
-Mouse reporting and redraw under sustained output were checked by eye in
-`convoy-vte-probe` only. No distribution package has been installed from a
-clean system; the PKGBUILD and Debian metadata are written but only CI builds
-them. Signing, updates and a real release remain release work, as before.
+**Nobody has used it.** Every check above is automated and headless. The window
+has not been opened on a real display, no agent session has been started by
+hand, and the client has never run against the real workspace file. That is the
+largest remaining gap, and no amount of further automation closes it.
+
+Mouse reporting and redraw under sustained output are not covered by the
+terminal checks; `convoy-vte-probe` exists for them but has not been run
+interactively. No distribution package has been installed from a clean system;
+the PKGBUILD and Debian metadata are written but only CI builds them. Signing,
+updates and a real release remain release work, as before.
 
 ## Local Linux artifact
 
