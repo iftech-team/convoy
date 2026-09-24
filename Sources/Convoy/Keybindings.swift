@@ -75,6 +75,8 @@ final class Keybindings: ObservableObject {
         KeyAction(id: "tab.previous", title: "Previous tab", group: "Sessions & tabs", defaultBinding: "ctrl+shift+tab"),
         KeyAction(id: "tab.close", title: "Close tab", group: "Sessions & tabs", defaultBinding: "cmd+w"),
         KeyAction(id: "tab.reopen", title: "Reopen closed tab", group: "Sessions & tabs", defaultBinding: "cmd+shift+t"),
+        KeyAction(id: "tab.moveLeft", title: "Move tab left", group: "Sessions & tabs", defaultBinding: "cmd+shift+left"),
+        KeyAction(id: "tab.moveRight", title: "Move tab right", group: "Sessions & tabs", defaultBinding: "cmd+shift+right"),
         KeyAction(id: "view.layout1", title: "One pane", group: "Panes", defaultBinding: "ctrl+1"),
         KeyAction(id: "view.layout2", title: "Two panes", group: "Panes", defaultBinding: "ctrl+2"),
         KeyAction(id: "view.layout4", title: "Four panes", group: "Panes", defaultBinding: "ctrl+4"),

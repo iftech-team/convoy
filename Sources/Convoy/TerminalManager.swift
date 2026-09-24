@@ -240,6 +240,24 @@ final class TerminalManager: ObservableObject {
         didSet { UserDefaults.standard.set(openOrder.map(\.uuidString), forKey: "openTerminalTabs") }
     }
     func openTab(_ sessionID: UUID) { if !openOrder.contains(sessionID) { openOrder.append(sessionID) } }
+    /// Drag-and-drop reorder: put `id` where `target` currently sits (the rest shift).
+    func moveTab(_ id: UUID, to target: UUID) {
+        guard id != target, let from = openOrder.firstIndex(of: id), let to = openOrder.firstIndex(of: target) else { return }
+        var next = openOrder
+        next.remove(at: from)
+        next.insert(id, at: to)
+        openOrder = next
+    }
+    /// Keyboard reorder: shift `id` one place left (-1) or right (+1), wrapping at the ends.
+    func moveTab(_ id: UUID, by offset: Int) {
+        guard let from = openOrder.firstIndex(of: id), openOrder.count > 1 else { return }
+        let count = openOrder.count
+        let to = ((from + offset) % count + count) % count
+        var next = openOrder
+        next.remove(at: from)
+        next.insert(id, at: to)
+        openOrder = next
+    }
     /// Recently closed tabs, newest last (⇧⌘T reopens).
     private(set) var closedTabs: [UUID] = []
     func popClosedTab() -> UUID? { closedTabs.popLast() }

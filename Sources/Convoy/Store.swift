@@ -578,6 +578,7 @@ final class Store: ObservableObject {
     }
     /// Open tab ids in display order (archived or removed sessions are skipped).
     var tabOrder: [UUID] { terminals.openOrder.filter { session($0).map { $0.archived != true } ?? false } }
+    func moveCurrentTab(by offset: Int) { if let id = workspace.selectedSessionID, tabOrder.contains(id) { terminals.moveTab(id, by: offset) } }
     func selectTab(index: Int) {
         let tabs = tabOrder
         guard tabs.indices.contains(index), let project = project(ofSession: tabs[index]) else { return }

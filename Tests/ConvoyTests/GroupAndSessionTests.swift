@@ -107,3 +107,18 @@ import Testing
     #expect(resume.contains("'--resume'"))
     #expect(!resume.contains("Perform a migration"))
 }
+
+@Test @MainActor func tabsCanBeReorderedByDropAndByKeyboard() {
+    let manager = TerminalManager()
+    let a = UUID(), b = UUID(), c = UUID()
+    for id in [a, b, c] { manager.openTab(id) }
+    manager.moveTab(c, to: a)
+    #expect(manager.openOrder == [c, a, b])
+    manager.moveTab(c, by: 1)
+    #expect(manager.openOrder == [a, c, b])
+    manager.moveTab(a, by: -1)      // wraps to the end
+    #expect(manager.openOrder == [c, b, a])
+    manager.moveTab(a, by: 1)       // wraps to the front
+    #expect(manager.openOrder == [a, c, b])
+    for id in [a, b, c] { manager.close(id) }
+}

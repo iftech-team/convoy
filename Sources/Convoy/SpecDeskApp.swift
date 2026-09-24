@@ -263,6 +263,7 @@ struct SessionTab: View {
     let select: () -> Void
     let close: () -> Void
     @State private var hovered = false
+    @State private var dropTarget = false
 
     var body: some View {
         HStack(spacing: 7) {
@@ -293,8 +294,17 @@ struct SessionTab: View {
         .contentShape(RoundedRectangle(cornerRadius: 7))
         .onTapGesture(perform: select)
         .draggable(session.id.uuidString)
+        .dropDestination(for: String.self) { items, _ in
+            guard let raw = items.first, let dragged = UUID(uuidString: raw), dragged != session.id, store.tabOrder.contains(dragged) else { return false }
+            withAnimation(.easeInOut(duration: 0.15)) { store.terminals.moveTab(dragged, to: session.id) }
+            return true
+        } isTargeted: { dropTarget = $0 }
+        .overlay(alignment: .leading) { if dropTarget { RoundedRectangle(cornerRadius: 1).fill(AppTheme.accent).frame(width: 2, height: 20).offset(x: -2) } }
         .contextMenu {
             ForEach(0..<store.paneCount, id: \.self) { i in Button("Open in pane \(i + 1)") { store.place(session.id, in: i); store.focusPane(i) } }
+            Button("Move left") { store.terminals.moveTab(session.id, by: -1) }
+            Button("Move right") { store.terminals.moveTab(session.id, by: 1) }
+            Divider()
             Button("Close tab", action: close)
             Button("Close other tabs") { for id in store.tabOrder where id != session.id && store.terminals.handles[id]?.running != true { store.terminals.close(id) }; store.openSession(session.id, in: project.id) }
         }
@@ -984,6 +994,8 @@ struct AppCommands: Commands {
             Divider()
             Button("Switch Terminal…") { store.openPalette(.terminals) }.bound("tab.switch", keys)
             Button("Next Tab") { store.selectTab(offset: 1) }.bound("tab.next", keys)
+            Button("Move Tab Left") { store.moveCurrentTab(by: -1) }.bound("tab.moveLeft", keys)
+            Button("Move Tab Right") { store.moveCurrentTab(by: 1) }.bound("tab.moveRight", keys)
             Button("Previous Tab") { store.selectTab(offset: -1) }.bound("tab.previous", keys)
             Button("Single Pane") { store.setLayout(1) }.bound("view.layout1", keys)
             Button("Two Panes") { store.setLayout(2) }.bound("view.layout2", keys)
