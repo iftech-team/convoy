@@ -1,144 +1,80 @@
-//! OS boundaries shared by the desktop clients.
-use crate::provider::launch::LaunchSpec;
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+//! Which operating system a decision is being made for.
+//!
+//! Passed as a value rather than read from `cfg!`, so the Windows branches can
+//! be exercised from a Linux machine and from Linux CI. The Electron build did
+//! the same thing with its `platform = process.platform` parameter, and it is
+//! the only reason its Windows launch had tests at all.
 
-/// Unix files are owner-only. Windows files inherit the user's profile ACL.
-pub fn private_file_options() -> std::fs::OpenOptions {
-    #[allow(unused_mut)]
-    let mut options = std::fs::OpenOptions::new();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    options
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Platform {
+    Unix,
+    Windows,
 }
 
-pub fn symlink(target: &Path, destination: &Path, directory: bool) -> std::io::Result<()> {
-    #[cfg(unix)]
-    {
-        let _ = directory;
-        std::os::unix::fs::symlink(target, destination)
-    }
-    #[cfg(windows)]
-    {
-        if directory {
-            std::os::windows::fs::symlink_dir(target, destination)
+impl Platform {
+    pub fn current() -> Self {
+        if cfg!(windows) {
+            Platform::Windows
         } else {
-            std::os::windows::fs::symlink_file(target, destination)
+            Platform::Unix
         }
     }
-}
 
-pub fn setup_shell(command: &str) -> LaunchSpec {
-    if cfg!(windows) {
-        LaunchSpec {
-            file: "powershell.exe".into(),
-            args: vec![
-                "-NoLogo".into(),
-                "-NoProfile".into(),
-                "-Command".into(),
-                command.into(),
-            ],
-        }
-    } else {
-        LaunchSpec {
-            file: "/bin/bash".into(),
-            args: vec!["-lc".into(), command.into()],
+    pub fn is_windows(self) -> bool {
+        self == Platform::Windows
+    }
+
+    /// The separator `PATH` uses.
+    pub fn path_separator(self) -> char {
+        match self {
+            Platform::Unix => ':',
+            Platform::Windows => ';',
         }
     }
-}
 
-/// Resolve a native executable or a standard npm entry point. Never pass an
-/// agent's prompt through cmd.exe, PowerShell or an npm .cmd shim: those can
-/// reinterpret quotes, newlines and shell metacharacters.
-pub fn windows_provider(
-    agent: &str,
-    args: &[String],
-    env: &BTreeMap<String, String>,
-) -> LaunchSpec {
-    let path = env
-        .iter()
-        .find(|(key, _)| key.eq_ignore_ascii_case("PATH"))
-        .map(|(_, value)| value.as_str())
-        .unwrap_or("");
-    let directories: Vec<PathBuf> = path
-        .split(';')
-        .filter(|p| !p.is_empty())
-        .map(|p| PathBuf::from(p.trim_matches('"')))
-        .filter(|p| p.is_absolute())
-        .collect();
-    windows_provider_in(agent, args, &directories)
-}
-
-fn windows_provider_in(agent: &str, args: &[String], directories: &[PathBuf]) -> LaunchSpec {
-    let module = if agent == "claude" {
-        "@anthropic-ai/claude-code/cli.js"
-    } else {
-        "@openai/codex/bin/codex.js"
-    };
-    let node = directories
-        .iter()
-        .map(|dir| dir.join("node.exe"))
-        .find(|p| p.is_file());
-    for directory in directories {
-        let executable = directory.join(format!("{agent}.exe"));
-        if executable.is_file() {
-            return LaunchSpec {
-                file: executable.to_string_lossy().into_owned(),
-                args: args.to_vec(),
-            };
+    /// The separator between directories in a path.
+    pub fn directory_separator(self) -> char {
+        match self {
+            Platform::Unix => '/',
+            Platform::Windows => '\\',
         }
-        if let Some(node) = &node {
-            for root in [
-                directory.join("node_modules"),
-                directory.parent().unwrap_or(directory).to_path_buf(),
-            ] {
-                let script = root.join(module);
-                if script.is_file() {
-                    return LaunchSpec {
-                        file: node.to_string_lossy().into_owned(),
-                        args: std::iter::once(script.to_string_lossy().into_owned())
-                            .chain(args.iter().cloned())
-                            .collect(),
-                    };
-                }
+    }
+
+    /// Joins path parts the way the target platform writes them. `PathBuf`
+    /// cannot be used for this: it always produces the host's form, and half
+    /// the point here is to produce the other one.
+    pub fn join(self, parts: &[&str]) -> String {
+        let separator = self.directory_separator();
+        let mut joined = String::new();
+        for part in parts {
+            if part.is_empty() {
+                continue;
             }
+            if !joined.is_empty() && !joined.ends_with(separator) {
+                joined.push(separator);
+            }
+            joined.push_str(part.trim_end_matches(separator));
         }
-    }
-    // Spawn reports the missing native CLI; a .cmd shim is deliberately never
-    // used as a fallback. Install the native CLI or Node + the standard package.
-    LaunchSpec {
-        file: format!("{agent}.exe"),
-        args: args.to_vec(),
+        joined
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
-    fn windows_launch_preserves_prompts_and_resolves_npm_without_a_shell() {
-        let temp = tempfile::tempdir().unwrap();
-        let bin = temp.path().join("Program Files/node");
-        let npm = temp.path().join("npm");
-        let script = npm.join("node_modules/@openai/codex/bin/codex.js");
-        std::fs::create_dir_all(script.parent().unwrap()).unwrap();
-        std::fs::create_dir_all(&bin).unwrap();
-        std::fs::write(bin.join("node.exe"), "").unwrap();
-        std::fs::write(&script, "").unwrap();
-        let args = vec![
-            "--".into(),
-            "quotes \" ' & %PATH% $(whoami)\nnext line".into(),
-        ];
-        let spec = windows_provider_in("codex", &args, &[npm.clone(), bin.clone()]);
-        assert_eq!(Path::new(&spec.file), bin.join("node.exe"));
-        assert_eq!(Path::new(&spec.args[0]), script);
-        assert_eq!(&spec.args[1..], args);
-        std::fs::write(npm.join("codex.exe"), "").unwrap();
-        let native = windows_provider_in("codex", &args, &[npm.clone(), bin]);
-        assert_eq!(Path::new(&native.file), npm.join("codex.exe"));
-        assert_eq!(native.args, args);
+    fn paths_are_written_the_way_each_platform_writes_them() {
+        assert_eq!(
+            Platform::Unix.join(&["/usr", "bin", "claude"]),
+            "/usr/bin/claude"
+        );
+        assert_eq!(
+            Platform::Windows.join(&["C:\\Windows", "System32", "cmd.exe"]),
+            "C:\\Windows\\System32\\cmd.exe"
+        );
+        // A trailing separator on a part does not double up.
+        assert_eq!(Platform::Windows.join(&["C:\\", "tools"]), "C:\\tools");
+        assert_eq!(Platform::Unix.join(&["", "bin"]), "bin");
     }
 }

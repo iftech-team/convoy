@@ -1,10 +1,14 @@
 # Port and native review — September 23, 2026
 
-> **September 24, 2026.** Linux moved off Electron. `apps/linux` is a native
-> GTK4 client in Rust; `apps/desktop` remains the Windows implementation and is
-> unchanged. Both read the same schema-3 `workspace.json`, so either can be run
-> against existing data — but not at the same time. See
-> [the Linux client](#linux-gtk-client) below and
+> **September 24, 2026.** Linux moved off Electron twice in one day. First to
+> `apps/linux`, a native GTK4 client in Rust; then, once the design was seen
+> beside the macOS app, to `apps/convoy` — a Tauri client that now covers both
+> Windows and Linux with one interface. `apps/linux` still builds and still
+> passes its tests; `apps/desktop` is the Electron build it replaced. All of
+> them read the same schema-3 `workspace.json`, so any one can be run against
+> existing data — but not two at the same time. See
+> [the Tauri client](#convoy-tauri-client) and
+> [the Linux client](#linux-gtk-client) below, and
 > [`docs/plan-refactor/`](../plan-refactor/) for why and how.
 
 Reference: native macOS 0.5.8 (`2732d28`). Its Files & Changes source changes were
@@ -95,6 +99,36 @@ GtkSourceView). Feature parity with the Electron preview, minus Windows.
   fallback there is no exit code at all and the task stays `building`. A GLib
   child watch is registered instead when VTE has already dropped the pty.
 
+### What running on Windows found
+
+- **`icons/icon.ico` was missing.** `tauri-build` fails outright without it.
+- **Every git call would have flashed a console window up** and taken the
+  focus. Convoy is a windowed program with no console of its own, and git is
+  called constantly. The one place Convoy starts another program now passes
+  `CREATE_NO_WINDOW`.
+- **Stopping was one stage, not two.** `taskkill /T` without `/F` does nothing
+  to a console program — the runner printed "could not be terminated" for
+  every child — so the polite half of a stop was wasted and the agent got no
+  moment to save. It is now the interrupt a person would have typed, then
+  `/T /F` a second and a half later.
+- **The exit would never have arrived.** Reading and reaping shared a thread:
+  read to EOF, then wait for the child. ConPTY does not close when the child is
+  killed, so a stopped agent was never reported and its task would have sat in
+  `building` for ever. Waiting has its own thread now.
+- **`/etc/passwd` passed as a repository-relative path.** `Path::is_absolute`
+  answers only the host's question, and on Windows a leading slash is *rooted*
+  rather than absolute — `root.join("/etc/passwd")` throws the root away and
+  lands outside the repository. `C:\Windows` and the drive-relative `C:file`
+  went the same way. The rules are now both platforms' together, applied on
+  both, and a project path is judged rooted if either platform would say so —
+  without which each build would have rejected the other's `workspace.json`.
+
+One thing the tests found about ConPTY itself, which is worth writing down:
+it asks the terminal for the cursor position on startup and **waits for the
+answer** before letting the child write anything. xterm.js answers without
+being asked; a test with no terminal on the other end has to do it, or the
+child never speaks at all.
+
 ### Not yet validated
 
 **Nobody has used it.** Every check above is automated and headless. The window
@@ -107,6 +141,70 @@ terminal checks; `convoy-vte-probe` exists for them but has not been run
 interactively. No distribution package has been installed from a clean system;
 the PKGBUILD and Debian metadata are written but only CI builds them. Signing,
 updates and a real release remain release work, as before.
+
+## Convoy (Tauri) client
+
+`apps/convoy` is the client for **Windows and Linux**, following the macOS
+SwiftUI app as its design. macOS keeps its native app and is not touched.
+`convoy-core` moved across from the GTK client unchanged — that was the point
+of writing it with no toolkit dependency — and only the front end is new.
+
+Feature parity with the Electron preview: projects and discovery, sessions with
+resume, recovery, models and accounts, reviews and builder feedback, worktrees
+with shared files and setup commands, Files & Changes with four views,
+side-by-side diffs, staging, hunk discard, commits, branches, remotes and pull
+requests, specifications with approval and export, tasks as a list and a board
+with a queue and publish modes, transcript import, usage limits, the agent
+monitor, hibernation, keep-awake, notifications, the activity log and a command
+palette.
+
+### What was actually run
+
+- **Rust**: `cargo fmt`, `cargo clippy --workspace --all-targets -D warnings`
+  and `cargo test --workspace` clean on Linux **and on `windows-2022`**, with
+  an NSIS installer built and kept as an artifact. That is the first time any
+  Windows branch in this tree has been compiled rather than read, and it found
+  five things by doing so — listed below.
+- **Terminal**: five checks on both platforms, in `convoy-pty` — a command
+  runs, input reaches it, the exit code comes back, writing to a session that
+  is not running says so, stopping reports that it was asked for, hibernating
+  is reported apart from a stop, and on Unix the whole process tree goes. The
+  terminal is a separate package precisely so these run on Windows: a test
+  binary that links the web view dies at load there.
+- **Exit rules**: a task whose session exits cleanly is asserted to be in
+  review afterwards, by reading the workspace file back. The assertion was
+  checked against a deliberately broken build first, because a test of wiring
+  that passes when the wiring is absent proves nothing — it failed, as it
+  should.
+- **Screens**: sessions, the workbench, the session menu, tasks as a list and
+  as a board, specifications, activity, Files & Changes in all four views with
+  a unified and a side-by-side diff, settings, the new-session and new-task
+  dialogs, the command palette, and both themes — each opened under Xvfb and
+  looked at.
+- **An agent**: Claude Code started from the session list, drew its interface
+  in the window, took keyboard input and exited; the exit code arrived and the
+  session returned to stopped.
+- **Core**: 87 tests. The ones that cannot mean anything on Windows — a login
+  shell, Unix permission bits, symlinks — now say so with `cfg(unix)` rather
+  than failing there. The Windows launch cases are covered by
+  `tests/windows.rs`, which runs from either platform because the platform is
+  a parameter rather than a `cfg!`.
+
+### Not yet validated
+
+**Nobody has used it on Windows.** CI compiles it, lints it, runs its tests and
+builds an installer, but no one has installed that installer and started an
+agent. What is proven there is the terminal — a command runs through ConPTY,
+input reaches it, the exit code comes back, and stopping and hibernating are
+told apart — and the shared rules, run natively. What is not: provider
+resolution against a real `claude.exe`, an agent's interface drawn through
+ConPTY, notification delivery, the Recycle Bin, and the installer itself.
+
+Input latency on Linux — the one open question the design pivot named — is
+still open. It needs somebody typing at a running agent, and no automation
+closes it.
+
+Signing, updates and a real release remain release work.
 
 ## Local Linux artifact
 

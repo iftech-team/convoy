@@ -1,4 +1,4 @@
-//! Isolated provider homes.
+//! Port of `accounts.cjs`: isolated provider homes.
 //!
 //! A session bound to a profile gets its own `CLAUDE_CONFIG_DIR` / `CODEX_HOME`
 //! named by the SHA-256 of the profile id, and loses any API-key variables so
@@ -81,12 +81,20 @@ pub fn account_environment(
     Ok(Account { home, env })
 }
 
+/// Where `~/.claude` and `~/.codex` sit when no profile is bound. The
+/// variable differs by platform, and the caller's environment wins over this
+/// process's so a test can state it.
 fn default_home_root(source: &BTreeMap<String, String>) -> PathBuf {
+    let name = if crate::Platform::current().is_windows() {
+        "USERPROFILE"
+    } else {
+        "HOME"
+    };
     source
-        .get(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .get(name)
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(crate::storage::home)
+        .unwrap_or_else(|| crate::storage::home(crate::Platform::current()))
 }
 
 /// `path.resolve()` — relative values are taken against the working directory.

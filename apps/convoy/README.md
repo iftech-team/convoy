@@ -20,15 +20,59 @@ its tests and every behavioural invariant. Only the front end is new.
 | Rules, storage, Git, providers, queue | `convoy-core`, 7,981 lines with tests | — |
 | Window, dialogs, terminal widget | — | `convoy-gtk`, 7,891 lines |
 
+## What it does
+
+Everything the app does. Projects and discovery, sessions with resume and
+recovery, models and accounts; reviews and feedback to the builder; Git
+worktrees with shared files and a setup command; Files & Changes with four
+views, side-by-side diffs, staging, hunk discard, commits, branches, remotes
+and pull requests; specifications with approval and export; tasks as a list and
+as a board, with a queue and publish modes; transcript import; usage limits;
+the agent monitor, hibernation, keep-awake, notifications, the activity log and
+a command palette.
+
+The rules behind all of it are `convoy-core`, shared with the GTK client and
+byte-compatible with what the Electron and SwiftUI builds write.
+
 ## The terminal
+
+`convoy-pty` is its own package and knows nothing about windows, workspaces or
+tasks: it runs an agent in a pty, says what comes out, and says how it ended.
+That is the same rule `convoy-core` was written under, one level down, and it
+pays the same way — a test binary that links the web view cannot be loaded on
+Windows at all, so ConPTY could not otherwise be tested where it runs.
 
 `portable-pty` gives a real pty on Unix and ConPTY on Windows, and xterm.js
 draws it — the same pairing VS Code uses. Output is pushed to the web view as events:
 an agent emits thousands of lines a second and a poll would either lag or spin.
 
-The open question this prototype exists to answer is **input latency on Linux**,
-where the web view is WebKitGTK rather than the Chromium-based WebView2 or
-WKWebView the other two platforms get. Measure before building further.
+The exit rules run in the thread that reaps the child, not in the web view. A
+clean exit hands the task to review — never to done, which stays a decision
+somebody makes — and a failure or a stop pauses the queue. None of that should
+depend on a window being able to answer.
+
+The open question is still **input latency on Linux**, where the web view is
+WebKitGTK rather than the Chromium-based WebView2 or WKWebView the other two
+platforms get. Nobody has sat and typed at a running agent for long enough to
+say.
+
+## Windows
+
+The same binary, built on `windows-2022` in CI: formatting, lints, the terminal
+tests through ConPTY, the shared core's own tests, and an NSIS installer as an
+artifact. Four things differ underneath, and each has a reason to exist rather
+than a `cfg!` for its own sake:
+
+- The agent is found by walking `PATH` for `claude.exe`, then for the standard
+  npm package to run under `node` — the resolution the Electron build used,
+  with a test asserting the argv is byte-identical.
+- There are no process groups, so stopping walks the tree with `taskkill /T`
+  and then `/T /F`, which keeps the two stages of a stop rather than making
+  both of them fatal.
+- Keeping the machine awake owns a thread of its own, because the request
+  belongs to the thread that made it and a command runs on a pooled one.
+- Every child process is spawned with `CREATE_NO_WINDOW`. Convoy has no console
+  of its own, and there are a great many git calls.
 
 ## What it costs
 

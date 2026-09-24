@@ -1,8 +1,10 @@
-//! Storage guarantees.
+//! Ported from `test/core.test.cjs` — storage guarantees.
 
 mod common;
 
-use common::{fixture, is_root, new_session, same_state};
+#[cfg(unix)]
+use common::is_root;
+use common::{fixture, new_session, same_state};
 use convoy_core::patterns::is_uuid;
 use convoy_core::workspace::model::Agent;
 use convoy_core::workspace::Workspace;
@@ -57,6 +59,8 @@ fn invalid_mutations_leave_both_memory_and_disk_untouched() {
     assert_eq!(workspace.state().sessions.len(), 0);
 }
 
+/// Made read-only through the Unix permission bits; Windows has no one-line
+/// equivalent, and the rule under test is the same on both.
 #[cfg(unix)]
 #[test]
 fn failed_writes_do_not_commit_mutations_in_memory() {

@@ -1,4 +1,4 @@
-//! Bounded plain-text excerpts of terminal output, the
+//! Port of `history.cjs`: bounded plain-text excerpts of terminal output, the
 //! bracketed-paste encoder, and the review brief.
 //!
 //! History files are named by the SHA-256 of the session id, so a crafted id
@@ -11,10 +11,9 @@ use crate::workspace::model::Session;
 use crate::{ensure, Result};
 use std::fs;
 use std::io::Write;
-
 use std::path::{Path, PathBuf};
 
-/// Excerpts are capped at 48,000 characters.
+/// Excerpts are capped at 48,000 characters, matching the Electron build.
 pub const LIMIT: usize = 48_000;
 
 /// Strips escape sequences and the control characters a terminal may emit,
@@ -75,11 +74,7 @@ impl History {
         let file = self.file(id);
         let temporary = file.with_extension("txt.tmp");
         let body = plain(text);
-        let mut handle = crate::platform::private_file_options()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&temporary)?;
+        let mut handle = crate::fs::create_private(&temporary)?;
         handle.write_all(tail(&body, LIMIT).as_bytes())?;
         drop(handle);
         fs::rename(&temporary, &file)?;

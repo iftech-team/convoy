@@ -50,6 +50,8 @@ pub fn same_state(left: &State, right: &State) -> bool {
 }
 
 /// Permission-based failure tests cannot work for a user that bypasses them.
+/// Only the Unix tests ask, since only they set a permission bit.
+#[cfg(unix)]
 pub fn is_root() -> bool {
     #[cfg(unix)]
     {

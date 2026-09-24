@@ -198,6 +198,9 @@ impl Workspace {
                     task.title = input.title;
                     task.details = input.details;
                     task.findings = input.findings;
+                    if task.agent != input.agent {
+                        task.model = None;
+                    }
                     task.agent = input.agent;
                     task.mode = input.mode;
                     task.auto_review = input.auto_review;

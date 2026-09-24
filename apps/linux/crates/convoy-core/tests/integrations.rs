@@ -463,3 +463,42 @@ fn the_same_key_on_two_sites_is_two_issues() {
         "corp.example/jira"
     );
 }
+
+#[test]
+fn editing_an_imported_task_keeps_its_model_until_the_agent_changes() {
+    let fixture = fixture();
+    let (mut workspace, project) = fixture.with_project();
+    let options = ImportOptions {
+        agent: Agent::Claude,
+        model: "sonnet".into(),
+        mode: PublishMode::None,
+        auto_review: false,
+        overrides: BTreeMap::new(),
+    };
+    workspace
+        .import_issues(
+            &project,
+            &connection(TrackerKind::Linear, TrackerAuth::Mcp),
+            &manual_issues("ENG-7 Fix login"),
+            &options,
+        )
+        .unwrap();
+    let task = workspace.state().tasks[0].clone();
+    let mut input = convoy_core::planning::TaskInput {
+        id: Some(task.id.clone()),
+        project_id: project,
+        spec_id: None,
+        title: "Updated title".into(),
+        details: String::new(),
+        findings: String::new(),
+        agent: Agent::Claude,
+        mode: PublishMode::None,
+        auto_review: false,
+    };
+    workspace.save_task(input.clone()).unwrap();
+    assert_eq!(workspace.state().tasks[0].model.as_deref(), Some("sonnet"));
+    input.agent = Agent::Codex;
+    workspace.save_task(input).unwrap();
+    assert_eq!(workspace.state().tasks[0].model, None);
+    assert_eq!(workspace.state().tasks[0].source, task.source);
+}

@@ -10,6 +10,7 @@ pub mod accounts;
 pub mod ansi;
 pub mod error;
 pub mod files;
+pub mod fs;
 pub mod git;
 pub mod hash;
 pub mod history;
@@ -34,6 +35,7 @@ pub mod worktree;
 
 pub use error::{ConvoyError, Result};
 pub use git::Git;
+pub use platform::Platform;
 pub use process::{Output, ProcessRunner, ProcessSpec, StdRunner};
 pub use storage::Storage;
 pub use workspace::model;

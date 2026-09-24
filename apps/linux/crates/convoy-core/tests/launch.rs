@@ -1,5 +1,8 @@
-//! How a provider CLI is actually invoked. Unix only: the core does not plan
-//! Windows launches yet.
+//! Ported from `test/core.test.cjs` and `test/provider.test.cjs` — how a
+//! provider CLI is actually invoked on Unix, down to the login shell and the
+//! argv the child receives. `tests/windows.rs` is the counterpart, and it runs
+//! from either platform because the platform is a parameter there.
+#![cfg(unix)]
 
 mod common;
 
