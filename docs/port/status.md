@@ -99,6 +99,36 @@ GtkSourceView). Feature parity with the Electron preview, minus Windows.
   fallback there is no exit code at all and the task stays `building`. A GLib
   child watch is registered instead when VTE has already dropped the pty.
 
+### What running on Windows found
+
+- **`icons/icon.ico` was missing.** `tauri-build` fails outright without it.
+- **Every git call would have flashed a console window up** and taken the
+  focus. Convoy is a windowed program with no console of its own, and git is
+  called constantly. The one place Convoy starts another program now passes
+  `CREATE_NO_WINDOW`.
+- **Stopping was one stage, not two.** `taskkill /T` without `/F` does nothing
+  to a console program — the runner printed "could not be terminated" for
+  every child — so the polite half of a stop was wasted and the agent got no
+  moment to save. It is now the interrupt a person would have typed, then
+  `/T /F` a second and a half later.
+- **The exit would never have arrived.** Reading and reaping shared a thread:
+  read to EOF, then wait for the child. ConPTY does not close when the child is
+  killed, so a stopped agent was never reported and its task would have sat in
+  `building` for ever. Waiting has its own thread now.
+- **`/etc/passwd` passed as a repository-relative path.** `Path::is_absolute`
+  answers only the host's question, and on Windows a leading slash is *rooted*
+  rather than absolute — `root.join("/etc/passwd")` throws the root away and
+  lands outside the repository. `C:\Windows` and the drive-relative `C:file`
+  went the same way. The rules are now both platforms' together, applied on
+  both, and a project path is judged rooted if either platform would say so —
+  without which each build would have rejected the other's `workspace.json`.
+
+One thing the tests found about ConPTY itself, which is worth writing down:
+it asks the terminal for the cursor position on startup and **waits for the
+answer** before letting the child write anything. xterm.js answers without
+being asked; a test with no terminal on the other end has to do it, or the
+child never speaks at all.
+
 ### Not yet validated
 
 **Nobody has used it.** Every check above is automated and headless. The window
@@ -130,10 +160,11 @@ palette.
 
 ### What was actually run
 
-- **Rust**: `cargo fmt`, `cargo clippy --all-targets -D warnings` and
-  `cargo test` clean on Linux, and `fmt` and `clippy` clean on `windows-2022`
-  in CI — which is the first time any Windows branch in this tree has been
-  compiled rather than read.
+- **Rust**: `cargo fmt`, `cargo clippy --workspace --all-targets -D warnings`
+  and `cargo test --workspace` clean on Linux **and on `windows-2022`**, with
+  an NSIS installer built and kept as an artifact. That is the first time any
+  Windows branch in this tree has been compiled rather than read, and it found
+  five things by doing so — listed below.
 - **Terminal**: five checks on both platforms, in `convoy-pty` — a command
   runs, input reaches it, the exit code comes back, writing to a session that
   is not running says so, stopping reports that it was asked for, hibernating
@@ -163,9 +194,11 @@ palette.
 
 **Nobody has used it on Windows.** CI compiles it, lints it, runs its tests and
 builds an installer, but no one has installed that installer and started an
-agent. Provider resolution against a real `claude.exe`, ConPTY rendering of an
-agent's interface, notification delivery and the Recycle Bin all remain
-unproven there.
+agent. What is proven there is the terminal — a command runs through ConPTY,
+input reaches it, the exit code comes back, and stopping and hibernating are
+told apart — and the shared rules, run natively. What is not: provider
+resolution against a real `claude.exe`, an agent's interface drawn through
+ConPTY, notification delivery, the Recycle Bin, and the installer itself.
 
 Input latency on Linux — the one open question the design pivot named — is
 still open. It needs somebody typing at a running agent, and no automation
