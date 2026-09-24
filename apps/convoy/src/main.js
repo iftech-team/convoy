@@ -1,5 +1,6 @@
 // Bootstrap, rendering and every action the window offers.
 
+import { listen } from "@tauri-apps/api/event";
 import { open as openDialogNative, save as saveDialogNative } from "@tauri-apps/plugin-dialog";
 import {
   applyTheme,
@@ -301,6 +302,7 @@ const ACTIONS = {
   "refresh-activity": loadActivity,
 
   // menus
+  quit: () => call("quit_now"),
   "open-split": () => openModal({ kind: "split" }),
   "close-split": () => {
     state.split = null;
@@ -1320,6 +1322,11 @@ terminal.onExit(async (exit) => {
 });
 
 // ------------------------------------------------------------- bootstrap --
+
+// The window asks before it takes the agents with it.
+await listen("window:closing", ({ payload }) =>
+  openModal({ kind: "quit", running: Number(payload) || 1 }),
+);
 
 try {
   await terminal.wire();

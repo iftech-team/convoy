@@ -45,22 +45,15 @@ impl Sink for Recorder {
     }
 }
 
-/// The environment the child gets. It is replaced rather than inherited, so
-/// anything the shell needs to start has to be named.
+/// The environment the child gets, which is what Convoy passes an agent: this
+/// process's own, with the terminal named. Windows will not start a shell in a
+/// nearly empty environment — PowerShell needs a dozen variables it is never
+/// asked about — and naming them one at a time is a list that goes stale.
 fn environment() -> Vec<(String, String)> {
-    let mut env = vec![
-        ("PATH".to_string(), var("PATH")),
-        ("TERM".to_string(), "xterm-256color".to_string()),
-    ];
-    if cfg!(windows) {
-        env.push(("SystemRoot".to_string(), var("SystemRoot")));
-        env.push(("USERPROFILE".to_string(), var("USERPROFILE")));
-    }
+    let mut env: Vec<(String, String)> = std::env::vars().collect();
+    env.retain(|(key, _)| !key.eq_ignore_ascii_case("term"));
+    env.push(("TERM".to_string(), "xterm-256color".to_string()));
     env
-}
-
-fn var(name: &str) -> String {
-    std::env::var(name).unwrap_or_default()
 }
 
 fn root() -> &'static std::path::Path {

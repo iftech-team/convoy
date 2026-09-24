@@ -11,6 +11,21 @@ mod power;
 mod pty;
 
 use std::sync::Arc;
+use tauri::{Emitter, Manager};
+
+/// Quitting once the user has said yes. The agents go with the process; this
+/// asks them to stop first so an exit code is recorded for each.
+#[tauri::command]
+fn quit_now(app: tauri::AppHandle, terminals: tauri::State<'_, Arc<pty::Terminals>>) {
+    for id in terminals.ids() {
+        terminals.stop(&id);
+    }
+    // Long enough for the stops to be sent, short enough not to feel stuck.
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        app.exit(0);
+    });
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -34,6 +49,18 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
+        // Closing the window ends every agent with it. Nothing is lost that
+        // was not going to be lost anyway, but it should not happen by
+        // accident, so the window asks first.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let running = window.state::<Arc<pty::Terminals>>().ids().len();
+                if running > 0 {
+                    api.prevent_close();
+                    let _ = window.emit("window:closing", running);
+                }
+            }
+        })
         .manage(Arc::new(pty::Terminals::new()))
         .manage(commands::Workspace::new())
         .manage(power::KeepAwake::default())
@@ -99,6 +126,7 @@ pub fn run() {
             commands::integrations::usage_read,
             monitor::monitor_tick,
             power::keep_awake,
+            quit_now,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Convoy");

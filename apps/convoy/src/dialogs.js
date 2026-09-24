@@ -521,8 +521,22 @@ function splitPicker() {
   });
 }
 
+/// Closing the window ends every agent with it.
+const quitting = (dialog) =>
+  modal({
+    title: dialog.running === 1 ? "An agent is still running" : "Agents are still running",
+    body: `<p class="modal__hint">
+      Closing Convoy stops ${dialog.running === 1 ? "it" : `all ${dialog.running}`}.
+      Anything not written to disk by then is gone.
+    </p>`,
+    foot: `
+      ${button({ label: "Stay open", data: { dismiss: "1" } })}
+      ${button({ label: "Stop and quit", action: "quit", kind: "danger-solid" })}`,
+  });
+
 const VIEWS = {
   split: splitPicker,
+  quit: quitting,
   session: newSession,
   "edit-session": editSession,
   review: startReview,
