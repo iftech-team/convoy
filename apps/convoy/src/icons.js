@@ -37,6 +37,7 @@ export const icons = {
   clock: icon('<circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2 1.2"/>', 14),
   person: icon('<circle cx="8" cy="5.5" r="2.5"/><path d="M3 13.2a5 5 0 0 1 10 0"/>', 14),
   download: icon('<path d="M8 2.5v7.5M5 7.5 8 10.5l3-3M3 13h10"/>', 14),
+  close: icon('<path d="M4 4l8 8M12 4l-8 8"/>', 14),
   check: icon('<path d="m3.5 8.5 3 3 6-7"/>', 14),
   warn: icon('<path d="M8 2.8 14 13H2z"/><path d="M8 6.8v2.6M8 11.3v.1"/>', 14),
 };

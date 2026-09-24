@@ -153,11 +153,15 @@ impl Git {
                 &["log", "-100", "--format=%H%x00%h%x00%s%x00%an%x00%aI"],
             )
             .unwrap_or_default();
+        // `refs/remotes/origin/HEAD` is a symbolic ref, and its short name is
+        // the bare remote — "origin". Listing it as a branch invites switching
+        // to something that is not one, so the symref field is asked for and
+        // anything that has one is dropped.
         let branches = self.run(
             root,
             &[
                 "for-each-ref",
-                "--format=%(refname:short)",
+                "--format=%(symref)%00%(refname:short)",
                 "refs/heads",
                 "refs/remotes",
             ],
@@ -193,8 +197,10 @@ impl Git {
             branches: branches
                 .trim()
                 .lines()
-                .filter(|line| !line.is_empty())
-                .map(str::to_string)
+                .filter_map(|line| line.split_once('\0'))
+                .filter(|(symref, _)| symref.is_empty())
+                .map(|(_, name)| name.to_string())
+                .filter(|name| !name.is_empty())
                 .collect(),
         })
     }

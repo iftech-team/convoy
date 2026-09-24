@@ -213,7 +213,17 @@ export function reviewsView() {
       "Open a session and choose Start review. The other agent receives an editable brief.",
     );
   }
-  return `<div class="list">${reviews.map(sessionRow).join("")}</div>`;
+  return `
+    <div class="section">
+      <h2 class="section__title">Reviews
+        <span class="section__count">${reviews.length}</span>
+      </h2>
+    </div>
+    <p class="section__hint">
+      A review runs in the builder's own folder, so it reads exactly what was
+      written there.
+    </p>
+    <div class="list">${reviews.map(sessionRow).join("")}</div>`;
 }
 
 // -------------------------------------------------------------- workbench --
@@ -221,6 +231,9 @@ export function reviewsView() {
 export function workbench() {
   const current = session();
   if (!current) return "";
+  const other = state.split
+    ? state.sessions.find((item) => item.id === state.split)
+    : null;
   const reported = state.agentState.get(current.id);
   const label = current.running
     ? (reported ?? "Running")
@@ -260,7 +273,33 @@ export function workbench() {
         ${button({ icon: "more", action: "session-menu", kind: "quiet", title: "Session actions" })}
         ${button({ icon: "back", action: "back", kind: "quiet", title: "Back to the list" })}
       </div>
-      <div class="terminal" id="terminal-host"></div>
+      ${
+        other
+          ? `<div class="workbench__panes">
+               <div class="pane">
+                 <div class="pane__label">${escape(current.title)}</div>
+                 <div class="terminal" id="terminal-host"></div>
+               </div>
+               <div class="pane">
+                 <div class="pane__label">
+                   ${escape(other.title)}
+                   ${
+                     other.running
+                       ? button({ label: "Stop", icon: "stop", kind: "quiet", data: { stop: other.id } })
+                       : button({
+                           label: other.started ? "Resume" : "Start",
+                           icon: "play",
+                           kind: "quiet",
+                           data: { start: other.id },
+                         })
+                   }
+                   ${button({ icon: "close", action: "close-split", kind: "quiet", title: "Close the split" })}
+                 </div>
+                 <div class="terminal" id="terminal-host-split"></div>
+               </div>
+             </div>`
+          : '<div class="terminal" id="terminal-host"></div>'
+      }
     </div>`;
 }
 

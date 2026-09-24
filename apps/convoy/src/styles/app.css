@@ -1654,3 +1654,58 @@ input {
   font-size: 13px;
   color: var(--text-muted);
 }
+
+/* ------------------------------------------------------------ split view -- */
+
+.workbench__panes {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 0;
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+}
+
+.pane:first-child {
+  border-left: none;
+}
+
+.pane__label {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--text-muted);
+}
+
+.pane__label > span:first-child,
+.pane__label {
+  min-width: 0;
+}
+
+.pane__label .button {
+  margin-left: auto;
+}
+
+.pane__label .button + .button {
+  margin-left: 0;
+}
+
+.plain-list--rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  gap: 2px;
+}

@@ -24,6 +24,9 @@ export const state = {
   running: [],
   projectId: null,
   sessionId: null,
+  /// A second session shown beside the first. In memory only: which two
+  /// terminals someone had open is not worth writing to the workspace.
+  split: null,
   tab: "sessions",
   filter: "",
   search: "",
@@ -157,6 +160,12 @@ export async function loadSessions() {
     archived: state.showArchived,
   });
   state.sessions = sessions ?? [];
+  // A split pointing at a session that has been archived or removed would
+  // render a pane for something that is not there.
+  if (state.split && !state.sessions.some((item) => item.id === state.split)) {
+    state.split = null;
+  }
+  if (state.split === state.sessionId) state.split = null;
   if (state.sessionId && !state.sessions.some((s) => s.id === state.sessionId)) {
     state.sessionId = null;
   }

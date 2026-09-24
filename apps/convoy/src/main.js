@@ -99,7 +99,10 @@ function render() {
   if (state.menu === "remote") app.insertAdjacentHTML("beforeend", remoteMenu());
   if (state.dialog) app.insertAdjacentHTML("beforeend", dialogView());
 
-  if (state.sessionId && !state.files) terminal.mount(state.sessionId);
+  if (state.sessionId && !state.files) {
+    terminal.mount(state.sessionId);
+    if (state.split) terminal.mount(state.split, "#terminal-host-split");
+  }
 
   // Typing re-renders, so the caret goes back where it was.
   if (caret) {
@@ -284,6 +287,11 @@ const ACTIONS = {
   "refresh-activity": loadActivity,
 
   // menus
+  "open-split": () => openModal({ kind: "split" }),
+  "close-split": () => {
+    state.split = null;
+    changed();
+  },
   "session-menu": () => {
     state.menu = "session";
     render();
@@ -432,7 +440,7 @@ app.addEventListener("click", async (event) => {
       "[data-set],[data-toggle],[data-dismiss],[data-quick],[data-files-view]," +
       "[data-change],[data-file],[data-commit],[data-branch],[data-task],[data-spec]," +
       "[data-approve],[data-export],[data-prepare],[data-status],[data-remove-profile]," +
-      "[data-remove-command],[data-import],[data-task-view],[data-palette]",
+      "[data-remove-command],[data-import],[data-task-view],[data-palette],[data-split]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -459,6 +467,10 @@ app.addEventListener("click", async (event) => {
   if (data.start) return terminal.start(data.start);
   if (data.stop) return terminal.stop(data.stop);
   if (data.open) return openSession(data.open);
+  if (data.split) {
+    state.split = data.split;
+    return closeDialog();
+  }
   if (data.quick) {
     state.menu = null;
     render();

@@ -474,7 +474,34 @@ const markdownPreview = (dialog) =>
       ${button({ label: "Copy", action: "copy-markdown", kind: "primary" })}`,
   });
 
+/// Which other session to show beside this one. A split is two terminals, not
+/// two windows: the same list, minus the one already on screen.
+function splitPicker() {
+  const others = state.sessions.filter(
+    (item) => item.id !== state.sessionId && !item.archived,
+  );
+  return modal({
+    title: "Open split terminal",
+    hint: "The chosen session appears beside this one and keeps running when the split is closed.",
+    body: others.length
+      ? `<div class="plain-list plain-list--rows">
+           ${others
+             .map(
+               (item) => `
+             <button class="menu__item" data-split="${escape(item.id)}">
+               <span>${escape(item.title)}</span>
+               <span class="menu__hint">${item.running ? "running" : item.started ? "stopped" : "never started"}</span>
+             </button>`,
+             )
+             .join("")}
+         </div>`
+      : '<p class="modal__hint">There is no other session in this project.</p>',
+    foot: button({ label: "Cancel", data: { dismiss: "1" } }),
+  });
+}
+
 const VIEWS = {
+  split: splitPicker,
   session: newSession,
   "edit-session": editSession,
   review: startReview,
