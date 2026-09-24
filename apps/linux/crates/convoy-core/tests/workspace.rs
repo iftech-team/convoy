@@ -2,7 +2,9 @@
 
 mod common;
 
-use common::{fixture, is_root, new_session, same_state};
+#[cfg(unix)]
+use common::is_root;
+use common::{fixture, new_session, same_state};
 use convoy_core::patterns::is_uuid;
 use convoy_core::workspace::model::Agent;
 use convoy_core::workspace::Workspace;
