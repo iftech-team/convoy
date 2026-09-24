@@ -25,6 +25,7 @@ function validate(state) {
     for (const key of ['archived', 'pinned']) if (session[key] !== undefined && typeof session[key] !== 'boolean') throw new Error('Invalid session flag.');
     if (session.workingDirectory !== undefined && (typeof session.workingDirectory !== 'string' || !path.isAbsolute(session.workingDirectory))) throw new Error('Invalid worktree path.');
     if (session.agentHome !== undefined && (typeof session.agentHome !== 'string' || !path.isAbsolute(session.agentHome))) throw new Error('Invalid account path.');
+    if (session.lastExit !== undefined && (!session.lastExit || !Number.isInteger(session.lastExit.code) || typeof session.lastExit.stopped !== 'boolean' || typeof session.lastExit.resumeMissing !== 'boolean')) throw new Error('Invalid session exit details.');
     if (session.reviewOf && !state.sessions.some(s => s.id === session.reviewOf && s.id !== session.id && s.projectID === session.projectID)) throw new Error('Invalid review relationship.');
   }
   if (state.settings) validateSettings(state.settings);
@@ -99,6 +100,7 @@ class Workspace {
     return this.update(next => {
       const fresh = { ...old, id: randomUUID(), title: `${old.title.slice(0, 180)} · recovery`, started: false, providerID: old.agent === 'claude' ? randomUUID() : '', archived: false, ownsWorktree: false, prompt: '' };
       delete fresh.taskID;
+      delete fresh.lastExit;
       next.sessions.push(fresh);
     });
   }
@@ -133,7 +135,11 @@ class Workspace {
     if (patch.notes !== undefined && (typeof patch.notes !== 'string' || patch.notes.length > 32000)) throw new Error('Notes are too long.');
     if (running && (patch.archived === true || patch.providerID !== undefined)) throw new Error('Stop the session before archiving or changing its provider ID.');
     this.session(id);
-    return this.update(next => Object.assign(next.sessions.find(s => s.id === id), patch));
+    return this.update(next => {
+      const session = next.sessions.find(s => s.id === id);
+      Object.assign(session, patch);
+      if (patch.providerID !== undefined) delete session.lastExit;
+    });
   }
   saveSettings(settings) {
     const next = Object.fromEntries(Object.keys(defaults).map(key => [key, settings[key] ?? this.state.settings[key] ?? defaults[key]]));

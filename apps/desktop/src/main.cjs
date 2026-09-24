@@ -12,6 +12,7 @@ const files = require('./files.cjs');
 const telemetry = require('./telemetry.cjs');
 const { codexLimits } = require('./provider.cjs');
 const { markdown } = require('./planning.cjs');
+const { resizeTerminal, exitDetails } = require('./terminal-lifecycle.cjs');
 
 // Preview data is intentionally separate from the native macOS workspace.
 app.setPath('userData', path.join(app.getPath('appData'), 'Convoy Desktop Preview'));
@@ -274,7 +275,9 @@ function boot() {
       { _enhanced: true, _settingsFile: settingsFile, [session.agent === 'claude' ? 'CLAUDE_CONFIG_DIR' : 'CODEX_HOME']: account.home });
     const child = pty.spawn(spec.file, spec.args, { name: 'xterm-256color', cwd: directory, env: account.env, cols: 100, rows: 30 });
     try { workspace.update(next => {
-      Object.assign(next.sessions.find(s => s.id === id), { started: true, agentHome: account.home });
+      const savedSession = next.sessions.find(s => s.id === id);
+      Object.assign(savedSession, { started: true, agentHome: account.home });
+      delete savedSession.lastExit;
       const task = next.tasks.find(t => t.id === session.taskID);
       if (task) { task.status = 'building'; delete task.lastError; }
     }); }
@@ -300,10 +303,13 @@ function boot() {
       }
     });
     child.onExit(({ exitCode }) => {
+      entry.exited = true;
+      const lastExit = exitDetails(session, exitCode, entry.tail, entry.stopping);
       try { history.save(id, entry.tail); } catch (error) { send('app:error', `Could not save terminal output: ${error.message}`); }
       terminals.delete(id); updateWake();
       try {
         workspace.update(next => {
+          next.sessions.find(s => s.id === id).lastExit = lastExit;
           const task = next.tasks.find(t => t.sessionID === id);
           if (task) {
             const specification = next.specs.find(s => s.id === task.specID);
@@ -313,7 +319,7 @@ function boot() {
         });
         workspace.record('exited', session, entry.stopping ? 'Stopped by user' : `Process exited with code ${exitCode}; task completion is unverified`);
       } catch (error) { send('app:error', error.message); }
-      send('terminal:exit', { id, exitCode });
+      send('terminal:exit', { id, exitCode, ...lastExit });
       if (!entry.stopping && exitCode === 0) finishTask(id).catch(error => { queues.delete(session.projectID); send('app:error', error.message); send('workspace:changed', state()); });
       else if (!entry.hibernating) queues.delete(session.projectID);
       send('workspace:changed', state());
@@ -371,7 +377,7 @@ function boot() {
   });
   handle('terminal:resize', (id, cols, rows) => {
     if (![cols, rows].every(n => Number.isInteger(n) && n >= 1 && n <= 1000)) throw new Error('Invalid terminal size.');
-    terminals.get(id)?.child.resize(cols, rows);
+    resizeTerminal(terminals.get(id), cols, rows);
   });
   const stop = id => {
     const entry = terminals.get(id);

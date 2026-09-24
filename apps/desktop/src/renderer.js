@@ -119,6 +119,14 @@ function render() {
   $('sessions').replaceChildren(...state.sessions.filter(s => s.projectID === projectID && visible(s)).sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned)).map(s =>
     button(`${s.pinned ? '★ ' : ''}${state.running.includes(s.id) ? '● ' : ''}${s.title}${agentStates.has(s.id) && state.running.includes(s.id) ? ' · ' + agentStates.get(s.id) : ''}${s.archived ? ' · archived' : ''}`, s.id === sessionID, () => openSession(s.id))));
   $('session-actions').hidden = !session; $('session-context').hidden = !session;
+  const failed = session?.lastExit && !session.lastExit.stopped && session.lastExit.code !== 0 && !state.running.includes(session.id);
+  $('session-recovery').hidden = !failed;
+  if (failed) {
+    $('session-exit-message').textContent = session.lastExit.resumeMissing
+      ? 'Claude could not find this conversation. Check the original account and folder, or create a fresh recovery session.'
+      : `The agent exited with code ${session.lastExit.code}. Check the terminal error before retrying. If no conversation was saved, create a recovery session.`;
+    $('recover-session').disabled = !!session.worktreeRemoved;
+  }
   $('empty').hidden = !!session; $('terminals').hidden = !session;
   if (session) {
     terminal(session.id);
@@ -183,6 +191,9 @@ $('start').onclick = () => perform(async () => {
   if (sessionID === id) { fitActive(); terminal(id).term.focus(); }
 });
 $('stop').onclick = () => perform(() => api.stop(sessionID));
+$('recover-session').onclick = () => perform(async () => {
+  const next = await api.recover(sessionID); update(next); openSession(next.sessions.at(-1).id);
+});
 function showText(id, mode, value) {
   textTarget = id; textMode = mode;
   $('text-title').textContent = mode === 'feedback' ? 'Send feedback to builder' : 'Insert saved message';
@@ -294,7 +305,12 @@ $('command-form').onsubmit = event => {
 };
 
 api.onData(({ id, data }) => { if (!removedSessions.has(id)) terminal(id).term.write(data); });
-api.onExit(({ id, exitCode }) => { if (!removedSessions.has(id)) terminal(id).term.writeln(`\r\n\x1b[90mSession stopped (exit ${exitCode}). Use Resume to continue.\x1b[0m`); });
+api.onExit(({ id, exitCode, stopped, resumeMissing }) => {
+  if (removedSessions.has(id)) return;
+  const hint = resumeMissing ? 'Conversation not found. Use Create recovery session for a new conversation.'
+    : stopped || exitCode === 0 ? 'Use Resume to continue.' : 'Check the error above before retrying; a recovery session starts a new conversation.';
+  terminal(id).term.writeln(`\r\n\x1b[90mSession stopped (exit ${exitCode}). ${hint}\x1b[0m`);
+});
 api.onChange(update); api.onError(showError);
 new ResizeObserver(scheduleFit).observe($('terminals'));
 perform(async () => update(await api.read()));

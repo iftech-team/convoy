@@ -15,6 +15,10 @@ const launch = require('../src/launch.cjs');
 const originalLaunch = launch.launchSpec;
 launch.launchSpec = session => {
   const file = originalLaunch({ agent: 'codex', providerID: '', prompt: '' }, false).file;
+  if (session.title === 'Missing conversation') {
+    const message = 'No conversation found with session ID: ' + session.providerID;
+    return { file, args: process.platform === 'win32' ? ['-NoLogo', '-NoProfile', '-Command', 'Write-Output "' + message + '"; exit 1'] : ['-c', 'printf "%s\\n" "' + message + '"; exit 1'] };
+  }
   if (session.title === 'Success task') return { file, args: process.platform === 'win32' ? ['-NoLogo', '-NoProfile', '-Command', 'Write-Output "SUCCESS"; exit 0'] : ['-c', 'printf "SUCCESS\\n"; exit 0'] };
   return process.platform === 'win32'
     ? { file, args: ['-NoLogo', '-NoProfile', '-Command', 'Write-Output "FIXTURE_READY"; $line = [Console]::ReadLine(); Write-Output ("RECEIVED_" + $line); Start-Sleep -Seconds 30'] }
@@ -116,6 +120,25 @@ app.whenReady().then(async () => {
   const hook = require('node:child_process').spawnSync(process.execPath, [path.join(__dirname, '../src/telemetry.cjs'), helperOutput], { input: JSON.stringify({ hook_event_name: 'PermissionRequest', prompt: 'Do not persist this prompt' }), env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8' });
   assert.equal(hook.status, 0, hook.stderr);
   const captured = fs.readFileSync(helperOutput + '.status', 'utf8'); assert.equal(JSON.parse(captured).state, 'waiting'); assert.doesNotMatch(captured, /persist this prompt/);
+  state = await evaluate(`window.convoy.createSession(${JSON.stringify({ projectID, title: 'Missing conversation', agent: 'claude', prompt: 'Do not replay me' })})`);
+  const failedSession = state.sessions.at(-1);
+  await evaluate(`window.convoy.start(${JSON.stringify(failedSession.id)})`);
+  await until(async () => (await evaluate('window.convoy.read()')).sessions.at(-1).lastExit?.resumeMissing);
+  await evaluate(`window.convoy.resize(${JSON.stringify(failedSession.id)}, 120, 35)`);
+  await evaluate("document.querySelector('#projects button').click(); [...document.querySelectorAll('#sessions button')].find(b => b.textContent.includes('Missing conversation')).click()");
+  await until(() => evaluate("!document.querySelector('#session-recovery').hidden"));
+  assert.match(await evaluate("document.querySelector('#session-exit-message').textContent"), /could not find/);
+  if (process.env.CONVOY_RECOVERY_SCREENSHOT) fs.writeFileSync(process.env.CONVOY_RECOVERY_SCREENSHOT, (await win.webContents.capturePage()).toPNG());
+  await evaluate("document.querySelector('#recover-session').click()");
+  state = await until(async () => { const next = await evaluate('window.convoy.read()'); return next.sessions.at(-1).title.endsWith('· recovery') && next; });
+  const recovered = state.sessions.at(-1);
+  assert.equal(recovered.started, false);
+  assert.equal(recovered.prompt, '');
+  assert.equal(recovered.lastExit, undefined);
+  assert.notEqual(recovered.providerID, failedSession.providerID);
+  assert.equal(state.running.includes(recovered.id), false);
+  assert.equal(state.sessions.find(s => s.id === failedSession.id).lastExit.resumeMissing, true);
+  await until(() => evaluate("document.querySelector('#session-recovery').hidden"));
   console.log('Real app IPC, PTY lifecycle, worktrees, planning gates, Markdown export, account binding, and activity passed');
   clearTimeout(timeout);
   win.destroy();
