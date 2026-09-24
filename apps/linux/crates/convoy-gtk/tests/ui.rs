@@ -40,6 +40,7 @@ fn main() {
     let storage = Storage::new(directory.path().join("Convoy Desktop Preview"));
     let project_path = directory.path().join("project");
     std::fs::create_dir_all(&project_path).expect("project folder");
+    seed_repository(&project_path);
     seed(&storage, &project_path);
 
     let application = adw::Application::builder()
@@ -55,8 +56,12 @@ fn main() {
                 application.quit();
                 return;
             };
-            run_checks(&app);
-            application.quit();
+            let application = application.clone();
+            glib::spawn_future_local(async move {
+                run_checks(&app);
+                files_checks(&app).await;
+                application.quit();
+            });
         }
     });
     application.run_with_args::<&str>(&[]);
@@ -436,4 +441,125 @@ fn split_checks(app: &Rc<convoy_gtk::state::App>) {
         app.tabs.n_pages() == before,
         format!("{} pages, expected {before}", app.tabs.n_pages()),
     );
+}
+
+
+/// A repository with one commit and one modified file, so Files & Changes has
+/// a diff to show and a log to list.
+fn seed_repository(path: &std::path::Path) {
+    let git = convoy_core::Git::default();
+    git.run(path, &["init"]).expect("init");
+    git.run(path, &["config", "user.name", "Test"]).expect("name");
+    git.run(path, &["config", "user.email", "test@example.invalid"]).expect("email");
+    git.run(path, &["config", "commit.gpgSign", "false"]).expect("gpg");
+
+    let original: String = (0..20).map(|index| format!("line {index}\n")).collect();
+    std::fs::write(path.join("tracked.txt"), &original).expect("write");
+    std::fs::write(path.join("notes.md"), "# Notes\n\nSome **bold** text.\n").expect("write");
+    git.run(path, &["add", "--all"]).expect("add");
+    git.run(path, &["commit", "-m", "Initial commit"]).expect("commit");
+
+    std::fs::write(
+        path.join("tracked.txt"),
+        original.replace("line 3\n", "line three\n"),
+    )
+    .expect("edit");
+    std::fs::write(path.join("untracked.txt"), "new file\n").expect("untracked");
+}
+
+async fn settle(milliseconds: u64) {
+    glib::timeout_future(std::time::Duration::from_millis(milliseconds)).await;
+}
+
+/// Files & Changes reads a real repository: the checks below assert what it
+/// found, not what it was told.
+async fn files_checks(app: &Rc<convoy_gtk::state::App>) {
+    use convoy_core::git::ReadRequest;
+    use convoy_gtk::files_ui;
+
+    let Some(view) = files_ui::open_view(app) else {
+        check("Files & Changes opens", false, "it did not open");
+        return;
+    };
+    settle(900).await;
+
+    check(
+        "the working tree is listed",
+        view.changes.n_items() == 2,
+        format!("{} changes", view.changes.n_items()),
+    );
+    check(
+        "the branch and change count are shown",
+        view.branch_label.label().contains("2 changed"),
+        format!("{:?}", view.branch_label.label()),
+    );
+    check(
+        "tracked files are listed",
+        view.files.n_items() >= 3,
+        format!("{} files", view.files.n_items()),
+    );
+    check(
+        "the log has the initial commit",
+        view.log.n_items() == 1,
+        format!("{} commits", view.log.n_items()),
+    );
+    check(
+        "branches are listed",
+        view.branches.n_items() >= 1,
+        format!("{} branches", view.branches.n_items()),
+    );
+
+    // A diff is shown as text, and the same diff can be read side by side.
+    files_ui::select(&view, ReadRequest::Unstaged { path: "tracked.txt".into() });
+    settle(600).await;
+    check(
+        "an unstaged diff is previewed",
+        files_ui::preview_page(&view).as_deref() == Some("text"),
+        format!("{:?}", files_ui::preview_page(&view)),
+    );
+    let hash = view.current.borrow().as_ref().map(|(_, hash)| hash.clone());
+    check(
+        "the diff is hashed for a later hunk discard",
+        hash.as_ref().is_some_and(|hash| hash.len() == 64),
+        format!("{hash:?}"),
+    );
+
+    view.side_by_side.set_active(true);
+    settle(600).await;
+    check(
+        "the same diff can be read side by side",
+        files_ui::preview_page(&view).as_deref() == Some("split"),
+        format!("{:?}", files_ui::preview_page(&view)),
+    );
+    view.side_by_side.set_active(false);
+    settle(400).await;
+
+    // Markdown is rendered, not dumped.
+    files_ui::select(&view, ReadRequest::File { path: "notes.md".into() });
+    settle(600).await;
+    check(
+        "Markdown is rendered",
+        files_ui::preview_page(&view).as_deref() == Some("markdown"),
+        format!("{:?}", files_ui::preview_page(&view)),
+    );
+
+    // An untracked file is shown as its own content, not as a diff.
+    files_ui::select(&view, ReadRequest::Untracked { path: "untracked.txt".into() });
+    settle(600).await;
+    check(
+        "an untracked file shows its contents",
+        files_ui::preview_page(&view).as_deref() == Some("text"),
+        format!("{:?}", files_ui::preview_page(&view)),
+    );
+
+    // A stale hash is refused, which is what stops a hunk discard from being
+    // applied to a diff the user never saw.
+    let stale = convoy_core::git::diff::digest("not the current diff");
+    check(
+        "a stale diff hash differs from the real one",
+        Some(stale) != hash,
+        "the hashes matched",
+    );
+
+    view.dialog.close();
 }

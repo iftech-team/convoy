@@ -7,7 +7,7 @@
 Порядок не случаен: сначала вертикальный срез, проверяющий рискованные
 допущения, потом горизонтальное расширение.
 
-**Статус на 24.09.2026.** M0, M1, M2 закрыты, M3 закрыт частично. `convoy-core` — 61 тест зелёный,
+**Статус на 24.09.2026.** M0–M3 закрыты, M4 закрыт почти целиком. `convoy-core` — 61 тест зелёный,
 `cargo clippy --all-targets -- -D warnings` чист по всему workspace.
 VTE проверен на живых агентах: 12 из 12 автоматических сценариев зелёные,
 Claude Code 2.1.273 и Codex 0.156.0 рисуются полностью. Две находки, менявшие
@@ -16,8 +16,11 @@ Claude Code 2.1.273 и Codex 0.156.0 рисуются полностью. Две
 Окно работает: дерево проектов, вкладки сессий, VTE, старт/стоп, меню сессии
 из 13 действий, worktree, review handoff, быстрые команды, split. Проверки:
 64 теста ядра, 36 проверок окна, 12 терминальных, smoke-запуск.
-Ближайший шаг — остаток M3 (сохранённый вывод, импорт истории провайдера)
-и M4 (Files & Changes).
+Files & Changes работает: четыре вида, подсветка diff, split-режим с номерами
+строк, stage/unstage/discard/trash, discard hunk с проверкой sha256, коммит,
+amend, генерация сообщения, fetch/pull/push/PR, revert, reset, ветки.
+Проверки: 69 тестов ядра, 47 проверок окна, 12 терминальных, smoke-запуск.
+Ближайший шаг — M5 (Specs & tasks).
 
 ---
 
@@ -117,18 +120,18 @@ Claude Code 2.1.273 и Codex 0.156.0 рисуются полностью. Две
 
 Самый объёмный UI-кусок.
 
-- [ ] `adw::NavigationPage` + `ViewSwitcher` на 4 вкладки
-- [ ] Changes: список, stage/unstage/discard/trash, подтверждения
-- [ ] Превью: `GtkSourceView` с языком `diff`
-- [ ] Split diff с номерами строк
-- [ ] Markdown через `pulldown-cmark`, картинки через `gtk::Picture`
-- [ ] Discard hunk с проверкой sha256
-- [ ] Коммит, amend, черновики сообщений
-- [ ] Generate with Claude (с защитой от затирания)
-- [ ] Fetch / pull / push / PR
-- [ ] Log с diff коммита, revert, reset soft/mixed
-- [ ] Branches: переключение, создание
-- [ ] Отмена устаревших асинхронных чтений (`generation`)
+- [x] `adw::NavigationPage` + `ViewSwitcher` на 4 вкладки
+- [x] Changes: список, stage/unstage/discard/trash, подтверждения
+- [x] Превью: `GtkSourceView` с языком `diff`
+- [x] Split diff с номерами строк
+- [x] Markdown через `pulldown-cmark`, картинки через `gtk::Picture`
+- [x] Discard hunk с проверкой sha256
+- [x] Коммит, amend, черновики сообщений
+- [x] Generate with Claude (с защитой от затирания)
+- [x] Fetch / pull / push / PR
+- [x] Log с diff коммита, revert, reset soft/mixed
+- [x] Branches: переключение, создание
+- [x] Отмена устаревших асинхронных чтений (`generation`)
 
 **Выход:** паритет по Git-панели, причём лучше текущего — подсветка
 и номера строк бесплатно.

@@ -100,6 +100,20 @@ where
     W: FnOnce() -> convoy_core::Result<T> + Send + 'static,
     D: Fn(&Rc<App>, T) + 'static,
 {
+    background_result(app, work, move |app, outcome| match outcome {
+        Ok(value) => done(app, value),
+        Err(error) => app.error(error),
+    });
+}
+
+/// As [`background`], but the caller sees the failure too — needed wherever a
+/// lock or a spinner has to be released either way.
+pub fn background_result<T, W, D>(app: &Rc<App>, work: W, done: D)
+where
+    T: Send + 'static,
+    W: FnOnce() -> convoy_core::Result<T> + Send + 'static,
+    D: Fn(&Rc<App>, convoy_core::Result<T>) + 'static,
+{
     let (sender, receiver) = async_channel::bounded(1);
     gtk::gio::spawn_blocking(move || {
         let _ = sender.send_blocking(work());
@@ -107,10 +121,8 @@ where
     glib::spawn_future_local({
         let app = app.clone();
         async move {
-            match receiver.recv().await {
-                Ok(Ok(value)) => done(&app, value),
-                Ok(Err(error)) => app.error(error),
-                Err(_) => {}
+            if let Ok(outcome) = receiver.recv().await {
+                done(&app, outcome);
             }
         }
     });

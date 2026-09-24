@@ -45,3 +45,63 @@ pub fn is_plain_relative(path: &Path) -> bool {
     path.components()
         .all(|component| matches!(component, Component::Normal(_)))
 }
+
+/// Where an untracked file to be trashed actually lives.
+///
+/// The parent directory is resolved rather than the file itself: following the
+/// file's own symlink would trash whatever it points at, which may be outside
+/// the repository entirely.
+pub fn trash_target(root: &Path, name: &str) -> Result<PathBuf> {
+    let name = relative(name)?;
+    let base = std::fs::canonicalize(root)?;
+    let candidate = base.join(name);
+    let parent = candidate
+        .parent()
+        .map(std::fs::canonicalize)
+        .transpose()?
+        .unwrap_or_else(|| base.clone());
+    if parent != base && !parent.starts_with(&base) {
+        bail!("Path points outside repository.")
+    }
+    Ok(parent.join(candidate.file_name().unwrap_or_default()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn traversal_and_absolute_paths_are_refused() {
+        assert!(relative("src/main.rs").is_ok());
+        assert!(relative("../outside").is_err());
+        assert!(relative("/etc/passwd").is_err());
+        assert!(relative("a/../../b").is_err());
+        assert!(relative("").is_err());
+        assert!(relative("with\0nul").is_err());
+        // A dash-prefixed name is a path, not an option, once `--` precedes it.
+        assert!(relative("--hard").is_ok());
+    }
+
+    #[test]
+    fn a_commit_is_an_object_name_never_a_flag() {
+        assert!(revision(&"a".repeat(40)).is_ok());
+        assert!(revision("--hard").is_err());
+        assert!(revision("HEAD~1").is_err());
+    }
+
+    #[test]
+    fn trash_resolves_the_parent_not_the_file() {
+        let directory = tempfile::Builder::new().prefix("convoy-trash-").tempdir().unwrap();
+        let root = directory.path().join("repo");
+        let outside = directory.path().join("outside");
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(root.join("sub/file"), "x").unwrap();
+        assert!(trash_target(&root, "sub/file").is_ok());
+
+        // A symlinked directory leading out of the repository is refused.
+        std::os::unix::fs::symlink(&outside, root.join("link")).unwrap();
+        std::fs::write(outside.join("victim"), "x").unwrap();
+        assert!(trash_target(&root, "link/victim").is_err());
+    }
+}

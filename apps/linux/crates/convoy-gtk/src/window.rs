@@ -111,8 +111,14 @@ pub fn build(application: &adw::Application, storage: Storage) -> Option<Rc<App>
         .tooltip_text("New session")
         .sensitive(false)
         .build();
+    let files_button = gtk::Button::builder()
+        .icon_name("folder-symbolic")
+        .tooltip_text("Files & Changes")
+        .action_name("app.files")
+        .build();
     let content_header = adw::HeaderBar::builder().title_widget(&title).build();
     content_header.pack_end(&new_session);
+    content_header.pack_end(&files_button);
 
     let empty = adw::StatusPage::builder()
         .icon_name("utilities-terminal-symbolic")

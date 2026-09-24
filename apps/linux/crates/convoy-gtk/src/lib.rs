@@ -6,8 +6,10 @@
 pub mod actions;
 pub mod app;
 pub mod dialogs;
+pub mod files_ui;
 pub mod objects;
 pub mod paths;
+pub mod preview;
 pub mod state;
 pub mod terminal;
 pub mod theme;

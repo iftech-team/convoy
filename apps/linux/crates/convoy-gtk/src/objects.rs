@@ -122,3 +122,102 @@ impl SessionObject {
         glib::Object::builder().property("id", id).build()
     }
 }
+
+mod imp_change {
+    use super::*;
+    use std::cell::{Cell, RefCell};
+
+    #[derive(Default, glib::Properties)]
+    #[properties(wrapper_type = super::ChangeObject)]
+    pub struct ChangeObject {
+        #[property(get, set)]
+        pub path: RefCell<String>,
+        #[property(get, set)]
+        pub original: RefCell<String>,
+        /// The two porcelain columns, shown as-is.
+        #[property(get, set)]
+        pub status: RefCell<String>,
+        #[property(get, set)]
+        pub untracked: Cell<bool>,
+        #[property(get, set)]
+        pub staged: Cell<bool>,
+        #[property(get, set)]
+        pub conflict: Cell<bool>,
+    }
+
+    #[glib::object_subclass]
+    impl ObjectSubclass for ChangeObject {
+        const NAME: &'static str = "ConvoyChangeObject";
+        type Type = super::ChangeObject;
+    }
+
+    #[glib::derived_properties]
+    impl ObjectImpl for ChangeObject {}
+}
+
+mod imp_commit {
+    use super::*;
+    use std::cell::RefCell;
+
+    #[derive(Default, glib::Properties)]
+    #[properties(wrapper_type = super::CommitObject)]
+    pub struct CommitObject {
+        #[property(get, set)]
+        pub id: RefCell<String>,
+        #[property(get, set)]
+        pub short: RefCell<String>,
+        #[property(get, set)]
+        pub subject: RefCell<String>,
+        #[property(get, set)]
+        pub author: RefCell<String>,
+        #[property(get, set)]
+        pub date: RefCell<String>,
+    }
+
+    #[glib::object_subclass]
+    impl ObjectSubclass for CommitObject {
+        const NAME: &'static str = "ConvoyCommitObject";
+        type Type = super::CommitObject;
+    }
+
+    #[glib::derived_properties]
+    impl ObjectImpl for CommitObject {}
+}
+
+glib::wrapper! {
+    pub struct ChangeObject(ObjectSubclass<imp_change::ChangeObject>);
+}
+
+impl ChangeObject {
+    pub fn from(change: &convoy_core::git::status::Change) -> Self {
+        glib::Object::builder()
+            .property("path", &change.path)
+            .property("original", change.original.clone().unwrap_or_default())
+            .property("status", format!("{}{}", change.index, change.worktree))
+            .property("untracked", change.untracked)
+            // A staged change has something other than a space in the index
+            // column, and `?` means it is not tracked at all.
+            .property(
+                "staged",
+                change.index != ' ' && change.index != '?',
+            )
+            .property("conflict", change.conflict)
+            .build()
+    }
+}
+
+glib::wrapper! {
+    pub struct CommitObject(ObjectSubclass<imp_commit::CommitObject>);
+}
+
+impl CommitObject {
+    pub fn from(commit: &convoy_core::git::Commit) -> Self {
+        glib::Object::builder()
+            .property("id", &commit.id)
+            .property("short", &commit.short)
+            .property("subject", &commit.subject)
+            .property("author", &commit.author)
+            .property("date", &commit.date)
+            .build()
+    }
+}

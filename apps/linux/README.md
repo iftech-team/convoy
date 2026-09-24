@@ -21,8 +21,8 @@ without a display.
 
 ```sh
 sudo pacman -S rust gtk4 libadwaita vte4 gtksourceview5   # Arch
-cargo test -p convoy-core                        # 64 tests, no display needed
-xvfb-run -a cargo test -p convoy-gtk --test ui   # 36 window checks
+cargo test -p convoy-core                        # 69 tests, no display needed
+xvfb-run -a cargo test -p convoy-gtk --test ui   # 47 window checks
 xvfb-run -a cargo run --bin convoy-vte-selftest  # 12 terminal checks
 ./scripts/smoke.sh                               # starts and exits cleanly
 cargo clippy --all-targets -- -D warnings
@@ -77,7 +77,9 @@ document; the last writer wins.
 - `convoy-gtk` — the main window: project tree with groups, session tabs, VTE
   terminals with start and stop, the thirteen-entry session menu, worktrees,
   review handoff, quick commands, a split view, search, settings and toasts.
-  Files & Changes and the specification views are M4 onwards.
+  Files & Changes covers the working tree, files, log and branches, with
+  highlighted diffs, a side-by-side reader, staging, commits and remotes.
+  The specification and task views are M5 onwards.
 
 `convoy-gtk` is a library with thin binaries on top, so the window can be built
 and inspected by a test rather than only by a person.

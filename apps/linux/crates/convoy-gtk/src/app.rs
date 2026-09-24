@@ -43,9 +43,10 @@ pub fn run() -> glib::ExitCode {
 type Entry = (&'static str, &'static [&'static str], fn(&Rc<App>));
 
 fn register_actions(application: &adw::Application, app: &Rc<App>) {
-    let entries: [Entry; 5] = [
+    let entries: [Entry; 6] = [
         ("open-folder", &["<Primary>o"], dialogs::open_folder),
         ("new-session", &["<Primary>n"], dialogs::new_session),
+        ("files", &["<Primary>b"], crate::files_ui::open),
         ("settings", &["<Primary>comma"], dialogs::settings),
         ("about", &[], dialogs::about),
         ("stop-session", &[], stop_selected),
