@@ -20,6 +20,7 @@ import {
   visibleSessions,
 } from "./state.js";
 import { escape, numberValue, value } from "./ui.js";
+import { SHORTCUTS, binding, capture, matches } from "./shortcuts.js";
 import { dialogView } from "./dialogs.js";
 import * as terminal from "./terminal.js";
 import {
@@ -86,6 +87,14 @@ function content() {
 function render() {
   const caret = document.activeElement?.id;
   const position = document.activeElement?.selectionStart;
+  // Every change re-renders, and a scroller that jumps to the top each time
+  // makes a long dialog or a long file list unusable.
+  const scrolled = new Map(
+    [...document.querySelectorAll("[data-scroll]")].map((node) => [
+      node.dataset.scroll,
+      node.scrollTop,
+    ]),
+  );
 
   app.innerHTML = `
     <div class="shell">
@@ -98,6 +107,11 @@ function render() {
   if (state.menu === "quick") app.insertAdjacentHTML("beforeend", quickMenu());
   if (state.menu === "remote") app.insertAdjacentHTML("beforeend", remoteMenu());
   if (state.dialog) app.insertAdjacentHTML("beforeend", dialogView());
+
+  for (const [key, top] of scrolled) {
+    const node = document.querySelector(`[data-scroll="${key}"]`);
+    if (node) node.scrollTop = top;
+  }
 
   if (state.sessionId && !state.files) {
     terminal.mount(state.sessionId);
@@ -432,6 +446,29 @@ const ACTIONS = {
   },
 };
 
+/// What each bound key does. Kept beside the bindings rather than inside the
+/// key handler, so adding an action is one entry in two places and not a
+/// branch in a growing chain of ifs.
+const SHORTCUT_ACTIONS = {
+  palette: () => openPalette(),
+  newSession: () => ACTIONS["new-session"](),
+  files: () => openFiles(),
+  next: () => stepSession(1),
+  previous: () => stepSession(-1),
+  settings: () => openSettings(),
+  search: () => document.querySelector("#project-search")?.focus(),
+};
+
+/// The next or previous session of the selected project, wrapping round. Does
+/// nothing when the list is empty, and opens the first when none is chosen.
+function stepSession(step) {
+  const sessions = visibleSessions();
+  if (!sessions.length) return;
+  const at = sessions.findIndex((item) => item.id === state.sessionId);
+  const next = at < 0 ? 0 : (at + step + sessions.length) % sessions.length;
+  return openSession(sessions[next].id);
+}
+
 // --------------------------------------------------------------- handlers --
 
 app.addEventListener("click", async (event) => {
@@ -440,7 +477,8 @@ app.addEventListener("click", async (event) => {
       "[data-set],[data-toggle],[data-dismiss],[data-quick],[data-files-view]," +
       "[data-change],[data-file],[data-commit],[data-branch],[data-task],[data-spec]," +
       "[data-approve],[data-export],[data-prepare],[data-status],[data-remove-profile]," +
-      "[data-remove-command],[data-import],[data-task-view],[data-palette],[data-split]",
+      "[data-remove-command],[data-import],[data-task-view],[data-palette],[data-split],"
+      + "[data-capture]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -467,6 +505,11 @@ app.addEventListener("click", async (event) => {
   if (data.start) return terminal.start(data.start);
   if (data.stop) return terminal.stop(data.stop);
   if (data.open) return openSession(data.open);
+  if (data.capture) {
+    captureDraft();
+    state.dialog.capturing = data.capture;
+    return render();
+  }
   if (data.split) {
     state.split = data.split;
     return closeDialog();
@@ -599,26 +642,23 @@ addEventListener("keydown", async (event) => {
     }
     return;
   }
-  const primary = event.metaKey || event.ctrlKey;
-  if (primary && event.key === "k") {
-    event.preventDefault();
-    return openPalette();
+  // The shortcut editor is listening for the next press, and takes it whole
+  // rather than letting it also do what it is currently bound to.
+  if (state.dialog?.kind === "settings" && state.dialog.capturing) {
+    const pressed = capture(event);
+    if (pressed || event.key === "Escape") {
+      event.preventDefault();
+      if (pressed) state.dialog.settings.shortcuts[state.dialog.capturing] = pressed;
+      state.dialog.capturing = null;
+      return render();
+    }
+    return;
   }
-  if (primary && event.key === "n") {
+
+  const bound = SHORTCUTS.find(([action]) => matches(event, binding(action)));
+  if (bound) {
     event.preventDefault();
-    return ACTIONS["new-session"]();
-  }
-  if (primary && event.key === "b") {
-    event.preventDefault();
-    return openFiles();
-  }
-  if (primary && event.key === ",") {
-    event.preventDefault();
-    return openSettings();
-  }
-  if (primary && event.key === "f") {
-    event.preventDefault();
-    return document.querySelector("#project-search")?.focus();
+    return SHORTCUT_ACTIONS[bound[0]]();
   }
   if (event.key === "Enter" && state.dialog && event.target.tagName === "INPUT") {
     const confirmAction = document
@@ -801,7 +841,13 @@ async function openRemoveWorktree() {
 
 async function openSettings() {
   await loadProfiles();
-  openModal({ kind: "settings", settings: { ...state.settings } });
+  openModal({
+    kind: "settings",
+    // `shortcuts` is copied rather than shared: a binding changed in the
+    // dialog and then cancelled must leave the live settings alone.
+    settings: { ...state.settings, shortcuts: { ...(state.settings.shortcuts ?? {}) } },
+    capturing: null,
+  });
 }
 
 async function saveSettings() {

@@ -1709,3 +1709,17 @@ input {
   margin: 0;
   gap: 2px;
 }
+
+.shortcut {
+  min-width: 128px;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.shortcut--listening {
+  border-color: var(--accent);
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  font-family: var(--font);
+}

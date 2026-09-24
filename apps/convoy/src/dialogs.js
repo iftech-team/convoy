@@ -15,6 +15,10 @@ import {
 } from "./ui.js";
 import { markdown } from "./views-files.js";
 import { state, project, session } from "./state.js";
+import { SHORTCUTS, label } from "./shortcuts.js";
+
+const fallback = (action) =>
+  SHORTCUTS.find(([name]) => name === action)?.[1] ?? "";
 
 const AGENTS = [
   ["claude", "Claude Code"],
@@ -205,6 +209,23 @@ const settings = (dialog) => {
         `
         ${setting("Notify when an agent finishes or needs input", "Only while the window is not focused.", toggle("notifications", draft.notifications, "Notifications"))}
         ${setting("Keep the system awake", "Prevents idle suspension, not closing the lid.", segmented("keep_awake", [["off", "Never"], ["always", "Always"], ["sessions", "While running"]], draft.keep_awake))}`,
+      )}
+      ${group(
+        "Shortcuts",
+        SHORTCUTS.map(([action, , what]) =>
+          setting(
+            what,
+            "",
+            `<button class="button shortcut${dialog.capturing === action ? " shortcut--listening" : ""}"
+                     data-capture="${action}">
+               ${
+                 dialog.capturing === action
+                   ? "Press a key…"
+                   : escape(label(draft.shortcuts?.[action] || fallback(action)))
+               }
+             </button>`,
+          ),
+        ).join(""),
       )}
       ${group(
         "Accounts",

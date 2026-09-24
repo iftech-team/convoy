@@ -114,7 +114,7 @@ export const modal = ({ title, hint = "", body, foot, note = "", wide = false })
         <div class="modal__title">${escape(title)}</div>
         ${hint ? `<div class="modal__hint">${escape(hint)}</div>` : ""}
       </div>
-      <div class="modal__body">${body}</div>
+      <div class="modal__body" data-scroll="modal">${body}</div>
       ${note ? `<p class="modal__note">${note}</p>` : ""}
       <div class="modal__foot">${foot}</div>
     </div>

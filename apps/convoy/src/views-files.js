@@ -46,10 +46,10 @@ export function filesView() {
       </div>
       <div class="files__body">
         <div class="files__column">
-          <div class="files__scroll">${list(files)}</div>
+          <div class="files__scroll" data-scroll="files">${list(files)}</div>
           ${actions(files)}
         </div>
-        <div class="files__preview">${preview(files)}</div>
+        <div class="files__preview" data-scroll="preview">${preview(files)}</div>
       </div>
       ${commitBar(files)}
     </div>`;
