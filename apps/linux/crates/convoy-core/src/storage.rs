@@ -42,6 +42,14 @@ pub fn config_root_for(platform: Platform) -> PathBuf {
 /// absolute on Windows, so using it here would make each platform's rules
 /// testable only from that platform — the thing passing a platform exists to
 /// avoid.
+/// Rooted on either platform. A workspace file is shared between builds, and a
+/// project path written on Windows is `C:\\Users\\…`, which Linux does not call
+/// absolute; judging it by the host's rules alone would make each build reject
+/// the other's file outright.
+pub fn rooted_anywhere(path: &Path) -> bool {
+    rooted(path, Platform::Unix) || rooted(path, Platform::Windows)
+}
+
 fn rooted(path: &Path, platform: Platform) -> bool {
     let text = path.to_string_lossy();
     let bytes = text.as_bytes();
@@ -153,5 +161,10 @@ mod tests {
         assert!(rooted(Path::new("\\\\server\\share"), Platform::Windows));
         assert!(!rooted(Path::new("/home/me"), Platform::Windows));
         assert!(!rooted(Path::new("C:relative"), Platform::Windows));
+
+        // A workspace file travels between builds; both spellings are a path.
+        assert!(rooted_anywhere(Path::new("/home/me/project")));
+        assert!(rooted_anywhere(Path::new("C:\\Users\\me\\project")));
+        assert!(!rooted_anywhere(Path::new("project")));
     }
 }
