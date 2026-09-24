@@ -522,7 +522,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         return integrationsDialog();
       case "connection":
         return connectionDialog();
-      case "task":
+      case "task-model":
         return taskDialog();
       default:
         return null;
@@ -551,7 +551,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
     }
     if (data.taskEdit) {
       const task = state.tasks.find((item) => item.id === data.taskEdit);
-      state.dialog = { kind: "task", id: task.id, title: task.title, agent: task.agent, model: task.model || "" };
+      state.dialog = { kind: "task-model", id: task.id, title: task.title, agent: task.agent, model: task.model || "" };
       return render(), true;
     }
     if (data.issue) {
@@ -590,6 +590,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         return openImport(), true;
       case "tasks-refresh":
         await loadTasks();
+        await loadWorkspace();
         return render(), true;
       case "integrations":
         await loadIntegrations();
@@ -619,6 +620,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         if (!(await callDone("task_agent", { id: draft.id, agent, model }))) return true;
         state.dialog = null;
         await loadTasks();
+        await loadWorkspace();
         return render(), true;
       }
     }
@@ -696,5 +698,11 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
     return false;
   }
 
-  return { taskList, dialog, loadTasks, onClick, onInput, onChange, onEnter };
+  const editModel = (id) => {
+    const task = state.tasks.find((item) => item.id === id);
+    if (!task) return;
+    state.dialog = { kind: "task-model", id: task.id, title: task.title, agent: task.agent, model: task.model || "" };
+    render();
+  };
+  return { taskList, dialog, loadTasks, onClick, onInput, onChange, onEnter, editModel };
 }

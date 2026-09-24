@@ -1,0 +1,14 @@
+[package]
+name = "convoy-pty"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+
+[dependencies]
+# A real pty on Unix and ConPTY on Windows: one implementation for both, which
+# is the piece a native toolkit could not give us.
+portable-pty = "0.9"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

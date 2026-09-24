@@ -8,7 +8,6 @@ use super::{sanitize, with_suffix};
 use serde_json::Value;
 use std::fs;
 use std::io::{Read, Write};
-
 use std::path::Path;
 use uuid::Uuid;
 
@@ -45,11 +44,7 @@ pub fn run(output: &Path, input: &mut impl Read) -> Option<String> {
     let temporary = with_suffix(&file, &format!(".{}", Uuid::new_v4()));
     let body = serde_json::to_string(&value).ok()?;
     let written = (|| -> std::io::Result<()> {
-        let mut handle = crate::platform::private_file_options()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&temporary)?;
+        let mut handle = crate::fs::create_private(&temporary)?;
         handle.write_all(body.as_bytes())?;
         drop(handle);
         fs::rename(&temporary, &file)

@@ -1,4 +1,4 @@
-//! Discovery, previews and every Git write.
+//! Ported from `test/files.test.cjs` — discovery, previews and every Git write.
 
 mod common;
 
@@ -50,6 +50,7 @@ fn discovery_stops_at_project_boundaries_and_skips_dependencies() {
     );
 }
 
+/// Symlinks are a Unix construct here; the Windows build copies instead.
 #[cfg(unix)]
 #[test]
 fn preview_rejects_traversal_external_symlinks_binary_and_oversized_files() {
@@ -224,6 +225,7 @@ fn staging_a_path_treats_git_wildcard_characters_literally() {
     );
 }
 
+/// Symlinks are a Unix construct here; the Windows build copies instead.
 #[cfg(unix)]
 #[test]
 fn shared_file_setup_never_follows_destination_symlinks_or_overwrites_existing_files() {
@@ -309,5 +311,45 @@ fn discard_and_hunk_discard_respect_git_crlf_checkout_settings() {
     assert_eq!(
         fs::read_to_string(root.join("text.txt")).unwrap(),
         before.replace("line 25\r\n", "second edit\r\n")
+    );
+}
+
+/// `refs/remotes/origin/HEAD` is a symbolic ref whose short name is the bare
+/// remote. Offering "origin" as a branch offers to switch to something that is
+/// not one.
+#[test]
+fn the_branch_list_leaves_out_the_remote_head() {
+    let fixture = fixture();
+    let root = fixture.path().join("repo");
+    let git = repository(&root, "false");
+    fs::write(root.join("a.txt"), "one").unwrap();
+    git.run(&root, &["add", "-A"]).unwrap();
+    git.run(&root, &["commit", "-m", "first"]).unwrap();
+    git.run(&root, &["branch", "-M", "main"]).unwrap();
+
+    // A remote that exists only as refs, which is what a clone leaves behind.
+    git.run(&root, &["update-ref", "refs/remotes/origin/main", "HEAD"])
+        .unwrap();
+    git.run(
+        &root,
+        &[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/main",
+        ],
+    )
+    .unwrap();
+
+    let snapshot = git.snapshot(&root).unwrap();
+    assert!(
+        snapshot.branches.contains(&"main".to_string())
+            && snapshot.branches.contains(&"origin/main".to_string()),
+        "real branches are missing from {:?}",
+        snapshot.branches
+    );
+    assert!(
+        !snapshot.branches.contains(&"origin".to_string()),
+        "the remote head was listed as a branch: {:?}",
+        snapshot.branches
     );
 }

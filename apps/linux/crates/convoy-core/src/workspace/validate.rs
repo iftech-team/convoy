@@ -57,8 +57,11 @@ fn is_one_of(value: Option<&Value>, allowed: &[&str]) -> bool {
     string(value).is_some_and(|text| allowed.contains(&text))
 }
 
+/// A project path is rooted. Judged by both platforms' rules, because the
+/// same `workspace.json` is read by the Windows, Linux and macOS builds and a
+/// path written by one must not look like nonsense to another.
 fn absolute(value: Option<&Value>) -> bool {
-    string(value).is_some_and(|text| Path::new(text).is_absolute())
+    string(value).is_some_and(|text| crate::storage::rooted_anywhere(Path::new(text)))
 }
 
 pub fn validate(state: &Value) -> Result<()> {

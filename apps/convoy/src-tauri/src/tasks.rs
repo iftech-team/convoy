@@ -8,7 +8,7 @@ use convoy_core::integrations::{
     self, Connection, Integrations, Issue, IssueSource, TrackerAuth, TrackerKind,
 };
 use convoy_core::planning::ImportOptions;
-use convoy_core::workspace::model::{Agent, PublishMode, TaskStatus};
+use convoy_core::workspace::model::{Agent, PublishMode};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -341,23 +341,6 @@ pub fn tasks_for(
     })
 }
 
-/// Prepares (or reuses) the task's session and returns its id; the page then
-/// starts it like any other session.
-#[tauri::command]
-pub fn task_prepare(id: String, workspace: State<'_, Workspace>) -> Result<String, String> {
-    workspace.with(|workspace| {
-        let state = workspace
-            .prepare_task(&id, None)
-            .map_err(|error| error.to_string())?;
-        state
-            .tasks
-            .iter()
-            .find(|task| task.id == id)
-            .and_then(|task| task.session_id.clone())
-            .ok_or_else(|| "Task unavailable.".to_string())
-    })
-}
-
 #[tauri::command]
 pub fn task_agent(
     id: String,
@@ -374,23 +357,28 @@ pub fn task_agent(
     })
 }
 
+/// Open the saved tracker link using the system browser.
 #[tauri::command]
-pub fn task_status(
+pub fn issue_open(
     id: String,
-    status: String,
+    app: tauri::AppHandle,
     workspace: State<'_, Workspace>,
 ) -> Result<(), String> {
-    let status = match status.as_str() {
-        "queued" => TaskStatus::Queued,
-        "review" => TaskStatus::Review,
-        "changes" => TaskStatus::Changes,
-        "done" => TaskStatus::Done,
-        other => return Err(format!("Unknown task status: {other}")),
-    };
-    workspace.with(|workspace| {
+    use tauri_plugin_opener::OpenerExt;
+    let url = workspace.with(|workspace| {
         workspace
-            .set_task_status(&id, status)
-            .map(|_| ())
-            .map_err(|error| error.to_string())
-    })
+            .state()
+            .tasks
+            .iter()
+            .find(|task| task.id == id)
+            .and_then(|task| task.source.as_ref())
+            .and_then(|source| source.url.clone())
+            .ok_or_else(|| "This task has no issue link.".to_string())
+    })?;
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err("Issue links must use HTTP or HTTPS.".into());
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
 }

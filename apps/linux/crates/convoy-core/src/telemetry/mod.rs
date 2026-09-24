@@ -1,4 +1,4 @@
-//! Claude's documented per-session hooks.
+//! Port of `telemetry.cjs`: Claude's documented per-session hooks.
 //!
 //! Convoy writes a settings file that points every hook at its own binary in
 //! `--hook` mode. The helper stores a state word and, optionally, validated
@@ -12,8 +12,20 @@ use crate::Result;
 use serde_json::{json, Map, Value};
 use std::fs;
 use std::io::Write;
-
 use std::path::{Path, PathBuf};
+
+/// Windows PowerShell, at the path it is actually installed at rather than
+/// whatever `powershell.exe` on PATH happens to be.
+pub fn powershell() -> String {
+    let root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
+    crate::Platform::Windows.join(&[
+        &root,
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe",
+    ])
+}
 
 /// The events Convoy subscribes to. Each maps to one agent state.
 pub const EVENTS: [&str; 8] = [
@@ -135,24 +147,19 @@ pub fn configuration(
     let mut document = Map::new();
     document.insert("hooks".into(), Value::Object(hooks));
     if usage {
-        // The status line is a shell string rather than an argument vector.
-        let quoted = format!(
-            "{} --hook {}",
-            crate::provider::launch::quote(&executable_text),
-            crate::provider::launch::quote(&output_text)
-        );
+        // The status line is a shell string rather than an argument vector, so
+        // it has to be quoted for whichever shell will run it.
         document.insert(
             "statusLine".into(),
-            json!({ "type": "command", "command": quoted }),
+            json!({
+                "type": "command",
+                "command": status_line(&executable_text, &output_text, crate::Platform::current()),
+            }),
         );
     }
 
     let file = with_suffix(&output, ".settings.json");
-    let mut handle = crate::platform::private_file_options()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&file)?;
+    let mut handle = crate::fs::create_private(&file)?;
     handle.write_all(serde_json::to_string(&Value::Object(document))?.as_bytes())?;
     drop(handle);
     for suffix in [".status", ".usage"] {
@@ -170,6 +177,25 @@ pub fn read(root: &Path, session_id: &str, suffix: &str) -> Option<Value> {
         return None;
     }
     serde_json::from_str(&fs::read_to_string(&file).ok()?).ok()
+}
+
+/// The command Claude runs for its status line. On Unix a POSIX shell reads
+/// it; on Windows it goes through the command interpreter, which quotes with
+/// double quotes and has no escape for one inside a quoted string — so a path
+/// containing a quote is refused rather than mangled.
+pub fn status_line(executable: &str, output: &str, platform: crate::Platform) -> String {
+    if platform.is_windows() {
+        return format!(
+            "\"{}\" --hook \"{}\"",
+            executable.replace('"', ""),
+            output.replace('"', "")
+        );
+    }
+    format!(
+        "{} --hook {}",
+        crate::provider::launch::quote(executable),
+        crate::provider::launch::quote(output)
+    )
 }
 
 pub fn with_suffix(path: &Path, suffix: &str) -> PathBuf {

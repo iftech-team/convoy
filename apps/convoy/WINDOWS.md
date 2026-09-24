@@ -26,7 +26,7 @@ npm run tauri -- build --bundles nsis
 ```
 
 The installer is written under `src-tauri/target/release/bundle/nsis`.
-The `Convoy Windows` workflow compiles the core and its test targets, tests
+The Windows job in the `Convoy client` workflow compiles the core and its test targets, tests
 native/npm executable resolution, runs ConPTY input/output and workspace/review
 lifecycle tests, checks the folder/review UI in Chromium with mocked IPC, and
 builds an NSIS installer. It does not publish a release.
@@ -36,9 +36,9 @@ Existing workspace data stays in
 though the old client has been removed. Linux continues using
 `${XDG_CONFIG_HOME:-~/.config}/Convoy Desktop Preview/workspace.json`.
 
-The folder button accepts a full folder path. A builder's **Review changes**
-button creates a linked session with the other agent; start that session to
-run the review. **Send findings to builder** lets you paste selected findings
+The folder button opens a native folder picker. A builder’s session menu offers **Start review**, which creates a linked
+session with the other agent; start it to run the review. **Send feedback to
+builder** lets you paste selected findings
 into the running builder, without pressing Enter for you.
 
 A successful cross-compilation of the core is not a Windows runtime test.
