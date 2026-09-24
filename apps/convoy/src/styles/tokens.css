@@ -66,9 +66,8 @@
   --sidebar-width: 268px;
 }
 
-:root[data-theme="dark"],
-:root:not([data-theme="light"]) {
-  @media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
     --bg: #131316;
     --bg-subtle: #171719;
     --bg-sunken: #1b1b1f;

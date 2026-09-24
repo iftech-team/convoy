@@ -3,7 +3,9 @@
 Рабочий документ. Не для коммита, не для публикации — личные заметки по рефакторингу.
 
 **Дата:** 24 сентября 2026
-**Статус:** M0–M8 выполнены. Код в `apps/linux/`, ветка `linux-gtk-port`.
+**Статус:** M0–M8 выполнены, но для Windows и Linux план развёрнут —
+см. [13-design-pivot.md](13-design-pivot.md). GTK-клиент остаётся в
+`apps/linux/` как рабочий, новый фронт — `apps/convoy/` на Tauri.
 **Решение:** Linux-версия Convoy переписывается с Electron на Rust + GTK4 + libadwaita + VTE.
 Windows остаётся на существующем Electron-превью (`apps/desktop`), он не трогается.
 
@@ -24,6 +26,7 @@ Windows остаётся на существующем Electron-превью (`a
 | [10-roadmap.md](10-roadmap.md) | Этапы M0–M8, оценки, definition of done |
 | [11-risks.md](11-risks.md) | Риски, открытые вопросы, что проверить до начала работы |
 | [12-verification.md](12-verification.md) | Чем проверен каждый из 34 инвариантов |
+| [13-design-pivot.md](13-design-pivot.md) | **Почему GTK заменён на Tauri** и чем это окупилось |
 
 ## Краткая суть
 

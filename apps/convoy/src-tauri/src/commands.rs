@@ -27,7 +27,10 @@ impl Workspace {
 
     /// Opens the workspace on first use and keeps it. A damaged or future file
     /// is reported rather than replaced, so the error reaches the user intact.
-    fn with<T>(&self, action: impl FnOnce(&mut CoreWorkspace) -> Result<T, String>) -> Result<T, String> {
+    fn with<T>(
+        &self,
+        action: impl FnOnce(&mut CoreWorkspace) -> Result<T, String>,
+    ) -> Result<T, String> {
         let mut guard = self.inner.lock().map_err(|_| "Workspace unavailable.")?;
         if guard.is_none() {
             let loaded = CoreWorkspace::load(self.storage.workspace_file())

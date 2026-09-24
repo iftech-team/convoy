@@ -49,7 +49,9 @@ impl Terminals {
     }
 
     pub fn running(&self, id: &str) -> bool {
-        self.sessions.lock().is_ok_and(|sessions| sessions.contains_key(id))
+        self.sessions
+            .lock()
+            .is_ok_and(|sessions| sessions.contains_key(id))
     }
 
     pub fn ids(&self) -> Vec<String> {
@@ -99,7 +101,9 @@ impl Terminals {
             command.env(key, value);
         }
 
-        let mut child = slave.spawn_command(command).map_err(|error| error.to_string())?;
+        let mut child = slave
+            .spawn_command(command)
+            .map_err(|error| error.to_string())?;
         let pid = child.process_id();
 
         // The slave has to go now that the child owns its own copy. Holding it
@@ -109,7 +113,9 @@ impl Terminals {
         drop(slave);
 
         let writer = master.take_writer().map_err(|error| error.to_string())?;
-        let mut reader = master.try_clone_reader().map_err(|error| error.to_string())?;
+        let mut reader = master
+            .try_clone_reader()
+            .map_err(|error| error.to_string())?;
 
         // Reading blocks, so it gets its own thread; the same thread reaps the
         // child, which is how the exit code is obtained.
@@ -300,7 +306,10 @@ mod tests {
                 app.handle(),
                 "probe",
                 "/bin/sh",
-                &["-c".to_string(), "read line; printf 'GOT:%s\\n' \"$line\"; exit 7".to_string()],
+                &[
+                    "-c".to_string(),
+                    "read line; printf 'GOT:%s\\n' \"$line\"; exit 7".to_string(),
+                ],
                 std::path::Path::new("/"),
                 &env,
                 80,
@@ -343,7 +352,10 @@ mod tests {
             }
         });
 
-        let env = vec![("PATH".to_string(), std::env::var("PATH").unwrap_or_default())];
+        let env = vec![(
+            "PATH".to_string(),
+            std::env::var("PATH").unwrap_or_default(),
+        )];
         terminals
             .start(
                 app.handle(),
