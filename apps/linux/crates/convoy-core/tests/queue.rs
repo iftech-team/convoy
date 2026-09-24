@@ -1,7 +1,6 @@
 //! The task queue: what runs next, and what a clean exit means.
 //!
-//! These rules had no direct test in the Electron suite — they lived in
-//! `main.cjs` alongside the IPC handlers. They decide when an agent starts and
+//! They decide when an agent starts and
 //! whether work is published, so they are worth stating plainly.
 
 mod common;

@@ -1,8 +1,8 @@
 //! Application state and the two refresh paths.
 //!
-//! The Electron renderer rebuilt its whole DOM on every change. Widgets carry
-//! state that a rebuild destroys — focus, scroll position, selection, and in a
-//! terminal the pty itself — so this port updates instead:
+//! Widgets carry state that a rebuild destroys — focus, scroll position,
+//! selection, and in a terminal the pty itself — so the window is updated in
+//! place rather than rebuilt:
 //!
 //! * [`App::sync`] aligns the list models with the workspace, touching only
 //!   rows whose contents actually differ.
@@ -88,7 +88,7 @@ pub struct App {
     pub actions: gtk::gio::SimpleActionGroup,
     /// Whether archived sessions are listed. Off by default: archiving is how
     /// a session gets out of the way, and most of the time it should stay
-    /// there. Held in memory, like the Electron checkbox it replaces.
+    /// there. Held in memory only.
     pub show_archived: Cell<bool>,
     /// Projects whose task queue is running. Held in memory only: a restart
     /// never silently resumes a queue.
@@ -365,7 +365,7 @@ impl App {
         }
     }
 
-    /// The second half of the Electron `render()`: everything scalar.
+    /// The second half of a refresh: everything scalar.
     pub fn refresh_selection(&self) {
         let project = self.selected_project();
         let session = self.selected_session();
@@ -434,8 +434,7 @@ impl App {
 }
 
 impl App {
-    /// Which menu entries make sense for the selected session. The conditions
-    /// are the ones the Electron renderer applied to its `#session-menu`.
+    /// Which menu entries make sense for the selected session.
     fn refresh_actions(&self, session: Option<&Session>, running: bool) {
         let busy = session.is_some_and(|session| self.busy.borrow().contains(&session.id));
         let idle = session.is_some() && !running && !busy;

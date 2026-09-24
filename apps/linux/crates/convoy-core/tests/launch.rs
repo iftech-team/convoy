@@ -1,6 +1,5 @@
-//! Ported from `test/core.test.cjs` and `test/provider.test.cjs` — how a
-//! provider CLI is actually invoked. The Windows cases are dropped: this build
-//! targets Linux and the Electron preview remains the Windows implementation.
+//! How a provider CLI is actually invoked. Unix only: the core does not plan
+//! Windows launches yet.
 
 mod common;
 

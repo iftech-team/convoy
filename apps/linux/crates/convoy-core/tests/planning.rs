@@ -1,4 +1,4 @@
-//! Ported from `test/planning.test.cjs` — specifications, tasks and accounts.
+//! Specifications, tasks and accounts.
 
 mod common;
 

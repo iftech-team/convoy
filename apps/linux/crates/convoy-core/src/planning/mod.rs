@@ -1,6 +1,5 @@
-//! Port of `planning.cjs`: specifications, tasks, account profiles and the
-//! rules that connect them. Mounted on [`Workspace`] the same way the JavaScript
-//! object was mixed into `Workspace.prototype`.
+//! Specifications, tasks, account profiles and the rules that connect them,
+//! as methods on [`Workspace`].
 
 pub mod markdown;
 
@@ -15,7 +14,7 @@ use crate::{bail, ensure, Result};
 pub use markdown::markdown;
 use std::collections::BTreeMap;
 
-/// `text()` from planning.cjs, for values already known to be strings.
+/// A string within `max` UTF-16 units, optionally non-blank.
 fn text(value: &str, max: usize, required: bool) -> Result<()> {
     ensure!(
         utf16_len(value) <= max && !(required && value.trim().is_empty()),

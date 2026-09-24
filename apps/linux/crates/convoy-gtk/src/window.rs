@@ -2,8 +2,8 @@
 //!
 //! Layout follows `docs/plan-refactor/04-ui-spec.md`: a navigation split view
 //! with the project tree on the left and the selected project's sessions as
-//! tabs on the right. Groups are real expandable nodes rather than the text
-//! prefix the Electron sidebar used.
+//! tabs on the right. Groups are real expandable nodes rather than a text
+//! prefix.
 
 use adw::prelude::*;
 use convoy_core::{Storage, Workspace};
@@ -136,7 +136,7 @@ pub fn build(application: &adw::Application, storage: Storage) -> Option<Rc<App>
         .title("No project selected")
         .description("Open a folder to begin.")
         .build();
-    // Exactly two panes, as in the Electron build. The second is empty until
+    // Exactly two panes. The second is empty until
     // a split is opened, and `gtk::Paned` can be nested later without changing
     // the model.
     let panes = gtk::Paned::builder()
@@ -266,7 +266,7 @@ fn select_first_project(app: &Rc<App>, selection: &gtk::SingleSelection) {
     }
 }
 
-/// Right-clicking a project offers what the Electron sidebar had no room for.
+/// Right-clicking a project offers what the sidebar row has no room for.
 fn attach_context_menu(list: &gtk::ListView, selection: &gtk::SingleSelection) {
     let popover = gtk::PopoverMenu::from_model(None::<&gtk::gio::Menu>);
     popover.set_parent(list);

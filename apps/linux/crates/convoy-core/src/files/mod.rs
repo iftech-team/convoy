@@ -1,4 +1,4 @@
-//! Port of the non-Git half of `files.cjs`: project discovery, folder listing
+//! Project discovery, folder listing
 //! and bounded previews.
 
 pub mod paths;

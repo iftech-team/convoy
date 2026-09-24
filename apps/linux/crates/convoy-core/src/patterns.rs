@@ -1,5 +1,5 @@
-//! Regular expressions ported verbatim from the Electron sources so the two
-//! builds accept exactly the same values.
+//! The regular expressions every build validates input with, kept in one
+//! place so they all accept exactly the same values.
 
 use regex::Regex;
 use std::sync::LazyLock;

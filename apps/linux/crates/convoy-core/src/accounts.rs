@@ -1,4 +1,4 @@
-//! Port of `accounts.cjs`: isolated provider homes.
+//! Isolated provider homes.
 //!
 //! A session bound to a profile gets its own `CLAUDE_CONFIG_DIR` / `CODEX_HOME`
 //! named by the SHA-256 of the profile id, and loses any API-key variables so

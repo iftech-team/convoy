@@ -2,8 +2,8 @@
 //!
 //! Validation runs against the raw `serde_json::Value`, not the typed model,
 //! for two reasons: a file on disk can contain anything, and every rejection
-//! message must match the Electron build word for word — these strings are
-//! shown to the user and several are asserted by the ported tests.
+//! message is fixed word for word — these strings are shown to the user and
+//! several are asserted by the tests.
 
 use crate::json::{
     array, boolean, integer, nonempty, safe_integer, string, truthy, truthy_opt, utf16_len,
@@ -37,7 +37,7 @@ const ACTIVITY_KINDS: [&str; 7] = [
     "worktree",
 ];
 
-/// `text()` from planning.cjs: a present string within `max` UTF-16 units,
+/// A present string within `max` UTF-16 units,
 /// optionally non-blank.
 fn text(value: Option<&Value>, max: usize, required: bool) -> Result<()> {
     let Some(value) = string(value) else {
@@ -221,8 +221,8 @@ pub fn validate_settings(settings: &Value) -> Result<()> {
 }
 
 pub fn validate_planning(state: &Value) -> Result<()> {
-    // Deliberately a second, independent id space: planning.cjs does not share
-    // the set built for projects and sessions, so a spec may reuse a project id.
+    // Deliberately a second, independent id space, separate from the set built
+    // for projects and sessions, so a spec may reuse a project id.
     let mut ids: HashSet<&str> = HashSet::new();
     for collection in ["specs", "tasks", "profiles", "activity"] {
         let Some(value) = state.get(collection) else {

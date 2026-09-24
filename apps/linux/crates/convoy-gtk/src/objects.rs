@@ -1,8 +1,7 @@
 //! GObject wrappers for the list models.
 //!
 //! `ListView` binds to properties, so the rows a user sees are updated in
-//! place rather than rebuilt. This is what replaces the Electron renderer's
-//! habit of rebuilding the whole DOM on every change: a rebuild would lose
+//! place rather than rebuilt: a rebuild would lose
 //! focus, selection and scroll position, which in a list of live sessions is
 //! very noticeable.
 

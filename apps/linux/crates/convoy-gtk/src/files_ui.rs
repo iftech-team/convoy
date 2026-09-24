@@ -1,8 +1,7 @@
 //! Files & Changes.
 //!
 //! A dialog with four views over one folder: working-tree changes, the files
-//! themselves, the commit log and the branches. The Electron build put Git
-//! behind a single dialog with a plain text diff; here the diff is highlighted,
+//! themselves, the commit log and the branches. The diff is highlighted,
 //! numbered and can be read side by side, because GtkSourceView does that work.
 //!
 //! Every destructive action asks first, and every one of them is narrow:

@@ -1,8 +1,8 @@
 use std::fmt;
 
-/// Every user-visible failure. `Message` carries wording ported verbatim from
-/// the Electron implementation: those strings are already reviewed and reach
-/// the user, so they must not drift.
+/// Every user-visible failure. `Message` carries fixed wording: those strings
+/// are already reviewed, reach the user and are asserted by tests, so they
+/// must not drift.
 #[derive(Debug)]
 pub enum ConvoyError {
     Message(String),

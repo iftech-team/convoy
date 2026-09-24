@@ -1,4 +1,4 @@
-//! New coverage for rules the Electron suite exercised only indirectly:
+//! Coverage for rules exercised only indirectly elsewhere:
 //! settings bounds, shortcut syntax and the referential checks in
 //! `validate()`. These are the rules a hand-edited or third-party
 //! `workspace.json` is most likely to break.
@@ -274,7 +274,7 @@ fn saved_shortcuts_survive_a_round_trip() {
     let reloaded = Workspace::load(&fixture.file).unwrap();
     assert_eq!(reloaded.settings().shortcuts, shortcuts);
 
-    // And the file on disk is still a document the Electron build would accept.
+    // And the file on disk still passes validation.
     let raw: Value = serde_json::from_str(&fs::read_to_string(&fixture.file).unwrap()).unwrap();
     assert!(validate(&raw).is_ok());
     assert_eq!(raw["schemaVersion"], 3);

@@ -1,7 +1,7 @@
 //! Keyboard shortcuts.
 //!
-//! The workspace stores them in the Electron form — `mod+shift+p` — because
-//! both builds read the same file. GTK wants `<Primary><Shift>p`, so the two
+//! The workspace stores them in one portable form — `mod+shift+p` — because
+//! every build reads the same file. GTK wants `<Primary><Shift>p`, so the two
 //! notations are converted here rather than in the UI, and the stored form
 //! never changes.
 

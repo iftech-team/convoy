@@ -1,4 +1,4 @@
-//! Port of `history.cjs`: bounded plain-text excerpts of terminal output, the
+//! Bounded plain-text excerpts of terminal output, the
 //! bracketed-paste encoder, and the review brief.
 //!
 //! History files are named by the SHA-256 of the session id, so a crafted id
@@ -14,7 +14,7 @@ use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
-/// Excerpts are capped at 48,000 characters, matching the Electron build.
+/// Excerpts are capped at 48,000 characters.
 pub const LIMIT: usize = 48_000;
 
 /// Strips escape sequences and the control characters a terminal may emit,

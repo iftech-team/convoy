@@ -1,10 +1,9 @@
 //! Where Convoy keeps its state on Linux.
 //!
-//! The directory name and layout are shared with the Electron preview so both
-//! builds read the same `workspace.json`: the port can be installed alongside
-//! the old build and used on real data from day one. Renaming this directory
-//! would silently strand every existing project, so it stays as it is until
-//! the Electron build is retired on Linux.
+//! The directory name predates the current clients and is kept on purpose:
+//! renaming it would silently strand every existing project, so it only
+//! changes together with a migration. The GTK and Tauri clients share it and
+//! read the same `workspace.json`.
 //!
 //! **Do not run both builds against the same file at once** — each writes the
 //! whole document, so the last writer wins.
@@ -14,8 +13,7 @@ use std::path::{Path, PathBuf};
 pub const STORAGE_NAME: &str = "Convoy Desktop Preview";
 
 /// `$XDG_CONFIG_HOME` when it is set to an absolute path, otherwise
-/// `~/.config`. This is what both `g_get_user_config_dir()` and Electron's
-/// `app.getPath('appData')` resolve to on Linux.
+/// `~/.config`. This is what `g_get_user_config_dir()` resolves to on Linux.
 pub fn config_root() -> PathBuf {
     std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -84,7 +82,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn layout_matches_the_electron_preview() {
+    fn layout_keeps_the_existing_directory() {
         let storage = Storage::new("/home/example/.config/Convoy Desktop Preview");
         assert_eq!(
             storage.workspace_file(),

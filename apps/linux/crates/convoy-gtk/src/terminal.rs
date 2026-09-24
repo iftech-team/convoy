@@ -22,7 +22,7 @@ use vte4::{Format, Pty, PtyFlags, Terminal};
 
 use crate::state::{App, SessionView};
 
-/// How long output may sit unsaved. Matches the Electron debounce.
+/// How long output may sit unsaved.
 const SAVE_INTERVAL: Duration = Duration::from_secs(2);
 
 /// Builds the terminal and its tab. The widget is created once per session and

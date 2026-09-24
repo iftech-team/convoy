@@ -1,4 +1,4 @@
-//! Port of `markdown()` from planning.cjs — the specification export and the
+//! The specification export and the
 //! preamble of every prepared task brief.
 
 use crate::workspace::model::{Spec, Task, TaskStatus};

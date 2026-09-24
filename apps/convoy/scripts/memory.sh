@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# What the client costs, for comparison with the Electron preview's 745 MB
-# across seven processes and the GTK client's 167 MB in one.
+# What the client costs, for comparison with the GTK client's 167 MB in one
+# process.
 #
 # Tauri is not one process: the web view runs its own network and rendering
 # processes, as every browser engine does. They are all counted.

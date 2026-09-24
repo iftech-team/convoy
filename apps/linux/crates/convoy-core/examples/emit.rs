@@ -1,5 +1,4 @@
-//! Writes a fully populated `workspace.json` so the Electron build can be
-//! asked to read it. Usage: `cargo run -p convoy-core --example emit -- <path>`
+//! Writes a fully populated `workspace.json`, for seeding a client under test. Usage: `cargo run -p convoy-core --example emit -- <path>`
 
 use convoy_core::planning::{SpecInput, TaskInput};
 use convoy_core::workspace::model::{ActivityKind, Agent, PublishMode, QuickCommand, Theme};

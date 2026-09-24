@@ -55,7 +55,7 @@
   <releases>
     <release version="0.1.0" date="2026-09-24">
       <description>
-        <p>First native Linux build, replacing the Electron preview.</p>
+        <p>First native Linux build.</p>
       </description>
     </release>
   </releases>

@@ -1,5 +1,5 @@
-//! Dialogs. libadwaita's `AlertDialog` replaces the `<dialog>` elements the
-//! Electron renderer used; forms are built from `PreferencesGroup` rows so
+//! Dialogs. Confirmations use libadwaita's `AlertDialog`; forms are built from
+//! `PreferencesGroup` rows so
 //! they look and behave like the rest of the desktop.
 
 use adw::prelude::*;
@@ -240,7 +240,7 @@ pub fn settings(app: &Rc<App>) {
 
     let keys = adw::PreferencesGroup::builder()
         .title("Keyboard")
-        .description("Shortcuts are shared with the Electron build through the workspace file.")
+        .description("Shortcuts are saved in the workspace file.")
         .build();
     let edit_keys = gtk::Button::with_label("Edit shortcuts…");
     edit_keys.set_valign(gtk::Align::Center);
@@ -795,7 +795,7 @@ fn is_running(app: &Rc<App>, id: &str) -> bool {
         .is_some_and(|view| view.running())
 }
 
-/// Two terminals side by side. Exactly two, as in the Electron build: nesting
+/// Two terminals side by side. Exactly two: nesting
 /// more panes is a change to the model, not to the view.
 pub fn open_split(app: &Rc<App>, session: &Session) {
     let others: Vec<Session> = app
@@ -1381,8 +1381,8 @@ fn kind_label(kind: convoy_core::model::ActivityKind) -> &'static str {
 
 /// The shortcut editor.
 ///
-/// A shortcut is stored in the Electron notation so both builds read the same
-/// file, and the same rules apply: Primary is required, the modifier order is
+/// A shortcut is stored in the workspace notation (`mod+shift+p`) so every
+/// build reads the same file, and the same rules apply: Primary is required, the modifier order is
 /// fixed, and no two actions may share a binding.
 pub fn shortcuts(app: &Rc<App>) {
     let saved = app.workspace.borrow().settings().shortcuts.clone();

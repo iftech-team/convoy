@@ -1,11 +1,11 @@
 //! Typed mirror of `workspace.json` schema 3.
 //!
-//! The on-disk format stays byte-compatible with the Electron preview so both
-//! builds can read the same file. Two consequences shape every struct here:
+//! The on-disk format is shared by every client, so they can all read the
+//! same file. Two consequences shape every struct here:
 //!
 //! * `#[serde(flatten)] unknown` on every record. JavaScript keeps unknown keys
 //!   for free through object spread; serde drops them silently. Without these
-//!   maps the port would quietly delete fields a newer Electron build wrote.
+//!   maps a client would quietly delete fields a newer build wrote.
 //! * `skip_serializing_if = "Option::is_none"`, because `JSON.stringify` omits
 //!   `undefined` and several code paths (`delete task.sessionID`) rely on the
 //!   key disappearing rather than becoming `null`.

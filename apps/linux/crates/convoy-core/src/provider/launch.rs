@@ -1,7 +1,4 @@
-//! Port of `launch.cjs`, Linux half only.
-//!
-//! The Windows PowerShell branch is deliberately absent: this build targets
-//! Linux, and the Electron preview remains the Windows implementation.
+//! Agent arguments and platform-specific launch planning.
 
 use crate::workspace::model::{Agent, Session};
 use std::collections::BTreeMap;

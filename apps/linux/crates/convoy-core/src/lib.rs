@@ -1,6 +1,6 @@
 //! Convoy core: every rule the Linux client obeys, with no toolkit dependency.
 //!
-//! The crate is a port of the Electron preview's main-process modules. It is
+//! The crate holds every rule the desktop clients share. It is
 //! deliberately synchronous — the GTK front end drives long-running work with
 //! `gio::spawn_blocking` rather than dragging a second async runtime into the
 //! GLib main loop. External commands go through [`process::ProcessRunner`] so

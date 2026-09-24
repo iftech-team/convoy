@@ -1,4 +1,4 @@
-//! Ported from `test/files.test.cjs` — discovery, previews and every Git write.
+//! Discovery, previews and every Git write.
 
 mod common;
 

@@ -195,7 +195,7 @@ fn copy_path(app: &Rc<App>, project_id: &str) {
 }
 
 /// Binds the shortcuts the workspace holds, falling back to the defaults.
-/// The stored notation is the Electron one, so both builds read the same file.
+/// The stored notation is the workspace one, so every build reads the same file.
 pub fn apply_shortcuts(application: &adw::Application, app: &Rc<App>) {
     let saved = app.workspace.borrow().settings().shortcuts.clone();
     for (action, _, accelerator) in convoy_core::shortcuts::resolve(&saved) {

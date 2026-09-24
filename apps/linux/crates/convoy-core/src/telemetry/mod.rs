@@ -1,4 +1,4 @@
-//! Port of `telemetry.cjs`: Claude's documented per-session hooks.
+//! Claude's documented per-session hooks.
 //!
 //! Convoy writes a settings file that points every hook at its own binary in
 //! `--hook` mode. The helper stores a state word and, optionally, validated

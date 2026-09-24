@@ -174,8 +174,7 @@ pub fn codex_limits(
 mod tests {
     use super::*;
 
-    /// Mirrors the Electron test: initialization and one rate-limit read, and
-    /// nothing else.
+    /// Initialization and one rate-limit read, and nothing else.
     #[test]
     fn performs_only_initialization_and_rate_limit_read() {
         let mut sent = vec![initialize()];

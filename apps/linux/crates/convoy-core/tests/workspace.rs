@@ -1,4 +1,4 @@
-//! Ported from `test/core.test.cjs` — storage guarantees.
+//! Storage guarantees.
 
 mod common;
 

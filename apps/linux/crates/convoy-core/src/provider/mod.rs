@@ -1,4 +1,4 @@
-//! Port of `provider.cjs`: how a provider CLI is invoked and how its usage
+//! How a provider CLI is invoked and how its usage
 //! quotas are read.
 
 pub mod codex;

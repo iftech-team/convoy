@@ -1,4 +1,4 @@
-//! Ported from `test/provider.test.cjs` — telemetry, usage quotas and the
+//! Telemetry, usage quotas and the
 //! provider's own saved conversations.
 
 mod common;

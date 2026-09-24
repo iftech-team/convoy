@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Measures what the client actually costs, for comparison with the Electron
-# preview's 745 MB across seven processes for one window and one session.
+# Measures what the client actually costs: one window and one session.
 #
 # Reports RSS and PSS. RSS double-counts pages shared with other GTK
 # applications, so PSS is the fairer number on a desktop that already runs

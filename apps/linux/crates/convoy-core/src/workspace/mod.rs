@@ -1,4 +1,4 @@
-//! Port of `workspace.cjs`: load, validate, mutate and persist `workspace.json`.
+//! Load, validate, mutate and persist `workspace.json`.
 //!
 //! Every mutation goes through [`Workspace::update`], which clones the current
 //! state, applies the change, validates the result and only then replaces the

@@ -1,5 +1,5 @@
-//! Port of the session lifecycle from `main.cjs` — everything `start()` does
-//! before the PTY exists, and everything `onExit` does after it is gone.
+//! The session lifecycle — everything a start does before the PTY exists,
+//! and everything an exit does after it is gone.
 //!
 //! The spawn itself belongs to the UI, because VTE owns the pseudo-terminal.
 //! Splitting it this way keeps every rule here, where it can be tested, and
@@ -62,8 +62,8 @@ pub fn directory_for(workspace: &Workspace, id: &str) -> Result<PathBuf> {
     }
 }
 
-/// Everything `start()` checks and prepares before spawning. Returns an error
-/// with the Electron build's wording whenever the session cannot run.
+/// Everything a start checks and prepares before spawning. Returns an error
+/// with fixed, user-facing wording whenever the session cannot run.
 ///
 /// `executable` is the path hooks will invoke — this binary, which re-enters
 /// in `--hook` mode.

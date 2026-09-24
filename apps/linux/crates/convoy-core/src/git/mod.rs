@@ -1,4 +1,4 @@
-//! Port of `git.cjs` and the Git half of `files.cjs`.
+//! Git: status, diffs, history, branches and every write.
 //!
 //! Every invocation sanitises the environment first: an agent running inside a
 //! worktree exports `GIT_DIR` and friends, and inheriting those would silently

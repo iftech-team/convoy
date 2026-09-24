@@ -1,4 +1,4 @@
-//! Port of `transcripts.cjs`: listing the provider's own saved conversations
+//! Listing the provider's own saved conversations
 //! for a folder so an existing session can be imported.
 //!
 //! Only the head of each `.jsonl` is read — enough for the session metadata and

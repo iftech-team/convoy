@@ -1,4 +1,4 @@
-//! Port of `worktree-setup.cjs`: copying shared files into a fresh worktree
+//! Copying shared files into a fresh worktree
 //! and running its optional setup command.
 //!
 //! Three rules matter here and each one is load-bearing:
@@ -123,8 +123,7 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Worktree lifecycle, ported from the `worktree:create` and `worktree:remove`
-// handlers in main.cjs.
+// Worktree lifecycle: creating and removing the worktrees Convoy owns.
 // ---------------------------------------------------------------------------
 
 use crate::git::Git;

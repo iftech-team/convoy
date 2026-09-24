@@ -196,7 +196,7 @@ pub fn language_for(name: &str) -> Option<String> {
         .map(|language| language.id().to_string())
 }
 
-/// Basic Markdown, as in the Electron preview: headings, emphasis, code and
+/// Basic Markdown: headings, emphasis, code and
 /// list structure, nothing more. Pango markup, so the text stays selectable.
 fn markup(text: &str) -> String {
     use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};

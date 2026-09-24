@@ -1,7 +1,7 @@
 name: Linux client
 
-# The GTK client lives beside the Electron preview and builds separately: they
-# share a workspace file format, not a toolchain.
+# The GTK client builds on its own: it shares the Rust core and the workspace
+# file format with the Tauri client, not a toolchain.
 on:
   push:
     branches: [main, linux-gtk-port]

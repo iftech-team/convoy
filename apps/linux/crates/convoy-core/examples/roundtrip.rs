@@ -1,6 +1,6 @@
 //! Loads a `workspace.json`, reports what it contains, and saves it again.
-//! Used to prove a document written by the Electron build survives a round
-//! trip through this one — including fields this build does not know.
+//! Used to prove a document written by another build survives a round trip
+//! through this one — including fields this build does not know.
 
 use convoy_core::workspace::{SessionPatch, Workspace};
 

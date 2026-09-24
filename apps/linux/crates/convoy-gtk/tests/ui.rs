@@ -239,7 +239,7 @@ fn run_checks(app: &Rc<convoy_gtk::state::App>) {
         format!("{} pages", app.tabs.n_pages()),
     );
 
-    // The workspace on disk stays a document the Electron build accepts.
+    // The workspace on disk still passes the shared validation rules.
     let raw: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(app.storage.workspace_file()).expect("read workspace"),
     )
@@ -274,8 +274,8 @@ fn activate(app: &Rc<convoy_gtk::state::App>, name: &str) {
     }
 }
 
-/// What the session menu offers depends on the session, exactly as the
-/// Electron renderer's `#session-menu` did.
+/// What the session menu offers depends on the session: running, archived,
+/// pinned and review state each change it.
 fn session_menu_checks(app: &Rc<convoy_gtk::state::App>, project: &str) {
     let session = app.selected_session().expect("session");
     check(

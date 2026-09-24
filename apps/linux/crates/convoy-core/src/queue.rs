@@ -1,4 +1,4 @@
-//! Task queue rules, ported from `runNext()` and `finishTask()` in main.cjs.
+//! Task queue rules: when the next task runs and how a finished one ends.
 //!
 //! Three properties hold throughout, and each one was a deliberate choice in
 //! the original:

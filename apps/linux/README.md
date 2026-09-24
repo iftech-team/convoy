@@ -1,8 +1,7 @@
 # Convoy for Linux
 
-A native GTK4 rewrite of the Electron preview, for Linux only. The Electron
-app in `apps/desktop` stays as the Windows implementation and is not touched by
-this work. Plan and rationale: [`docs/plan-refactor/`](../../docs/plan-refactor/).
+A native GTK4 client for Linux. It shares `convoy-core` with the Tauri client
+in [`apps/convoy`](../convoy/README.md), which covers Windows. Plan and rationale: [`docs/plan-refactor/`](../../docs/plan-refactor/).
 
 ## Layout
 
@@ -62,9 +61,9 @@ return. That mistake would have produced empty review briefs.
 ## Storage
 
 State lives in `${XDG_CONFIG_HOME:-~/.config}/Convoy Desktop Preview/`, the
-same location and the same schema-3 `workspace.json` the Electron preview uses,
-so this build can run on real data and the old build remains a working
-fallback. Unknown fields are preserved on write.
+same location and the same schema-3 `workspace.json` the Tauri client uses. The
+directory keeps its older name so existing projects are not stranded. Unknown
+fields are preserved on write.
 
 **Do not run both builds at once against the same file.** Each writes the whole
 document; the last writer wins.
@@ -74,14 +73,14 @@ document; the last writer wins.
 Measured on this machine with `scripts/memory.sh`: one window, three session
 tabs, no agent running.
 
-| | Electron preview | This build |
-|---|---|---|
-| Processes | 7 | 1 |
-| RSS | 745 MB | 167 MB |
-| Unique (PSS) | ~400–500 MB (estimated) | 65 MB |
-| Artifact | 122 MB AppImage | 3.6 MB binary |
+| | This build |
+|---|---|
+| Processes | 1 |
+| RSS | 167 MB |
+| Unique (PSS) | 65 MB |
+| Artifact | 3.6 MB binary |
 
-Both figures were taken under Xvfb, which has no GPU: GTK then falls back to a
+The figures were taken under Xvfb, which has no GPU: GTK then falls back to a
 software renderer that carries tens of megabytes of its own. With `GSK_RENDERER`
 left at its default that same window measures 217 MB RSS and 115 MB PSS, and the
 50 MB difference is the software stack, not the application. A real desktop
@@ -101,7 +100,7 @@ session pays neither.
   the queue. Hooks report each agent's state, which drives notifications,
   hibernation and the activity log; account profiles keep provider sign-ins
   separate. A command palette, an editable set of shortcuts shared with the
-  Electron build, project settings and a sidebar context menu complete the
+  Tauri client, project settings and a sidebar context menu complete the
   navigation. Packaging is M8.
 
 `convoy-gtk` is a library with thin binaries on top, so the window can be built

@@ -9,9 +9,9 @@ curl -fsSL https://peshbar.com/convoy-install.sh | sh
 ```
 
 
-Convoy is a workspace for Claude Code and Codex sessions. The production app is native macOS; a Windows/Linux Electron preview is being developed in this same repository under [`apps/desktop`](apps/desktop/README.md). Sessions and cross-agent reviews come first; Spec Driven Development is optional.
+Convoy is a workspace for Claude Code and Codex sessions. The production app is native macOS; a Windows/Linux client built with Tauri lives in [`apps/convoy`](apps/convoy/README.md), and a native GTK client for Linux in [`apps/linux`](apps/linux/README.md). Both share one Rust core. Sessions and cross-agent reviews come first; Spec Driven Development is optional.
 
-The desktop preview includes folders, saved sessions, embedded agent terminals, review handoffs, worktrees, Files & Changes, specs and task queues, provider history, account profiles, usage/status integrations, split panes, session management, custom shortcuts, and quick commands. See its [setup and build instructions](apps/desktop/README.md) for development, current limitations, and Windows/Linux packaging. The instructions below describe the native macOS app.
+See each client's README for its setup, build instructions and current limitations. The instructions below describe the native macOS app.
 
 Requires macOS 14+, Swift 6 to build, and your existing Claude Code / Codex CLI installation and login. Embedded terminals use SwiftTerm 1.20.0 (MIT).
 

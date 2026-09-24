@@ -1,4 +1,4 @@
-//! Ported from `test/features.test.cjs` — migration, review handoff, settings,
+//! Migration, review handoff, settings,
 //! saved output and real worktrees.
 
 mod common;
@@ -45,8 +45,8 @@ fn schema_1_migrates_without_losing_provider_ids_or_unknown_data() {
     );
     assert_eq!(migrated.session(&builder).unwrap().provider_id, provider_id);
 
-    // The unknown field must survive a write, or the Electron build would lose
-    // data the moment this one saves.
+    // The unknown field must survive a write, or another build (or a newer
+    // version) would lose data the moment this one saves.
     migrated
         .edit_session(
             &builder,
@@ -128,8 +128,8 @@ fn running_sessions_cannot_be_archived_or_rebound_but_notes_and_pinning_can_chan
     assert!(error.to_string().contains("Stop"), "{error}");
 
     // A running session can still be renamed, pinned and annotated. The
-    // working directory is not in `SessionPatch` at all, so the Electron test
-    // for an unknown key has no counterpart here.
+    // working directory is not in `SessionPatch` at all, so there is no
+    // unknown key to test here.
     workspace
         .edit_session(
             &builder,

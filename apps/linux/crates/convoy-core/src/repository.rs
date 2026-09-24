@@ -1,4 +1,4 @@
-//! Port of `repository-tools.cjs`: the two repository actions that call out to
+//! The two repository actions that call out to
 //! another program rather than to Git itself.
 
 use crate::git::Git;
