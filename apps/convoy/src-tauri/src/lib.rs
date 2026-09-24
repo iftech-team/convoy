@@ -63,6 +63,7 @@ pub fn run() {
         })
         .manage(Arc::new(pty::Terminals::new()))
         .manage(commands::Workspace::new())
+        .manage(commands::Repositories::default())
         .manage(power::KeepAwake::default())
         .manage(monitor::Reports::default())
         .invoke_handler(tauri::generate_handler![

@@ -13,6 +13,8 @@ pub mod session;
 use convoy_core::model::Session;
 use convoy_core::{Storage, Workspace as CoreWorkspace};
 use serde::Serialize;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tauri::State;
 
@@ -65,6 +67,37 @@ impl Workspace {
 impl Default for Workspace {
     fn default() -> Self {
         Workspace::new()
+    }
+}
+
+/// One git mutation per repository at a time.
+///
+/// Tauri runs commands concurrently, so two clicks a moment apart can reach
+/// `git` together. Two writers in one checkout is how an index lock is hit, or
+/// worse, how a stage and a discard interleave. Reads are left alone: they are
+/// short, and `git` handles concurrent readers itself.
+#[derive(Default)]
+pub struct Repositories {
+    inner: Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>,
+}
+
+impl Repositories {
+    /// Runs `action` with this repository to itself. Per directory rather than
+    /// one lock for everything, because a push can take seconds and another
+    /// project has no reason to wait for it.
+    pub fn with<T>(&self, directory: &Path, action: impl FnOnce() -> T) -> T {
+        let lock = {
+            let Ok(mut repositories) = self.inner.lock() else {
+                return action();
+            };
+            Arc::clone(
+                repositories
+                    .entry(directory.to_path_buf())
+                    .or_insert_with(|| Arc::new(Mutex::new(()))),
+            )
+        };
+        let _held = lock.lock();
+        action()
     }
 }
 
@@ -272,4 +305,61 @@ pub fn settings_save(input: SettingsInput, workspace: State<'_, Workspace>) -> R
             })
             .map(|_| ())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Repositories;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    /// Two writers in one checkout is how an index lock is hit, or worse, how
+    /// a stage and a discard interleave. One repository lets one through at a
+    /// time; a different one does not wait.
+    #[test]
+    fn one_git_mutation_per_repository_at_a_time() {
+        let repositories = Arc::new(Repositories::default());
+        let inside = Arc::new(AtomicUsize::new(0));
+        let most = Arc::new(AtomicUsize::new(0));
+
+        let same: Vec<_> = (0..8)
+            .map(|_| {
+                let repositories = Arc::clone(&repositories);
+                let inside = Arc::clone(&inside);
+                let most = Arc::clone(&most);
+                std::thread::spawn(move || {
+                    repositories.with(std::path::Path::new("/one"), || {
+                        let now = inside.fetch_add(1, Ordering::SeqCst) + 1;
+                        most.fetch_max(now, Ordering::SeqCst);
+                        std::thread::sleep(std::time::Duration::from_millis(20));
+                        inside.fetch_sub(1, Ordering::SeqCst);
+                    })
+                })
+            })
+            .collect();
+        for thread in same {
+            thread.join().unwrap();
+        }
+        assert_eq!(
+            most.load(Ordering::SeqCst),
+            1,
+            "two mutations ran in one repository at once"
+        );
+
+        // A second repository is not held up by the first.
+        let held = Arc::clone(&repositories);
+        let blocker = std::thread::spawn(move || {
+            held.with(std::path::Path::new("/one"), || {
+                std::thread::sleep(std::time::Duration::from_millis(300));
+            })
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let started = std::time::Instant::now();
+        repositories.with(std::path::Path::new("/two"), || {});
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(200),
+            "a different repository waited for the first"
+        );
+        blocker.join().unwrap();
+    }
 }

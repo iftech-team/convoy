@@ -3,7 +3,7 @@
 //! Every destructive action is narrow on purpose, and the confirmations are
 //! the front end's — the rules about what may be done at all are here.
 
-use super::{directory_or_project, Workspace};
+use super::{directory_or_project, Repositories, Workspace};
 use convoy_core::git::diff::{digest, hunks, split, SplitRow};
 use convoy_core::git::mutate::Action;
 use convoy_core::git::{ReadRequest, Snapshot};
@@ -294,11 +294,14 @@ pub fn files_mutate(
     id: String,
     mutation: Mutation,
     workspace: State<'_, Workspace>,
+    repositories: State<'_, Repositories>,
 ) -> Result<String, String> {
     let directory = directory_or_project(&workspace, &id)?;
-    Git::default()
-        .mutate(&directory, &Action::from(mutation))
-        .map_err(|error| error.to_string())
+    repositories.with(&directory, || {
+        Git::default()
+            .mutate(&directory, &Action::from(mutation))
+            .map_err(|error| error.to_string())
+    })
 }
 
 /// Only untracked files go to Trash: anything Git knows about can be restored

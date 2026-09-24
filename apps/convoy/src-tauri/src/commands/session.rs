@@ -1,6 +1,6 @@
 //! Sessions: creating them, editing them, running them, and handing work on.
 
-use super::{directory_or_project, view_of, SessionView, Workspace};
+use super::{directory_or_project, view_of, Repositories, SessionView, Workspace};
 use convoy_core::model::Agent;
 use convoy_core::session::{mark_started, plan_launch};
 use convoy_core::workspace::{NewSession, SessionPatch};
@@ -332,6 +332,7 @@ pub fn worktree_create(
     branch: String,
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
+    repositories: State<'_, Repositories>,
 ) -> Result<WorktreePlanView, String> {
     let running: Vec<String> = terminals.ids();
     let root = workspace.storage.worktrees();
@@ -340,9 +341,11 @@ pub fn worktree_create(
         convoy_core::worktree::plan_create(core, &id, &branch, &busy)
     })?;
 
-    let directory = convoy_core::Git::default()
-        .create_worktree(&plan.project_path, &root, &plan.branch)
-        .map_err(|error| error.to_string())?;
+    let directory = repositories.with(&plan.project_path, || {
+        convoy_core::Git::default()
+            .create_worktree(&plan.project_path, &root, &plan.branch)
+            .map_err(|error| error.to_string())
+    })?;
     workspace
         .act(|core| convoy_core::worktree::record_create(core, &id, &directory, &plan.branch))?;
 
@@ -422,6 +425,7 @@ pub fn worktree_remove(
     id: String,
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
+    repositories: State<'_, Repositories>,
 ) -> Result<(), String> {
     let running: Vec<String> = terminals.ids();
     let root = workspace.storage.worktrees();
@@ -429,8 +433,10 @@ pub fn worktree_remove(
         let busy = |id: &str| running.iter().any(|other| other == id);
         convoy_core::worktree::plan_remove(core, &id, &root, &busy)
     })?;
-    convoy_core::worktree::remove_checkout(&convoy_core::Git::default(), &plan)
-        .map_err(|error| error.to_string())?;
+    repositories.with(&plan.project_path, || {
+        convoy_core::worktree::remove_checkout(&convoy_core::Git::default(), &plan)
+            .map_err(|error| error.to_string())
+    })?;
     workspace.act(|core| convoy_core::worktree::record_remove(core, &plan.directory))
 }
 

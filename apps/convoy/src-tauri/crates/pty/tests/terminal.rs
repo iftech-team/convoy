@@ -10,20 +10,28 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// A sink that hands everything to the test through a channel.
+/// A sink that hands everything to the test through a channel, and answers
+/// the one question a terminal is obliged to answer.
+///
+/// ConPTY asks for the cursor position on startup — `ESC[6n` — and waits for
+/// the reply before letting the child write anything. In the app xterm.js
+/// answers it without being asked to; a test with no terminal on the other end
+/// must do it itself, or the child simply never speaks.
 struct Recorder {
     data: Mutex<Sender<String>>,
     ended: Mutex<Sender<Ended>>,
+    terminals: Arc<Terminals>,
 }
 
 impl Recorder {
-    fn new() -> (Arc<Self>, Receiver<String>, Receiver<Ended>) {
+    fn new(terminals: &Arc<Terminals>) -> (Arc<Self>, Receiver<String>, Receiver<Ended>) {
         let (data, output) = channel();
         let (ended, endings) = channel();
         (
             Arc::new(Recorder {
                 data: Mutex::new(data),
                 ended: Mutex::new(ended),
+                terminals: Arc::clone(terminals),
             }),
             output,
             endings,
@@ -32,7 +40,10 @@ impl Recorder {
 }
 
 impl Sink for Recorder {
-    fn data(&self, _id: &str, data: &str) {
+    fn data(&self, id: &str, data: &str) {
+        if data.contains("\u{1b}[6n") {
+            let _ = self.terminals.write(id, "\u{1b}[1;1R");
+        }
         if let Ok(sender) = self.data.lock() {
             let _ = sender.send(data.to_string());
         }
@@ -135,7 +146,7 @@ fn launch(terminals: &Arc<Terminals>, sink: Arc<Recorder>, id: &str, what: (&str
 #[test]
 fn a_command_runs_and_its_output_and_exit_code_come_back() {
     let terminals = Arc::new(Terminals::new());
-    let (sink, output, endings) = Recorder::new();
+    let (sink, output, endings) = Recorder::new(&terminals);
     launch(&terminals, sink, "probe", read_and_exit());
 
     assert!(terminals.running("probe"));
@@ -170,7 +181,7 @@ fn writing_to_a_session_that_is_not_running_says_so() {
 #[test]
 fn stopping_ends_the_session_and_says_it_was_asked_for() {
     let terminals = Arc::new(Terminals::new());
-    let (sink, output, endings) = Recorder::new();
+    let (sink, output, endings) = Recorder::new(&terminals);
     launch(&terminals, sink, "idle", sleeps());
 
     assert!(terminals.running("idle"));
@@ -189,7 +200,7 @@ fn stopping_ends_the_session_and_says_it_was_asked_for() {
 #[test]
 fn hibernation_is_reported_apart_from_a_stop() {
     let terminals = Arc::new(Terminals::new());
-    let (sink, output, endings) = Recorder::new();
+    let (sink, output, endings) = Recorder::new(&terminals);
     launch(&terminals, sink, "dozing", sleeps());
 
     gather(&output, "READY", Duration::from_secs(25));
@@ -210,7 +221,7 @@ fn hibernation_is_reported_apart_from_a_stop() {
 #[test]
 fn stopping_takes_the_whole_process_tree() {
     let terminals = Arc::new(Terminals::new());
-    let (sink, output, _endings) = Recorder::new();
+    let (sink, output, _endings) = Recorder::new(&terminals);
     let script = "sleep 300 & printf 'CHILD:%s\\n' $!; sleep 300";
     launch(
         &terminals,
