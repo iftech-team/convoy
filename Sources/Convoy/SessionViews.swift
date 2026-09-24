@@ -433,6 +433,7 @@ struct NewSessionSheet: View {
             VStack(alignment: .leading, spacing: 8) {
                 label("Agent")
                 HStack(spacing: 10) { agentCard(.claude); agentCard(.codex) }
+                AgentAvailabilityNote(agent: agent)
             }
 
             VStack(alignment: .leading, spacing: 6) {

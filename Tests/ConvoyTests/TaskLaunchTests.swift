@@ -35,3 +35,33 @@ import Testing
     let fallback = SessionNaming.autoTitle(agent: .codex, prompt: "   \n", date: Date(timeIntervalSince1970: 0))
     #expect(fallback.hasPrefix("Codex · "))
 }
+
+@Test @MainActor func taskDependenciesBlockRunningAndRefuseCycles() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("convoy-deps-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let project = Project(name: "p", path: root.path)
+    let file = WorkspaceFile(url: root.appendingPathComponent("ws.json"))
+    try file.save(Workspace(projects: [project], selectedProjectID: project.id))
+    let store = Store(workspaceURL: file.url)
+    let a = AgentTask(projectID: project.id, title: "A")
+    var b = AgentTask(projectID: project.id, title: "B"); b.dependsOn = [a.id]
+    store.saveTask(a); store.saveTask(b)
+    #expect(store.isBlocked(b))
+    #expect(store.blockers(of: b).map(\.title) == ["A"])
+    store.runTask(b)
+    #expect(store.error?.contains("blocked by: A") == true)
+    #expect(store.tasks.first { $0.id == b.id }?.status == .queued)
+    #expect(store.wouldCycle(a, dependingOn: b.id))
+    #expect(!store.wouldCycle(b, dependingOn: a.id))
+    var done = a; done.status = .done; done.finishedAt = Date()
+    store.saveTask(done)
+    #expect(!store.isBlocked(b))
+}
+
+@Test func diagnosticsShellProbeUsesLoginShell() {
+    let (status, out) = SetupDiagnostics.shell("command -v git")
+    #expect(status == 0)
+    #expect(out.hasSuffix("/git"))
+    #expect(SetupDiagnostics.shell("exit 3").0 == 3)
+}

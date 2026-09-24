@@ -88,6 +88,14 @@ struct HomePage: View {
                 }
                 HStack(spacing: 14) {
                     hint("⌘K", "palette"); hint("⌘E", "switch terminal"); hint("⌘/", "quick commands"); hint("⌘,", "settings")
+                    if !store.diagnostics.problems.isEmpty {
+                        let failures = store.diagnostics.failures.count
+                        Button { store.showSettings = true; store.settingsSection = "Setup" } label: {
+                            Label("Setup: \(store.diagnostics.problems.count) to check", systemImage: failures > 0 ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
+                                .font(.system(size: 11, weight: .medium)).foregroundStyle(failures > 0 ? .red : .orange)
+                                .padding(.horizontal, 8).padding(.vertical, 3).background((failures > 0 ? Color.red : Color.orange).opacity(0.1), in: Capsule())
+                        }.buttonStyle(.plain).help("Missing CLIs, logins or configuration problems")
+                    }
                 }.padding(.top, 8)
             }.padding(36).frame(maxWidth: .infinity, alignment: .leading)
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

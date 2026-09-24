@@ -7,6 +7,7 @@ struct SettingsPage: View {
     @FocusState private var searchFocused: Bool
 
     static let sections: [(String, String, [String])] = [
+        ("Setup", "stethoscope", ["check", "diagnostics", "doctor", "missing", "install", "path", "login", "gh", "git", "problem"]),
         ("General", "slider.horizontal.3", ["keep awake", "sleep", "sidebar", "compact", "group", "sort", "worktree default", "branch prefix"]),
         ("Appearance", "paintpalette", ["theme", "dark", "light", "system", "accent"]),
         ("Terminal", "terminal", ["font", "size", "scrollback", "lines", "snapshot"]),
@@ -58,6 +59,7 @@ struct SettingsPage: View {
                 VStack(alignment: .leading, spacing: 22) {
                     Text(store.settingsSection).font(.system(size: 24, weight: .bold))
                     switch store.settingsSection {
+                    case "Setup": SetupSettings(diagnostics: store.diagnostics).onAppear { store.diagnostics.run(store: store) }
                     case "Appearance": AppearanceSettings()
                     case "Terminal": TerminalSettings()
                     case "Agents": AgentSettings()

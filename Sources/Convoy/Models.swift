@@ -76,6 +76,8 @@ struct AgentTask: Codable, Identifiable, Equatable, Sendable {
     var autoReview: Bool = false
     var reviewSessionID: UUID?
     var model: String?
+    /// Tasks that must be Done before this one may run.
+    var dependsOn: [UUID]?
 }
 
 /// Saved terminal command or agent prompt; `projectID == nil` means global.

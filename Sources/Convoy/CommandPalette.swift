@@ -51,6 +51,7 @@ struct CommandPalette: View {
             ("Theme: Light", "", "sun.max", nil, { appearance = "light" }),
             ("Theme: Dark", "", "moon.fill", nil, { appearance = "dark" }),
             ("Settings…", "Appearance, terminal, agents, git, notifications", "gearshape", "⌘,", { store.showSettings = true }),
+            ("Setup check", "Find missing CLIs, logins and configuration problems", "stethoscope", nil, { store.showSettings = true; store.settingsSection = "Setup" }),
             ("Reopen closed tab", "", "arrow.uturn.backward", "⇧⌘T", { store.reopenClosedTab() }),
             ("Edit session name & notes", "", "pencil", "⌘I", { store.editRequest = store.workspace.selectedSessionID }),
             ("Start review of current session", "Hands the work to the other agent", "checkmark.bubble", "⌥⌘R", { store.reviewRequest = store.workspace.selectedSessionID }),

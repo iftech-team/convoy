@@ -78,8 +78,33 @@ extension Store {
     func saveTask(_ task: AgentTask) {
         var next = workspace
         var list = next.tasks ?? []
+        let previous = list.first { $0.id == task.id }
         if let i = list.firstIndex(where: { $0.id == task.id }) { list[i] = task } else { list.append(task) }
         next.tasks = list; commit(next)
+        // A task reaching Done may unblock others; keep the queue moving when auto-run is on.
+        if task.status == .done, previous?.status != .done { runNextQueuedTask(projectID: task.projectID) }
+    }
+    /// Prerequisites of `task` that are not Done yet (missing ids are ignored).
+    func blockers(of task: AgentTask) -> [AgentTask] {
+        (task.dependsOn ?? []).compactMap { id in tasks.first { $0.id == id } }.filter { $0.status != .done }
+    }
+    func isBlocked(_ task: AgentTask) -> Bool { !blockers(of: task).isEmpty }
+    /// Would making `task` depend on `candidate` create a cycle?
+    func wouldCycle(_ task: AgentTask, dependingOn candidate: UUID) -> Bool {
+        var seen: Set<UUID> = []
+        var stack = [candidate]
+        while let id = stack.popLast() {
+            if id == task.id { return true }
+            guard seen.insert(id).inserted, let t = tasks.first(where: { $0.id == id }) else { continue }
+            stack += t.dependsOn ?? []
+        }
+        return false
+    }
+    func runNextQueuedTask(projectID: UUID) {
+        guard let project = workspace.projects.first(where: { $0.id == projectID }), project.autoRunTasks == true,
+              !tasks(for: project).contains(where: { $0.status == .running }),
+              let next = tasks(for: project).first(where: { $0.status == .queued && !isBlocked($0) }) else { return }
+        runTask(next)
     }
     func deleteTask(_ id: UUID) { var next = workspace; next.tasks = (next.tasks ?? []).filter { $0.id != id }; commit(next) }
 
@@ -91,6 +116,8 @@ extension Store {
     /// Starts the task in its own worktree (or the project folder when mode is "none" and worktrees are off).
     func runTask(_ task: AgentTask) {
         guard let project = workspace.projects.first(where: { $0.id == task.projectID }) else { return }
+        let blockers = blockers(of: task)
+        guard blockers.isEmpty else { error = "“\(task.title)” is blocked by: " + blockers.map(\.title).joined(separator: ", ") + ". Mark them Done first."; return }
         guard terminals.runningCount < 12 else { error = "Too many running sessions."; return }
         let docExists = FileManager.default.fileExists(atPath: project.path + "/.specdesk/PROJECT.md")
         let base = project.baseRef?.isEmpty == false ? project.baseRef! : GitWorktree.defaultBase(project.path)
@@ -128,7 +155,7 @@ extension Store {
             startSession(reviewer, in: project)
             task.reviewSessionID = reviewer.id; saveTask(task)
         }
-        if project.autoRunTasks == true, let next = tasks(for: project).first(where: { $0.status == .queued }) { runTask(next) }
+        runNextQueuedTask(projectID: project.id)
     }
 
     func taskCounts(for project: Project? = nil) -> (queued: Int, running: Int, review: Int) {
@@ -338,7 +365,7 @@ private struct TaskActionsMenu: View {
         let meta = TaskMeta(task: task, store: store)
         Group {
             switch task.status {
-            case .queued, .failed: Button { store.runTask(task) } label: { Label("Run", systemImage: "play") }
+            case .queued, .failed: Button { store.runTask(task) } label: { Label(store.isBlocked(task) ? "Run (blocked)" : "Run", systemImage: "play") }.disabled(store.isBlocked(task))
             case .running, .review, .pr, .done:
                 if task.sessionID != nil { Button { meta.open() } label: { Label("Open session", systemImage: "terminal") } }
             }
@@ -372,6 +399,11 @@ private struct TaskRow: View {
             Image(systemName: task.status.symbol).font(.system(size: 13)).foregroundStyle(task.status.tint).frame(width: 18)
             AgentIcon(agent: task.agent, size: 12).opacity(0.8)
             Text(task.title).font(.system(size: 13)).lineLimit(1)
+            if task.status == .queued, store.isBlocked(task) {
+                Label("Blocked", systemImage: "lock.fill").font(.system(size: 10)).foregroundStyle(.secondary)
+                    .padding(.horizontal, 6).padding(.vertical, 2).background(Color.secondary.opacity(0.12), in: Capsule())
+                    .help("Waiting for: " + store.blockers(of: task).map(\.title).joined(separator: ", "))
+            }
             if let label = meta.agentLabel {
                 Text(label).font(.system(size: 10.5)).foregroundStyle(meta.needsYou ? .orange : .secondary)
                     .padding(.horizontal, 6).padding(.vertical, 2).background((meta.needsYou ? Color.orange : Color.secondary).opacity(0.12), in: Capsule())
@@ -426,6 +458,10 @@ private struct TaskCardView: View {
             }
             Text(task.title).font(.system(size: 13, weight: .medium)).lineLimit(3).fixedSize(horizontal: false, vertical: true)
             if !task.details.isEmpty { Text(task.details).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2) }
+            if task.status == .queued, !store.blockers(of: task).isEmpty {
+                Label("Waiting for " + store.blockers(of: task).map(\.title).joined(separator: ", "), systemImage: "lock.fill")
+                    .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(2)
+            }
             HStack(spacing: 6) {
                 if let label = meta.agentLabel {
                     Text(label).font(.system(size: 10)).foregroundStyle(meta.needsYou ? .orange : .secondary)
@@ -437,7 +473,8 @@ private struct TaskCardView: View {
                 if let url = task.prURL, let link = URL(string: url) { Link(destination: link) { Image(systemName: "arrow.triangle.pull").font(.system(size: 11)) }.help(url) }
                 switch task.status {
                 case .queued, .failed:
-                    Button { store.runTask(task) } label: { Image(systemName: "play.fill").font(.system(size: 10)) }.buttonStyle(.borderedProminent).controlSize(.mini).help("Run")
+                    Button { store.runTask(task) } label: { Image(systemName: store.isBlocked(task) ? "lock.fill" : "play.fill").font(.system(size: 10)) }
+                        .buttonStyle(.borderedProminent).controlSize(.mini).disabled(store.isBlocked(task)).help(store.isBlocked(task) ? "Blocked by an unfinished task" : "Run")
                 case .running, .review, .pr:
                     Button { meta.open() } label: { Image(systemName: "terminal").font(.system(size: 10)) }.controlSize(.mini).help("Open session")
                 case .done: EmptyView()
@@ -517,6 +554,36 @@ struct TaskSheet: View {
             .help(task.agent == .claude ? "Passed as claude --model; aliases like opus/sonnet or a full model id" : "Passed as codex --model")
     }
 
+    private var otherTasks: [AgentTask] { store.tasks.filter { $0.projectID == task.projectID && $0.id != task.id } }
+
+    /// Prerequisites: pick any other task of the project; cycles are refused.
+    private var dependsField: some View {
+        let chosen = task.dependsOn ?? []
+        return VStack(alignment: .leading, spacing: 6) {
+            Menu {
+                ForEach(otherTasks) { other in
+                    let on = chosen.contains(other.id)
+                    Button { task.dependsOn = on ? chosen.filter { $0 != other.id } : chosen + [other.id]; if task.dependsOn?.isEmpty == true { task.dependsOn = nil } } label: {
+                        if on { Label(other.title, systemImage: "checkmark") } else { Label(other.title, systemImage: other.status.symbol) }
+                    }.disabled(!on && store.wouldCycle(task, dependingOn: other.id))
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "lock").foregroundStyle(.tertiary).font(.system(size: 10))
+                    Text(chosen.isEmpty ? "Runs whenever it is next in the queue" : "Waits for \(chosen.count) task\(chosen.count == 1 ? "" : "s")").font(.system(size: 12)).foregroundStyle(chosen.isEmpty ? .secondary : .primary)
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                }.padding(.horizontal, 10).frame(height: 30).contentShape(Rectangle())
+                    .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(AppTheme.stroke))
+            }.menuStyle(.borderlessButton).menuIndicator(.hidden)
+                .help("The task stays queued until every prerequisite is marked Done")
+            if !chosen.isEmpty {
+                FlowChips(items: chosen.compactMap { id in otherTasks.first { $0.id == id } }) { other in task.dependsOn = chosen.filter { $0 != other.id }; if task.dependsOn?.isEmpty == true { task.dependsOn = nil } }
+            }
+        }
+    }
+
     private var specField: some View {
         let current = task.spec.map { $0.replacingOccurrences(of: ".specdesk/specs/", with: "") }
         return Menu {
@@ -589,6 +656,13 @@ struct TaskSheet: View {
                 }.frame(maxWidth: .infinity)
             }
 
+            if !otherTasks.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    label("Blocked by")
+                    dependsField
+                }
+            }
+
             VStack(alignment: .leading, spacing: 8) {
                 label("When done")
                 Picker("", selection: $task.mode) {
@@ -626,5 +700,22 @@ struct TaskSheet: View {
             }
         }.padding(24).frame(width: 640)
             .onAppear { if isNew { titleFocused = true } }
+    }
+}
+
+/// Removable chips for the chosen prerequisites.
+private struct FlowChips: View {
+    let items: [AgentTask]
+    let remove: (AgentTask) -> Void
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(items) { item in
+                HStack(spacing: 4) {
+                    Image(systemName: item.status.symbol).font(.system(size: 9)).foregroundStyle(item.status.tint)
+                    Text(item.title).font(.system(size: 11)).lineLimit(1).truncationMode(.tail).frame(maxWidth: 180)
+                    Button { remove(item) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary) }.buttonStyle(.plain)
+                }.padding(.horizontal, 8).padding(.vertical, 3).background(Color.primary.opacity(0.06), in: Capsule())
+            }
+        }
     }
 }

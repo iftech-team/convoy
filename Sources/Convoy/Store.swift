@@ -52,6 +52,7 @@ final class Store: ObservableObject {
     let git = GitInfoService()
     let notifier = Notifier()
     let accounts = Accounts()
+    let diagnostics = SetupDiagnostics()
     let keys = Keybindings.shared
     @Published var showSettings = false
     @Published var settingsSection = "General"
@@ -127,6 +128,7 @@ final class Store: ObservableObject {
         }
         agentStatus.onAttention = { [weak self] providerID, state in self?.handleAttention(providerID: providerID, state: state) }
         terminals.accounts = accounts
+        diagnostics.run(store: self)
         hibernationTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in Task { @MainActor in self?.hibernateIdleSessions() } }
     }
 
