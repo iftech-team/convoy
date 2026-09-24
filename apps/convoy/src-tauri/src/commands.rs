@@ -183,13 +183,15 @@ pub fn session_start(
     let env: Vec<(String, String)> = plan.env.clone().into_iter().collect();
     terminals.start(
         &app,
-        &id,
-        &plan.spec.file,
-        &plan.spec.args,
-        &plan.directory,
-        &env,
-        cols,
-        rows,
+        crate::pty::Launch {
+            id: &id,
+            program: &plan.spec.file,
+            args: &plan.spec.args,
+            cwd: &plan.directory,
+            env: &env,
+            cols,
+            rows,
+        },
     )?;
 
     // Recorded only once the process exists, and the process is stopped if
@@ -203,6 +205,107 @@ pub fn session_start(
         return Err(error);
     }
     Ok(())
+}
+
+/// Creates a session. Validation — the title length, the model name, the
+/// review relationship — all happens in the core, so the rules are the same
+/// ones every other build enforces.
+#[tauri::command]
+pub fn session_create(
+    project_id: String,
+    agent: String,
+    title: String,
+    prompt: String,
+    model: String,
+    workspace: State<'_, Workspace>,
+) -> Result<String, String> {
+    let agent = Agent::parse(&agent).ok_or("Unknown agent.")?;
+    workspace.with(|workspace| {
+        let mut input = convoy_core::workspace::NewSession::new(project_id, agent, title);
+        input.prompt = prompt;
+        input.model = model;
+        let state = workspace.add_session(input).map_err(|e| e.to_string())?;
+        Ok(state
+            .sessions
+            .last()
+            .map(|session| session.id.clone())
+            .unwrap_or_default())
+    })
+}
+
+/// Archiving is how a session gets out of the way. It is reversible, and it
+/// deletes nothing.
+#[tauri::command]
+pub fn session_archive(
+    id: String,
+    archived: bool,
+    workspace: State<'_, Workspace>,
+    terminals: State<'_, Arc<Terminals>>,
+) -> Result<(), String> {
+    let running = terminals.running(&id);
+    workspace.with(|workspace| {
+        workspace
+            .edit_session(
+                &id,
+                convoy_core::workspace::SessionPatch {
+                    archived: Some(archived),
+                    ..Default::default()
+                },
+                running,
+            )
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })
+}
+
+#[tauri::command]
+pub fn session_pin(
+    id: String,
+    pinned: bool,
+    workspace: State<'_, Workspace>,
+    terminals: State<'_, Arc<Terminals>>,
+) -> Result<(), String> {
+    let running = terminals.running(&id);
+    workspace.with(|workspace| {
+        workspace
+            .edit_session(
+                &id,
+                convoy_core::workspace::SessionPatch {
+                    pinned: Some(pinned),
+                    ..Default::default()
+                },
+                running,
+            )
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })
+}
+
+/// The settings the front end needs to draw itself.
+#[derive(Serialize)]
+pub struct SettingsView {
+    theme: String,
+    default_agent: String,
+    font_size: i64,
+    scrollback: i64,
+}
+
+#[tauri::command]
+pub fn settings_read(workspace: State<'_, Workspace>) -> Result<SettingsView, String> {
+    workspace.with(|workspace| {
+        let settings = workspace.settings();
+        Ok(SettingsView {
+            theme: match settings.theme {
+                convoy_core::model::Theme::Dark => "dark",
+                convoy_core::model::Theme::Light => "light",
+                convoy_core::model::Theme::System => "system",
+            }
+            .to_string(),
+            default_agent: settings.default_agent.as_str().to_string(),
+            font_size: settings.font_size,
+            scrollback: settings.scrollback,
+        })
+    })
 }
 
 #[tauri::command]
@@ -227,11 +330,4 @@ pub fn terminal_resize(
     terminals: State<'_, Arc<Terminals>>,
 ) -> Result<(), String> {
     terminals.resize(&id, cols, rows)
-}
-
-/// Kept for the agents a session may use; the front end sends the word, not
-/// the enum.
-#[allow(dead_code)]
-fn agent_of(value: &str) -> Option<Agent> {
-    Agent::parse(value)
 }

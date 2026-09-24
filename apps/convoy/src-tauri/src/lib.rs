@@ -34,6 +34,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::workspace_read,
             commands::sessions_for,
+            commands::settings_read,
+            commands::session_create,
+            commands::session_archive,
+            commands::session_pin,
             commands::session_start,
             commands::session_stop,
             commands::terminal_write,

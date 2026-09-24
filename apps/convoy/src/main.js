@@ -12,6 +12,8 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { icons } from "./icons.js";
 
 const state = {
+  settings: { theme: "system", default_agent: "claude" },
+  dialog: null,
   projects: [],
   storage: "",
   running: [],
@@ -79,6 +81,21 @@ function sidebar() {
     }
   }
 
+  const sessionLinks = (item) =>
+    item.id !== state.projectId
+      ? ""
+      : state.sessions
+          .map(
+            (entry) => `
+        <button class="session-link${entry.running ? " session-link--running" : ""}"
+                data-open="${escape(entry.id)}"
+                aria-current="${entry.id === state.sessionId}">
+          <span class="session-link__dot"></span>
+          <span class="session-link__title">${escape(entry.title)}</span>
+        </button>`,
+          )
+          .join("");
+
   const row = (item) => `
     <button class="project" data-project="${escape(item.id)}"
             aria-current="${item.id === state.projectId}">
@@ -86,7 +103,7 @@ function sidebar() {
       <span class="project__title">${escape(item.title)}</span>
       ${item.running ? '<span class="project__running"></span>' : ""}
       <span class="project__count">${item.sessions || ""}</span>
-    </button>`;
+    </button>${sessionLinks(item)}`;
 
   const sections = [
     ...[...groups].map(
@@ -269,6 +286,49 @@ function workbench() {
     </div>`;
 }
 
+function newSessionDialog() {
+  const draft = state.dialog;
+  const agent = (name, label) => `
+    <button data-agent="${name}" aria-pressed="${draft.agent === name}">${label}</button>`;
+  return `
+    <div class="scrim" data-dismiss="1">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="New session">
+        <div class="modal__head">
+          <div class="modal__title">New session</div>
+          <div class="modal__hint">In ${escape(project()?.title ?? "")}</div>
+        </div>
+        <div class="modal__body">
+          <label class="field">
+            <span class="field__label">Name</span>
+            <input id="draft-title" value="${escape(draft.title)}" spellcheck="false" />
+          </label>
+          <div class="field">
+            <span class="field__label">Agent</span>
+            <div class="choice">
+              ${agent("claude", "Claude Code")}
+              ${agent("codex", "Codex")}
+            </div>
+          </div>
+          <label class="field">
+            <span class="field__label">Model</span>
+            <input id="draft-model" value="${escape(draft.model)}"
+                   placeholder="Leave empty for the CLI default" spellcheck="false" />
+          </label>
+          <label class="field">
+            <span class="field__label">First message</span>
+            <textarea id="draft-prompt" spellcheck="false"
+                      placeholder="Optional. Sent once, on the first launch only.">${escape(draft.prompt)}</textarea>
+            <span class="field__note">Resuming never replays it.</span>
+          </label>
+        </div>
+        <div class="modal__foot">
+          <button class="button" data-dismiss="1">Cancel</button>
+          <button class="button button--primary" data-action="create">Create</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 function status() {
   const running = state.running.length;
   return `
@@ -310,6 +370,10 @@ function render() {
       ${status()}
     </div>`;
 
+  if (state.dialog) {
+    app.insertAdjacentHTML("beforeend", newSessionDialog());
+    document.querySelector("#draft-title")?.focus();
+  }
   if (state.sessionId) mountTerminal(state.sessionId);
 }
 
@@ -377,6 +441,16 @@ const refit = () => {
 
 // ------------------------------------------------------------------ data --
 
+async function loadSettings() {
+  const settings = await call("settings_read");
+  if (!settings) return;
+  state.settings = settings;
+  // "system" means whatever the desktop says; the other two are explicit.
+  const root = document.documentElement;
+  if (settings.theme === "system") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", settings.theme);
+}
+
 async function loadWorkspace() {
   const view = await call("workspace_read");
   if (!view) return;
@@ -399,6 +473,46 @@ async function loadSessions() {
   render();
 }
 
+function openDialog() {
+  if (!state.projectId) return;
+  state.dialog = {
+    title: project()?.title ?? "Session",
+    agent: state.settings.default_agent || "claude",
+    model: "",
+    prompt: "",
+  };
+  render();
+}
+
+function readDraft() {
+  const value = (id) => document.querySelector(id)?.value ?? "";
+  state.dialog = {
+    ...state.dialog,
+    title: value("#draft-title"),
+    model: value("#draft-model"),
+    prompt: value("#draft-prompt"),
+  };
+}
+
+async function createSession() {
+  readDraft();
+  const draft = state.dialog;
+  const id = await call("session_create", {
+    projectId: state.projectId,
+    agent: draft.agent,
+    title: draft.title,
+    prompt: draft.prompt,
+    model: draft.model,
+  });
+  if (!id) return;
+  state.dialog = null;
+  await loadWorkspace();
+  // Selected but not started. Launching an agent is always an explicit act —
+  // a first message is passed on the command line and acted on at once.
+  state.sessionId = id;
+  render();
+}
+
 async function start(id) {
   const { terminal, fit } = terminalFor(id);
   state.sessionId = id;
@@ -415,8 +529,14 @@ async function start(id) {
 // ---------------------------------------------------------------- events --
 
 app.addEventListener("click", async (event) => {
-  const target = event.target.closest("[data-project],[data-tab],[data-action],[data-start],[data-stop],[data-open],[data-session]");
+  const target = event.target.closest(
+    "[data-project],[data-tab],[data-action],[data-start],[data-stop],[data-open],[data-session],[data-agent],[data-dismiss]",
+  );
   if (!target) return;
+  // Clicking the panel itself must not dismiss it; only the scrim behind.
+  if (target.dataset.dismiss && event.target.closest(".modal") && !target.classList.contains("button")) {
+    return;
+  }
 
   if (target.dataset.project) {
     state.projectId = target.dataset.project;
@@ -445,7 +565,32 @@ app.addEventListener("click", async (event) => {
       state.sessionId = null;
       return render();
     case "new-session":
-      return toast("The new-session dialog is not in this prototype yet.");
+      return openDialog();
+    case "create":
+      return createSession();
+  }
+
+  if (target.dataset.agent) {
+    readDraft();
+    state.dialog = { ...state.dialog, agent: target.dataset.agent };
+    return render();
+  }
+  if (target.dataset.dismiss) {
+    state.dialog = null;
+    return render();
+  }
+});
+
+// Escape closes the dialog, Enter in a single-line field submits it.
+addEventListener("keydown", (event) => {
+  if (!state.dialog) return;
+  if (event.key === "Escape") {
+    state.dialog = null;
+    render();
+  }
+  if (event.key === "Enter" && event.target.tagName === "INPUT") {
+    event.preventDefault();
+    createSession();
   }
 });
 
@@ -481,4 +626,5 @@ await listen("terminal:exit", async ({ payload }) => {
   await loadWorkspace();
 });
 
+await loadSettings();
 await loadWorkspace();

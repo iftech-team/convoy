@@ -728,3 +728,179 @@ input {
     display: none;
   }
 }
+
+/* ---------------------------------------------------------------- modal -- */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(24, 24, 27, 0.35);
+  animation: fade 120ms ease-out;
+}
+
+.modal {
+  width: min(520px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg);
+  box-shadow: var(--shadow-lg);
+  animation: rise 140ms ease-out;
+}
+
+.modal__head {
+  padding: 20px 22px 4px;
+}
+
+.modal__title {
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.modal__hint {
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 22px 4px;
+}
+
+.modal__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 22px 20px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.field__label {
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--text-muted);
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  outline: none;
+  user-select: text;
+}
+
+.field textarea {
+  min-height: 84px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.field input:focus,
+.field textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.field__note {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* A choice of two, shown as two. A dropdown would hide one of them. */
+.choice {
+  display: flex;
+  gap: 6px;
+}
+
+.choice button {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.choice button:hover {
+  background: var(--bg-hover);
+}
+
+.choice button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrim,
+  .modal {
+    animation: none;
+  }
+}
+
+/* --------------------------------------------------- sidebar sessions --- */
+
+.session-link {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 4px 8px 4px 24px;
+  border-radius: var(--radius);
+  text-align: left;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.session-link:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.session-link[aria-current="true"] {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+.session-link__dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--state-idle);
+}
+
+.session-link--running .session-link__dot {
+  background: var(--state-running);
+}
+
+.session-link__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

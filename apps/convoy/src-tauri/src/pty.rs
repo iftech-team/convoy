@@ -29,6 +29,21 @@ pub struct Terminals {
     sessions: Mutex<HashMap<String, Session>>,
 }
 
+/// Everything needed to start one agent. Grouped rather than passed loose:
+/// seven positional arguments of which three are strings invites the kind of
+/// mistake a compiler cannot catch.
+pub struct Launch<'a> {
+    pub id: &'a str,
+    pub program: &'a str,
+    pub args: &'a [String],
+    pub cwd: &'a std::path::Path,
+    /// The complete environment. The agent must not inherit this process's own
+    /// conversation markers.
+    pub env: &'a [(String, String)],
+    pub cols: u16,
+    pub rows: u16,
+}
+
 #[derive(Clone, Serialize)]
 pub struct Output {
     pub id: String,
@@ -67,14 +82,17 @@ impl Terminals {
     pub fn start<R: Runtime>(
         self: &Arc<Self>,
         app: &AppHandle<R>,
-        id: &str,
-        program: &str,
-        args: &[String],
-        cwd: &std::path::Path,
-        env: &[(String, String)],
-        cols: u16,
-        rows: u16,
+        launch: Launch<'_>,
     ) -> Result<u32, String> {
+        let Launch {
+            id,
+            program,
+            args,
+            cwd,
+            env,
+            cols,
+            rows,
+        } = launch;
         if self.running(id) {
             return Err("This session is already running.".into());
         }
@@ -304,16 +322,18 @@ mod tests {
         terminals
             .start(
                 app.handle(),
-                "probe",
-                "/bin/sh",
-                &[
-                    "-c".to_string(),
-                    "read line; printf 'GOT:%s\\n' \"$line\"; exit 7".to_string(),
-                ],
-                std::path::Path::new("/"),
-                &env,
-                80,
-                24,
+                Launch {
+                    id: "probe",
+                    program: "/bin/sh",
+                    args: &[
+                        "-c".to_string(),
+                        "read line; printf 'GOT:%s\\n' \"$line\"; exit 7".to_string(),
+                    ],
+                    cwd: std::path::Path::new("/"),
+                    env: &env,
+                    cols: 80,
+                    rows: 24,
+                },
             )
             .expect("spawn");
 
@@ -359,16 +379,18 @@ mod tests {
         terminals
             .start(
                 app.handle(),
-                "tree",
-                "/bin/sh",
-                &[
-                    "-c".to_string(),
-                    "sleep 300 & printf 'CHILD:%s\\n' $!; sleep 300".to_string(),
-                ],
-                std::path::Path::new("/"),
-                &env,
-                80,
-                24,
+                Launch {
+                    id: "tree",
+                    program: "/bin/sh",
+                    args: &[
+                        "-c".to_string(),
+                        "sleep 300 & printf 'CHILD:%s\\n' $!; sleep 300".to_string(),
+                    ],
+                    cwd: std::path::Path::new("/"),
+                    env: &env,
+                    cols: 80,
+                    rows: 24,
+                },
             )
             .expect("spawn");
 
