@@ -4,9 +4,7 @@
 
 mod common;
 
-use convoy_core::provider::launch::{
-    agent_args, agent_environment, launch_spec, Bindings,
-};
+use convoy_core::provider::launch::{agent_args, agent_environment, launch_spec, Bindings};
 use convoy_core::provider::session_spec;
 use convoy_core::workspace::model::{Agent, Session};
 use std::collections::BTreeMap;
@@ -25,7 +23,10 @@ fn resume_uses_exact_provider_identity_and_never_repeats_the_initial_prompt() {
     assert_eq!(agent_args(&claude, true), ["claude", "--resume", "123"]);
 
     let anonymous = session(Agent::Codex, "", "Do something");
-    assert_eq!(agent_args(&anonymous, true), ["codex", "resume", "--no-alt-screen"]);
+    assert_eq!(
+        agent_args(&anonymous, true),
+        ["codex", "resume", "--no-alt-screen"]
+    );
 
     let known = session(Agent::Codex, "123", "Do something");
     assert_eq!(
@@ -94,7 +95,11 @@ fn agent_environment_removes_parent_conversation_markers_without_losing_login_co
     assert_eq!(env.get("CLAUDE_CONFIG_DIR").unwrap(), "/account");
     assert_eq!(env.get("CODEX_HOME").unwrap(), "/codex");
     assert_eq!(env.get("TERM").unwrap(), "xterm-256color");
-    assert_eq!(source.get("CLAUDECODE").unwrap(), "1", "the source map is not mutated");
+    assert_eq!(
+        source.get("CLAUDECODE").unwrap(),
+        "1",
+        "the source map is not mutated"
+    );
 }
 
 #[test]

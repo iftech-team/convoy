@@ -65,14 +65,11 @@ pub fn create_pr(runner: &dyn ProcessRunner, directory: &Path) -> Result<String>
     env.insert("GH_PROMPT_DISABLED".into(), "1".into());
     env.insert("GIT_TERMINAL_PROMPT".into(), "0".into());
     let output = runner.run(
-        &ProcessSpec::new(
-            "gh",
-            vec!["pr".into(), "create".into(), "--fill".into()],
-        )
-        .cwd(directory)
-        .env(env)
-        .timeout(Duration::from_secs(60))
-        .max_output(64_000),
+        &ProcessSpec::new("gh", vec!["pr".into(), "create".into(), "--fill".into()])
+            .cwd(directory)
+            .env(env)
+            .timeout(Duration::from_secs(60))
+            .max_output(64_000),
     )?;
     if !output.ok() {
         return Err(output.failure());

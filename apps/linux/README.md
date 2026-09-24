@@ -69,6 +69,24 @@ fallback. Unknown fields are preserved on write.
 **Do not run both builds at once against the same file.** Each writes the whole
 document; the last writer wins.
 
+## What it costs
+
+Measured on this machine with `scripts/memory.sh`: one window, three session
+tabs, no agent running.
+
+| | Electron preview | This build |
+|---|---|---|
+| Processes | 7 | 1 |
+| RSS | 745 MB | 167 MB |
+| Unique (PSS) | ~400–500 MB (estimated) | 65 MB |
+| Artifact | 122 MB AppImage | 3.6 MB binary |
+
+Both figures were taken under Xvfb, which has no GPU: GTK then falls back to a
+software renderer that carries tens of megabytes of its own. With `GSK_RENDERER`
+left at its default that same window measures 217 MB RSS and 115 MB PSS, and the
+50 MB difference is the software stack, not the application. A real desktop
+session pays neither.
+
 ## Status
 
 - `convoy-core` — done: workspace, validation, migration, Git, files, previews,

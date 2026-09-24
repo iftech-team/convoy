@@ -76,9 +76,18 @@ fn sessions_must_reference_a_project_and_carry_a_well_formed_provider_id() {
         json!({ "sessions": [base] })
     };
 
-    rejects(session(json!({ "projectID": "missing" })), "Invalid session record.");
-    rejects(session(json!({ "agent": "gemini" })), "Invalid session record.");
-    rejects(session(json!({ "started": "yes" })), "Invalid session record.");
+    rejects(
+        session(json!({ "projectID": "missing" })),
+        "Invalid session record.",
+    );
+    rejects(
+        session(json!({ "agent": "gemini" })),
+        "Invalid session record.",
+    );
+    rejects(
+        session(json!({ "started": "yes" })),
+        "Invalid session record.",
+    );
     rejects(
         session(json!({ "providerID": "not-a-uuid" })),
         "Invalid provider session ID.",
@@ -111,7 +120,10 @@ fn shortcuts_must_use_the_known_actions_and_stay_unique() {
         }})
     };
 
-    assert!(validate(&document(settings(json!({ "palette": "mod+shift+p", "files": "mod+b" })))).is_ok());
+    assert!(validate(&document(settings(
+        json!({ "palette": "mod+shift+p", "files": "mod+b" })
+    )))
+    .is_ok());
 
     for broken in [
         json!({ "unknownAction": "mod+p" }),
@@ -168,14 +180,20 @@ fn quick_commands_are_bounded_and_scoped_to_a_known_project() {
     };
 
     assert!(validate(&document(command(json!({ "projectID": "p1" })))).is_ok());
-    rejects(command(json!({ "projectID": "missing" })), "Invalid quick command.");
+    rejects(
+        command(json!({ "projectID": "missing" })),
+        "Invalid quick command.",
+    );
     rejects(command(json!({ "title": "   " })), "Invalid quick command.");
     rejects(command(json!({ "submit": 1 })), "Invalid quick command.");
     rejects(
         command(json!({ "text": "x".repeat(32_001) })),
         "Invalid quick command.",
     );
-    rejects(json!({ "quickCommands": "none" }), "Invalid quick commands.");
+    rejects(
+        json!({ "quickCommands": "none" }),
+        "Invalid quick commands.",
+    );
 }
 
 #[test]
@@ -199,9 +217,18 @@ fn activity_is_capped_and_must_point_at_a_live_session() {
     };
 
     assert!(validate(&document(event(json!({})))).is_ok());
-    rejects(event(json!({ "kind": "pondering" })), "Invalid activity event.");
-    rejects(event(json!({ "at": "sometime" })), "Invalid activity event.");
-    rejects(event(json!({ "sessionID": "gone" })), "Invalid activity event.");
+    rejects(
+        event(json!({ "kind": "pondering" })),
+        "Invalid activity event.",
+    );
+    rejects(
+        event(json!({ "at": "sometime" })),
+        "Invalid activity event.",
+    );
+    rejects(
+        event(json!({ "sessionID": "gone" })),
+        "Invalid activity event.",
+    );
 
     let overflowing: Vec<Value> = (0..201)
         .map(|index| {

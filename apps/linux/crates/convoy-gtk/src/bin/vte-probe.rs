@@ -71,7 +71,10 @@ fn build(application: &adw::Application) {
 
     terminal.connect_child_exited(|_, status| {
         // VTE reports the raw wait status, exactly like waitpid.
-        println!("[probe] child-exited: raw status {status}, exit code {}", status >> 8);
+        println!(
+            "[probe] child-exited: raw status {status}, exit code {}",
+            status >> 8
+        );
     });
 
     let scroller = gtk::ScrolledWindow::builder()
@@ -111,8 +114,8 @@ fn build(application: &adw::Application) {
         move |_| {
             // The port's paste path: bracketed, control characters stripped,
             // and no trailing Enter unless the user asked for one.
-            let payload = convoy_core::history::paste("probe paste line\nsecond line", false)
-                .expect("paste");
+            let payload =
+                convoy_core::history::paste("probe paste line\nsecond line", false).expect("paste");
             terminal.feed_child(payload.as_bytes());
             println!("[probe] fed {} bytes through feed_child", payload.len());
         }
@@ -210,7 +213,10 @@ fn build(application: &adw::Application) {
                         terminal.watch_child(child);
                     } else {
                         glib::child_watch_add_local(child, |_, status| {
-                            println!("[probe] glib child-watch: status {status}, exit {}", status >> 8);
+                            println!(
+                                "[probe] glib child-watch: status {status}, exit {}",
+                                status >> 8
+                            );
                         });
                     }
                     println!("[probe] pid {}", child.0);

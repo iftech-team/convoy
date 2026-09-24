@@ -42,7 +42,10 @@ pub fn session_spec(
     settings_file: Option<&str>,
     env: &BTreeMap<String, String>,
 ) -> LaunchSpec {
-    let mut args: Vec<String> = agent_args(session, session.started).into_iter().skip(1).collect();
+    let mut args: Vec<String> = agent_args(session, session.started)
+        .into_iter()
+        .skip(1)
+        .collect();
     let mut flags: Vec<String> = Vec::new();
     if let Some(model) = session.model.as_deref().filter(|model| !model.is_empty()) {
         flags.push("--model".into());
@@ -80,7 +83,9 @@ pub fn rate_windows(result: &Value, now: f64) -> Vec<RateWindow> {
     let mut windows = Vec::new();
     for (name, bucket) in buckets {
         for key in ["primary", "secondary"] {
-            let Some(value) = bucket.get(key) else { continue };
+            let Some(value) = bucket.get(key) else {
+                continue;
+            };
             let Some(percent) = value.get("usedPercent").and_then(Value::as_f64) else {
                 continue;
             };

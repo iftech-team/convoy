@@ -189,9 +189,7 @@ impl App {
             .sessions
             .iter()
             .filter(|session| session.project_id == project && !session.is_archived())
-            .filter(|session| {
-                needle.is_empty() || session.title.to_lowercase().contains(&needle)
-            })
+            .filter(|session| needle.is_empty() || session.title.to_lowercase().contains(&needle))
             .cloned()
             .collect();
         sessions.sort_by_key(|session| !session.is_pinned());
@@ -229,10 +227,7 @@ impl App {
                 }),
                 None,
             );
-            item.set_action_and_target_value(
-                Some("session.quick"),
-                Some(&command.id.to_variant()),
-            );
+            item.set_action_and_target_value(Some("session.quick"), Some(&command.id.to_variant()));
             self.quick_menu.append_item(&item);
         }
         if !any {
@@ -242,7 +237,10 @@ impl App {
             );
         }
         let manage = gtk::gio::Menu::new();
-        manage.append(Some("Manage quick commands…"), Some("session.manage-commands"));
+        manage.append(
+            Some("Manage quick commands…"),
+            Some("session.manage-commands"),
+        );
         self.quick_menu.append_section(None, &manage);
     }
 
@@ -269,7 +267,11 @@ impl App {
             // searching for a session name still shows the way to it.
             let matches = needle.is_empty()
                 || project.title.to_lowercase().contains(&needle)
-                || project.path.to_string_lossy().to_lowercase().contains(&needle)
+                || project
+                    .path
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .contains(&needle)
                 || workspace.state().sessions.iter().any(|session| {
                     session.project_id == project.id
                         && !session.is_archived()
@@ -278,11 +280,8 @@ impl App {
             if !matches {
                 continue;
             }
-            let item = SidebarItem::project(
-                &project.id,
-                &project.title,
-                &project.path.to_string_lossy(),
-            );
+            let item =
+                SidebarItem::project(&project.id, &project.title, &project.path.to_string_lossy());
             item.set_running(running.get(&project.id).copied().unwrap_or(0));
             let group = project.group.clone().filter(|name| !name.is_empty());
             if let Some(name) = &group {
@@ -375,13 +374,13 @@ impl App {
             !running && !session.is_archived() && !session.worktree_removed()
         });
         self.chrome.start.set_sensitive(startable);
-        self.chrome.start.set_label(
-            if session.as_ref().is_some_and(|session| session.started) {
+        self.chrome
+            .start
+            .set_label(if session.as_ref().is_some_and(|session| session.started) {
                 "Resume"
             } else {
                 "Start"
-            },
-        );
+            });
         self.chrome.stop.set_sensitive(running);
         self.refresh_actions(session.as_ref(), running);
 
@@ -401,10 +400,12 @@ impl App {
             Some(_) => "No sessions yet",
             None => "No project selected",
         });
-        self.chrome.empty.set_description(Some(match self.selection.borrow().project {
-            Some(_) => "Start a session to run Claude Code or Codex in this folder.",
-            None => "Open a folder to begin.",
-        }));
+        self.chrome
+            .empty
+            .set_description(Some(match self.selection.borrow().project {
+                Some(_) => "Start a session to run Claude Code or Codex in this folder.",
+                None => "Open a folder to begin.",
+            }));
     }
 }
 
@@ -439,13 +440,12 @@ impl App {
         enable("history", session.is_some());
         enable(
             "worktree",
-            idle
-                && session.is_some_and(|session| {
-                    !session.started
-                        && session.working_directory.is_none()
-                        && session.review_of.is_none()
-                        && !session.is_archived()
-                }),
+            idle && session.is_some_and(|session| {
+                !session.started
+                    && session.working_directory.is_none()
+                    && session.review_of.is_none()
+                    && !session.is_archived()
+            }),
         );
         enable(
             "remove-worktree",

@@ -58,10 +58,10 @@ fn tick(app: &Rc<App>) {
                 AgentState::Done => convoy_core::model::ActivityKind::Done,
                 _ => convoy_core::model::ActivityKind::Waiting,
             };
-            if let Err(error) =
-                app.workspace
-                    .borrow_mut()
-                    .record(kind, id, status.state.detail())
+            if let Err(error) = app
+                .workspace
+                .borrow_mut()
+                .record(kind, id, status.state.detail())
             {
                 app.error(error);
             }
@@ -82,11 +82,7 @@ fn tick(app: &Rc<App>) {
             // A finished turn is what moves a task on to review, and that is
             // what lets the queue continue.
             if transition == Transition::Review {
-                crate::queue_ui::after_exit(
-                    app,
-                    id,
-                    convoy_core::session::ExitCause::Exited(0),
-                );
+                crate::queue_ui::after_exit(app, id, convoy_core::session::ExitCause::Exited(0));
             }
         }
         changed = true;

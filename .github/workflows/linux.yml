@@ -1,0 +1,102 @@
+name: Linux client
+
+# The GTK client lives beside the Electron preview and builds separately: they
+# share a workspace file format, not a toolchain.
+on:
+  push:
+    branches: [main, linux-gtk-port]
+    paths: ['apps/linux/**', '.github/workflows/linux.yml']
+  pull_request:
+    paths: ['apps/linux/**', '.github/workflows/linux.yml']
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: apps/linux
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GTK, libadwaita, VTE and GtkSourceView
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libgtk-4-dev libadwaita-1-dev libvte-2.91-gtk4-dev \
+            libgtksourceview-5-dev xvfb
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/linux
+
+      - name: Formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lints
+        run: cargo clippy --all-targets -- -D warnings
+
+      # No display needed: the core crate has no toolkit dependency at all.
+      - name: Core tests
+        run: cargo test -p convoy-core
+
+      - name: Window checks
+        run: xvfb-run -a cargo test -p convoy-gtk --test ui
+
+      # Proves a real agent still renders correctly in VTE. Claude Code and
+      # Codex are absent on the runner, so those two checks report themselves
+      # as skipped rather than failing.
+      - name: Terminal checks
+        run: |
+          cargo build --bin convoy-vte-selftest
+          xvfb-run -a ./target/debug/convoy-vte-selftest
+
+      - name: Start-up smoke
+        run: ./scripts/smoke.sh
+
+      - name: Desktop and AppStream metadata
+        run: |
+          sudo apt-get install --no-install-recommends -y desktop-file-utils appstream
+          desktop-file-validate data/com.iftech.convoy.linux.desktop
+          appstreamcli validate --no-net data/com.iftech.convoy.linux.metainfo.xml
+
+  package:
+    needs: check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libgtk-4-dev libadwaita-1-dev libvte-2.91-gtk4-dev libgtksourceview-5-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/linux
+
+      - name: Build the release binary
+        run: cargo build --release --bin convoy
+
+      - name: Report the binary size
+        run: ls -lh target/release/convoy
+
+      - name: Build the Debian package
+        run: |
+          cargo install cargo-deb --locked
+          cargo deb -p convoy-gtk --no-build --output target/debian
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: convoy-linux
+          path: |
+            apps/linux/target/release/convoy
+            apps/linux/target/debian/*.deb
+          if-no-files-found: error

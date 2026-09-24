@@ -63,7 +63,12 @@ pub fn advance(app: &Rc<App>, project_id: &str) {
     if !is_running(app, project_id) {
         return;
     }
-    let running = |id: &str| app.views.borrow().get(id).is_some_and(|view| view.running());
+    let running = |id: &str| {
+        app.views
+            .borrow()
+            .get(id)
+            .is_some_and(|view| view.running())
+    };
     let step = queue::next_step(&app.workspace.borrow(), project_id, &running);
     match step {
         Step::Waiting => {}
@@ -111,7 +116,11 @@ fn make_worktree_then_start(app: &Rc<App>, project_id: &str, session_id: &str, b
         let workspace = app.workspace.borrow();
         let busy = |id: &str| {
             app.busy.borrow().contains(id)
-                || app.views.borrow().get(id).is_some_and(|view| view.running())
+                || app
+                    .views
+                    .borrow()
+                    .get(id)
+                    .is_some_and(|view| view.running())
         };
         convoy_core::worktree::plan_create(&workspace, session_id, branch, &busy)
     };

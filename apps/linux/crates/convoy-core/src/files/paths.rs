@@ -11,9 +11,7 @@ use std::path::{Component, Path, PathBuf};
 /// absolute prefix. Returned unchanged so callers keep the original spelling,
 /// which Git needs for `--literal-pathspecs`.
 pub fn relative(value: &str) -> Result<&str> {
-    let traversal = value
-        .split(['/', '\\'])
-        .any(|segment| segment == "..");
+    let traversal = value.split(['/', '\\']).any(|segment| segment == "..");
     if value.is_empty() || value.contains('\0') || Path::new(value).is_absolute() || traversal {
         bail!("Invalid repository path.")
     }
@@ -91,7 +89,10 @@ mod tests {
 
     #[test]
     fn trash_resolves_the_parent_not_the_file() {
-        let directory = tempfile::Builder::new().prefix("convoy-trash-").tempdir().unwrap();
+        let directory = tempfile::Builder::new()
+            .prefix("convoy-trash-")
+            .tempdir()
+            .unwrap();
         let root = directory.path().join("repo");
         let outside = directory.path().join("outside");
         std::fs::create_dir_all(root.join("sub")).unwrap();

@@ -151,8 +151,14 @@ mod tests {
 
     #[test]
     fn accepts_offsets_and_rejects_nonsense() {
-        assert_eq!(parse_iso8601("2026-09-24T12:00:00+02:00"), parse_iso8601("2026-09-24T10:00:00Z"));
-        assert_eq!(parse_iso8601("2026-09-24"), parse_iso8601("2026-09-24T00:00:00Z"));
+        assert_eq!(
+            parse_iso8601("2026-09-24T12:00:00+02:00"),
+            parse_iso8601("2026-09-24T10:00:00Z")
+        );
+        assert_eq!(
+            parse_iso8601("2026-09-24"),
+            parse_iso8601("2026-09-24T00:00:00Z")
+        );
         assert!(parse_iso8601("not a date").is_none());
         assert!(parse_iso8601("2026-13-01T00:00:00Z").is_none());
         assert!(parse_iso8601("").is_none());

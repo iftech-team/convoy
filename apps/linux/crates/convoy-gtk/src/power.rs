@@ -11,11 +11,7 @@ use convoy_core::model::KeepAwake;
 
 pub fn refresh(app: &Rc<App>) {
     let mode = app.workspace.borrow().settings().keep_awake;
-    let running = app
-        .views
-        .borrow()
-        .values()
-        .any(|view| view.running());
+    let running = app.views.borrow().values().any(|view| view.running());
     let wanted = match mode {
         KeepAwake::Off => false,
         KeepAwake::Always => true,

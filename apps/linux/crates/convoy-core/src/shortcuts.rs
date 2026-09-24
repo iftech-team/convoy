@@ -82,7 +82,13 @@ pub fn from_accelerator(value: &str) -> Option<String> {
     }
     let key = stored_key(rest);
     modifiers.sort_by_key(|name| if *name == "alt" { 0 } else { 1 });
-    let result = format!("mod+{}{key}", modifiers.iter().map(|name| format!("{name}+")).collect::<String>());
+    let result = format!(
+        "mod+{}{key}",
+        modifiers
+            .iter()
+            .map(|name| format!("{name}+"))
+            .collect::<String>()
+    );
     SHORTCUT.is_match(&result).then_some(result)
 }
 
@@ -136,7 +142,13 @@ mod tests {
 
     #[test]
     fn the_two_notations_round_trip() {
-        for stored in ["mod+k", "mod+shift+p", "mod+alt+n", "mod+alt+shift+k", "mod+,"] {
+        for stored in [
+            "mod+k",
+            "mod+shift+p",
+            "mod+alt+n",
+            "mod+alt+shift+k",
+            "mod+,",
+        ] {
             let accelerator = to_accelerator(stored).expect(stored);
             assert_eq!(
                 from_accelerator(&accelerator).as_deref(),
@@ -164,12 +176,17 @@ mod tests {
     fn every_action_resolves_to_something_usable() {
         let resolved = resolve(&BTreeMap::new());
         assert_eq!(resolved.len(), SHORTCUT_ACTIONS.len());
-        assert!(resolved.iter().all(|(_, _, accelerator)| !accelerator.is_empty()));
+        assert!(resolved
+            .iter()
+            .all(|(_, _, accelerator)| !accelerator.is_empty()));
 
         let mut saved = BTreeMap::new();
         saved.insert("palette".to_string(), "mod+shift+k".to_string());
         let resolved = resolve(&saved);
-        let palette = resolved.iter().find(|(name, ..)| *name == "palette").unwrap();
+        let palette = resolved
+            .iter()
+            .find(|(name, ..)| *name == "palette")
+            .unwrap();
         assert_eq!(palette.2, "<Primary><Shift>k", "a saved value wins");
     }
 }

@@ -135,10 +135,7 @@ impl Workspace {
         text(&input.details, 16_000, false)?;
         text(&input.findings, 16_000, false)?;
         self.update(move |state| {
-            let existing = input
-                .id
-                .as_ref()
-                .map(|id| find_task_index(state, id));
+            let existing = input.id.as_ref().map(|id| find_task_index(state, id));
             match existing {
                 Some(None) => bail!("Task not found."),
                 Some(Some(index)) => {
@@ -193,7 +190,10 @@ impl Workspace {
             ensure!(
                 matches!(
                     status,
-                    TaskStatus::Queued | TaskStatus::Review | TaskStatus::Changes | TaskStatus::Done
+                    TaskStatus::Queued
+                        | TaskStatus::Review
+                        | TaskStatus::Changes
+                        | TaskStatus::Done
                 ),
                 "Invalid task status."
             );

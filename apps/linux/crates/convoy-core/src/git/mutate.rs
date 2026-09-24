@@ -12,20 +12,45 @@ use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
-    Stage { path: String, original: Option<String> },
-    Unstage { path: String, original: Option<String> },
+    Stage {
+        path: String,
+        original: Option<String>,
+    },
+    Unstage {
+        path: String,
+        original: Option<String>,
+    },
     StageAll,
-    Discard { path: String },
-    DiscardHunk { path: String, hunk: usize, hash: String },
-    Commit { message: String, amend: bool },
+    Discard {
+        path: String,
+    },
+    DiscardHunk {
+        path: String,
+        hunk: usize,
+        hash: String,
+    },
+    Commit {
+        message: String,
+        amend: bool,
+    },
     Fetch,
     Pull,
     Push,
-    Switch { branch: String },
-    Branch { branch: String },
-    Revert { commit: String },
-    ResetSoft { commit: String },
-    ResetMixed { commit: String },
+    Switch {
+        branch: String,
+    },
+    Branch {
+        branch: String,
+    },
+    Revert {
+        commit: String,
+    },
+    ResetSoft {
+        commit: String,
+    },
+    ResetMixed {
+        commit: String,
+    },
 }
 
 impl Git {
@@ -83,9 +108,7 @@ impl Git {
             Action::Revert { commit } => {
                 self.run(root, &["revert", "--no-edit", revision(commit)?])
             }
-            Action::ResetSoft { commit } => {
-                self.run(root, &["reset", "--soft", revision(commit)?])
-            }
+            Action::ResetSoft { commit } => self.run(root, &["reset", "--soft", revision(commit)?]),
             Action::ResetMixed { commit } => {
                 self.run(root, &["reset", "--mixed", revision(commit)?])
             }

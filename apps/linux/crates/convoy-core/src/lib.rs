@@ -27,8 +27,8 @@ pub mod shortcuts;
 pub mod storage;
 pub mod telemetry;
 pub mod time;
-pub mod worktree;
 pub mod workspace;
+pub mod worktree;
 
 pub use error::{ConvoyError, Result};
 pub use git::Git;

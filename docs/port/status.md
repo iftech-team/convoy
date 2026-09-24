@@ -1,5 +1,12 @@
 # Port and native review — September 23, 2026
 
+> **September 24, 2026.** Linux moved off Electron. `apps/linux` is a native
+> GTK4 client in Rust; `apps/desktop` remains the Windows implementation and is
+> unchanged. Both read the same schema-3 `workspace.json`, so either can be run
+> against existing data — but not at the same time. See
+> [the Linux client](#linux-gtk-client) below and
+> [`docs/plan-refactor/`](../plan-refactor/) for why and how.
+
 Reference: native macOS 0.5.8 (`2732d28`). Its Files & Changes source changes were
 applied to this worktree while retaining the Electron implementation. Main 0.5.9
 (`ee04717`) was subsequently merged, preserving its newer History and optional
@@ -52,6 +59,48 @@ review/fix loop. Provider permissions stay enabled. See the
   delivery, signing and updates remain release validation.
 
 Tests do not access production workspace files or send actual model requests.
+
+## Linux GTK client
+
+`apps/linux` replaces the Electron preview on Linux with `convoy-core` (every
+rule, no toolkit dependency) and `convoy-gtk` (GTK4, libadwaita, VTE,
+GtkSourceView). Feature parity with the Electron preview, minus Windows.
+
+### What was actually run
+
+- **Core**: 79 tests, no display. All 32 non-Windows tests from the JavaScript
+  suite were ported; the four Windows PowerShell and npm-resolver cases were
+  dropped with the platform. The rest are new, covering rules the Electron
+  build had beside its IPC handlers and therefore never tested: the task queue,
+  shortcut conversion, agent-state monitoring, worktree ownership and the
+  side-by-side diff.
+- **Window**: 70 headless checks under `xvfb-run`, driving a real repository
+  and a real workspace file. They assert what the window shows and does, not
+  what it was told.
+- **Terminal**: 12 checks against VTE, including launching the installed
+  Claude Code 2.1.273 and Codex 0.156.0 through the production launch path.
+  Both render their interfaces correctly; emoji and CJK occupy two cells.
+- **Start-up**: `scripts/smoke.sh` starts the app headlessly on a seeded
+  workspace and requires a clean exit.
+- **Metadata**: `desktop-file-validate` and `appstreamcli validate` both pass.
+
+### Two corrections the terminal work forced
+
+- Reading the buffer back must use `text_format`, not `text_range_format`.
+  Agents draw with absolute cursor positioning, and a row range returned zero
+  characters for a full screen of Codex output. The original plan specified the
+  wrong call; a review brief would have been empty.
+- `vte_terminal_watch_child` asserts if the child is already gone, which
+  happens when a command fails instantly — a missing CLI exits 127. Without a
+  fallback there is no exit code at all and the task stays `building`. A GLib
+  child watch is registered instead when VTE has already dropped the pty.
+
+### Not yet validated
+
+Mouse reporting and redraw under sustained output were checked by eye in
+`convoy-vte-probe` only. No distribution package has been installed from a
+clean system; the PKGBUILD and Debian metadata are written but only CI builds
+them. Signing, updates and a real release remain release work, as before.
 
 ## Local Linux artifact
 

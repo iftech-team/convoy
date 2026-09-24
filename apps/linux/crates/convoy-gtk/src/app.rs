@@ -50,8 +50,12 @@ pub fn register_actions(application: &adw::Application, app: &Rc<App>) {
         ("files", &[], crate::files_ui::open),
         ("specs", &["<Primary>t"], crate::planning_ui::open),
         ("palette", &[], crate::palette::open),
-        ("next-session", &[], |app| crate::window::step_session(app, 1)),
-        ("previous-session", &[], |app| crate::window::step_session(app, -1)),
+        ("next-session", &[], |app| {
+            crate::window::step_session(app, 1)
+        }),
+        ("previous-session", &[], |app| {
+            crate::window::step_session(app, -1)
+        }),
         ("focus-search", &[], crate::window::focus_search),
         ("import-history", &[], dialogs::import_history),
         ("activity", &[], dialogs::activity),
@@ -82,10 +86,8 @@ pub fn register_actions(application: &adw::Application, app: &Rc<App>) {
     apply_shortcuts(application, app);
 
     // Activated by clicking a notification, with the session id as its target.
-    let focus = gtk::gio::SimpleAction::new(
-        crate::notify::FOCUS_ACTION,
-        Some(glib::VariantTy::STRING),
-    );
+    let focus =
+        gtk::gio::SimpleAction::new(crate::notify::FOCUS_ACTION, Some(glib::VariantTy::STRING));
     focus.connect_activate({
         let app = app.clone();
         move |_, target| {
@@ -129,8 +131,12 @@ fn register_project_actions(application: &adw::Application, app: &Rc<App>) {
             select_project(app, id);
             dialogs::new_session(app);
         }),
-        ("project-settings", |app, id| dialogs::project_settings(app, id)),
-        ("project-reconnect", |app, id| dialogs::reconnect_project(app, id)),
+        ("project-settings", |app, id| {
+            dialogs::project_settings(app, id)
+        }),
+        ("project-reconnect", |app, id| {
+            dialogs::reconnect_project(app, id)
+        }),
         ("project-remove", |app, id| dialogs::remove_project(app, id)),
         ("project-show-files", |app, id| show_in_files(app, id)),
         ("project-copy-path", |app, id| copy_path(app, id)),
@@ -181,8 +187,11 @@ fn copy_path(app: &Rc<App>, project_id: &str) {
     };
     let path = project.path.to_string_lossy().into_owned();
     app.window.clipboard().set_text(&path);
-    app.toasts
-        .add_toast(adw::Toast::builder().title(format!("Copied {path}")).build());
+    app.toasts.add_toast(
+        adw::Toast::builder()
+            .title(format!("Copied {path}"))
+            .build(),
+    );
 }
 
 /// Binds the shortcuts the workspace holds, falling back to the defaults.

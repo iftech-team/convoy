@@ -5,14 +5,17 @@
 //! message must match the Electron build word for word — these strings are
 //! shown to the user and several are asserted by the ported tests.
 
-use crate::json::{array, boolean, integer, nonempty, safe_integer, string, truthy, truthy_opt, utf16_len};
+use crate::json::{
+    array, boolean, integer, nonempty, safe_integer, string, truthy, truthy_opt, utf16_len,
+};
 use crate::patterns::{SHORTCUT, UUID};
 use crate::{bail, ensure, Result};
 use serde_json::Value;
 use std::collections::HashSet;
 use std::path::Path;
 
-pub const DAMAGED: &str = "Unsupported or damaged desktop workspace. The file has not been changed.";
+pub const DAMAGED: &str =
+    "Unsupported or damaged desktop workspace. The file has not been changed.";
 
 const SPEC_FIELDS: [&str; 6] = [
     "title",
@@ -61,7 +64,9 @@ fn absolute(value: Option<&Value>) -> bool {
 pub fn validate(state: &Value) -> Result<()> {
     let schema = state.get("schemaVersion").and_then(Value::as_f64);
     let supported = schema.is_some_and(|value| value == 1.0 || value == 2.0 || value == 3.0);
-    let (Some(projects), Some(sessions)) = (array(state.get("projects")), array(state.get("sessions"))) else {
+    let (Some(projects), Some(sessions)) =
+        (array(state.get("projects")), array(state.get("sessions")))
+    else {
         bail!("{DAMAGED}")
     };
     ensure!(truthy(state) && supported, "{DAMAGED}");
@@ -87,7 +92,8 @@ pub fn validate(state: &Value) -> Result<()> {
     }
 
     for session in sessions {
-        let belongs = string(field(session, "projectID")).is_some_and(|id| project_ids.contains(id));
+        let belongs =
+            string(field(session, "projectID")).is_some_and(|id| project_ids.contains(id));
         ensure!(
             is_one_of(field(session, "agent"), &AGENTS)
                 && string(field(session, "providerID")).is_some()
@@ -116,10 +122,16 @@ pub fn validate(state: &Value) -> Result<()> {
             }
         }
         if field(session, "workingDirectory").is_some() {
-            ensure!(absolute(field(session, "workingDirectory")), "Invalid worktree path.");
+            ensure!(
+                absolute(field(session, "workingDirectory")),
+                "Invalid worktree path."
+            );
         }
         if field(session, "agentHome").is_some() {
-            ensure!(absolute(field(session, "agentHome")), "Invalid account path.");
+            ensure!(
+                absolute(field(session, "agentHome")),
+                "Invalid account path."
+            );
         }
         if let Some(review_of) = nonempty(field(session, "reviewOf")) {
             let id = string(field(session, "id"));
@@ -151,9 +163,11 @@ pub fn validate(state: &Value) -> Result<()> {
                     None => true,
                 }
                 || !title.is_some_and(|value| !value.trim().is_empty() && utf16_len(value) <= 200)
-                || !body.is_some_and(|value| !value.trim().is_empty() && utf16_len(value) <= 32_000)
+                || !body
+                    .is_some_and(|value| !value.trim().is_empty() && utf16_len(value) <= 32_000)
                 || boolean(field(command, "submit")).is_none()
-                || nonempty(field(command, "projectID")).is_some_and(|id| !project_ids.contains(id));
+                || nonempty(field(command, "projectID"))
+                    .is_some_and(|id| !project_ids.contains(id));
             ensure!(!invalid, "Invalid quick command.");
         }
     }
@@ -195,7 +209,8 @@ pub fn validate_settings(settings: &Value) -> Result<()> {
     }
     if settings.get("hibernateMinutes").is_some() {
         ensure!(
-            integer(settings.get("hibernateMinutes")).is_some_and(|value| (0.0..=1440.0).contains(&value)),
+            integer(settings.get("hibernateMinutes"))
+                .is_some_and(|value| (0.0..=1440.0).contains(&value)),
             "Invalid hibernation delay."
         );
     }
@@ -334,7 +349,8 @@ pub fn validate_planning(state: &Value) -> Result<()> {
             .any(|session| string(field(session, "id")) == string(field(item, "sessionID")));
         ensure!(
             is_one_of(field(item, "kind"), &ACTIVITY_KINDS)
-                && string(field(item, "at")).is_some_and(|at| crate::time::parse_iso8601(at).is_some())
+                && string(field(item, "at"))
+                    .is_some_and(|at| crate::time::parse_iso8601(at).is_some())
                 && known_session,
             "Invalid activity event."
         );

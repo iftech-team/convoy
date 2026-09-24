@@ -48,7 +48,9 @@ fn walk(folder: &Path, depth: u32, max_depth: u32, visited: &mut usize, files: &
         let path = entry.path();
         match entry.file_type() {
             Ok(kind) if kind.is_dir() => walk(&path, depth + 1, max_depth, visited, files),
-            Ok(kind) if kind.is_file() && path.extension().is_some_and(|value| value == "jsonl") => {
+            Ok(kind)
+                if kind.is_file() && path.extension().is_some_and(|value| value == "jsonl") =>
+            {
                 files.push(path);
             }
             _ => {}
@@ -153,11 +155,9 @@ pub fn scan(agent: Agent, home: &Path, directory: &Path) -> Vec<Transcript> {
                 .join(" "),
             _ => format!("{} {}", agent.as_str(), &id[..8]),
         };
-        let title: String = crate::json::head(
-            &raw.split_whitespace().collect::<Vec<_>>().join(" "),
-            100,
-        )
-        .to_string();
+        let title: String =
+            crate::json::head(&raw.split_whitespace().collect::<Vec<_>>().join(" "), 100)
+                .to_string();
         let at = fs::metadata(&file)
             .and_then(|metadata| metadata.modified())
             .ok()

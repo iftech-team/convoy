@@ -29,7 +29,11 @@ pub fn markdown(spec: &Spec, tasks: &[Task]) -> String {
         .iter()
         .filter(|task| task.spec_id.as_deref() == Some(spec.id.as_str()))
         .map(|task| {
-            let mark = if task.status == TaskStatus::Done { "x" } else { " " };
+            let mark = if task.status == TaskStatus::Done {
+                "x"
+            } else {
+                " "
+            };
             format!(
                 "- [{mark}] {} ({})\n  {}\n  Findings: {}",
                 task.title,

@@ -185,6 +185,8 @@ mod tests {
         assert_eq!(AgentState::parse("pondering"), None);
         assert!(AgentState::Done.notable() && AgentState::Waiting.notable());
         assert!(!AgentState::Working.notable() && !AgentState::Idle.notable());
-        assert!(AgentState::Done.detail().contains("acceptance remains unverified"));
+        assert!(AgentState::Done
+            .detail()
+            .contains("acceptance remains unverified"));
     }
 }

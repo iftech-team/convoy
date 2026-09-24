@@ -53,19 +53,19 @@ pub fn builder_of(workspace: &Workspace, review_id: &str) -> Result<String> {
 }
 
 /// The quick command to send, checked against the session's project.
-pub fn quick_command(workspace: &Workspace, session_id: &str, command_id: &str) -> Result<(String, bool)> {
+pub fn quick_command(
+    workspace: &Workspace,
+    session_id: &str,
+    command_id: &str,
+) -> Result<(String, bool)> {
     let session = workspace.session(session_id)?;
-    let command = workspace
-        .state()
-        .quick_commands
-        .iter()
-        .find(|command| {
-            command.id == command_id
-                && command
-                    .project_id
-                    .as_deref()
-                    .is_none_or(|project| project == session.project_id)
-        });
+    let command = workspace.state().quick_commands.iter().find(|command| {
+        command.id == command_id
+            && command
+                .project_id
+                .as_deref()
+                .is_none_or(|project| project == session.project_id)
+    });
     let Some(command) = command else {
         bail!("Quick command not found for this project.")
     };

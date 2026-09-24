@@ -94,7 +94,9 @@ mod tests {
         let root = config_root();
         assert!(root.is_absolute(), "{root:?}");
         match std::env::var_os("XDG_CONFIG_HOME") {
-            Some(value) if Path::new(&value).is_absolute() => assert_eq!(root, PathBuf::from(value)),
+            Some(value) if Path::new(&value).is_absolute() => {
+                assert_eq!(root, PathBuf::from(value))
+            }
             _ => assert!(root.ends_with(".config")),
         }
     }

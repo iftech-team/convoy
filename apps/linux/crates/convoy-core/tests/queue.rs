@@ -57,7 +57,10 @@ fn the_queue_runs_one_task_at_a_time_and_stops_when_empty() {
         })
         .unwrap();
     let running = |id: &str| id == session;
-    assert_eq!(queue::next_step(&workspace, &project, &running), Step::Waiting);
+    assert_eq!(
+        queue::next_step(&workspace, &project, &running),
+        Step::Waiting
+    );
 
     // A task marked building whose session died does not block the queue: a
     // restart never silently resumes, but it must not deadlock either.

@@ -64,7 +64,9 @@ pub fn sanitize(input: &Value, now_ms: f64) -> Value {
     let mut windows: Vec<Value> = Vec::new();
     if let Some(limits) = limits {
         for name in ["five_hour", "seven_day"] {
-            let Some(value) = limits.get(name) else { continue };
+            let Some(value) = limits.get(name) else {
+                continue;
+            };
             let Some(percent) = value.get("used_percentage").and_then(Value::as_f64) else {
                 continue;
             };

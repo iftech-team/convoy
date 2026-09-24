@@ -14,37 +14,33 @@ use crate::window;
 /// directory of repositories registers each one rather than the parent.
 pub fn open_folder(app: &Rc<App>) {
     let dialog = gtk::FileDialog::builder().title("Open folder").build();
-    dialog.select_folder(
-        Some(&app.window),
-        gtk::gio::Cancellable::NONE,
-        {
-            let app = app.clone();
-            move |result| {
-                let Ok(file) = result else { return };
-                let Some(path) = file.path() else { return };
-                let found = convoy_core::files::discover(&path);
-                let mut added = 0usize;
-                for directory in found {
-                    let mut workspace = app.workspace.borrow_mut();
-                    match workspace.add_project(&directory) {
-                        Ok(_) => added += 1,
-                        Err(error) => {
-                            drop(workspace);
-                            app.error(error);
-                        }
+    dialog.select_folder(Some(&app.window), gtk::gio::Cancellable::NONE, {
+        let app = app.clone();
+        move |result| {
+            let Ok(file) = result else { return };
+            let Some(path) = file.path() else { return };
+            let found = convoy_core::files::discover(&path);
+            let mut added = 0usize;
+            for directory in found {
+                let mut workspace = app.workspace.borrow_mut();
+                match workspace.add_project(&directory) {
+                    Ok(_) => added += 1,
+                    Err(error) => {
+                        drop(workspace);
+                        app.error(error);
                     }
                 }
-                if added > 1 {
-                    app.toasts.add_toast(
-                        adw::Toast::builder()
-                            .title(format!("Added {added} projects"))
-                            .build(),
-                    );
-                }
-                app.sync();
             }
-        },
-    );
+            if added > 1 {
+                app.toasts.add_toast(
+                    adw::Toast::builder()
+                        .title(format!("Added {added} projects"))
+                        .build(),
+                );
+            }
+            app.sync();
+        }
+    });
 }
 
 /// A new session for the selected project. The first message is sent only on
@@ -218,9 +214,7 @@ pub fn settings(app: &Rc<App>) {
 
     let claude_usage = adw::SwitchRow::builder()
         .title("Claude usage status line")
-        .subtitle(
-            "Replaces that launch's custom status line and takes effect on the next launch.",
-        )
+        .subtitle("Replaces that launch's custom status line and takes effect on the next launch.")
         .active(settings.claude_usage)
         .build();
 
@@ -593,7 +587,10 @@ pub fn saved_output(app: &Rc<App>, session: &Session) {
     let (_, frame) = text_area(&text, false);
     let dialog = adw::AlertDialog::builder()
         .heading("Saved output")
-        .body(format!("{} · bounded plain text, not a transcript", session.title))
+        .body(format!(
+            "{} · bounded plain text, not a transcript",
+            session.title
+        ))
         .extra_child(&frame)
         .build();
     dialog.add_response("close", "Close");
@@ -615,11 +612,8 @@ pub fn usage(app: &Rc<App>, session: &Session) {
 
     match session.agent {
         Agent::Claude => {
-            let stored = convoy_core::telemetry::read(
-                &app.storage.telemetry(),
-                &session.id,
-                ".usage",
-            );
+            let stored =
+                convoy_core::telemetry::read(&app.storage.telemetry(), &session.id, ".usage");
             let now = convoy_core::provider::now_seconds();
             let windows: Vec<String> = stored
                 .as_ref()
@@ -662,9 +656,7 @@ pub fn usage(app: &Rc<App>, session: &Session) {
                         move |_, windows| {
                             let lines: Vec<String> = windows
                                 .iter()
-                                .map(|window| {
-                                    format!("{}: {:.0}%", window.name, window.percent)
-                                })
+                                .map(|window| format!("{}: {:.0}%", window.name, window.percent))
                                 .collect();
                             dialog.set_body(&render_usage(
                                 lines,
@@ -708,7 +700,11 @@ pub fn create_worktree(app: &Rc<App>, session: &Session) {
             .title
             .to_lowercase()
             .chars()
-            .map(|character| if character.is_ascii_alphanumeric() { character } else { '-' })
+            .map(|character| if character.is_ascii_alphanumeric() {
+                character
+            } else {
+                '-'
+            })
             .collect::<String>()
             .trim_matches('-')
     );
@@ -719,7 +715,9 @@ pub fn create_worktree(app: &Rc<App>, session: &Session) {
 
     let dialog = adw::AlertDialog::builder()
         .heading("Create worktree")
-        .body("A separate checkout on a new branch. The project's own checkout is left where it is.")
+        .body(
+            "A separate checkout on a new branch. The project's own checkout is left where it is.",
+        )
         .extra_child(&group)
         .build();
     dialog.add_response("cancel", "Cancel");
@@ -783,7 +781,10 @@ pub fn remove_worktree(app: &Rc<App>, session: &Session) {
 }
 
 fn is_running(app: &Rc<App>, id: &str) -> bool {
-    app.views.borrow().get(id).is_some_and(|view| view.running())
+    app.views
+        .borrow()
+        .get(id)
+        .is_some_and(|view| view.running())
 }
 
 /// Two terminals side by side. Exactly two, as in the Electron build: nesting
@@ -856,7 +857,11 @@ pub fn quick_commands(app: &Rc<App>) {
             .subtitle(format!(
                 "{}{}",
                 convoy_core::json::head(&command.text, 80),
-                if command.submit { " · sends Enter" } else { "" }
+                if command.submit {
+                    " · sends Enter"
+                } else {
+                    ""
+                }
             ))
             .build();
         let remove = gtk::Button::builder()
@@ -901,7 +906,9 @@ pub fn quick_commands(app: &Rc<App>) {
     let add = gtk::Button::with_label("Add command");
     add.add_css_class("suggested-action");
 
-    let fresh = adw::PreferencesGroup::builder().title("New command").build();
+    let fresh = adw::PreferencesGroup::builder()
+        .title("New command")
+        .build();
     fresh.add(&title);
     fresh.add(&text_frame);
     fresh.add(&submit);
@@ -1040,7 +1047,9 @@ pub fn accounts_dialog(app: &Rc<App>) {
         .build();
     let add = gtk::Button::with_label("Add profile");
     add.add_css_class("suggested-action");
-    let fresh = adw::PreferencesGroup::builder().title("New profile").build();
+    let fresh = adw::PreferencesGroup::builder()
+        .title("New profile")
+        .build();
     fresh.add(&label);
     fresh.add(&agent);
     fresh.add(&add);
@@ -1086,12 +1095,14 @@ pub fn import_history(app: &Rc<App>) {
     };
 
     let agents = gtk::StringList::new(&["Claude Code", "Codex"]);
-    let agent = adw::ComboRow::builder().title("Provider").model(&agents).build();
+    let agent = adw::ComboRow::builder()
+        .title("Provider")
+        .model(&agents)
+        .build();
     let profiles = app.workspace.borrow().state().profiles.clone();
     let mut names: Vec<String> = vec!["Default home".to_string()];
     names.extend(profiles.iter().map(|profile| profile.label.clone()));
-    let profile_model =
-        gtk::StringList::new(&names.iter().map(String::as_str).collect::<Vec<_>>());
+    let profile_model = gtk::StringList::new(&names.iter().map(String::as_str).collect::<Vec<_>>());
     let profile = adw::ComboRow::builder()
         .title("Account")
         .model(&profile_model)
@@ -1154,7 +1165,11 @@ pub fn import_history(app: &Rc<App>) {
             let home = account.home.clone();
             background(
                 &app,
-                move || Ok(convoy_core::provider::transcripts::scan(chosen, &home, &path)),
+                move || {
+                    Ok(convoy_core::provider::transcripts::scan(
+                        chosen, &home, &path,
+                    ))
+                },
                 {
                     let app = app.clone();
                     let found = found.clone();
@@ -1163,7 +1178,13 @@ pub fn import_history(app: &Rc<App>) {
                     let bound = bound.clone();
                     move |_, transcripts: Vec<convoy_core::provider::transcripts::Transcript>| {
                         show_transcripts(
-                            &app, &found, &project.id, chosen, &home, bound.clone(), &transcripts,
+                            &app,
+                            &found,
+                            &project.id,
+                            chosen,
+                            &home,
+                            bound.clone(),
+                            &transcripts,
                         );
                     }
                 },
@@ -1248,11 +1269,17 @@ fn import_one(
     home: &std::path::Path,
     profile_id: Option<String>,
 ) -> convoy_core::Result<()> {
-    let already = app.workspace.borrow().state().sessions.iter().any(|session| {
-        session.provider_id == provider_id
-            && session.agent == agent
-            && session.agent_home.as_deref() == Some(home)
-    });
+    let already = app
+        .workspace
+        .borrow()
+        .state()
+        .sessions
+        .iter()
+        .any(|session| {
+            session.provider_id == provider_id
+                && session.agent == agent
+                && session.agent_home.as_deref() == Some(home)
+        });
     if already {
         return Ok(());
     }
@@ -1406,7 +1433,9 @@ pub fn shortcuts(app: &Rc<App>) {
             };
             match outcome {
                 Ok(()) => {
-                    if let Some(application) = app.window.application().and_downcast::<adw::Application>() {
+                    if let Some(application) =
+                        app.window.application().and_downcast::<adw::Application>()
+                    {
                         crate::app::apply_shortcuts(&application, &app);
                     }
                     dialog.close();
@@ -1525,14 +1554,20 @@ pub fn project_settings(app: &Rc<App>, project_id: &str) {
 /// Removing a project forgets its sessions. The folder, its worktrees and the
 /// provider's own conversations are all left alone.
 pub fn remove_project(app: &Rc<App>, project_id: &str) {
-    let running = app.workspace.borrow().state().sessions.iter().any(|session| {
-        session.project_id == project_id
-            && app
-                .views
-                .borrow()
-                .get(&session.id)
-                .is_some_and(|view| view.running())
-    });
+    let running = app
+        .workspace
+        .borrow()
+        .state()
+        .sessions
+        .iter()
+        .any(|session| {
+            session.project_id == project_id
+                && app
+                    .views
+                    .borrow()
+                    .get(&session.id)
+                    .is_some_and(|view| view.running())
+        });
     if running {
         app.error("Stop project sessions first.");
         return;
@@ -1575,14 +1610,20 @@ pub fn remove_project(app: &Rc<App>, project_id: &str) {
 
 /// Points a project at a folder that moved. Sessions keep their identities.
 pub fn reconnect_project(app: &Rc<App>, project_id: &str) {
-    let running = app.workspace.borrow().state().sessions.iter().any(|session| {
-        session.project_id == project_id
-            && app
-                .views
-                .borrow()
-                .get(&session.id)
-                .is_some_and(|view| view.running())
-    });
+    let running = app
+        .workspace
+        .borrow()
+        .state()
+        .sessions
+        .iter()
+        .any(|session| {
+            session.project_id == project_id
+                && app
+                    .views
+                    .borrow()
+                    .get(&session.id)
+                    .is_some_and(|view| view.running())
+        });
     if running {
         app.error("Stop project sessions before reconnecting.");
         return;
@@ -1596,7 +1637,9 @@ pub fn reconnect_project(app: &Rc<App>, project_id: &str) {
         let project_id = project_id.to_string();
         move |result| {
             let Ok(file) = result else { return };
-            let Some(path) = file.path().and_then(|path| std::fs::canonicalize(path).ok())
+            let Some(path) = file
+                .path()
+                .and_then(|path| std::fs::canonicalize(path).ok())
             else {
                 return;
             };

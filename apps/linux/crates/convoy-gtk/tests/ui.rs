@@ -182,7 +182,11 @@ fn run_checks(app: &Rc<convoy_gtk::state::App>) {
             .map(|font| font.size() / gtk::pango::SCALE)
             == Some(13)
     });
-    check("the terminal font follows the settings", font_matches, "font size differs");
+    check(
+        "the terminal font follows the settings",
+        font_matches,
+        "font size differs",
+    );
     drop(views);
 
     // Searching filters the sidebar without disturbing the open tabs.
@@ -222,7 +226,11 @@ fn run_checks(app: &Rc<convoy_gtk::state::App>) {
             .add_session(NewSession::new(&project.id, Agent::Claude, "Added later"))
             .map(|_| ())
     };
-    check("a session can be added", added.is_ok(), "add_session failed");
+    check(
+        "a session can be added",
+        added.is_ok(),
+        "add_session failed",
+    );
     window::rebuild_tabs(app);
     app.sync();
     check(
@@ -377,7 +385,9 @@ fn quick_command_checks(app: &Rc<convoy_gtk::state::App>, project: &str) {
     };
     {
         let mut workspace = app.workspace.borrow_mut();
-        workspace.save_command(command("global", None)).expect("global");
+        workspace
+            .save_command(command("global", None))
+            .expect("global");
         workspace
             .save_command(command("scoped", Some(project)))
             .expect("scoped");
@@ -392,7 +402,8 @@ fn quick_command_checks(app: &Rc<convoy_gtk::state::App>, project: &str) {
     );
 
     let session = app.selected_session().expect("session");
-    let resolved = convoy_core::review::quick_command(&app.workspace.borrow(), &session.id, "scoped");
+    let resolved =
+        convoy_core::review::quick_command(&app.workspace.borrow(), &session.id, "scoped");
     check(
         "a scoped command resolves for its own project",
         resolved.is_ok(),
@@ -400,7 +411,8 @@ fn quick_command_checks(app: &Rc<convoy_gtk::state::App>, project: &str) {
     );
     check(
         "an unknown command is refused",
-        convoy_core::review::quick_command(&app.workspace.borrow(), &session.id, "missing").is_err(),
+        convoy_core::review::quick_command(&app.workspace.borrow(), &session.id, "missing")
+            .is_err(),
         "an unknown id resolved",
     );
 }
@@ -410,7 +422,11 @@ fn quick_command_checks(app: &Rc<convoy_gtk::state::App>, project: &str) {
 fn split_checks(app: &Rc<convoy_gtk::state::App>) {
     let sessions = app.visible_sessions();
     if sessions.len() < 2 {
-        check("there are two sessions to split", false, "not enough sessions");
+        check(
+            "there are two sessions to split",
+            false,
+            "not enough sessions",
+        );
         return;
     }
     let other = sessions[1].id.clone();
@@ -446,21 +462,24 @@ fn split_checks(app: &Rc<convoy_gtk::state::App>) {
     );
 }
 
-
 /// A repository with one commit and one modified file, so Files & Changes has
 /// a diff to show and a log to list.
 fn seed_repository(path: &std::path::Path) {
     let git = convoy_core::Git::default();
     git.run(path, &["init"]).expect("init");
-    git.run(path, &["config", "user.name", "Test"]).expect("name");
-    git.run(path, &["config", "user.email", "test@example.invalid"]).expect("email");
-    git.run(path, &["config", "commit.gpgSign", "false"]).expect("gpg");
+    git.run(path, &["config", "user.name", "Test"])
+        .expect("name");
+    git.run(path, &["config", "user.email", "test@example.invalid"])
+        .expect("email");
+    git.run(path, &["config", "commit.gpgSign", "false"])
+        .expect("gpg");
 
     let original: String = (0..20).map(|index| format!("line {index}\n")).collect();
     std::fs::write(path.join("tracked.txt"), &original).expect("write");
     std::fs::write(path.join("notes.md"), "# Notes\n\nSome **bold** text.\n").expect("write");
     git.run(path, &["add", "--all"]).expect("add");
-    git.run(path, &["commit", "-m", "Initial commit"]).expect("commit");
+    git.run(path, &["commit", "-m", "Initial commit"])
+        .expect("commit");
 
     std::fs::write(
         path.join("tracked.txt"),
@@ -513,7 +532,12 @@ async fn files_checks(app: &Rc<convoy_gtk::state::App>) {
     );
 
     // A diff is shown as text, and the same diff can be read side by side.
-    files_ui::select(&view, ReadRequest::Unstaged { path: "tracked.txt".into() });
+    files_ui::select(
+        &view,
+        ReadRequest::Unstaged {
+            path: "tracked.txt".into(),
+        },
+    );
     settle(600).await;
     check(
         "an unstaged diff is previewed",
@@ -538,7 +562,12 @@ async fn files_checks(app: &Rc<convoy_gtk::state::App>) {
     settle(400).await;
 
     // Markdown is rendered, not dumped.
-    files_ui::select(&view, ReadRequest::File { path: "notes.md".into() });
+    files_ui::select(
+        &view,
+        ReadRequest::File {
+            path: "notes.md".into(),
+        },
+    );
     settle(600).await;
     check(
         "Markdown is rendered",
@@ -547,7 +576,12 @@ async fn files_checks(app: &Rc<convoy_gtk::state::App>) {
     );
 
     // An untracked file is shown as its own content, not as a diff.
-    files_ui::select(&view, ReadRequest::Untracked { path: "untracked.txt".into() });
+    files_ui::select(
+        &view,
+        ReadRequest::Untracked {
+            path: "untracked.txt".into(),
+        },
+    );
     settle(600).await;
     check(
         "an untracked file shows its contents",
@@ -566,7 +600,6 @@ async fn files_checks(app: &Rc<convoy_gtk::state::App>) {
 
     view.dialog.close();
 }
-
 
 /// Specifications, tasks and the queue, driven through the same calls the
 /// dialog makes.
@@ -619,9 +652,20 @@ async fn planning_checks(app: &Rc<convoy_gtk::state::App>) {
             })
             .expect("task");
     }
-    let task = app.workspace.borrow().state().tasks.last().expect("task").clone();
+    let task = app
+        .workspace
+        .borrow()
+        .state()
+        .tasks
+        .last()
+        .expect("task")
+        .clone();
 
-    let blocked = app.workspace.borrow_mut().prepare_task(&task.id, None).is_err();
+    let blocked = app
+        .workspace
+        .borrow_mut()
+        .prepare_task(&task.id, None)
+        .is_err();
     check(
         "an unapproved specification blocks preparation",
         blocked,
@@ -632,8 +676,16 @@ async fn planning_checks(app: &Rc<convoy_gtk::state::App>) {
         .borrow_mut()
         .approve_spec(&spec.id, 1)
         .expect("approve");
-    let prepared = app.workspace.borrow_mut().prepare_task(&task.id, None).is_ok();
-    check("an approved specification allows it", prepared, "it was refused");
+    let prepared = app
+        .workspace
+        .borrow_mut()
+        .prepare_task(&task.id, None)
+        .is_ok();
+    check(
+        "an approved specification allows it",
+        prepared,
+        "it was refused",
+    );
 
     let session = app
         .workspace
@@ -647,7 +699,13 @@ async fn planning_checks(app: &Rc<convoy_gtk::state::App>) {
         "the brief carries the specification",
         session
             .as_ref()
-            .and_then(|id| app.workspace.borrow().session(id).ok().map(|s| s.prompt.clone()))
+            .and_then(|id| {
+                app.workspace
+                    .borrow()
+                    .session(id)
+                    .ok()
+                    .map(|s| s.prompt.clone())
+            })
             .is_some_and(|prompt| prompt.contains("Reachable by keyboard")),
         "the brief did not mention the acceptance criteria",
     );
@@ -709,7 +767,6 @@ fn queue_ui_running(app: &Rc<convoy_gtk::state::App>, project: &str) -> bool {
     convoy_gtk::queue_ui::is_running(app, project)
 }
 
-
 /// Hooks, agent state, hibernation and account isolation.
 async fn integration_checks(app: &Rc<convoy_gtk::state::App>) {
     use convoy_core::model::Agent;
@@ -729,7 +786,9 @@ async fn integration_checks(app: &Rc<convoy_gtk::state::App>) {
         (Ok(plan), Agent::Claude) => {
             check(
                 "a Claude launch installs its hooks",
-                plan.settings_file.as_ref().is_some_and(|file| file.exists()),
+                plan.settings_file
+                    .as_ref()
+                    .is_some_and(|file| file.exists()),
                 "no settings file",
             );
             let document: serde_json::Value = plan
@@ -741,7 +800,10 @@ async fn integration_checks(app: &Rc<convoy_gtk::state::App>) {
             check(
                 "every documented hook event is subscribed",
                 document["hooks"].as_object().map(|hooks| hooks.len()) == Some(8),
-                format!("{:?}", document["hooks"].as_object().map(|hooks| hooks.len())),
+                format!(
+                    "{:?}",
+                    document["hooks"].as_object().map(|hooks| hooks.len())
+                ),
             );
             check(
                 "the launch resolves the session's own folder",
@@ -749,11 +811,7 @@ async fn integration_checks(app: &Rc<convoy_gtk::state::App>) {
                 format!("{:?}", plan.directory),
             );
         }
-        (Ok(_), Agent::Codex) => check(
-            "a Codex launch needs no settings file",
-            true,
-            "",
-        ),
+        (Ok(_), Agent::Codex) => check("a Codex launch needs no settings file", true, ""),
         (Err(error), _) => check("a launch can be planned", false, error),
     }
 
@@ -785,7 +843,9 @@ async fn integration_checks(app: &Rc<convoy_gtk::state::App>) {
     {
         let mut workspace = app.workspace.borrow_mut();
         workspace.add_profile("Work", Agent::Claude).expect("work");
-        workspace.add_profile("Personal", Agent::Claude).expect("personal");
+        workspace
+            .add_profile("Personal", Agent::Claude)
+            .expect("personal");
         check(
             "a duplicate label is refused",
             workspace.add_profile("work", Agent::Claude).is_err(),
@@ -797,8 +857,7 @@ async fn integration_checks(app: &Rc<convoy_gtk::state::App>) {
         .iter()
         .filter(|profile| profile.agent == Agent::Claude)
         .map(|profile| {
-            let mut probe =
-                convoy_core::model::Session::new("p", Agent::Claude, "probe");
+            let mut probe = convoy_core::model::Session::new("p", Agent::Claude, "probe");
             probe.profile_id = Some(profile.id.clone());
             convoy_core::accounts::account_environment(
                 &probe,
@@ -819,7 +878,6 @@ async fn integration_checks(app: &Rc<convoy_gtk::state::App>) {
     settle(50).await;
 }
 
-
 /// Shortcuts, tab navigation and project settings.
 async fn navigation_checks(app: &Rc<convoy_gtk::state::App>) {
     use convoy_core::shortcuts;
@@ -827,11 +885,9 @@ async fn navigation_checks(app: &Rc<convoy_gtk::state::App>) {
 
     // Every configurable shortcut reaches a real action.
     let resolved = shortcuts::resolve(&BTreeMap::new());
-    let bound = resolved
-        .iter()
-        .all(|(action, _, accelerator)| {
-            !accelerator.is_empty() && convoy_gtk::app::action_for(action).is_some()
-        });
+    let bound = resolved.iter().all(|(action, _, accelerator)| {
+        !accelerator.is_empty() && convoy_gtk::app::action_for(action).is_some()
+    });
     check("every shortcut maps to an action", bound, "one did not");
 
     let application = app

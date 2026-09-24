@@ -54,13 +54,15 @@ pub fn open(app: &Rc<App>) {
 /// As [`open`], but hands back the view so a test can look at it.
 pub fn open_view(app: &Rc<App>) -> Option<Rc<FilesView>> {
     let (directory, session) = match app.selected_session() {
-        Some(session) => match convoy_core::session::directory_for(&app.workspace.borrow(), &session.id) {
-            Ok(directory) => (directory, Some(session.id)),
-            Err(error) => {
-                app.error(error);
-                return None;
+        Some(session) => {
+            match convoy_core::session::directory_for(&app.workspace.borrow(), &session.id) {
+                Ok(directory) => (directory, Some(session.id)),
+                Err(error) => {
+                    app.error(error);
+                    return None;
+                }
             }
-        },
+        }
         None => match app.selected_project() {
             Some(project) => (project.path, None),
             None => {
@@ -171,7 +173,12 @@ fn layout(view: &Rc<FilesView>) -> gtk::Widget {
         .build();
 
     let header = adw::HeaderBar::builder()
-        .title_widget(&adw::ViewSwitcher::builder().stack(&stack).policy(adw::ViewSwitcherPolicy::Wide).build())
+        .title_widget(
+            &adw::ViewSwitcher::builder()
+                .stack(&stack)
+                .policy(adw::ViewSwitcherPolicy::Wide)
+                .build(),
+        )
         .build();
 
     let refresh_button = gtk::Button::builder()
@@ -270,11 +277,17 @@ fn changes_list(view: &Rc<FilesView>) -> gtk::Widget {
                 return;
             };
             let request = if change.untracked() {
-                ReadRequest::Untracked { path: change.path() }
+                ReadRequest::Untracked {
+                    path: change.path(),
+                }
             } else if change.staged() {
-                ReadRequest::Staged { path: change.path() }
+                ReadRequest::Staged {
+                    path: change.path(),
+                }
             } else {
-                ReadRequest::Unstaged { path: change.path() }
+                ReadRequest::Unstaged {
+                    path: change.path(),
+                }
             };
             read(&view, request);
         }
@@ -293,7 +306,11 @@ fn changes_list(view: &Rc<FilesView>) -> gtk::Widget {
         ("Stage all", "files.stage-all", None),
         ("Discard", "files.discard", Some("destructive-action")),
         ("Trash", "files.trash", Some("destructive-action")),
-        ("Discard hunk", "files.discard-hunk", Some("destructive-action")),
+        (
+            "Discard hunk",
+            "files.discard-hunk",
+            Some("destructive-action"),
+        ),
     ] {
         let button = gtk::Button::with_label(label);
         button.set_action_name(Some(action));
@@ -304,7 +321,12 @@ fn changes_list(view: &Rc<FilesView>) -> gtk::Widget {
     }
 
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    box_.append(&gtk::ScrolledWindow::builder().child(&list).vexpand(true).build());
+    box_.append(
+        &gtk::ScrolledWindow::builder()
+            .child(&list)
+            .vexpand(true)
+            .build(),
+    );
     box_.append(&bar);
     box_.upcast()
 }
@@ -318,10 +340,18 @@ fn files_list(view: &Rc<FilesView>) -> gtk::Widget {
     selection.connect_selected_item_notify({
         let view = view.clone();
         move |selection| {
-            let Some(item) = selection.selected_item().and_downcast::<gtk::StringObject>() else {
+            let Some(item) = selection
+                .selected_item()
+                .and_downcast::<gtk::StringObject>()
+            else {
                 return;
             };
-            read(&view, ReadRequest::File { path: item.string().to_string() });
+            read(
+                &view,
+                ReadRequest::File {
+                    path: item.string().to_string(),
+                },
+            );
         }
     });
     let list = gtk::ListView::builder()
@@ -393,7 +423,12 @@ fn log_list(view: &Rc<FilesView>) -> gtk::Widget {
             let Some(commit) = selection.selected_item().and_downcast::<CommitObject>() else {
                 return;
             };
-            read(&view, ReadRequest::Commit { commit: commit.id() });
+            read(
+                &view,
+                ReadRequest::Commit {
+                    commit: commit.id(),
+                },
+            );
         }
     });
 
@@ -416,7 +451,12 @@ fn log_list(view: &Rc<FilesView>) -> gtk::Widget {
     }
 
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    box_.append(&gtk::ScrolledWindow::builder().child(&list).vexpand(true).build());
+    box_.append(
+        &gtk::ScrolledWindow::builder()
+            .child(&list)
+            .vexpand(true)
+            .build(),
+    );
     box_.append(&bar);
     box_.upcast()
 }
@@ -439,12 +479,17 @@ fn branches_page(view: &Rc<FilesView>) -> gtk::Widget {
         let view = view.clone();
         let selection = selection.clone();
         move |_| {
-            let Some(item) = selection.selected_item().and_downcast::<gtk::StringObject>() else {
+            let Some(item) = selection
+                .selected_item()
+                .and_downcast::<gtk::StringObject>()
+            else {
                 return;
             };
             confirm_and_mutate(
                 &view,
-                Action::Switch { branch: item.string().to_string() },
+                Action::Switch {
+                    branch: item.string().to_string(),
+                },
                 None,
             );
         }
@@ -458,7 +503,12 @@ fn branches_page(view: &Rc<FilesView>) -> gtk::Widget {
     bar.pack_start(&create);
 
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    box_.append(&gtk::ScrolledWindow::builder().child(&list).vexpand(true).build());
+    box_.append(
+        &gtk::ScrolledWindow::builder()
+            .child(&list)
+            .vexpand(true)
+            .build(),
+    );
     box_.append(&bar);
     box_.upcast()
 }
@@ -543,17 +593,13 @@ fn selected_change(view: &Rc<FilesView>) -> Option<(String, Option<String>)> {
         | ReadRequest::File { path } => path,
         ReadRequest::Commit { .. } => return None,
     };
-    let original = view
-        .snapshot
-        .borrow()
-        .as_ref()
-        .and_then(|snapshot| {
-            snapshot
-                .changes
-                .iter()
-                .find(|change| change.path == path)
-                .and_then(|change| change.original.clone())
-        });
+    let original = view.snapshot.borrow().as_ref().and_then(|snapshot| {
+        snapshot
+            .changes
+            .iter()
+            .find(|change| change.path == path)
+            .and_then(|change| change.original.clone())
+    });
     Some((path, original))
 }
 
@@ -568,48 +614,44 @@ fn selected_commit(view: &Rc<FilesView>) -> Option<String> {
 /// which is what keeps the panel honest about the repository's real state.
 fn refresh(view: &Rc<FilesView>) {
     let directory = view.directory.clone();
-    background(
-        &view.app,
-        move || Git::default().snapshot(&directory),
-        {
-            let view = view.clone();
-            move |_, snapshot: Snapshot| {
-                view.changes.remove_all();
-                for change in &snapshot.changes {
-                    view.changes.append(&ChangeObject::from(change));
-                }
-                while view.files.n_items() > 0 {
-                    view.files.remove(0);
-                }
-                for name in &snapshot.files {
-                    view.files.append(name);
-                }
-                view.log.remove_all();
-                for commit in &snapshot.log {
-                    view.log.append(&CommitObject::from(commit));
-                }
-                while view.branches.n_items() > 0 {
-                    view.branches.remove(0);
-                }
-                for branch in &snapshot.branches {
-                    view.branches.append(branch);
-                }
-                view.branch_label.set_label(&format!(
-                    "{} · {} changed",
-                    snapshot.branch,
-                    snapshot.changes.len()
-                ));
-                *view.snapshot.borrow_mut() = Some(snapshot);
-
-                // The shown diff may have moved on; read it again so its hash
-                // matches what a hunk discard would be applied to.
-                let current = view.current.borrow().clone();
-                if let Some((request, _)) = current {
-                    read(&view, request);
-                }
+    background(&view.app, move || Git::default().snapshot(&directory), {
+        let view = view.clone();
+        move |_, snapshot: Snapshot| {
+            view.changes.remove_all();
+            for change in &snapshot.changes {
+                view.changes.append(&ChangeObject::from(change));
             }
-        },
-    );
+            while view.files.n_items() > 0 {
+                view.files.remove(0);
+            }
+            for name in &snapshot.files {
+                view.files.append(name);
+            }
+            view.log.remove_all();
+            for commit in &snapshot.log {
+                view.log.append(&CommitObject::from(commit));
+            }
+            while view.branches.n_items() > 0 {
+                view.branches.remove(0);
+            }
+            for branch in &snapshot.branches {
+                view.branches.append(branch);
+            }
+            view.branch_label.set_label(&format!(
+                "{} · {} changed",
+                snapshot.branch,
+                snapshot.changes.len()
+            ));
+            *view.snapshot.borrow_mut() = Some(snapshot);
+
+            // The shown diff may have moved on; read it again so its hash
+            // matches what a hunk discard would be applied to.
+            let current = view.current.borrow().clone();
+            if let Some((request, _)) = current {
+                read(&view, request);
+            }
+        }
+    });
 }
 
 /// Reads one selection. A generation counter makes a slow read harmless: if
@@ -639,9 +681,10 @@ fn read(view: &Rc<FilesView>, request: ReadRequest) {
                         convoy_core::files::Content::Image { bytes, .. } => {
                             view.preview.show_image(&bytes)
                         }
-                        convoy_core::files::Content::Text { text, markdown: true } => {
-                            view.preview.show_markdown(&text)
-                        }
+                        convoy_core::files::Content::Text {
+                            text,
+                            markdown: true,
+                        } => view.preview.show_markdown(&text),
                         convoy_core::files::Content::Text { text, .. } => {
                             let language = match &request {
                                 ReadRequest::File { path } => language_for(path),
@@ -771,46 +814,60 @@ type Entry = (&'static str, fn(&Rc<FilesView>));
 fn register_actions(view: &Rc<FilesView>) {
     let group = gtk::gio::SimpleActionGroup::new();
     let simple: [Entry; 15] = [
-        ("stage", |view| with_path(view, |view, path, original| {
-            confirm_and_mutate(view, Action::Stage { path, original }, None)
-        })),
-        ("unstage", |view| with_path(view, |view, path, original| {
-            confirm_and_mutate(view, Action::Unstage { path, original }, None)
-        })),
-        ("stage-all", |view| confirm_and_mutate(view, Action::StageAll, None)),
-        ("discard", |view| with_path(view, |view, path, _| {
-            let detail = path.clone();
-            confirm_and_mutate(
-                view,
-                Action::Discard { path },
-                Some(("Discard changes to this file?", detail)),
-            )
-        })),
+        ("stage", |view| {
+            with_path(view, |view, path, original| {
+                confirm_and_mutate(view, Action::Stage { path, original }, None)
+            })
+        }),
+        ("unstage", |view| {
+            with_path(view, |view, path, original| {
+                confirm_and_mutate(view, Action::Unstage { path, original }, None)
+            })
+        }),
+        ("stage-all", |view| {
+            confirm_and_mutate(view, Action::StageAll, None)
+        }),
+        ("discard", |view| {
+            with_path(view, |view, path, _| {
+                let detail = path.clone();
+                confirm_and_mutate(
+                    view,
+                    Action::Discard { path },
+                    Some(("Discard changes to this file?", detail)),
+                )
+            })
+        }),
         ("trash", trash),
         ("discard-hunk", discard_hunk),
         ("commit", |view| commit(view, false)),
         ("amend", |view| commit(view, true)),
         ("generate", generate),
-        ("fetch", |view| confirm_and_mutate(view, Action::Fetch, None)),
+        ("fetch", |view| {
+            confirm_and_mutate(view, Action::Fetch, None)
+        }),
         ("pull", |view| confirm_and_mutate(view, Action::Pull, None)),
         ("push", |view| confirm_and_mutate(view, Action::Push, None)),
         ("pr", create_pr),
-        ("revert", |view| with_commit(view, |view, commit| {
-            let detail = commit.clone();
-            confirm_and_mutate(
-                view,
-                Action::Revert { commit },
-                Some(("Revert this commit?", detail)),
-            )
-        })),
-        ("reset-soft", |view| with_commit(view, |view, commit| {
-            let detail = commit.clone();
-            confirm_and_mutate(
-                view,
-                Action::ResetSoft { commit },
-                Some(("Reset to this commit, keeping the index?", detail)),
-            )
-        })),
+        ("revert", |view| {
+            with_commit(view, |view, commit| {
+                let detail = commit.clone();
+                confirm_and_mutate(
+                    view,
+                    Action::Revert { commit },
+                    Some(("Revert this commit?", detail)),
+                )
+            })
+        }),
+        ("reset-soft", |view| {
+            with_commit(view, |view, commit| {
+                let detail = commit.clone();
+                confirm_and_mutate(
+                    view,
+                    Action::ResetSoft { commit },
+                    Some(("Reset to this commit, keeping the index?", detail)),
+                )
+            })
+        }),
     ];
     for (name, handler) in simple {
         let action = gtk::gio::SimpleAction::new(name, None);
@@ -860,18 +917,15 @@ fn trash(view: &Rc<FilesView>) {
     let Some((path, _)) = selected_change(view) else {
         return view.app.error("Select a file first.");
     };
-    let untracked = view
-        .snapshot
-        .borrow()
-        .as_ref()
-        .is_some_and(|snapshot| {
-            snapshot
-                .changes
-                .iter()
-                .any(|change| change.path == path && change.untracked)
-        });
+    let untracked = view.snapshot.borrow().as_ref().is_some_and(|snapshot| {
+        snapshot
+            .changes
+            .iter()
+            .any(|change| change.path == path && change.untracked)
+    });
     if !untracked {
-        view.app.error("Only untracked files can be moved to Trash.");
+        view.app
+            .error("Only untracked files can be moved to Trash.");
         return;
     }
     let target = match convoy_core::files::paths::trash_target(&view.directory, &path) {
@@ -996,8 +1050,7 @@ fn commit(view: &Rc<FilesView>, amend: bool) {
     let confirmation = amend.then(|| {
         (
             "Amend the latest commit?",
-            "The previous commit is replaced. Do not amend something already pushed."
-                .to_string(),
+            "The previous commit is replaced. Do not amend something already pushed.".to_string(),
         )
     });
     confirm_and_mutate(view, action, confirmation);
@@ -1036,11 +1089,9 @@ fn request_message(view: &Rc<FilesView>) {
     let account = {
         let workspace = view.app.workspace.borrow();
         match &view.session {
-            Some(id) => workspace
-                .session(id)
-                .and_then(|session| {
-                    convoy_core::session::prepare_account(&workspace, &view.app.storage, session)
-                }),
+            Some(id) => workspace.session(id).and_then(|session| {
+                convoy_core::session::prepare_account(&workspace, &view.app.storage, session)
+            }),
             None => {
                 let session = convoy_core::model::Session::new(
                     String::new(),

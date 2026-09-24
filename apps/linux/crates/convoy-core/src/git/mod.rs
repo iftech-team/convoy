@@ -139,14 +139,28 @@ impl Git {
         };
         let listed = self.run(
             root,
-            &["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+            &[
+                "ls-files",
+                "-z",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+            ],
         )?;
         let log = self
-            .run(root, &["log", "-100", "--format=%H%x00%h%x00%s%x00%an%x00%aI"])
+            .run(
+                root,
+                &["log", "-100", "--format=%H%x00%h%x00%s%x00%an%x00%aI"],
+            )
             .unwrap_or_default();
         let branches = self.run(
             root,
-            &["for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes"],
+            &[
+                "for-each-ref",
+                "--format=%(refname:short)",
+                "refs/heads",
+                "refs/remotes",
+            ],
         )?;
 
         let mut files: Vec<String> = listed

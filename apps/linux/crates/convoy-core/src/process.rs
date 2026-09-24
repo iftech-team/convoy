@@ -218,8 +218,11 @@ mod tests {
     fn rejects_output_beyond_the_cap() {
         let error = StdRunner
             .run(
-                &ProcessSpec::new("/bin/sh", vec!["-c".into(), "yes convoy | head -c 200000".into()])
-                    .max_output(1024),
+                &ProcessSpec::new(
+                    "/bin/sh",
+                    vec!["-c".into(), "yes convoy | head -c 200000".into()],
+                )
+                .max_output(1024),
             )
             .unwrap_err();
         assert!(error.to_string().contains("size limit"));

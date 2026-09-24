@@ -91,14 +91,12 @@ pub fn codex_limits(
         .stderr(Stdio::null())
         .spawn()?;
 
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| ConvoyError::message("Codex could not read usage. Check installation and sign-in."))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| ConvoyError::message("Codex could not read usage. Check installation and sign-in."))?;
+    let mut stdin = child.stdin.take().ok_or_else(|| {
+        ConvoyError::message("Codex could not read usage. Check installation and sign-in.")
+    })?;
+    let stdout = child.stdout.take().ok_or_else(|| {
+        ConvoyError::message("Codex could not read usage. Check installation and sign-in.")
+    })?;
 
     let (sender, receiver) = mpsc::channel::<std::result::Result<String, &'static str>>();
     std::thread::spawn(move || {
@@ -201,7 +199,10 @@ mod tests {
                     .to_string()
             })
             .collect();
-        assert_eq!(methods, ["initialize", "initialized", "account/rateLimits/read"]);
+        assert_eq!(
+            methods,
+            ["initialize", "initialized", "account/rateLimits/read"]
+        );
         assert_eq!(windows.unwrap()[0].percent, 25.0);
     }
 

@@ -297,7 +297,10 @@ async fn check_output(terminal: &Terminal) -> Outcome {
         if text.contains('\u{1b}') {
             return Err("escape sequences leaked into the text".into());
         }
-        Ok(format!("{} chars, colours applied, emoji and CJK intact", text.trim().chars().count()))
+        Ok(format!(
+            "{} chars, colours applied, emoji and CJK intact",
+            text.trim().chars().count()
+        ))
     }
     .await;
     Outcome {
@@ -310,7 +313,11 @@ async fn check_output(terminal: &Terminal) -> Outcome {
 /// `feed_child` is how quick commands and review feedback reach an agent.
 async fn check_feed_child(terminal: &Terminal) -> Outcome {
     let result = async {
-        let child = spawn(terminal, "read line; printf 'GOT:%s\\n' \"$line\"; sleep 30").await?;
+        let child = spawn(
+            terminal,
+            "read line; printf 'GOT:%s\\n' \"$line\"; sleep 30",
+        )
+        .await?;
         settle(250).await;
         terminal.feed_child(b"hello-from-feed\n");
         settle(400).await;
@@ -326,7 +333,11 @@ async fn check_feed_child(terminal: &Terminal) -> Outcome {
 /// Writing to the master fd directly, the fallback the plan considered.
 async fn check_direct_write(terminal: &Terminal) -> Outcome {
     let result = async {
-        let child = spawn(terminal, "read line; printf 'RAW:%s\\n' \"$line\"; sleep 30").await?;
+        let child = spawn(
+            terminal,
+            "read line; printf 'RAW:%s\\n' \"$line\"; sleep 30",
+        )
+        .await?;
         settle(250).await;
         let Some(pty) = terminal.pty() else {
             return Err("no pty".to_string());
@@ -389,12 +400,15 @@ async fn check_bracketed_paste(terminal: &Terminal) -> Outcome {
         }
 
         // With submit, and only then, a carriage return follows the close marker.
-        let submitted = convoy_core::history::paste("run it", true)
-            .map_err(|error| error.to_string())?;
+        let submitted =
+            convoy_core::history::paste("run it", true).map_err(|error| error.to_string())?;
         if !submitted.ends_with("\u{1b}[201~\r") {
             return Err("submit did not append exactly one Enter".into());
         }
-        Ok(format!("{} bytes delivered verbatim, no Enter", received.len()))
+        Ok(format!(
+            "{} bytes delivered verbatim, no Enter",
+            received.len()
+        ))
     }
     .await;
     outcome("bracketed paste", result)
@@ -445,7 +459,11 @@ async fn check_exit_code(terminal: &Terminal, script: &str, name: &'static str) 
 /// Stopping a session must stop the agent *and* everything it started.
 async fn check_killpg(terminal: &Terminal) -> Outcome {
     let result = async {
-        let child = spawn(terminal, "sleep 300 & printf 'GRANDCHILD:%s\\n' $!; sleep 300").await?;
+        let child = spawn(
+            terminal,
+            "sleep 300 & printf 'GRANDCHILD:%s\\n' $!; sleep 300",
+        )
+        .await?;
         settle(500).await;
         let text = dump(terminal);
         let grandchild: i32 = text
@@ -497,7 +515,6 @@ async fn check_resize(terminal: &Terminal) -> Outcome {
     outcome("resize", result)
 }
 
-
 /// Emoji and CJK must occupy two cells, or every box-drawn agent UI is one
 /// column out of line for the rest of the session. Asked of the terminal
 /// itself: the child prints a character and reads back the cursor column.
@@ -546,10 +563,7 @@ sleep 30"#;
 /// it, through `session_spec` and a login shell. Its own configuration
 /// directory is a throwaway, so the user's sessions and credentials are not
 /// touched and no conversation is created.
-async fn check_agent_launch(
-    terminal: &Terminal,
-    agent: convoy_core::model::Agent,
-) -> Outcome {
+async fn check_agent_launch(terminal: &Terminal, agent: convoy_core::model::Agent) -> Outcome {
     let name: &'static str = match agent {
         convoy_core::model::Agent::Claude => "claude launch",
         convoy_core::model::Agent::Codex => "codex launch",
@@ -612,7 +626,10 @@ async fn check_agent_launch(
         for line in &sample {
             println!("     │ {line}");
         }
-        Ok(format!("{} lines rendered, {report}", visible.lines().count()))
+        Ok(format!(
+            "{} lines rendered, {report}",
+            visible.lines().count()
+        ))
     }
     .await;
     outcome(name, result)

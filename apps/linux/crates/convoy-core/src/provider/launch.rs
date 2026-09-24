@@ -80,10 +80,18 @@ pub fn launch_spec(session: &Session, resume: bool, bindings: &Bindings) -> Laun
     } else {
         format!(
             "env {} ",
-            bound.iter().map(|pair| quote(pair)).collect::<Vec<_>>().join(" ")
+            bound
+                .iter()
+                .map(|pair| quote(pair))
+                .collect::<Vec<_>>()
+                .join(" ")
         )
     };
-    let command = args.iter().map(|arg| quote(arg)).collect::<Vec<_>>().join(" ");
+    let command = args
+        .iter()
+        .map(|arg| quote(arg))
+        .collect::<Vec<_>>()
+        .join(" ");
     LaunchSpec {
         file: "/bin/bash".into(),
         args: vec!["-ilc".into(), format!("exec {prefix}{command}")],
@@ -104,10 +112,7 @@ pub fn agent_environment(source: &BTreeMap<String, String>) -> BTreeMap<String, 
         .collect();
     env.insert("TERM".into(), "xterm-256color".into());
     env.insert("COLORTERM".into(), "truecolor".into());
-    env.insert(
-        "CLAUDE_CODE_FORCE_SESSION_PERSISTENCE".into(),
-        "1".into(),
-    );
+    env.insert("CLAUDE_CODE_FORCE_SESSION_PERSISTENCE".into(), "1".into());
     env
 }
 

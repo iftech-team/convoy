@@ -25,7 +25,11 @@ fn telemetry_stores_only_status_and_validated_quota_windows() {
     });
     let result = telemetry::sanitize(&input, 100_000.0);
     assert_eq!(result["state"], "waiting");
-    assert_eq!(result["windows"].as_array().unwrap().len(), 1, "101% is not a quota");
+    assert_eq!(
+        result["windows"].as_array().unwrap().len(),
+        1,
+        "101% is not a quota"
+    );
 
     let serialised = serde_json::to_string(&result).unwrap();
     assert!(!serialised.contains("secret"), "{serialised}");
@@ -60,10 +64,17 @@ fn hook_configuration_clears_stale_status_and_stores_only_a_state_word() {
     let stale = telemetry::with_suffix(&output, ".status");
     fs::write(&stale, r#"{"state":"done"}"#).unwrap();
 
-    let settings =
-        telemetry::configuration(&root, &session, std::path::Path::new("/usr/bin/convoy"), true)
-            .unwrap();
-    assert!(!stale.exists(), "old Stop data must not mark a fresh launch complete");
+    let settings = telemetry::configuration(
+        &root,
+        &session,
+        std::path::Path::new("/usr/bin/convoy"),
+        true,
+    )
+    .unwrap();
+    assert!(
+        !stale.exists(),
+        "old Stop data must not mark a fresh launch complete"
+    );
 
     let document: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&settings).unwrap()).unwrap();
@@ -133,7 +144,11 @@ fn provider_history_matches_folders_and_excludes_codex_subagents() {
     .unwrap();
 
     let found = scan(Agent::Codex, root, &project);
-    assert_eq!(found.len(), 1, "a subagent rollout is not a session to import");
+    assert_eq!(
+        found.len(),
+        1,
+        "a subagent rollout is not a session to import"
+    );
     assert_eq!(found[0].title, "Fix parser");
     assert_eq!(found[0].provider_id, id);
 

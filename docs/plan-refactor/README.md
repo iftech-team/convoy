@@ -3,7 +3,7 @@
 Рабочий документ. Не для коммита, не для публикации — личные заметки по рефакторингу.
 
 **Дата:** 24 сентября 2026
-**Статус:** план, работа не начата
+**Статус:** M0–M8 выполнены. Код в `apps/linux/`, ветка `linux-gtk-port`.
 **Решение:** Linux-версия Convoy переписывается с Electron на Rust + GTK4 + libadwaita + VTE.
 Windows остаётся на существующем Electron-превью (`apps/desktop`), он не трогается.
 
@@ -14,7 +14,7 @@ Windows остаётся на существующем Electron-превью (`a
 | [00-rationale.md](00-rationale.md) | Почему уходим с Electron, замеры, какие альтернативы отклонены и почему |
 | [01-architecture.md](01-architecture.md) | Целевая архитектура: крейты, слои, модель состояния, конкурентность |
 | [02-module-map.md](02-module-map.md) | Построчный маппинг: каждый JS-модуль → куда переезжает |
-| [03-invariants.md](03-invariants.md) | **Контракт поведения.** 24 инварианта, которые порт обязан сохранить |
+| [03-invariants.md](03-invariants.md) | **Контракт поведения.** 34 инварианта, которые порт обязан сохранить |
 | [04-ui-spec.md](04-ui-spec.md) | Спецификация UI: каждый экран и диалог на GTK4/libadwaita |
 | [05-terminal-vte.md](05-terminal-vte.md) | Терминальная подсистема: VTE, PTY, lifecycle, вставка текста, история |
 | [06-integrations.md](06-integrations.md) | Провайдеры, hooks-телеметрия, usage, уведомления, keep-awake, аккаунты |
@@ -23,6 +23,7 @@ Windows остаётся на существующем Electron-превью (`a
 | [09-packaging.md](09-packaging.md) | Сборка, пакеты, CI. Почему Flatpak здесь — плохая идея |
 | [10-roadmap.md](10-roadmap.md) | Этапы M0–M8, оценки, definition of done |
 | [11-risks.md](11-risks.md) | Риски, открытые вопросы, что проверить до начала работы |
+| [12-verification.md](12-verification.md) | Чем проверен каждый из 34 инвариантов |
 
 ## Краткая суть
 

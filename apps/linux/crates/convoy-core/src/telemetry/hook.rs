@@ -66,7 +66,10 @@ pub fn run(output: &Path, input: &mut impl Read) -> Option<String> {
                 .map(|window| {
                     format!(
                         "{}: {}%",
-                        window.get("name").and_then(Value::as_str).unwrap_or_default(),
+                        window
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
                         window
                             .get("percent")
                             .and_then(Value::as_f64)

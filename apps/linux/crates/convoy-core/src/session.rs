@@ -93,12 +93,16 @@ pub fn plan_launch(
             .iter()
             .find(|task| task.id == task_id)
             .ok_or_else(|| ConvoyError::message(OUTDATED_BRIEF))?;
-        let spec = task
-            .spec_id
-            .as_deref()
-            .and_then(|spec_id| workspace.state().specs.iter().find(|spec| spec.id == spec_id));
+        let spec = task.spec_id.as_deref().and_then(|spec_id| {
+            workspace
+                .state()
+                .specs
+                .iter()
+                .find(|spec| spec.id == spec_id)
+        });
         let stale = task.session_id.as_deref() != Some(id)
-            || spec.is_some_and(|spec| !spec.approved() || task.spec_revision != Some(spec.revision));
+            || spec
+                .is_some_and(|spec| !spec.approved() || task.spec_revision != Some(spec.revision));
         ensure!(!stale, "{OUTDATED_BRIEF}");
     }
 
@@ -114,7 +118,10 @@ pub fn plan_launch(
     };
     let spec = session_spec(
         &session,
-        settings_file.as_ref().map(|file| file.to_string_lossy()).as_deref(),
+        settings_file
+            .as_ref()
+            .map(|file| file.to_string_lossy())
+            .as_deref(),
         &account.env,
     );
 
@@ -129,7 +136,8 @@ pub fn plan_launch(
     })
 }
 
-const OUTDATED_BRIEF: &str = "This task brief is outdated or unapproved. Approve the spec and prepare a new task brief.";
+const OUTDATED_BRIEF: &str =
+    "This task brief is outdated or unapproved. Approve the spec and prepare a new task brief.";
 
 /// Resolves the account home and creates it for profile-bound sessions.
 pub fn prepare_account(
@@ -167,8 +175,8 @@ pub fn mark_started(workspace: &mut Workspace, plan: &LaunchPlan) -> Result<()> 
         session.started = true;
         session.agent_home = Some(home);
         let task_id = session.task_id.clone();
-        if let Some(task) = task_id
-            .and_then(|task_id| state.tasks.iter_mut().find(|task| task.id == task_id))
+        if let Some(task) =
+            task_id.and_then(|task_id| state.tasks.iter_mut().find(|task| task.id == task_id))
         {
             task.status = TaskStatus::Building;
             task.last_error = None;

@@ -120,7 +120,9 @@ fn spec_approval_gates_task_preparation_and_edits_invalidate_completed_work() {
     workspace.prepare_task(&planned.task, None).unwrap();
     assert_ne!(workspace.state().tasks[0].session_id, original);
     assert_eq!(workspace.state().sessions.len(), 2);
-    assert!(workspace.state().sessions[1].prompt.contains("screen reader"));
+    assert!(workspace.state().sessions[1]
+        .prompt
+        .contains("screen reader"));
 }
 
 #[test]
@@ -207,7 +209,9 @@ fn account_profiles_use_separate_homes_and_reject_provider_mismatches() {
     let mut planned = planned();
     let directory = planned.fixture.path().to_path_buf();
     let workspace = &mut planned.workspace;
-    workspace.add_profile("Work / ../ account", Agent::Codex).unwrap();
+    workspace
+        .add_profile("Work / ../ account", Agent::Codex)
+        .unwrap();
     let profile = workspace.state().profiles[0].id.clone();
 
     let mut wrong = new_session(&planned.project, Agent::Claude, "Wrong account");
@@ -241,8 +245,9 @@ fn account_profiles_use_separate_homes_and_reject_provider_mismatches() {
     let mut resumed = session.clone();
     resumed.agent_home = Some(bound.home.clone());
     let moved = directory.join("changed");
-    let other: BTreeMap<String, String> =
-        [("CODEX_HOME".to_string(), "/other".to_string())].into_iter().collect();
+    let other: BTreeMap<String, String> = [("CODEX_HOME".to_string(), "/other".to_string())]
+        .into_iter()
+        .collect();
     let resumed_account =
         account_environment(&resumed, &workspace.state().profiles, &moved, &other).unwrap();
     assert_eq!(resumed_account.home, bound.home);
@@ -298,7 +303,9 @@ fn publication_and_review_choices_are_explicit_and_changing_them_invalidates_the
     let task = workspace.state().tasks[0].clone();
 
     workspace.prepare_task(&task.id, None).unwrap();
-    assert!(workspace.state().sessions[0].prompt.contains("pull request"));
+    assert!(workspace.state().sessions[0]
+        .prompt
+        .contains("pull request"));
 
     let mut edited = task_input(&task);
     edited.mode = PublishMode::None;

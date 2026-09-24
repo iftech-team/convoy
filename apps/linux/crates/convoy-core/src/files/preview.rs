@@ -18,10 +18,16 @@ const IMAGE_TOO_LARGE: &str = "Image preview exceeds 1 MB.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Content {
-    Text { text: String, markdown: bool },
+    Text {
+        text: String,
+        markdown: bool,
+    },
     /// Raw bytes rather than a `data:` URI: `gtk::Picture` loads bytes
     /// directly, so the base64 round-trip the web renderer needed is gone.
-    Image { mime: &'static str, bytes: Vec<u8> },
+    Image {
+        mime: &'static str,
+        bytes: Vec<u8>,
+    },
 }
 
 fn image_type(name: &str) -> Option<&'static str> {
@@ -51,9 +57,7 @@ fn read_bounded(path: &Path) -> Result<std::result::Result<Vec<u8>, &'static str
         return Ok(Err(NOT_PREVIEWABLE));
     }
     let mut bytes = Vec::with_capacity(metadata.len() as usize + 1);
-    file.by_ref()
-        .take(LIMIT + 1)
-        .read_to_end(&mut bytes)?;
+    file.by_ref().take(LIMIT + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > LIMIT {
         return Ok(Err(BINARY));
     }

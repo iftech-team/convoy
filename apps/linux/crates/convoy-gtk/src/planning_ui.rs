@@ -266,10 +266,13 @@ fn spec_page(
     header.add(&title);
 
     let get = |pick: fn(&Spec) -> &String| -> String {
-        spec.as_ref().map(|spec| pick(spec).clone()).unwrap_or_default()
+        spec.as_ref()
+            .map(|spec| pick(spec).clone())
+            .unwrap_or_default()
     };
     let (problem_group, problem) = field("Problem", &get(|spec| &spec.problem), 4);
-    let (requirements_group, requirements) = field("Requirements", &get(|spec| &spec.requirements), 5);
+    let (requirements_group, requirements) =
+        field("Requirements", &get(|spec| &spec.requirements), 5);
     let (acceptance_group, acceptance) = field("Acceptance", &get(|spec| &spec.acceptance), 4);
     let (constraints_group, constraints) = field("Constraints", &get(|spec| &spec.constraints), 3);
     let (plan_group, plan) = field("Plan", &get(|spec| &spec.plan), 5);
@@ -383,7 +386,11 @@ fn export_spec(app: &Rc<App>, spec: &Spec) {
             "{}.md",
             spec.title
                 .chars()
-                .map(|character| if character.is_ascii_alphanumeric() { character } else { '-' })
+                .map(|character| if character.is_ascii_alphanumeric() {
+                    character
+                } else {
+                    '-'
+                })
                 .collect::<String>()
                 .trim_matches('-')
         ))
@@ -418,7 +425,10 @@ fn task_page(
     title.set_text(task.as_ref().map(|task| task.title.as_str()).unwrap_or(""));
 
     let agents = gtk::StringList::new(&["Claude Code", "Codex"]);
-    let agent = adw::ComboRow::builder().title("Agent").model(&agents).build();
+    let agent = adw::ComboRow::builder()
+        .title("Agent")
+        .model(&agents)
+        .build();
     agent.set_selected(match task.as_ref().map(|task| task.agent) {
         Some(Agent::Codex) => 1,
         _ => 0,
@@ -469,12 +479,16 @@ fn task_page(
 
     let (details_group, details) = field(
         "Details",
-        task.as_ref().map(|task| task.details.as_str()).unwrap_or(""),
+        task.as_ref()
+            .map(|task| task.details.as_str())
+            .unwrap_or(""),
         5,
     );
     let (findings_group, findings) = field(
         "Findings",
-        task.as_ref().map(|task| task.findings.as_str()).unwrap_or(""),
+        task.as_ref()
+            .map(|task| task.findings.as_str())
+            .unwrap_or(""),
         4,
     );
 
@@ -603,7 +617,11 @@ fn task_page(
 
     let _ = navigation;
     adw::NavigationPage::builder()
-        .title(if existing.is_some() { "Task" } else { "New task" })
+        .title(if existing.is_some() {
+            "Task"
+        } else {
+            "New task"
+        })
         .child(&toolbar)
         .build()
 }

@@ -188,13 +188,14 @@ impl Workspace {
     }
 
     pub fn add_project(&mut self, directory: &Path) -> Result<&State> {
-        ensure!(
-            fs::metadata(directory)?.is_dir(),
-            "Choose a folder."
-        );
+        ensure!(fs::metadata(directory)?.is_dir(), "Choose a folder.");
         let resolved = fs::canonicalize(directory)?;
         self.update(move |state| {
-            if !state.projects.iter().any(|project| project.path == resolved) {
+            if !state
+                .projects
+                .iter()
+                .any(|project| project.path == resolved)
+            {
                 let title = resolved
                     .file_name()
                     .map(|name| name.to_string_lossy().into_owned())

@@ -57,11 +57,17 @@ pub fn register(app: &Rc<App>) {
         ("archive", archive),
         ("recover", recover),
         ("review", |app, session| dialogs::start_review(app, session)),
-        ("feedback", |app, session| dialogs::send_feedback(app, session)),
-        ("history", |app, session| dialogs::saved_output(app, session)),
+        ("feedback", |app, session| {
+            dialogs::send_feedback(app, session)
+        }),
+        ("history", |app, session| {
+            dialogs::saved_output(app, session)
+        }),
         ("usage", |app, session| dialogs::usage(app, session)),
         ("git-status", git_status),
-        ("worktree", |app, session| dialogs::create_worktree(app, session)),
+        ("worktree", |app, session| {
+            dialogs::create_worktree(app, session)
+        }),
         ("remove-worktree", |app, session| {
             dialogs::remove_worktree(app, session)
         }),
@@ -138,7 +144,11 @@ fn archive(app: &Rc<App>, session: &Session) {
 }
 
 fn apply(app: &Rc<App>, id: &str, patch: SessionPatch) {
-    let running = app.views.borrow().get(id).is_some_and(|view| view.running());
+    let running = app
+        .views
+        .borrow()
+        .get(id)
+        .is_some_and(|view| view.running());
     let outcome = {
         let mut workspace = app.workspace.borrow_mut();
         workspace.edit_session(id, patch, running).map(|_| ())

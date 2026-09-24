@@ -18,10 +18,13 @@ fn repository(path: &Path, autocrlf: &str) -> Git {
     let git = Git::default();
     fs::create_dir_all(path).unwrap();
     git.run(path, &["init"]).unwrap();
-    git.run(path, &["config", "core.autocrlf", autocrlf]).unwrap();
+    git.run(path, &["config", "core.autocrlf", autocrlf])
+        .unwrap();
     git.run(path, &["config", "user.name", "Test"]).unwrap();
-    git.run(path, &["config", "user.email", "test@example.invalid"]).unwrap();
-    git.run(path, &["config", "commit.gpgSign", "false"]).unwrap();
+    git.run(path, &["config", "user.email", "test@example.invalid"])
+        .unwrap();
+    git.run(path, &["config", "commit.gpgSign", "false"])
+        .unwrap();
     git
 }
 
@@ -41,7 +44,10 @@ fn discovery_stops_at_project_boundaries_and_skips_dependencies() {
         fs::create_dir_all(&folder).unwrap();
         fs::write(folder.join("package.json"), "{}").unwrap();
     }
-    assert_eq!(discover(fixture.path()), vec![fixture.path().join("group/app")]);
+    assert_eq!(
+        discover(fixture.path()),
+        vec![fixture.path().join("group/app")]
+    );
 }
 
 #[test]
@@ -75,23 +81,54 @@ fn git_panel_handles_unborn_repositories_spaced_paths_stage_commit_and_diffs() {
     assert!(change(&git.snapshot(root).unwrap(), name).untracked);
 
     // Unstaging before the first commit must not need a HEAD.
-    git.mutate(root, &Action::Stage { path: name.into(), original: None }).unwrap();
-    git.mutate(root, &Action::Unstage { path: name.into(), original: None }).unwrap();
+    git.mutate(
+        root,
+        &Action::Stage {
+            path: name.into(),
+            original: None,
+        },
+    )
+    .unwrap();
+    git.mutate(
+        root,
+        &Action::Unstage {
+            path: name.into(),
+            original: None,
+        },
+    )
+    .unwrap();
     assert!(change(&git.snapshot(root).unwrap(), name).untracked);
 
     git.mutate(root, &Action::StageAll).unwrap();
-    git.mutate(root, &Action::Commit { message: "Initial commit".into(), amend: false }).unwrap();
+    git.mutate(
+        root,
+        &Action::Commit {
+            message: "Initial commit".into(),
+            amend: false,
+        },
+    )
+    .unwrap();
 
     fs::write(root.join(name), "two\n").unwrap();
-    let diff = git.read(root, &ReadRequest::Unstaged { path: name.into() }).unwrap();
+    let diff = git
+        .read(root, &ReadRequest::Unstaged { path: name.into() })
+        .unwrap();
     assert!(diff.contains("+two"), "{diff}");
 
-    git.mutate(root, &Action::Discard { path: name.into() }).unwrap();
+    git.mutate(root, &Action::Discard { path: name.into() })
+        .unwrap();
     assert_eq!(fs::read_to_string(root.join(name)).unwrap(), "one\n");
     assert_eq!(git.snapshot(root).unwrap().log.len(), 1);
 
     // A reset target is an object name, never a flag.
-    assert!(git.mutate(root, &Action::ResetMixed { commit: "--hard".into() }).is_err());
+    assert!(git
+        .mutate(
+            root,
+            &Action::ResetMixed {
+                commit: "--hard".into()
+            }
+        )
+        .is_err());
 }
 
 #[test]
@@ -113,23 +150,45 @@ fn discard_hunk_rejects_stale_diffs_and_preserves_other_hunks() {
     let before: String = (0..30).map(|index| format!("line {index}\n")).collect();
     fs::write(root.join("text"), &before).unwrap();
     git.mutate(root, &Action::StageAll).unwrap();
-    git.mutate(root, &Action::Commit { message: "Initial".into(), amend: false }).unwrap();
+    git.mutate(
+        root,
+        &Action::Commit {
+            message: "Initial".into(),
+            amend: false,
+        },
+    )
+    .unwrap();
 
     let edited = before
         .replace("line 1\n", "first edit\n")
         .replace("line 25\n", "second edit\n");
     fs::write(root.join("text"), &edited).unwrap();
 
-    let diff = git.read(root, &ReadRequest::Unstaged { path: "text".into() }).unwrap();
+    let diff = git
+        .read(
+            root,
+            &ReadRequest::Unstaged {
+                path: "text".into(),
+            },
+        )
+        .unwrap();
     let stale = git.mutate(
         root,
-        &Action::DiscardHunk { path: "text".into(), hunk: 0, hash: "stale".into() },
+        &Action::DiscardHunk {
+            path: "text".into(),
+            hunk: 0,
+            hash: "stale".into(),
+        },
     );
     assert!(stale.unwrap_err().to_string().contains("changed"));
 
     git.mutate(
         root,
-        &Action::DiscardHunk { path: "text".into(), hunk: 0, hash: digest(&diff) },
+        &Action::DiscardHunk {
+            path: "text".into(),
+            hunk: 0,
+            hash: digest(&diff),
+        },
     )
     .unwrap();
     assert_eq!(
@@ -147,11 +206,21 @@ fn staging_a_path_treats_git_wildcard_characters_literally() {
     fs::write(root.join("[ab].txt"), "literal").unwrap();
     fs::write(root.join("a.txt"), "other").unwrap();
 
-    git.mutate(root, &Action::Stage { path: "[ab].txt".into(), original: None }).unwrap();
+    git.mutate(
+        root,
+        &Action::Stage {
+            path: "[ab].txt".into(),
+            original: None,
+        },
+    )
+    .unwrap();
 
     let snapshot = git.snapshot(root).unwrap();
     assert_eq!(change(&snapshot, "[ab].txt").index, 'A');
-    assert!(change(&snapshot, "a.txt").untracked, "the glob matched nothing else");
+    assert!(
+        change(&snapshot, "a.txt").untracked,
+        "the glob matched nothing else"
+    );
 }
 
 #[test]
@@ -195,20 +264,44 @@ fn discard_and_hunk_discard_respect_git_crlf_checkout_settings() {
     let before: String = (0..30).map(|index| format!("line {index}\r\n")).collect();
     fs::write(root.join("text.txt"), &before).unwrap();
     git.mutate(root, &Action::StageAll).unwrap();
-    git.mutate(root, &Action::Commit { message: "CRLF fixture".into(), amend: false }).unwrap();
+    git.mutate(
+        root,
+        &Action::Commit {
+            message: "CRLF fixture".into(),
+            amend: false,
+        },
+    )
+    .unwrap();
 
     fs::write(root.join("text.txt"), "changed\r\n").unwrap();
-    git.mutate(root, &Action::Discard { path: "text.txt".into() }).unwrap();
+    git.mutate(
+        root,
+        &Action::Discard {
+            path: "text.txt".into(),
+        },
+    )
+    .unwrap();
     assert_eq!(fs::read_to_string(root.join("text.txt")).unwrap(), before);
 
     let edited = before
         .replace("line 1\r\n", "first edit\r\n")
         .replace("line 25\r\n", "second edit\r\n");
     fs::write(root.join("text.txt"), &edited).unwrap();
-    let diff = git.read(root, &ReadRequest::Unstaged { path: "text.txt".into() }).unwrap();
+    let diff = git
+        .read(
+            root,
+            &ReadRequest::Unstaged {
+                path: "text.txt".into(),
+            },
+        )
+        .unwrap();
     git.mutate(
         root,
-        &Action::DiscardHunk { path: "text.txt".into(), hunk: 0, hash: digest(&diff) },
+        &Action::DiscardHunk {
+            path: "text.txt".into(),
+            hunk: 0,
+            hash: digest(&diff),
+        },
     )
     .unwrap();
     assert_eq!(

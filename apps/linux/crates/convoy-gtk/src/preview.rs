@@ -5,8 +5,8 @@
 //! numbers the web renderer had to fake; Markdown is rendered as formatted
 //! text; an image is drawn by GTK from its bytes, with no base64 round trip.
 
-use convoy_core::git::diff::SplitRow;
 use adw::prelude::*;
+use convoy_core::git::diff::SplitRow;
 use sourceview::prelude::*;
 
 pub struct Preview {
@@ -178,12 +178,13 @@ fn apply(view: &sourceview::View, text: &str, language: Option<&str>) {
     let language = language.and_then(|name| sourceview::LanguageManager::default().language(name));
     buffer.set_language(language.as_ref());
     buffer.set_highlight_syntax(true);
-    let scheme = sourceview::StyleSchemeManager::default()
-        .scheme(if adw::StyleManager::default().is_dark() {
+    let scheme = sourceview::StyleSchemeManager::default().scheme(
+        if adw::StyleManager::default().is_dark() {
             "Adwaita-dark"
         } else {
             "Adwaita"
-        });
+        },
+    );
     buffer.set_style_scheme(scheme.as_ref());
 }
 

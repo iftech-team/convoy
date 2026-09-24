@@ -125,12 +125,7 @@ pub fn start(app: &Rc<App>, id: &str) {
         return;
     }
 
-    let plan = match plan_launch(
-        &app.workspace.borrow(),
-        &app.storage,
-        id,
-        &app.executable,
-    ) {
+    let plan = match plan_launch(&app.workspace.borrow(), &app.storage, id, &app.executable) {
         Ok(plan) => plan,
         Err(error) => {
             app.error(error);

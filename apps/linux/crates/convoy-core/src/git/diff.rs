@@ -29,7 +29,10 @@ pub fn hunks(text: &str) -> Hunks {
     }
     if !current.is_empty() {
         let joined = current.join("\n");
-        patches.push(format!("{}\n", joined.strip_suffix('\n').unwrap_or(&joined)));
+        patches.push(format!(
+            "{}\n",
+            joined.strip_suffix('\n').unwrap_or(&joined)
+        ));
     }
     Hunks { header, patches }
 }
@@ -52,12 +55,18 @@ mod tests {
         assert_eq!(parsed.patches.len(), 2);
         assert!(parsed.patches[0].starts_with("@@ -1,3 +1,3 @@\n"));
         assert!(parsed.patches[1].ends_with(" z\n"));
-        assert_eq!(parsed.header + &parsed.patches[0] + &parsed.patches[1], text);
+        assert_eq!(
+            parsed.header + &parsed.patches[0] + &parsed.patches[1],
+            text
+        );
     }
 
     #[test]
     fn returns_nothing_for_a_diff_without_hunks() {
-        assert_eq!(hunks("diff --git a/f b/f\nBinary files differ\n"), Hunks::default());
+        assert_eq!(
+            hunks("diff --git a/f b/f\nBinary files differ\n"),
+            Hunks::default()
+        );
     }
 }
 
@@ -182,7 +191,10 @@ mod split_tests {
         assert!(split("").is_empty());
         assert!(split("diff --git a/f b/f\nBinary files differ\n").is_empty());
         assert_eq!(
-            split(DIFF).iter().filter(|row| row.separator.is_some()).count(),
+            split(DIFF)
+                .iter()
+                .filter(|row| row.separator.is_some())
+                .count(),
             1
         );
     }

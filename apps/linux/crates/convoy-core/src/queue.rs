@@ -130,9 +130,7 @@ pub fn on_clean_exit(workspace: &Workspace, session_id: &str, output: &str) -> R
     }
     let brief = review::brief(workspace, session_id, output)?;
     Ok(Completion::Review(Box::new(review::handoff(
-        workspace,
-        session_id,
-        brief,
+        workspace, session_id, brief,
     )?)))
 }
 

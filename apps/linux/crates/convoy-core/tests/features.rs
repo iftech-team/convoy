@@ -86,12 +86,24 @@ fn review_handoff_preserves_folder_branch_source_link_and_uses_a_new_provider_id
     let stored = Workspace::load(&fixture.file).unwrap();
     let review = stored.state().sessions[1].clone();
     assert_eq!(review.review_of.as_deref(), Some(builder.as_str()));
-    assert_eq!(review.working_directory.as_deref(), Some(checkout.as_path()));
+    assert_eq!(
+        review.working_directory.as_deref(),
+        Some(checkout.as_path())
+    );
     assert_eq!(review.branch.as_deref(), Some("task/fix"));
-    assert_eq!(review.owns_worktree, None, "a review never owns the worktree");
-    assert_eq!(review.provider_id, "", "Codex gets its identity from the CLI");
+    assert_eq!(
+        review.owns_worktree, None,
+        "a review never owns the worktree"
+    );
+    assert_eq!(
+        review.provider_id, "",
+        "Codex gets its identity from the CLI"
+    );
     assert!(review.prompt.contains("Do not edit files"));
-    assert!(!review.prompt.contains('\x1b'), "escape sequences are stripped");
+    assert!(
+        !review.prompt.contains('\x1b'),
+        "escape sequences are stripped"
+    );
 }
 
 #[test]
@@ -103,7 +115,9 @@ fn running_sessions_cannot_be_archived_or_rebound_but_notes_and_pinning_can_chan
         archived: Some(true),
         ..SessionPatch::default()
     };
-    let error = workspace.edit_session(&builder, archived, true).unwrap_err();
+    let error = workspace
+        .edit_session(&builder, archived, true)
+        .unwrap_err();
     assert!(error.to_string().contains("Stop"), "{error}");
 
     let rebound = SessionPatch {
@@ -142,7 +156,10 @@ fn running_sessions_cannot_be_archived_or_rebound_but_notes_and_pinning_can_chan
             )
             .unwrap();
     }
-    assert_eq!(workspace.session(&builder).unwrap().provider_id, provider_id);
+    assert_eq!(
+        workspace.session(&builder).unwrap().provider_id,
+        provider_id
+    );
 }
 
 #[test]
@@ -170,7 +187,10 @@ fn settings_and_scoped_commands_persist_and_invalid_changes_are_atomic() {
 
     let saved = Workspace::load(&fixture.file).unwrap();
     assert_eq!(saved.settings().font_size, 18);
-    assert_eq!(saved.state().quick_commands[0].project_id.as_deref(), Some(project.as_str()));
+    assert_eq!(
+        saved.state().quick_commands[0].project_id.as_deref(),
+        Some(project.as_str())
+    );
 
     assert!(workspace
         .save_settings(SettingsPatch {
@@ -205,7 +225,10 @@ fn snapshots_remain_bounded_plain_text_and_ids_cannot_escape_the_history_directo
 
     let stored = history.read(id).unwrap();
     assert_eq!(stored.chars().count(), 48_000);
-    assert!(stored.ends_with("red"), "colour codes are removed, the text stays");
+    assert!(
+        stored.ends_with("red"),
+        "colour codes are removed, the text stays"
+    );
     assert!(
         !fixture.path().join("outside").exists(),
         "the id is hashed, so it cannot address a path"
@@ -215,7 +238,10 @@ fn snapshots_remain_bounded_plain_text_and_ids_cannot_escape_the_history_directo
 #[test]
 fn feedback_paste_strips_control_sequences_and_does_not_press_enter() {
     let text = "hello\x1b[201~\r\x03\x00\nworld";
-    assert_eq!(paste(text, false).unwrap(), "\x1b[200~hello\nworld\x1b[201~");
+    assert_eq!(
+        paste(text, false).unwrap(),
+        "\x1b[200~hello\nworld\x1b[201~"
+    );
     assert_eq!(paste("test", true).unwrap(), "\x1b[200~test\x1b[201~\r");
 }
 
@@ -229,10 +255,16 @@ fn real_worktrees_isolate_changes_reject_invalid_branches_and_refuse_dirty_remov
     git.run(
         &repo,
         &[
-            "-c", "user.name=Convoy Test",
-            "-c", "user.email=test@example.invalid",
-            "-c", "commit.gpgSign=false",
-            "commit", "--allow-empty", "-m", "initial",
+            "-c",
+            "user.name=Convoy Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "-c",
+            "commit.gpgSign=false",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "initial",
         ],
     )
     .unwrap();
@@ -249,7 +281,9 @@ fn real_worktrees_isolate_changes_reject_invalid_branches_and_refuse_dirty_remov
     let checkout = git.create_worktree(&repo, &root, "convoy/test").unwrap();
     assert_eq!(git.status(&checkout).unwrap().branch, "convoy/test");
     assert_eq!(
-        git.run(&repo, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap().trim(),
+        git.run(&repo, &["rev-parse", "--abbrev-ref", "HEAD"])
+            .unwrap()
+            .trim(),
         original,
         "the original checkout stays on its branch"
     );
@@ -267,7 +301,9 @@ fn real_worktrees_isolate_changes_reject_invalid_branches_and_refuse_dirty_remov
     git.run(&repo, &["worktree", "remove", &path]).unwrap();
     assert!(!Path::new(&path).exists());
     assert!(
-        git.run(&repo, &["branch", "--list", "convoy/test"]).unwrap().contains("convoy/test"),
+        git.run(&repo, &["branch", "--list", "convoy/test"])
+            .unwrap()
+            .contains("convoy/test"),
         "the branch is retained after the worktree is removed"
     );
 }
@@ -282,10 +318,16 @@ fn worktrees_belong_to_fresh_sessions_and_only_this_app_may_remove_them() {
     git.run(
         &repo,
         &[
-            "-c", "user.name=Convoy Test",
-            "-c", "user.email=test@example.invalid",
-            "-c", "commit.gpgSign=false",
-            "commit", "--allow-empty", "-m", "initial",
+            "-c",
+            "user.name=Convoy Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "-c",
+            "commit.gpgSign=false",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "initial",
         ],
     )
     .unwrap();
@@ -306,25 +348,33 @@ fn worktrees_belong_to_fresh_sessions_and_only_this_app_may_remove_them() {
     review.review_of = Some(builder.clone());
     workspace.add_session(review).unwrap();
     let review_id = workspace.state().sessions[1].id.clone();
-    let error = convoy_core::worktree::plan_create(&workspace, &review_id, "convoy/x", &idle)
-        .unwrap_err();
+    let error =
+        convoy_core::worktree::plan_create(&workspace, &review_id, "convoy/x", &idle).unwrap_err();
     assert!(error.to_string().contains("new, stopped coding session"));
 
     // Nor does a session that is already running.
     let busy = |id: &str| id == builder;
     assert!(convoy_core::worktree::plan_create(&workspace, &builder, "convoy/x", &busy).is_err());
 
-    let plan = convoy_core::worktree::plan_create(&workspace, &builder, "convoy/work", &idle).unwrap();
+    let plan =
+        convoy_core::worktree::plan_create(&workspace, &builder, "convoy/work", &idle).unwrap();
     let directory = git
         .create_worktree(&plan.project_path, &root, &plan.branch)
         .unwrap();
-    convoy_core::worktree::record_create(&mut workspace, &builder, &directory, &plan.branch).unwrap();
+    convoy_core::worktree::record_create(&mut workspace, &builder, &directory, &plan.branch)
+        .unwrap();
 
     let stored = workspace.session(&builder).unwrap().clone();
-    assert_eq!(stored.working_directory.as_deref(), Some(directory.as_path()));
+    assert_eq!(
+        stored.working_directory.as_deref(),
+        Some(directory.as_path())
+    );
     assert_eq!(stored.branch.as_deref(), Some("convoy/work"));
     assert!(stored.owns_worktree());
-    assert_eq!(workspace.state().activity[0].detail, "Created worktree on convoy/work");
+    assert_eq!(
+        workspace.state().activity[0].detail,
+        "Created worktree on convoy/work"
+    );
 
     // A folder the app did not create is refused, however it is pointed at.
     let outside = fixture.path().join("elsewhere");
@@ -341,7 +391,10 @@ fn worktrees_belong_to_fresh_sessions_and_only_this_app_may_remove_them() {
         })
         .unwrap();
     let error = convoy_core::worktree::plan_remove(&workspace, &builder, &root, &idle).unwrap_err();
-    assert_eq!(error.to_string(), "Only worktrees created by this app can be removed.");
+    assert_eq!(
+        error.to_string(),
+        "Only worktrees created by this app can be removed."
+    );
 
     workspace
         .update({
@@ -388,14 +441,19 @@ fn a_review_swaps_the_agent_keeps_the_folder_and_points_back_at_its_builder() {
         )
         .unwrap();
 
-    let brief = convoy_core::review::brief(&workspace, &builder, "\x1b[32mbuilt it\x1b[0m").unwrap();
+    let brief =
+        convoy_core::review::brief(&workspace, &builder, "\x1b[32mbuilt it\x1b[0m").unwrap();
     assert!(brief.starts_with("House rules: check the migration path."));
     assert!(brief.contains("Do not edit files"));
     assert!(brief.contains("built it"));
     assert!(!brief.contains('\x1b'));
 
     let handoff = convoy_core::review::handoff(&workspace, &builder, brief).unwrap();
-    assert_eq!(handoff.agent, Agent::Codex, "a review uses the other provider");
+    assert_eq!(
+        handoff.agent,
+        Agent::Codex,
+        "a review uses the other provider"
+    );
     assert!(handoff.title.starts_with("Review: "));
     workspace.add_session(handoff).unwrap();
 
@@ -408,7 +466,10 @@ fn a_review_swaps_the_agent_keeps_the_folder_and_points_back_at_its_builder() {
 
     // Feedback only flows from a review; a plain session has nowhere to send it.
     let error = convoy_core::review::builder_of(&workspace, &builder).unwrap_err();
-    assert_eq!(error.to_string(), "This session is not linked to a builder.");
+    assert_eq!(
+        error.to_string(),
+        "This session is not linked to a builder."
+    );
 
     let _ = fixture;
 }

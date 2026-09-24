@@ -6,8 +6,8 @@
 //! prefix the Electron sidebar used.
 
 use adw::prelude::*;
-use gtk::gdk;
 use convoy_core::{Storage, Workspace};
+use gtk::gdk;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -296,11 +296,7 @@ fn attach_context_menu(list: &gtk::ListView, selection: &gtk::SingleSelection) {
 
 /// Which row is under the pointer. `ListView` does not expose a hit test, so
 /// the row is found by walking the children it has realised.
-fn row_at(
-    list: &gtk::ListView,
-    selection: &gtk::SingleSelection,
-    y: f64,
-) -> Option<SidebarItem> {
+fn row_at(list: &gtk::ListView, selection: &gtk::SingleSelection, y: f64) -> Option<SidebarItem> {
     let mut child = list.first_child();
     let mut index = 0u32;
     while let Some(widget) = child {
@@ -620,7 +616,11 @@ pub fn create_worktree(app: &Rc<App>, id: &str, branch: &str) {
         let workspace = app.workspace.borrow();
         let busy = |id: &str| {
             app.busy.borrow().contains(id)
-                || app.views.borrow().get(id).is_some_and(|view| view.running())
+                || app
+                    .views
+                    .borrow()
+                    .get(id)
+                    .is_some_and(|view| view.running())
         };
         convoy_core::worktree::plan_create(&workspace, id, branch, &busy)
     };
@@ -701,8 +701,12 @@ fn confirm_setup(
             if response != "run" {
                 return;
             }
-            let (repo, shared, command, target) =
-                (repo.clone(), shared.clone(), command.clone(), target.clone());
+            let (repo, shared, command, target) = (
+                repo.clone(),
+                shared.clone(),
+                command.clone(),
+                target.clone(),
+            );
             background(
                 &app,
                 move || {
@@ -715,8 +719,11 @@ fn confirm_setup(
                     )
                 },
                 |app, ()| {
-                    app.toasts
-                        .add_toast(adw::Toast::builder().title("Worktree setup finished").build());
+                    app.toasts.add_toast(
+                        adw::Toast::builder()
+                            .title("Worktree setup finished")
+                            .build(),
+                    );
                 },
             );
         }
@@ -733,17 +740,13 @@ pub fn remove_worktree(app: &Rc<App>, plan: convoy_core::worktree::RemovePlan) {
     let directory = plan.directory.clone();
     background(
         app,
-        move || {
-            convoy_core::worktree::remove_checkout(&convoy_core::Git::default(), &plan)
-        },
+        move || convoy_core::worktree::remove_checkout(&convoy_core::Git::default(), &plan),
         move |app, ()| {
             for id in &linked {
                 app.busy.borrow_mut().remove(id);
             }
-            let outcome = convoy_core::worktree::record_remove(
-                &mut app.workspace.borrow_mut(),
-                &directory,
-            );
+            let outcome =
+                convoy_core::worktree::record_remove(&mut app.workspace.borrow_mut(), &directory);
             if let Err(error) = outcome {
                 app.error(error);
             }
@@ -777,7 +780,10 @@ pub fn open_split(app: &Rc<App>, id: &str) {
         .child(&view.terminal)
         .hscrollbar_policy(gtk::PolicyType::Never)
         .build();
-    let label = gtk::Label::builder().label(&session.title).xalign(0.0).build();
+    let label = gtk::Label::builder()
+        .label(&session.title)
+        .xalign(0.0)
+        .build();
     label.add_css_class("caption-heading");
     let bar = gtk::ActionBar::new();
     bar.pack_start(&label);
@@ -804,7 +810,6 @@ pub fn close_split(app: &Rc<App>) {
     rebuild_tabs(app);
     app.refresh_selection();
 }
-
 
 /// Moves to the next or previous session tab, wrapping round.
 pub fn step_session(app: &Rc<App>, delta: i32) {

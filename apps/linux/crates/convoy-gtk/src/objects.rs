@@ -197,10 +197,7 @@ impl ChangeObject {
             .property("untracked", change.untracked)
             // A staged change has something other than a space in the index
             // column, and `?` means it is not tracked at all.
-            .property(
-                "staged",
-                change.index != ' ' && change.index != '?',
-            )
+            .property("staged", change.index != ' ' && change.index != '?')
             .property("conflict", change.conflict)
             .build()
     }

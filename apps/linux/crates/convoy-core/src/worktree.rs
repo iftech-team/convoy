@@ -68,12 +68,9 @@ pub fn setup(
     }
 
     if let Some(command) = command.filter(|value| !value.trim().is_empty()) {
-        let spec = ProcessSpec::new(
-            "/bin/bash",
-            vec!["-lc".into(), command.to_string()],
-        )
-        .cwd(&target)
-        .timeout(Duration::from_secs(120));
+        let spec = ProcessSpec::new("/bin/bash", vec!["-lc".into(), command.to_string()])
+            .cwd(&target)
+            .timeout(Duration::from_secs(120));
         let output = runner.run(&spec).map_err(|error| {
             if error.to_string() == "Command timed out." {
                 crate::ConvoyError::message(
@@ -186,7 +183,9 @@ pub fn plan_create(
             .map(|line| line.trim().to_string())
             .filter(|line| !line.is_empty())
             .collect(),
-        setup_command: project.setup_command.filter(|value| !value.trim().is_empty()),
+        setup_command: project
+            .setup_command
+            .filter(|value| !value.trim().is_empty()),
     })
 }
 
@@ -250,10 +249,7 @@ pub fn plan_remove(
         && directory
             .as_ref()
             .is_some_and(|directory| directory.parent() == Some(root));
-    ensure!(
-        owned,
-        "Only worktrees created by this app can be removed."
-    );
+    ensure!(owned, "Only worktrees created by this app can be removed.");
     let directory = directory.expect("checked above");
     let linked: Vec<String> = workspace
         .state()
@@ -297,9 +293,11 @@ pub fn record_remove(workspace: &mut Workspace, directory: &Path) -> Result<()> 
     let directory = directory.to_path_buf();
     workspace
         .update(move |state| {
-            for session in state.sessions.iter_mut().filter(|session| {
-                session.working_directory.as_deref() == Some(directory.as_path())
-            }) {
+            for session in state
+                .sessions
+                .iter_mut()
+                .filter(|session| session.working_directory.as_deref() == Some(directory.as_path()))
+            {
                 session.archived = Some(true);
                 session.worktree_removed = Some(true);
             }

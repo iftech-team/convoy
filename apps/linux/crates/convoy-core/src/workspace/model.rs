@@ -156,11 +156,23 @@ pub struct Project {
     pub color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
-    #[serde(rename = "setupCommand", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "setupCommand",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub setup_command: Option<String>,
-    #[serde(rename = "sharedPaths", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "sharedPaths",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub shared_paths: Option<String>,
-    #[serde(rename = "reviewTemplate", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "reviewTemplate",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub review_template: Option<String>,
     #[serde(flatten)]
     pub unknown: Unknown,
@@ -187,13 +199,25 @@ pub struct Session {
     pub archived: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pinned: Option<bool>,
-    #[serde(rename = "workingDirectory", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "workingDirectory",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub working_directory: Option<PathBuf>,
     #[serde(rename = "agentHome", default, skip_serializing_if = "Option::is_none")]
     pub agent_home: Option<PathBuf>,
-    #[serde(rename = "ownsWorktree", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "ownsWorktree",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub owns_worktree: Option<bool>,
-    #[serde(rename = "worktreeRemoved", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "worktreeRemoved",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub worktree_removed: Option<bool>,
     #[serde(rename = "reviewOf", default, skip_serializing_if = "Option::is_none")]
     pub review_of: Option<String>,
@@ -263,7 +287,11 @@ pub struct Spec {
     pub constraints: String,
     pub plan: String,
     pub revision: u64,
-    #[serde(rename = "approvedRevision", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "approvedRevision",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub approved_revision: Option<u64>,
     #[serde(flatten)]
     pub unknown: Unknown,
@@ -293,7 +321,11 @@ pub struct Task {
     pub spec_id: Option<String>,
     #[serde(rename = "sessionID", default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
-    #[serde(rename = "specRevision", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "specRevision",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub spec_revision: Option<u64>,
     #[serde(rename = "lastError", default, skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,

@@ -101,7 +101,8 @@ pub fn open(app: &Rc<App>) {
         let commands = commands.clone();
         let dialog = dialog.clone();
         move |_, row| {
-            let index: Option<usize> = unsafe { row.data("command-index").map(|value| *value.as_ptr()) };
+            let index: Option<usize> =
+                unsafe { row.data("command-index").map(|value| *value.as_ptr()) };
             let Some(index) = index else { return };
             dialog.close();
             if let Some(command) = commands.get(index) {

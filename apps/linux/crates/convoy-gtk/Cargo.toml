@@ -43,3 +43,29 @@ path = "tests/ui.rs"
 # per process, so this target supplies its own main rather than using the
 # default test harness.
 harness = false
+
+# `cargo deb` builds the Debian package. The runtime libraries are named by
+# their Debian packages; the agent CLIs and Git are run rather than linked, so
+# they are suggestions.
+[package.metadata.deb]
+name = "convoy"
+maintainer = "if(tech) <support@example.invalid>"
+copyright = "if(tech)"
+license-file = ["../../../../LICENSE", "0"]
+extended-description = """\
+Runs Claude Code and Codex sessions in real terminals, keeps each conversation \
+attached to its project, and makes reviewing the result part of the same \
+workflow. Agents run with your own permissions and sign in through their own \
+interfaces."""
+section = "devel"
+priority = "optional"
+depends = "libgtk-4-1 (>= 4.14), libadwaita-1-0 (>= 1.5), libvte-2.91-gtk4-0, libgtksourceview-5-0"
+suggests = "git, gh"
+assets = [
+    ["../../target/release/convoy", "usr/bin/", "755"],
+    ["../../data/com.iftech.convoy.linux.desktop", "usr/share/applications/", "644"],
+    ["../../data/com.iftech.convoy.linux.metainfo.xml", "usr/share/metainfo/", "644"],
+    ["../../data/icons/hicolor/scalable/apps/com.iftech.convoy.linux.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+    ["../../data/icons/hicolor/symbolic/apps/com.iftech.convoy.linux-symbolic.svg", "usr/share/icons/hicolor/symbolic/apps/", "644"],
+    ["../../README.md", "usr/share/doc/convoy/README.md", "644"],
+]
