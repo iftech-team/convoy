@@ -36,6 +36,12 @@ byte-compatible with what the Electron and SwiftUI builds write.
 
 ## The terminal
 
+`convoy-pty` is its own package and knows nothing about windows, workspaces or
+tasks: it runs an agent in a pty, says what comes out, and says how it ended.
+That is the same rule `convoy-core` was written under, one level down, and it
+pays the same way — a test binary that links the web view cannot be loaded on
+Windows at all, so ConPTY could not otherwise be tested where it runs.
+
 `portable-pty` gives a real pty on Unix and ConPTY on Windows, and xterm.js
 draws it — the same pairing VS Code uses, and the same terminal the Electron
 preview already ran Claude Code in. Output is pushed to the web view as events:

@@ -134,9 +134,12 @@ palette.
   `cargo test` clean on Linux, and `fmt` and `clippy` clean on `windows-2022`
   in CI — which is the first time any Windows branch in this tree has been
   compiled rather than read.
-- **Terminal**: the pty path end to end without a window — a command runs,
-  input reaches it, the exit code comes back, and stopping takes the whole
-  process tree. The Windows counterpart runs the same path through ConPTY.
+- **Terminal**: five checks on both platforms, in `convoy-pty` — a command
+  runs, input reaches it, the exit code comes back, writing to a session that
+  is not running says so, stopping reports that it was asked for, hibernating
+  is reported apart from a stop, and on Unix the whole process tree goes. The
+  terminal is a separate package precisely so these run on Windows: a test
+  binary that links the web view dies at load there.
 - **Exit rules**: a task whose session exits cleanly is asserted to be in
   review afterwards, by reading the workspace file back. The assertion was
   checked against a deliberately broken build first, because a test of wiring
