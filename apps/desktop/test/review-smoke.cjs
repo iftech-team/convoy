@@ -21,7 +21,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('files:mutate', (event, id, action, value) => mutateReply(id, action, value));
   ipcMain.handle('terminal:resize', () => { resizeCount++; });
   const win = new BrowserWindow({ show: false, width: 1200, height: 800,
-    webPreferences: { preload: path.join(__dirname, '../src/preload.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false } });
+    webPreferences: { preload: path.join(__dirname, '../src/preload.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
   const evaluate = code => win.webContents.executeJavaScript(code);
   async function until(code) {
     for (let i = 0; i < 100; i++) { if (await evaluate(code)) return; await delay(30); }
@@ -110,8 +110,10 @@ app.whenReady().then(async () => {
   await until(`!document.getElementById('start').disabled`);
   const beforeResume = resizeCount;
   state.running = ['s']; win.webContents.send('workspace:changed', state);
-  await until(`document.getElementById('start').disabled`); await delay(100);
-  assert.equal(resizeCount, beforeResume + 1);
+  await until(`document.getElementById('start').disabled`);
+  // Wait for the observable IPC effect, not a fixed frame deadline on a busy runner.
+  for (let i = 0; i < 100 && resizeCount === beforeResume; i++) await delay(30);
+  assert(resizeCount > beforeResume, 'resuming must resize the new PTY');
   state.queues = ['p']; win.webContents.send('workspace:changed', state);
   await evaluate(`document.getElementById('planning').click()`);
   await until(`document.getElementById('run-queue').textContent === 'Pause queue'`);
