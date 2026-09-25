@@ -66,7 +66,13 @@ impl<R: Runtime> Sink for Window<R> {
         // A clean exit sends the task to review and a failure pauses the
         // queue. Recorded before the event goes out, so a window reacting to
         // the event reads a workspace that already agrees with it.
-        if let Some(workspace) = self.app.try_state::<crate::commands::Workspace>() {
+        // A login terminal is not a session; there is nothing to record.
+        let session = !id.starts_with("login:");
+        if let Some(workspace) = self
+            .app
+            .try_state::<crate::commands::Workspace>()
+            .filter(|_| session)
+        {
             if let Err(error) =
                 workspace.act(|core| convoy_core::session::finish_session(core, id, cause))
             {

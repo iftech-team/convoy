@@ -149,6 +149,30 @@ export function visibleSessions() {
   );
 }
 
+/// The account last used per agent, which new sessions start with, as the
+/// macOS app's "active" account. Per machine; an empty string is the system
+/// login.
+const ACCOUNT_KEY = "convoy.activeAccount";
+
+export function activeAccount(agent) {
+  try {
+    const id = JSON.parse(localStorage.getItem(ACCOUNT_KEY) ?? "{}")?.[agent] ?? "";
+    return (state.profiles ?? []).some((item) => item.id === id && item.agent === agent) ? id : "";
+  } catch {
+    return "";
+  }
+}
+
+export function rememberAccount(agent, id) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ACCOUNT_KEY) ?? "{}") ?? {};
+    saved[agent] = id || "";
+    localStorage.setItem(ACCOUNT_KEY, JSON.stringify(saved));
+  } catch {
+    /* not remembered */
+  }
+}
+
 // -------------------------------------------------------------- loading ---
 
 export async function loadSettings() {

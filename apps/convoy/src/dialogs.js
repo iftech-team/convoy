@@ -35,21 +35,99 @@ const foot = (confirmLabel, action, kind = "primary") => `
 
 // ---------------------------------------------------------------- sessions --
 
-const newSession = (dialog) =>
-  modal({
+/// The account a new session signs in with: the system login or a profile.
+const accountOptions = (agent) => [
+  ["", "System login"],
+  ...(state.profiles ?? []).filter((item) => item.agent === agent).map((item) => [item.id, item.label]),
+];
+
+const select = (id, options, selected) =>
+  `<select id="${id}" class="field__select">${options
+    .map(([value, label]) => `<option value="${escape(value)}"${value === selected ? " selected" : ""}>${escape(label)}</option>`)
+    .join("")}</select>`;
+
+/// As the macOS app's sheet: any project, an optional name, an isolated
+/// worktree from a chosen ref, the agent and its account, and a first
+/// message. Creating it starts it.
+function newSession(dialog) {
+  const target = state.projects.find((item) => item.id === dialog.projectId);
+  const refs = dialog.refs ?? [];
+  const agentName = dialog.agent === "claude" ? "Claude Code" : "Codex";
+  const yolo = dialog.agent === "claude" ? state.settings.yolo_claude : state.settings.yolo_codex;
+  const worktree = dialog.repo
+    ? `<div class="sheet-box">
+        ${setting(
+          "Isolated git worktree",
+          "Own checkout and branch, so parallel sessions never touch each other's files.",
+          toggle("worktree", dialog.worktree, "Isolated git worktree"),
+        )}
+        ${
+          dialog.worktree
+            ? `<div class="field-row">
+                ${field(
+                  "Create from",
+                  `<input id="draft-base" list="draft-refs" value="${escape(dialog.base)}"
+                          placeholder="${escape(dialog.defaultBase || "current branch")}" spellcheck="false" />
+                   <datalist id="draft-refs">${refs
+                     .map((ref) => `<option value="${escape(ref.replace(/^tag:/, ""))}">${ref.startsWith("tag:") ? "tag" : ref.startsWith("origin/") ? "remote" : "branch"}</option>`)
+                     .join("")}</datalist>`,
+                )}
+                ${field("Branch", textInput("draft-branch", dialog.branch, "branch-name"))}
+              </div>`
+            : ""
+        }
+      </div>`
+    : "";
+  const advanced = dialog.advanced
+    ? `<div class="sheet-box">
+        ${field("Note", textInput("draft-notes", dialog.notes, "Where you left off, links, context for later"))}
+        ${
+          dialog.repo && dialog.worktree
+            ? field(
+                "Worktree setup",
+                `${choice("setup", [["run", "Run"], ["skip", "Skip"]], dialog.setup)}
+                 ${
+                   dialog.setupPreview
+                     ? `<pre class="sheet-preview">${escape(dialog.setupPreview)}</pre>`
+                     : '<span class="field__note">None configured. Add it in Project settings or Settings → Git.</span>'
+                 }`,
+              )
+            : ""
+        }
+        ${setting("Keep this dialog open to create more", "", toggle("keepOpen", dialog.keepOpen, "Keep open"))}
+      </div>`
+    : "";
+  return modal({
     title: "New session",
-    hint: `In ${project()?.title ?? ""}`,
+    hint: target?.path ?? "",
     body: `
-      ${field("Name", textInput("draft-title", dialog.title))}
-      ${field("Agent", choice("agent", AGENTS, dialog.agent))}
-      ${field("Model", textInput("draft-model", dialog.model, "Leave empty for the CLI default"))}
       ${field(
-        "First message",
-        textArea("draft-prompt", dialog.prompt, "Optional. Sent once, on the first launch only."),
-        "Resuming never replays it.",
-      )}`,
-    foot: foot("Create", "create-session"),
+        "Project",
+        select("draft-project", state.projects.map((item) => [item.id, item.title]), dialog.projectId),
+      )}
+      ${field("Name (optional)", textInput("draft-title", dialog.title, "Leave empty to name it after the first message"))}
+      ${worktree}
+      ${field("Agent", choice("agent", AGENTS, dialog.agent))}
+      <div class="field-row">
+        ${field("Account", select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
+        ${field("Model", textInput("draft-model", dialog.model, "CLI default"))}
+      </div>
+      ${field(
+        "First message (optional)",
+        textArea("draft-prompt", dialog.prompt, "Sent once, when the agent starts. Resuming never replays it."),
+      )}
+      <button class="sheet-disclosure" data-toggle="advanced" aria-expanded="${!!dialog.advanced}">
+        ${dialog.advanced ? "▾" : "▸"} Advanced
+      </button>
+      ${advanced}`,
+    note: escape(
+      yolo
+        ? "Starts without permission prompts (Yolo is on in Settings → Agents)."
+        : "Uses your installed agent, its login and its approval settings.",
+    ),
+    foot: foot(dialog.busy ? "Starting…" : `Start ${agentName}`, "create-session"),
   });
+}
 
 const editSession = (dialog) =>
   modal({
@@ -510,7 +588,18 @@ const macosImportDone = (dialog) =>
     foot: button({ label: "Done", kind: "primary", data: { dismiss: "1" } }),
   });
 
+/// An account's login, in its own terminal.
+const login = (dialog) =>
+  modal({
+    title: `Log in: ${dialog.label}`,
+    hint: `${dialog.agent === "claude" ? "Claude Code" : "Codex"} runs its own login here. Nothing you type is kept by Convoy.`,
+    wide: true,
+    body: '<div class="login-term" id="login-host"></div>',
+    foot: button({ label: dialog.finished ? "Done" : "Close", kind: dialog.finished ? "primary" : "", data: { dismiss: "1" } }),
+  });
+
 const VIEWS = {
+  login,
   "macos-import": macosImport,
   "macos-import-done": macosImportDone,
   "doc-spec": docSpec,

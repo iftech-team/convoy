@@ -17,6 +17,8 @@ import {
   loadWorkspace,
   anySession,
   saveCollapsed,
+  activeAccount,
+  rememberAccount,
   observe,
   project,
   session,
@@ -319,6 +321,7 @@ function render() {
   if (state.menu === "remote") app.insertAdjacentHTML("beforeend", remoteMenu());
   if (state.menu?.kind) app.insertAdjacentHTML("beforeend", contextMenu(state.menu));
   if (state.dialog) app.insertAdjacentHTML("beforeend", isImportDialog() ? imports.dialog() : dialogView());
+  if (state.dialog?.kind === "login") terminal.mount(state.dialog.id, "#login-host");
 
   // Every click re-renders, and a dialog rebuilt from markup replays its
   // opening animation — the whole modal blinked on each toggle. Only the
@@ -444,6 +447,12 @@ async function refreshGitStatus() {
 // ------------------------------------------------------------- dialogs ----
 
 const closeDialog = () => {
+  if (state.dialog?.kind === "login") {
+    const id = state.dialog.id;
+    call("session_stop", { id });
+    terminal.forget(id);
+    loadProfiles().then(render);
+  }
   // Turning the offer down once is an answer; Settings → Setup still has it.
   if (state.dialog?.kind === "macos-import") {
     try {
@@ -477,6 +486,8 @@ function captureDraft() {
   read("draft-provider", "provider_id");
   read("draft-brief", "brief");
   read("draft-branch", "branch");
+  read("draft-base", "base");
+  read("draft-account", "account");
   read("draft-label", "label");
   read("draft-text", "text");
   read("draft-group", "group");
@@ -565,14 +576,7 @@ const ACTIONS = {
   "reconnect-project": reconnectProject,
 
   // sessions
-  "new-session": () =>
-    openModal({
-      kind: "session",
-      title: project()?.title ?? "Session",
-      agent: project()?.default_agent || state.settings.default_agent,
-      model: "",
-      prompt: "",
-    }),
+  "new-session": () => openNewSession(state.projectId),
   "create-session": createSession,
   "edit-session": openEditSession,
   "save-session": saveSession,
@@ -906,7 +910,7 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
+      "[data-layout],[data-needs-you],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -1051,6 +1055,7 @@ app.addEventListener("click", async (event) => {
   if (data.set) {
     captureDraft();
     state.dialog[fieldFor(data.set)] = data.value;
+    if (state.dialog.kind === "session" && data.set === "agent") state.dialog.account = activeAccount(data.value);
     return render();
   }
   if (data.toggle) {
@@ -1099,6 +1104,12 @@ app.addEventListener("click", async (event) => {
   if (data.export) return exportSpec(data.export);
   if (data.prepare) return prepareTask(data.prepare);
   if (data.status) return setTaskStatus(data.status);
+  if (data.useAccount) {
+    const [agent, id] = data.useAccount.split(":");
+    rememberAccount(agent, id);
+    return render();
+  }
+  if (data.loginAccount) return openLogin(data.loginAccount);
   if (data.removeProfile) {
     if (await done("profile_remove", { id: data.removeProfile })) await loadProfiles();
     return render();
@@ -1144,6 +1155,15 @@ app.addEventListener("input", (event) => {
     state.files.message = field.value;
     return;
   }
+  if (state.dialog?.kind === "session" && (field.id === "draft-title" || field.id === "draft-branch")) {
+    if (field.id === "draft-branch") state.dialog.branchEdited = true;
+    else if (!state.dialog.branchEdited) {
+      state.dialog.branch = suggestBranch(field.value || "session", state.dialog.projectId);
+      const branch = document.querySelector("#draft-branch");
+      if (branch) branch.value = state.dialog.branch;
+    }
+    return;
+  }
   if (field.id === "find-term") {
     state.find.term = field.value;
     findStep({ incremental: true });
@@ -1158,6 +1178,14 @@ app.addEventListener("input", (event) => {
 });
 
 app.addEventListener("change", async (event) => {
+  if (state.dialog?.kind === "session" && event.target.id === "draft-project") {
+    captureDraft();
+    return sessionProject(state.dialog, event.target.value);
+  }
+  if (state.dialog?.kind === "session" && event.target.id === "draft-account") {
+    state.dialog.account = event.target.value;
+    return;
+  }
   const projectKey = event.target.dataset?.projText ?? event.target.dataset?.projSelect;
   if (projectKey) return saveProjectField({ [projectKey]: event.target.value });
   const choiceKey = event.target.dataset?.prefSelect;
@@ -1349,43 +1377,116 @@ async function setProjectImage(source) {
   render();
 }
 
+// ---------------------------------------------------------- new session ---
+
+/// A session's name from its first message, else the agent and the time —
+/// the macOS app's rule.
+function autoTitle(agent, prompt) {
+  const first = (prompt ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean)
+    ?.replace(/^[#*>\-\s]+/, "");
+  if (first) return first.length > 60 ? `${first.slice(0, 57).trim()}…` : first;
+  const when = new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+  return `${agent === "claude" ? "Claude Code" : "Codex"} · ${when}`;
+}
+
+async function openNewSession(projectId) {
+  if (!projectId) return toast("Open a folder first.");
+  await loadProfiles();
+  const draft = {
+    kind: "session",
+    projectId: null,
+    title: "",
+    model: "",
+    prompt: "",
+    notes: "",
+    setup: "run",
+    keepOpen: false,
+    advanced: false,
+  };
+  openModal(draft);
+  await sessionProject(draft, projectId);
+}
+
+/// Points the sheet at a project: its default agent, its refs, and whether
+/// it is a repository at all.
+async function sessionProject(draft, projectId) {
+  const target = state.projects.find((item) => item.id === projectId);
+  draft.projectId = projectId;
+  draft.agent = target?.default_agent || state.settings.default_agent;
+  draft.account = activeAccount(draft.agent);
+  draft.worktree = !!state.settings.worktree_by_default;
+  draft.branchEdited = false;
+  draft.branch = suggestBranch(draft.title || "session", projectId);
+  draft.refs = [];
+  draft.repo = false;
+  draft.base = "";
+  render();
+  const [refs, detail] = await Promise.all([
+    call("git_refs", { projectId }),
+    call("project_detail", { id: projectId }),
+  ]);
+  if (state.dialog !== draft || draft.projectId !== projectId) return;
+  draft.refs = refs ?? [];
+  draft.repo = draft.refs.length > 0;
+  draft.defaultBase = detail?.base_ref || draft.refs.find((ref) => !ref.startsWith("origin/") && !ref.startsWith("tag:")) || "";
+  draft.setupPreview = [state.settings.worktree_setup, detail?.setup_command]
+    .filter((part) => part && part.trim())
+    .join("\n");
+  render();
+}
+
 async function createSession() {
   captureDraft();
   const draft = state.dialog;
+  if (draft.busy) return;
+  const title = draft.title.trim() || autoTitle(draft.agent, draft.prompt);
+  const target = draft.projectId;
+  draft.busy = true;
+  render();
   const id = await call("session_create", {
-    projectId: state.projectId,
+    projectId: target,
     agent: draft.agent,
-    title: draft.title,
+    title,
     prompt: draft.prompt,
     model: draft.model,
+    profileId: draft.account || null,
+    notes: draft.notes,
   });
-  if (!id) return;
-  closeDialog();
-  await loadWorkspace();
-  // Selected but not started: launching an agent is always an explicit act,
-  // and a first message is acted on the moment it runs.
-  openSession(id);
-  if (state.settings.worktree_by_default) await worktreeByDefault(id, draft.title);
-}
-
-/// "Run new sessions in a git worktree by default". A folder that is not a
-/// repository simply keeps the session in the project folder.
-async function worktreeByDefault(id, title) {
-  const made = await attempt("worktree_create", { id, branch: suggestBranch(title || "session") });
-  if (!made.ok) return toast(`Started in the project folder: ${made.error}`);
-  await loadSessions();
-  const plan = made.value;
-  if (plan.shared_paths.length || plan.setup_command) {
-    openModal({
-      kind: "worktree-setup",
-      id,
-      shared: plan.shared_paths,
-      command: plan.setup_command ?? "",
-      directory: plan.directory,
-    });
+  draft.busy = false;
+  if (!id) return render();
+  rememberAccount(draft.agent, draft.account);
+  const wantsWorktree = draft.repo && draft.worktree;
+  const branch = (draft.branch ?? "").trim() || suggestBranch(title, target);
+  const base = (draft.base ?? "").trim();
+  const setup = draft.setup;
+  if (draft.keepOpen) {
+    Object.assign(draft, { title: "", prompt: "", notes: "", branchEdited: false, branch: suggestBranch("session", target) });
+    toast(`Started ${title}`);
   } else {
-    toast(`Worktree created on ${plan.branch}`);
+    closeDialog();
   }
+  await loadWorkspace();
+  if (target !== state.projectId) await selectProject(target);
+  if (!draft.keepOpen) openSession(id);
+
+  if (wantsWorktree) {
+    const made = await attempt("worktree_create", { id, branch, base: base || null });
+    if (!made.ok) {
+      toast(`Started in the project folder: ${made.error}`);
+    } else {
+      await loadSessions();
+      const plan = made.value;
+      if (setup !== "skip" && (plan.shared_paths.length || plan.setup_command)) {
+        toast("Running worktree setup…");
+        if (!(await done("worktree_setup", { id }))) return;
+      }
+    }
+  }
+  // Creating is starting, as on macOS; the first message goes with it.
+  await terminal.start(id, { background: draft.keepOpen });
 }
 
 async function openEditSession() {
@@ -1458,8 +1559,8 @@ async function openUsage() {
 
 /// A branch name from a title, under the project's branch prefix, else the
 /// one set in Settings.
-const suggestBranch = (title) =>
-  `${project()?.branch_prefix || state.settings.branch_prefix || "convoy"}/${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "work"}`;
+const suggestBranch = (title, projectId = state.projectId) =>
+  `${state.projects.find((item) => item.id === projectId)?.branch_prefix || state.settings.branch_prefix || "convoy"}/${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "work"}`;
 
 async function confirmWorktree() {
   captureDraft();
@@ -1584,10 +1685,27 @@ async function savePref(patch) {
 async function addPageProfile() {
   const label = value("pref-profile-label").trim();
   if (!label) return toast("Give the account a label.");
+  const before = new Set((state.profiles ?? []).map((item) => item.id));
   if (!(await done("profile_add", { label, agent: state.profileAgent }))) return;
   await loadProfiles();
   render();
-  toast(`Added ${label}`);
+  // As on macOS: a new account opens its login straight away.
+  const added = state.profiles.find((item) => !before.has(item.id));
+  if (added) await openLogin(added.id);
+}
+
+/// The provider's own login for an account, in a terminal of its own. It is
+/// not a session: closing the dialog ends it, and nothing is saved.
+async function openLogin(profileId) {
+  const profile = (state.profiles ?? []).find((item) => item.id === profileId);
+  if (!profile) return;
+  const id = `login:${profileId}`;
+  openModal({ kind: "login", id, label: profile.label, agent: profile.agent, finished: false });
+  terminal.mount(id, "#login-host");
+  const { terminal: xterm } = terminal.terminalFor(id);
+  const started = await call("account_login", { profileId, cols: xterm.cols || 100, rows: xterm.rows || 28 });
+  if (started === undefined && state.dialog?.id === id) closeDialog();
+  xterm.focus();
 }
 
 /// Right-click and "…" menus in the sidebar.
@@ -1680,8 +1798,7 @@ async function loadProfiles() {
 }
 
 async function openAccounts() {
-  await loadProfiles();
-  openModal({ kind: "accounts", label: "", agent: state.settings.default_agent });
+  await openSettings("Accounts");
 }
 
 async function addProfile() {
@@ -2376,6 +2493,13 @@ async function applyKeepAwake() {
 }
 
 terminal.onExit(async (exit) => {
+  if (exit.id.startsWith("login:")) {
+    if (state.dialog?.id === exit.id) {
+      state.dialog.finished = true;
+      render();
+    }
+    return;
+  }
   await applyKeepAwake();
   const projectId =
     state.sessions.find((item) => item.id === exit.id)?.project_id ?? state.projectId;

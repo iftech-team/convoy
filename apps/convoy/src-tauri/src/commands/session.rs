@@ -46,12 +46,15 @@ pub fn session_detail(
 /// Creates a session. Its title, model name and review relationship are all
 /// checked by the core, so the rules are the ones every build enforces.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn session_create(
     project_id: String,
     agent: String,
     title: String,
     prompt: String,
     model: String,
+    profile_id: Option<String>,
+    notes: Option<String>,
     workspace: State<'_, Workspace>,
 ) -> Result<String, String> {
     let agent = Agent::parse(&agent).ok_or("Unknown agent.")?;
@@ -59,12 +62,25 @@ pub fn session_create(
         let mut input = NewSession::new(project_id, agent, title);
         input.prompt = prompt;
         input.model = model;
+        // The account it signs in with; none means the system login.
+        input.profile_id = profile_id.filter(|id| !id.is_empty());
         let state = workspace.add_session(input)?;
-        Ok(state
+        let id = state
             .sessions
             .last()
             .map(|session| session.id.clone())
-            .unwrap_or_default())
+            .unwrap_or_default();
+        if let Some(notes) = notes.filter(|notes| !notes.trim().is_empty()) {
+            workspace.edit_session(
+                &id,
+                SessionPatch {
+                    notes: Some(notes),
+                    ..Default::default()
+                },
+                false,
+            )?;
+        }
+        Ok(id)
     })
 }
 
@@ -330,16 +346,24 @@ pub struct WorktreePlanView {
 pub fn worktree_create(
     id: String,
     branch: String,
+    base: Option<String>,
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
     repositories: State<'_, Repositories>,
 ) -> Result<WorktreePlanView, String> {
     let running: Vec<String> = terminals.ids();
     let root = workspace.storage.worktrees();
-    let plan = workspace.act(|core| {
+    let mut plan = workspace.act(|core| {
         let busy = |id: &str| running.iter().any(|other| other == id);
         convoy_core::worktree::plan_create(core, &id, &branch, &busy)
     })?;
+    // A ref chosen in the New Session sheet wins over the project's default.
+    if let Some(base) = base
+        .map(|base| base.trim().to_string())
+        .filter(|base| !base.is_empty())
+    {
+        plan.base_ref = Some(base);
+    }
 
     let directory = repositories.with(&plan.project_path, || {
         convoy_core::Git::default()
@@ -522,4 +546,132 @@ pub fn quick_command_send(
     }
     let payload = convoy_core::history::paste(&text, submit).map_err(|error| error.to_string())?;
     terminals.write(&session_id, &payload)
+}
+
+/// Branches, then origin's branches, then tags — each newest first — for the
+/// "Create from" picker. A folder that is not a repository has none.
+#[tauri::command]
+pub fn git_refs(
+    project_id: String,
+    workspace: State<'_, Workspace>,
+) -> Result<Vec<String>, String> {
+    let path = workspace.act(|core| Ok(core.project(&project_id)?.path.clone()))?;
+    let git = convoy_core::Git::default();
+    let list = |args: &[&str]| -> Vec<String> {
+        git.run(&path, args)
+            .map(|out| {
+                out.lines()
+                    .map(str::to_string)
+                    .filter(|line| !line.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut refs = list(&[
+        "for-each-ref",
+        "--sort=-committerdate",
+        "--format=%(refname:short)",
+        "refs/heads",
+    ]);
+    refs.extend(
+        list(&[
+            "for-each-ref",
+            "--sort=-committerdate",
+            "--format=%(refname:short)",
+            "refs/remotes/origin",
+        ])
+        .into_iter()
+        .filter(|name| name != "origin/HEAD" && name != "origin"),
+    );
+    refs.extend(
+        list(&[
+            "for-each-ref",
+            "--sort=-creatordate",
+            "--format=%(refname:short)",
+            "refs/tags",
+        ])
+        .into_iter()
+        .map(|name| format!("tag:{name}")),
+    );
+    Ok(refs)
+}
+
+/// The terminal id a profile's login runs under. It is not a session: nothing
+/// is recorded in the workspace, and its exit is not a session's exit.
+pub fn login_terminal(profile_id: &str) -> String {
+    format!("login:{profile_id}")
+}
+
+/// Runs the provider's own login inside a profile's account folder, in a
+/// terminal the page shows — `claude /login` or `codex login`, as the macOS
+/// app does. Returns the terminal's id.
+#[tauri::command]
+pub fn account_login(
+    app: AppHandle,
+    profile_id: String,
+    cols: u16,
+    rows: u16,
+    workspace: State<'_, Workspace>,
+    terminals: State<'_, Arc<Terminals>>,
+) -> Result<String, String> {
+    let storage = workspace.storage.clone();
+    let (agent, account) = workspace.act(|core| {
+        let profile = core
+            .state()
+            .profiles
+            .iter()
+            .find(|profile| profile.id == profile_id)
+            .cloned()
+            .ok_or_else(|| convoy_core::ConvoyError::message("This account no longer exists."))?;
+        let mut probe = convoy_core::model::Session::new(String::new(), profile.agent, "login");
+        probe.profile_id = Some(profile.id.clone());
+        let account = convoy_core::accounts::account_environment(
+            &probe,
+            &core.state().profiles,
+            &storage.accounts(),
+            &convoy_core::provider::launch::current_environment(),
+        )?;
+        std::fs::create_dir_all(&account.home)?;
+        Ok((profile.agent, account))
+    })?;
+
+    let login: &[&str] = match agent {
+        Agent::Claude => &["/login"],
+        Agent::Codex => &["login"],
+    };
+    let (program, args) = if cfg!(windows) {
+        let resolved = convoy_core::provider::launch::windows_executable(agent, &account.env)
+            .map_err(|error| error.to_string())?;
+        let mut args = resolved.prefix;
+        args.extend(login.iter().map(|arg| arg.to_string()));
+        (resolved.file, args)
+    } else {
+        (
+            "/bin/bash".to_string(),
+            vec![
+                "-ilc".to_string(),
+                format!("exec {} {}", agent.as_str(), login.join(" ")),
+            ],
+        )
+    };
+
+    let id = login_terminal(&profile_id);
+    if terminals.running(&id) {
+        return Ok(id);
+    }
+    let env: Vec<(String, String)> = account.env.clone().into_iter().collect();
+    crate::pty::start(
+        &terminals,
+        &app,
+        Launch {
+            id: &id,
+            program: &program,
+            args: &args,
+            cwd: &account.home,
+            env: &env,
+            cols,
+            rows,
+        },
+    )?;
+    Ok(id)
 }

@@ -194,7 +194,12 @@ pub fn workspace_read(
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
 ) -> Result<WorkspaceView, String> {
-    let running = terminals.ids();
+    // Login terminals are not sessions.
+    let running: Vec<String> = terminals
+        .ids()
+        .into_iter()
+        .filter(|id| !id.starts_with("login:"))
+        .collect();
     let storage = workspace.storage.root().to_string_lossy().into_owned();
     workspace.with(|workspace| {
         let state = workspace.state();
@@ -502,9 +507,20 @@ mod migration_tests {
             "Fix login".into(),
             "Handle expired tokens".into(),
             "sonnet".into(),
+            None,
+            Some("Where I left off".into()),
             app.state(),
         )
         .unwrap();
+        let notes = app
+            .state::<Workspace>()
+            .act(|w| Ok(w.session(&builder)?.notes.clone()))
+            .unwrap();
+        assert_eq!(
+            notes.as_deref(),
+            Some("Where I left off"),
+            "the sheet's note is kept"
+        );
         convoy_core::history::History::new(storage.history())
             .save(&builder, "Tests pass")
             .unwrap();

@@ -98,7 +98,10 @@ export function mount(id, slotSelector = "#terminal-host") {
   }
   requestAnimationFrame(() => {
     entry.fit.fit();
-    if (!state.dialog && !state.menu && state.sessionId === id) entry.terminal.focus();
+    // A field outside the terminal keeps its caret — the find bar above all.
+    const active = document.activeElement;
+    const typing = active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) && !active.closest(".xterm");
+    if (!state.dialog && !state.menu && state.sessionId === id && !typing) entry.terminal.focus();
   });
 }
 

@@ -106,6 +106,8 @@ pub fn run() {
             commands::session::review_builder,
             commands::session::git_status,
             commands::session::worktree_create,
+            commands::session::git_refs,
+            commands::session::account_login,
             commands::session::worktree_setup,
             commands::session::worktree_plan_remove,
             commands::session::worktree_remove,

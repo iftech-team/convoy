@@ -27,7 +27,7 @@ try {
       if (cmd === "sessions_for") return sessions.filter((item) => item.project_id === args.projectId);
       if (cmd === "planning_read") return { tasks, specs: [], queued: tasks.length };
       if (cmd === "tasks_for") return tasks;
-      if (["quick_commands_read", "profiles_read"].includes(cmd)) return [];
+      if (["quick_commands_read"].includes(cmd)) return [];
       if (cmd === "activity_read") return window.activity ??= [
         { id: "e2", at: new Date().toISOString(), kind: "waiting", session_id: "builder", title: "Fix login", detail: "Permission to run tests", project_id: "project", project: "Example" },
         { id: "e1", at: new Date(Date.now() - 60000).toISOString(), kind: "started", session_id: "builder", title: "Fix login", detail: "Agent process launched", project_id: "project", project: "Example" },
@@ -80,6 +80,16 @@ try {
       }
       if (cmd === "project_edit") { Object.assign(projects.find((item) => item.id === args.id), args.input); return null; }
       if (cmd === "project_git") return { branch: "main", changed_files: 2 };
+      if (cmd === "git_refs") return args.projectId === "project" ? ["main", "feature/x", "origin/main", "tag:v1.0"] : [];
+      if (cmd === "profiles_read") return [{ id: "work", label: "Work", agent: "codex", sessions: 0 }];
+      if (cmd === "session_create") {
+        sessions.push({ id: "fresh", project_id: args.projectId, title: args.title, agent: args.agent, provider_id: "", started: false, running: false, pinned: false, review_of: null });
+        return "fresh";
+      }
+      if (cmd === "worktree_create") return { branch: args.branch, shared_paths: [], setup_command: null, directory: "/fixture/worktrees/x" };
+      if (cmd === "account_login") return `login:${args.profileId}`;
+      if (cmd === "session_stop") return null;
+      if (cmd === "session_start") { sessions.find((item) => item.id === args.id).running = true; return null; }
       if (["keep_awake", "terminal_resize", "terminal_write", "terminal_paste"].includes(cmd)) return null;
       throw new Error(`Unmocked IPC: ${cmd}`);
     } };
@@ -131,7 +141,8 @@ try {
   await page.locator('.tab-item--selected[data-tab-open="builder"]').waitFor();
   // ⌘F finds in the terminal on screen; Escape closes the bar.
   await page.keyboard.press(`${primary}+f`);
-  await page.locator("#find-term").fill("nothing like this");
+  await page.waitForFunction(() => document.activeElement?.id === "find-term");
+  await page.keyboard.type("nothing like this");
   await page.locator(".find-bar__count", { hasText: "No matches" }).waitFor();
   await page.locator('[data-action="find-case"]').click();
   await page.locator('[data-action="find-case"][aria-pressed="true"]').waitFor();
@@ -219,8 +230,22 @@ try {
   await page.locator(".scrim--settled .modal").waitFor();
   assert.equal(await page.evaluate(() => document.querySelector(".modal").getAnimations().length), 0, "no animation after a toggle");
   assert(await page.locator('.choice [data-value="codex"] .agent-icon').count(), "agent choices carry their marks");
+  // The sheet names the account for the agent, offers a worktree from any
+  // ref, and starting it starts the agent.
+  await page.locator("#draft-account option", { hasText: "Work" }).waitFor({ state: "attached" });
+  await page.locator('.modal [data-toggle="worktree"]').click();
+  await page.locator("#draft-base").fill("origin/main");
+  await page.locator("#draft-title").fill("Fix flaky checkout");
+  assert.equal(await page.locator("#draft-branch").inputValue(), "convoy/fix-flaky-checkout", "the branch follows the name");
+  await page.locator("#draft-account").selectOption("work");
   if (shots) await page.screenshot({ path: `${shots}/new-session.png` });
-  await page.keyboard.press("Escape");
+  await page.locator('[data-action="create-session"]').click();
+  await page.locator('.tab-item--selected[data-tab-open="fresh"]').waitFor();
+  const made = await page.evaluate(() => window.checkCalls.filter((c) => ["session_create", "worktree_create", "session_start"].includes(c.cmd)).map((c) => ({ cmd: c.cmd, ...c.args })));
+  assert.deepEqual(made.map((c) => c.cmd), ["session_create", "worktree_create", "session_start"]);
+  assert.equal(made[0].profileId, "work");
+  assert.equal(made[0].agent, "codex");
+  assert.deepEqual([made[1].branch, made[1].base], ["convoy/fix-flaky-checkout", "origin/main"]);
 
   // Project settings: a page, as on macOS, saving each choice.
   await page.locator('[data-menu-project="project"]').click({ button: "right" });
@@ -300,6 +325,22 @@ try {
   await page.locator('[data-settings-section="Shortcuts"]').click();
   await page.locator(".pref-group__title", { hasText: "Project" }).waitFor();
   assert(await page.locator(".shortcut").count() >= 30, "the macOS set of shortcuts is listed");
+  // Accounts, per agent as on macOS: which one new sessions use, and a login
+  // terminal that ends when the dialog closes.
+  await page.locator('[data-settings-section="Accounts"]').click();
+  // Starting a session with Work made it the active account already.
+  await page.locator(".pref-row", { hasText: "Work" }).locator(".pref-ok").waitFor();
+  await page.locator('[data-use-account="codex:"]').click();
+  await page.locator('[data-use-account="codex:work"]').click();
+  await page.locator(".pref-row", { hasText: "Work" }).locator(".pref-ok").waitFor();
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("convoy.activeAccount")).codex), "work");
+  await page.locator('[data-login-account="work"]').click();
+  await page.locator(".modal", { hasText: "Log in: Work" }).locator("#login-host .xterm").waitFor();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "account_login" && c.args.profileId === "work"));
+  if (shots) await page.screenshot({ path: `${shots}/login.png` });
+  // Escape belongs to the login in the terminal; Close ends it.
+  await page.locator(".modal .button", { hasText: "Close" }).click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "session_stop" && c.args.id === "login:work"));
   await page.locator('[data-settings-section="Notifications"]').click();
   await page.locator('[data-pref-toggle="notifications"]').click();
   await page.waitForFunction(() => window.savedSettings.notifications === true);

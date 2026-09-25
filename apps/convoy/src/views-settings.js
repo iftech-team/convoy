@@ -4,7 +4,7 @@
 
 import { agentIcon, icons } from "./icons.js";
 import { button, escape, plural, shorten } from "./ui.js";
-import { state } from "./state.js";
+import { activeAccount, state } from "./state.js";
 import { SHORTCUTS, SHORTCUT_GROUPS, label } from "./shortcuts.js";
 
 /// The macOS app's sections, in its order.
@@ -330,15 +330,21 @@ function limits(settings) {
 
 function accounts() {
   const profiles = state.profiles ?? [];
-  const rows = profiles.length
-    ? profiles
+  const using = (agent, id) =>
+    activeAccount(agent) === id
+      ? `<span class="pref-ok">${icons.check} Active</span>`
+      : button({ label: "Use", data: { "use-account": `${agent}:${id}` } });
+  const perAgent = AGENTS.map(([agent, name]) => {
+    const own = profiles.filter((profile) => profile.agent === agent);
+    const rows =
+      row("System login", "Your normal login in a terminal. Convoy never changes it.", using(agent, "")) +
+      own
         .map((profile) =>
           row(
             profile.label,
-            `${profile.agent === "claude" ? "Claude Code" : "Codex"} · ${
-              profile.sessions ? plural(profile.sessions, "session") : "not in use"
-            }`,
-            `${agentIcon(profile.agent, 14)}
+            profile.sessions ? plural(profile.sessions, "session") : "Not in use yet",
+            `${using(agent, profile.id)}
+             ${button({ label: "Log in…", data: { "login-account": profile.id } })}
              ${button({
                icon: "trash",
                kind: "quiet",
@@ -348,14 +354,17 @@ function accounts() {
              })}`,
           ),
         )
-        .join("")
-    : empty("No accounts yet. Without one, a session uses the provider's own login.");
-  return `
-    ${groupBox(
-      "Accounts",
+        .join("");
+    return groupBox(
+      name,
       rows,
-      "Each account gets its own provider home, so sign-ins stay separate. Removing one keeps its credential files.",
-    )}
+      agent === "claude"
+        ? "Each account is its own CLAUDE_CONFIG_DIR, so sign-ins stay separate. The active one is what new sessions start with; the New Session sheet can pick another."
+        : "Each account is its own CODEX_HOME. The active one is what new sessions start with.",
+    );
+  }).join("");
+  return `
+    ${perAgent}
     ${groupBox(
       "Add account",
       `<div class="pref-inline">
@@ -365,9 +374,9 @@ function accounts() {
            state.profileAgent,
          )}
          <input id="pref-profile-label" placeholder="Label, e.g. work" spellcheck="false" />
-         ${button({ label: "Add", action: "page-add-profile", kind: "primary" })}
+         ${button({ label: "Add & log in", action: "page-add-profile", kind: "primary" })}
        </div>`,
-      "Sign in afterwards through the provider's own login inside a session's terminal.",
+      "Adding an account opens its login in a terminal.",
     )}`;
 }
 
