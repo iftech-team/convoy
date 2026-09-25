@@ -82,10 +82,46 @@ pub struct Storage {
     root: PathBuf,
 }
 
+/// The data folder's name on macOS, under Application Support, for installs
+/// made from now on.
+pub const MACOS_STORAGE_NAME: &str = "Convoy Desktop";
+
 impl Default for Storage {
     fn default() -> Self {
-        Storage::new(config_root().join(STORAGE_NAME))
+        let xdg = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .filter(|path| rooted(path, Platform::current()));
+        let legacy = config_root().join(STORAGE_NAME);
+        let exists = legacy.join("workspace.json").exists();
+        Storage::new(choose_root(
+            cfg!(target_os = "macos"),
+            xdg.is_some(),
+            &home(Platform::current()),
+            legacy,
+            exists,
+        ))
     }
+}
+
+/// Where the data lives. On macOS a new install uses Application Support, as
+/// a Mac app should; one that already has data under `~/.config` keeps it,
+/// because worktrees and sessions record absolute paths inside it and a move
+/// would break them. An explicit `XDG_CONFIG_HOME` always wins, which is how a
+/// test or a second copy is kept apart. Elsewhere nothing changes.
+pub fn choose_root(
+    macos: bool,
+    xdg: bool,
+    home: &Path,
+    legacy: PathBuf,
+    legacy_exists: bool,
+) -> PathBuf {
+    if macos && !xdg && !legacy_exists {
+        return home
+            .join("Library")
+            .join("Application Support")
+            .join(MACOS_STORAGE_NAME);
+    }
+    legacy
 }
 
 impl Storage {
@@ -139,6 +175,31 @@ mod tests {
         );
         assert!(storage.history().ends_with("TerminalHistory"));
         assert!(storage.accounts().ends_with("accounts"));
+    }
+
+    #[test]
+    fn a_new_mac_install_uses_application_support_and_an_old_one_stays() {
+        let home = Path::new("/Users/example");
+        let legacy = PathBuf::from("/Users/example/.config/Convoy Desktop Preview");
+        assert_eq!(
+            choose_root(true, false, home, legacy.clone(), false),
+            Path::new("/Users/example/Library/Application Support/Convoy Desktop")
+        );
+        assert_eq!(
+            choose_root(true, false, home, legacy.clone(), true),
+            legacy,
+            "existing data stays"
+        );
+        assert_eq!(
+            choose_root(true, true, home, legacy.clone(), false),
+            legacy,
+            "XDG wins"
+        );
+        assert_eq!(
+            choose_root(false, false, home, legacy.clone(), false),
+            legacy,
+            "not a Mac"
+        );
     }
 
     #[test]

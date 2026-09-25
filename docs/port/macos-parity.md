@@ -32,11 +32,11 @@ own settings.
 
 | Item | Status | Note |
 |---|---|---|
-| Storage location on macOS | MISSING | Tauri keeps its data in `~/.config/Convoy Desktop Preview/`. Move it to `~/Library/Application Support/Convoy Tauri/` (or similar), and never write into the Swift folder while both apps exist. |
-| Signed, notarized macOS build in `convoy-release.yml` | MISSING | Today only Windows and Linux are built there. `Convoy.zip` is still the Swift app. |
-| Bundle identity | MISSING | Swift uses `com.iftech.convoy`. Tauri should take it over at the switch so notification permission and the Dock entry carry over. |
-| Update path for existing Swift users | MISSING | The last Swift release should point at the Tauri download, and the Tauri app should run the import on first launch (already built). |
-| Quit keeps agents running when the window closes | PARTIAL | Swift asks only on Quit. Tauri asks to stop everything when the window closes (`lib.rs` `on_window_event`). On macOS, closing the window should not quit. |
+| Storage location on macOS | done | A new install keeps its data in `~/Library/Application Support/Convoy Desktop/`. An install that already has data in `~/.config/Convoy Desktop Preview/` keeps it there, because worktrees and sessions record absolute paths inside it. `XDG_CONFIG_HOME` still wins. Linux and Windows are unchanged. |
+| Signed, notarized macOS build in `convoy-release.yml` | MISSING | Needs an Apple Developer ID certificate and a notarization login as repository secrets. Today `Convoy.zip` is still the Swift app. |
+| Bundle identity | done, with a caveat | `tauri.conf.json` already uses `com.iftech.convoy`, the Swift app's identifier, so notification permission and the Dock entry carry over at the switch. Until then, do not install both apps on one Mac. |
+| Update path for existing Swift users | MISSING | The last Swift release should point at the Tauri download. The Tauri app already offers the import on first launch. |
+| Quit keeps agents running when the window closes | done | On macOS, closing the window hides it and agents keep running; the Dock icon brings it back, and ⌘Q asks before stopping agents. Linux and Windows still ask when the window closes, since closing it quits. |
 
 ## P0 — the daily loop
 

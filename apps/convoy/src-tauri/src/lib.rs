@@ -50,12 +50,18 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
-        // Closing the window ends every agent with it. Nothing is lost that
-        // was not going to be lost anyway, but it should not happen by
-        // accident, so the window asks first.
+        // On macOS, as the Swift app does, closing the window only hides it:
+        // the agents keep working and the Dock icon brings it back. Quitting
+        // is ⌘Q, which asks first (below). Elsewhere closing the window
+        // quits, so it asks first when agents are running.
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let running = window.state::<Arc<pty::Terminals>>().ids().len();
+                if cfg!(target_os = "macos") {
+                    api.prevent_close();
+                    let _ = window.hide();
+                    return;
+                }
+                let running = agents_running(window.app_handle());
                 if running > 0 {
                     api.prevent_close();
                     let _ = window.emit("window:closing", running);
@@ -168,6 +174,42 @@ pub fn run() {
             power::keep_awake,
             quit_now,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Convoy");
+        .build(tauri::generate_context!())
+        .expect("error while building Convoy")
+        .run(|app, event| match event {
+            // ⌘Q, or quitting from the Dock: running agents stop with the app,
+            // so the window comes back and asks. `quit_now` exits with a code,
+            // which is let through.
+            tauri::RunEvent::ExitRequested {
+                api, code: None, ..
+            } => {
+                let running = agents_running(app);
+                if running > 0 {
+                    api.prevent_exit();
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                        let _ = window.emit("window:closing", running);
+                    }
+                }
+            }
+            // The Dock icon clicked while the window is hidden.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            _ => {}
+        });
+}
+
+/// Agents running now. A login terminal is not an agent.
+fn agents_running<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> usize {
+    app.state::<Arc<pty::Terminals>>()
+        .ids()
+        .iter()
+        .filter(|id| !id.starts_with("login:"))
+        .count()
 }
