@@ -116,7 +116,8 @@ mod tests {
         let keys: Vec<_> = found.defaults.keys().cloned().collect();
         eprintln!("{} settings keys: {keys:?}", keys.len());
         let storage = convoy_core::Storage::new(std::env::temp_dir().join("convoy-import-probe"));
-        let workspace = convoy_core::Workspace::load(storage.workspace_file()).expect("empty store");
+        let workspace =
+            convoy_core::Workspace::load(storage.workspace_file()).expect("empty store");
         let report = convoy_core::macos_import::preview(&workspace, &storage, &found, true);
         eprintln!("{}", serde_json::to_string(&report).unwrap());
     }
