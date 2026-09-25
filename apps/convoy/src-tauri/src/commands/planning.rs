@@ -42,6 +42,8 @@ pub struct TaskView {
     pub spec_id: Option<String>,
     pub session_id: Option<String>,
     pub last_error: Option<String>,
+    /// The pull request its session opened.
+    pub pr_url: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -100,6 +102,7 @@ pub fn planning_read(
                 spec_id: task.spec_id.clone(),
                 session_id: task.session_id.clone(),
                 last_error: task.last_error.clone(),
+                pr_url: task.pr_url.clone(),
             })
             .collect();
         let queued = tasks.iter().filter(|task| task.status == "queued").count();

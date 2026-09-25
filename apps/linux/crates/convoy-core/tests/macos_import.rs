@@ -226,10 +226,14 @@ fn everything_the_macos_app_saved_comes_across() {
         .unwrap();
     assert_eq!(
         task.status,
-        TaskStatus::Review,
-        "a PR in progress is here for review"
+        TaskStatus::Pr,
+        "a task awaiting its pull request still awaits it"
     );
-    assert!(task.details.contains(".specdesk/specs/login.md") && task.details.contains("pull/1"));
+    assert!(task.details.contains(".specdesk/specs/login.md"));
+    assert_eq!(
+        task.pr_url.as_deref(),
+        Some("https://github.com/acme/pull/1")
+    );
     assert_eq!(task.source.as_ref().unwrap().key, "ENG-1");
     let work = state.tasks.iter().find(|t| t.title == "Build it").unwrap();
     assert_eq!(

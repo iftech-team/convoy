@@ -12,6 +12,7 @@ const COLUMNS = [
   ["queued", "Queued", "idle"],
   ["building", "Running", "running"],
   ["review", "Needs review", "review"],
+  ["pr", "Pull request", "review"],
   ["changes", "Needs changes", "open"],
   ["done", "Done", "done"],
   ["failed", "Failed", "failed"],

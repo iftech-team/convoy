@@ -51,6 +51,8 @@ pub enum TaskStatus {
     Queued,
     Building,
     Review,
+    /// Finished, and it opened a pull request: review happens there.
+    Pr,
     Changes,
     Done,
     Failed,
@@ -62,6 +64,7 @@ impl TaskStatus {
             TaskStatus::Queued => "queued",
             TaskStatus::Building => "building",
             TaskStatus::Review => "review",
+            TaskStatus::Pr => "pr",
             TaskStatus::Changes => "changes",
             TaskStatus::Done => "done",
             TaskStatus::Failed => "failed",
@@ -363,6 +366,9 @@ pub struct Task {
     /// Set when the task was imported from Linear or Jira.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<crate::integrations::IssueSource>,
+    /// The pull request its session opened, as the agent printed it.
+    #[serde(rename = "prURL", default, skip_serializing_if = "Option::is_none")]
+    pub pr_url: Option<String>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }

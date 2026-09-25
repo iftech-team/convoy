@@ -16,9 +16,13 @@ try {
     const sessions = [{ id: "builder", project_id: "project", title: "Fix login", agent: "claude", provider_id: "id", started: true, running: true, review_of: null }];
     const calls = [];
     window.checkCalls = calls;
+    // Events the backend would send, delivered to what the page listens for.
+    const callbacks = new Map();
+    const listeners = {};
+    window.emitTauri = (event, payload) => (listeners[event] ?? []).forEach((handler) => callbacks.get(handler)?.({ event, id: 0, payload }));
     // A pinned session in a second project, for the sidebar's Pinned list.
     const elsewhere = [{ id: "notes", project_id: "other", title: "Release notes", agent: "codex", provider_id: "", started: false, running: false, pinned: true, review_of: null }];
-    window.__TAURI_INTERNALS__ = { metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } }, transformCallback: () => 1, invoke: async (cmd, args) => {
+    window.__TAURI_INTERNALS__ = { metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } }, transformCallback: (callback) => { const id = callbacks.size + 1; callbacks.set(id, callback); return id; }, invoke: async (cmd, args) => {
       calls.push({ cmd, args });
       window.savedSettings ??= { theme: "light", default_agent: "claude", font_size: 13, scrollback: 10000, claude_usage: false, notifications: false, keep_awake: "off", hibernate_minutes: 0, shortcuts: {} };
       if (cmd === "settings_read") return { ...window.savedSettings, storage: "/fixture" };
@@ -57,7 +61,7 @@ try {
         return { created: ["task"], skipped: 0 };
       }
       if (cmd === "task_agent") { tasks[0].model = args.model; tasks[0].agent = args.agent; return null; }
-      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|listen") { (listeners[args.event] ??= []).push(args.handler); return args.handler; }
       if (cmd === "limits_read") {
         const now = Date.now() / 1000;
         return {
@@ -88,6 +92,12 @@ try {
       }
       if (cmd === "worktree_create") return { branch: args.branch, shared_paths: [], setup_command: null, directory: "/fixture/worktrees/x" };
       if (cmd === "plugin:window|set_badge_count") { window.badge = args.value; return null; }
+      if (cmd === "session_output") return { review: "Found: a token refresh race", notes: "No conversation found with session ID 0199" }[args.id] ?? "";
+      if (cmd === "session_snapshot") { (window.snapshots ??= {})[args.id] = args.text; return null; }
+      if (cmd === "session_recover") {
+        sessions.push({ id: "notes-fresh", project_id: "other", title: "Release notes · recovery", agent: "codex", provider_id: "", started: false, running: false, pinned: false, review_of: null });
+        return "notes-fresh";
+      }
       if (cmd === "account_login") return `login:${args.profileId}`;
       if (cmd === "session_stop") return null;
       if (cmd === "session_start") { sessions.find((item) => item.id === args.id).running = true; return null; }
@@ -114,6 +124,10 @@ try {
   await page.locator("#draft-feedback").waitFor();
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   assert.equal(await page.evaluate(() => document.activeElement.id), "draft-feedback", "terminal must not steal dialog focus");
+  // Filled with the reviewer's output under a short ask, as on macOS.
+  const prefilled = await page.locator("#draft-feedback").inputValue();
+  assert.match(prefilled, /^Please address the review findings below/);
+  assert.match(prefilled, /a token refresh race/, "the reviewer's saved output is in it");
   await page.locator("#draft-feedback").fill("Fix the error path before shipping.");
   await page.locator('[data-action="insert-feedback"]').click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "terminal_paste"));
@@ -378,6 +392,14 @@ try {
   await pinnedRow.click();
   await page.locator('.project-row--current [data-project="other"]').waitFor();
   await page.locator('.tab-item--selected[data-tab-open="notes"]').waitFor();
+  // A conversation the agent cannot find offers a fresh start, which runs.
+  await page.locator(".session-banner", { hasText: "couldn't find this conversation" }).waitFor();
+  await page.locator('[data-action="start-fresh"]').click();
+  await page.locator('.tab-item--selected[data-tab-open="notes-fresh"]').waitFor();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "session_start" && c.args.id === "notes-fresh"));
+  // What a running terminal shows is kept.
+  await page.evaluate(() => window.emitTauri("terminal:data", { id: "builder", data: "All 42 tests pass\r\n" }));
+  await page.waitForFunction(() => window.snapshots?.builder?.includes("All 42 tests pass"), null, { timeout: 10000 });
 
   const calls = await page.evaluate(() => window.checkCalls);
   assert(calls.some(c => c.cmd === "terminal_paste" && c.args.id === "builder" && c.args.text === "Fix the error path before shipping." && c.args.submit === false));

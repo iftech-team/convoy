@@ -464,6 +464,7 @@ impl Merge<'_> {
                         last_error: None,
                         model: None,
                         source: None,
+                        pr_url: None,
                         unknown: Default::default(),
                     });
                     self.report.tasks += 1;
@@ -495,15 +496,13 @@ impl Merge<'_> {
                     "\n\nThe work must satisfy the specification in {spec}."
                 ));
             }
-            if let Some(url) = text(task, "prURL") {
-                details.push_str(&format!("\n\nPull request: {url}"));
-            }
             let status = match text(task, "status").as_deref() {
                 Some("done") => TaskStatus::Done,
                 Some("failed") => TaskStatus::Failed,
-                // Agents do not move between apps: work that was running or
-                // awaiting a PR is here for review.
-                Some("running") | Some("review") | Some("pr") => TaskStatus::Review,
+                Some("pr") => TaskStatus::Pr,
+                // Agents do not move between apps: work that was running is
+                // here for review.
+                Some("running") | Some("review") => TaskStatus::Review,
                 _ => TaskStatus::Queued,
             };
             let mode = match text(task, "mode").as_deref() {
@@ -550,6 +549,7 @@ impl Merge<'_> {
                 last_error: None,
                 model: text(task, "model").filter(|value| !value.is_empty()),
                 source,
+                pr_url: text(task, "prURL"),
                 unknown: Default::default(),
             });
             self.report.tasks += 1;

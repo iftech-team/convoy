@@ -411,7 +411,17 @@ function reopenTab() {
   }
 }
 
+/// A stopped session shows its saved output in place of a live terminal.
+async function showSaved(id) {
+  if (isRunning(id)) return;
+  const text = await call("session_output", { id });
+  if (text === undefined || isRunning(id)) return;
+  terminal.restore(id, text);
+  if (terminal.missingConversation(id)) render();
+}
+
 function openSession(id) {
+  showSaved(id);
   const seen = recent.indexOf(id);
   if (seen >= 0) recent.splice(seen, 1);
   recent.unshift(id);
@@ -605,7 +615,21 @@ const ACTIONS = {
   },
   "start-review": openReview,
   "create-review": createReview,
-  "send-feedback": () => openModal({ kind: "feedback" }),
+  // As on macOS: the reviewer's output, ready to trim, under a short ask.
+  "send-feedback": () =>
+    openModal({
+      kind: "feedback",
+      feedback: `Please address the review findings below, verify the changes, and report what you fixed.\n\n${terminal
+        .buffer(state.sessionId)
+        .slice(-18000)}`,
+    }),
+  "start-fresh": async () => {
+    const id = await call("session_recover", { id: session().id });
+    if (!id) return;
+    await loadSessions();
+    openSession(id);
+    await terminal.start(id);
+  },
   "insert-feedback": insertFeedback,
   "saved-output": openSavedOutput,
   usage: openUsage,
@@ -2748,6 +2772,13 @@ try {
   scheduleGitPolling();
   loadActivity();
   setInterval(loadActivity, 5000);
+  // What each running terminal shows is kept every few seconds.
+  setInterval(terminal.snapshotRunning, 4000);
+  // The backend found a Codex id or a pull request in an agent's output.
+  await listen("session:changed", async () => {
+    await loadSessions();
+    if (state.tab === "tasks") await loadPlanning();
+  });
   let offered = false;
   try {
     offered = localStorage.getItem(MAC_OFFERED) === "1";

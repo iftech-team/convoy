@@ -273,6 +273,21 @@ pub fn session_output(id: String, workspace: State<'_, Workspace>) -> Result<Str
     })
 }
 
+/// Saves what a session's terminal shows, as the page renders it, so a review
+/// brief, the saved output and a restart all have it.
+#[tauri::command]
+pub fn session_snapshot(
+    id: String,
+    text: String,
+    workspace: State<'_, Workspace>,
+) -> Result<(), String> {
+    let history = convoy_core::history::History::new(workspace.storage.history());
+    workspace.act(|workspace| {
+        workspace.session(&id)?;
+        history.save(&id, &text)
+    })
+}
+
 /// The brief a reviewing agent would receive, for the user to edit first.
 /// The terminal excerpt it carries is context, never instructions.
 #[tauri::command]

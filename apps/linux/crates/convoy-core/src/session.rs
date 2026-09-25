@@ -226,10 +226,17 @@ pub fn finish_session(workspace: &mut Workspace, id: &str, cause: ExitCause) -> 
             let status = if superseded {
                 TaskStatus::Changes
             } else {
+                // A task whose session opened a pull request awaits that
+                // pull request rather than review here, as on macOS.
+                let finished = if task.pr_url.is_some() {
+                    TaskStatus::Pr
+                } else {
+                    TaskStatus::Review
+                };
                 match cause {
-                    ExitCause::Hibernated => TaskStatus::Review,
+                    ExitCause::Hibernated => finished,
                     _ if cause.failed() => TaskStatus::Failed,
-                    _ => TaskStatus::Review,
+                    _ => finished,
                 }
             };
             let task = &mut state.tasks[index];
@@ -260,4 +267,76 @@ pub fn finish_session(workspace: &mut Workspace, id: &str, cause: ExitCause) -> 
 /// queued one. Mirrors the condition guarding `finishTask()`.
 pub fn completed_cleanly(cause: ExitCause) -> bool {
     cause == ExitCause::Exited(0)
+}
+
+/// `codex resume <id>`, which Codex prints as it exits.
+pub fn codex_resume_id(text: &str) -> Option<String> {
+    crate::patterns::CODEX_RESUME
+        .captures(text)
+        .map(|found| found[1].to_string())
+}
+
+/// The first pull or merge request link in `text`.
+pub fn pull_request_url(text: &str) -> Option<String> {
+    crate::patterns::PULL_REQUEST
+        .find(text)
+        .map(|found| found.as_str().to_string())
+}
+
+/// Records the conversation id Codex printed, so the session resumes it
+/// exactly. Only a Codex session that has none yet takes it. Returns whether
+/// anything changed.
+pub fn record_provider_id(workspace: &mut Workspace, session_id: &str, id: &str) -> Result<bool> {
+    let wanted = workspace.state().sessions.iter().any(|session| {
+        session.id == session_id
+            && session.agent == crate::model::Agent::Codex
+            && session.provider_id.is_empty()
+    });
+    if !wanted {
+        return Ok(false);
+    }
+    let (session_id, id) = (session_id.to_string(), id.to_string());
+    workspace.update(move |state| {
+        if let Some(session) = state
+            .sessions
+            .iter_mut()
+            .find(|session| session.id == session_id)
+        {
+            session.provider_id = id;
+        }
+        Ok(())
+    })?;
+    Ok(true)
+}
+
+/// Records a pull request the agent printed on the task its session runs.
+/// A task that is building or awaiting review now awaits the pull request.
+/// Returns whether anything changed.
+pub fn record_pull_request(workspace: &mut Workspace, session_id: &str, url: &str) -> Result<bool> {
+    let known = workspace.state().tasks.iter().any(|task| {
+        task.session_id.as_deref() == Some(session_id) && task.pr_url.as_deref() != Some(url)
+    });
+    if !known {
+        return Ok(false);
+    }
+    let (session, link) = (session_id.to_string(), url.to_string());
+    workspace.update(move |state| {
+        if let Some(task) = state
+            .tasks
+            .iter_mut()
+            .find(|task| task.session_id.as_deref() == Some(session.as_str()))
+        {
+            task.pr_url = Some(link);
+            if task.status == TaskStatus::Review {
+                task.status = TaskStatus::Pr;
+            }
+        }
+        Ok(())
+    })?;
+    workspace.record(
+        ActivityKind::Done,
+        session_id,
+        &format!("Pull request: {url}"),
+    )?;
+    Ok(true)
 }

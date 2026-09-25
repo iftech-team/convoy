@@ -38,15 +38,80 @@ pub fn start<R: Runtime>(
     app: &AppHandle<R>,
     launch: Launch<'_>,
 ) -> Result<u32, String> {
-    terminals.start(Arc::new(Window { app: app.clone() }), launch)
+    terminals.start(
+        Arc::new(Window {
+            app: app.clone(),
+            watch: std::sync::Mutex::new(Watch::default()),
+        }),
+        launch,
+    )
 }
 
 struct Window<R: Runtime> {
     app: AppHandle<R>,
+    watch: std::sync::Mutex<Watch>,
+}
+
+/// The end of the output, read for the two things an agent prints that
+/// Convoy acts on: Codex's resume id and a pull request link.
+#[derive(Default)]
+struct Watch {
+    tail: String,
+    codex_id: bool,
+    pull_request: Option<String>,
+}
+
+/// How much output is kept to look through. Enough for a line printed across
+/// several chunks; the macOS app keeps the same.
+const TAIL: usize = 6000;
+
+impl<R: Runtime> Window<R> {
+    fn watch(&self, id: &str, data: &str) {
+        if id.starts_with("login:") {
+            return;
+        }
+        let Ok(mut watch) = self.watch.lock() else {
+            return;
+        };
+        watch.tail.push_str(&convoy_core::history::plain(data));
+        if watch.tail.len() > TAIL * 2 {
+            let mut cut = watch.tail.len() - TAIL;
+            while !watch.tail.is_char_boundary(cut) {
+                cut += 1;
+            }
+            watch.tail.drain(..cut);
+        }
+        let Some(workspace) = self.app.try_state::<crate::commands::Workspace>() else {
+            return;
+        };
+        let mut changed = false;
+        if !watch.codex_id && watch.tail.contains("codex resume ") {
+            if let Some(found) = convoy_core::session::codex_resume_id(&watch.tail) {
+                watch.codex_id = true;
+                changed |= workspace
+                    .act(|core| convoy_core::session::record_provider_id(core, id, &found))
+                    .unwrap_or(false);
+            }
+        }
+        if watch.tail.contains("/pull/") || watch.tail.contains("/merge_requests/") {
+            if let Some(url) = convoy_core::session::pull_request_url(&watch.tail) {
+                if watch.pull_request.as_deref() != Some(url.as_str()) {
+                    watch.pull_request = Some(url.clone());
+                    changed |= workspace
+                        .act(|core| convoy_core::session::record_pull_request(core, id, &url))
+                        .unwrap_or(false);
+                }
+            }
+        }
+        if changed {
+            let _ = self.app.emit("session:changed", id.to_string());
+        }
+    }
 }
 
 impl<R: Runtime> Sink for Window<R> {
     fn data(&self, id: &str, data: &str) {
+        self.watch(id, data);
         let _ = self.app.emit(
             "terminal:data",
             Output {
@@ -183,6 +248,77 @@ mod tests {
             TaskStatus::Review,
             "a clean exit must hand the task to review"
         );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// A pull request link in the output is recorded on the task, and a task
+    /// with one awaits its pull request when the agent exits.
+    #[test]
+    fn a_printed_pull_request_is_kept_on_the_task() {
+        let root = std::env::temp_dir().join(format!("convoy-pr-{}", std::process::id()));
+        let project = root.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let storage = Storage::new(root.join("state"));
+
+        let mut core = CoreWorkspace::load(storage.workspace_file()).unwrap();
+        core.add_project(&project).unwrap();
+        let project_id = core.state().projects[0].id.clone();
+        core.save_task(TaskInput {
+            id: None,
+            project_id,
+            spec_id: None,
+            title: "Open a pull request".into(),
+            details: String::new(),
+            findings: String::new(),
+            agent: Agent::Claude,
+            mode: PublishMode::Pr,
+            auto_review: false,
+        })
+        .unwrap();
+        let task_id = core.state().tasks[0].id.clone();
+        core.prepare_task(&task_id, None).unwrap();
+        let session_id = core.state().tasks[0].session_id.clone().unwrap();
+        drop(core);
+
+        let app = tauri::test::mock_app();
+        app.manage(crate::commands::Workspace::at(storage.clone()));
+        let terminals = Arc::new(Terminals::new());
+        let (exits, exited) = std::sync::mpsc::channel::<()>();
+        app.handle().listen("terminal:exit", move |_| {
+            let _ = exits.send(());
+        });
+        let env = vec![(
+            "PATH".to_string(),
+            std::env::var("PATH").unwrap_or_default(),
+        )];
+        start(
+            &terminals,
+            app.handle(),
+            Launch {
+                id: &session_id,
+                program: "/bin/sh",
+                args: &[
+                    "-c".to_string(),
+                    "printf 'Created https://github.com/acme/app/pull/42\\n'; exit 0".to_string(),
+                ],
+                cwd: &project,
+                env: &env,
+                cols: 80,
+                rows: 24,
+            },
+        )
+        .expect("spawn");
+        exited
+            .recv_timeout(Duration::from_secs(10))
+            .expect("no exit event");
+
+        let core = CoreWorkspace::load(storage.workspace_file()).unwrap();
+        let task = &core.state().tasks[0];
+        assert_eq!(
+            task.pr_url.as_deref(),
+            Some("https://github.com/acme/app/pull/42")
+        );
+        assert_eq!(task.status, TaskStatus::Pr);
         std::fs::remove_dir_all(&root).ok();
     }
 }

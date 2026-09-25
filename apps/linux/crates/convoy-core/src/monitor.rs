@@ -106,7 +106,7 @@ pub fn transition(workspace: &Workspace, session_id: &str, state: AgentState) ->
         return Transition::None;
     };
     match (state, task.status) {
-        (AgentState::Working, TaskStatus::Review) => Transition::Building,
+        (AgentState::Working, TaskStatus::Review | TaskStatus::Pr) => Transition::Building,
         (AgentState::Done, TaskStatus::Building) => Transition::Review,
         _ => Transition::None,
     }
@@ -126,7 +126,11 @@ pub fn apply(workspace: &mut Workspace, session_id: &str, transition: Transition
                 .iter_mut()
                 .find(|task| task.session_id.as_deref() == Some(session_id.as_str()))
             {
-                task.status = status;
+                task.status = if status == TaskStatus::Review && task.pr_url.is_some() {
+                    TaskStatus::Pr
+                } else {
+                    status
+                };
             }
             Ok(())
         })

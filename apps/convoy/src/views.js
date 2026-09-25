@@ -12,6 +12,7 @@ import {
   toggle,
 } from "./ui.js";
 import { isRunning, project, session, state, visibleSessions } from "./state.js";
+import { missingConversation } from "./terminal.js";
 
 const TABS = [
   ["sessions", "Sessions"],
@@ -464,6 +465,19 @@ export function workbench() {
         ${button({ icon: "plus", action: "new-session", kind: "quiet", title: "New session" })}
         ${button({ icon: "more", action: "session-menu", kind: "quiet", title: "Session actions" })}
       </div>
+      ${
+        !current.running && missingConversation(current.id)
+          ? `<div class="session-banner session-banner--warn">
+               <div>
+                 <div class="session-banner__title">Claude couldn't find this conversation</div>
+                 <div class="session-banner__text">It may have closed before the first message. Start fresh; this session is kept.</div>
+               </div>
+               ${button({ label: "Start fresh", action: "start-fresh", kind: "primary" })}
+             </div>`
+          : !current.running && current.started
+            ? `<div class="session-banner">${icons.history} Saved output · read-only. Resume to reconnect to the agent.</div>`
+            : ""
+      }
       ${state.find ? findBar() : ""}
       ${state.layout > 1 ? panesView() : '<div class="term" id="terminal-host"></div>'}
     </div>`;

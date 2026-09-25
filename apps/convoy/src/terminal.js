@@ -55,6 +55,9 @@ export function zoom(id, step) {
   return entry.terminal.options.fontSize;
 }
 
+/// Claude's words when a session's conversation is gone.
+const MISSING = /no conversation found with session id/i;
+
 export function terminalFor(id) {
   if (terminals.has(id)) return terminals.get(id);
 
@@ -82,7 +85,9 @@ export function terminalFor(id) {
   terminal.onData((data) => call("terminal_write", { id, data }));
   terminal.onResize(({ cols, rows }) => call("terminal_resize", { id, cols, rows }));
 
-  const entry = { terminal, fit, host, search, opened: false };
+  // `restored`: saved output is already shown. `saved`: the text last kept.
+  // `missing`: the agent said the conversation it was asked to resume is gone.
+  const entry = { terminal, fit, host, search, opened: false, restored: false, saved: "", missing: false };
   terminals.set(id, entry);
   return entry;
 }
@@ -211,7 +216,13 @@ export const onExit = (handler) => {
 
 export async function wire() {
   await listen("terminal:data", ({ payload }) => {
-    terminalFor(payload.id).terminal.write(payload.data);
+    const entry = terminalFor(payload.id);
+    entry.restored = true;
+    entry.terminal.write(payload.data);
+    if (!entry.missing && MISSING.test(payload.data)) {
+      entry.missing = true;
+      changed();
+    }
   });
 
   // The exit rules are applied in the backend, where they do not depend on a
@@ -230,18 +241,48 @@ export async function wire() {
       entry.terminal.write(`\r\n\x1b[2m── session ${how} ──\x1b[0m\r\n`);
     }
     state.agentState.delete(payload.id);
+    await snapshot(payload.id);
     await loadWorkspace();
     exitHandler(payload);
   });
 }
 
-/// The visible buffer, for anything that wants to quote the agent.
-export function buffer(id) {
+/// A stopped session's saved output, shown where its terminal would be — as
+/// the macOS app does — until the agent is resumed.
+export function restore(id, text) {
+  const entry = terminalFor(id);
+  if (entry.restored) return;
+  entry.restored = true;
+  entry.saved = text;
+  if (!text) return;
+  if (MISSING.test(text)) entry.missing = true;
+  entry.terminal.write(`\x1b[2m── saved output · resume to reconnect ──\x1b[0m\r\n${text.replace(/\r?\n/g, "\r\n")}\r\n`);
+}
+
+export const missingConversation = (id) => !!terminals.get(id)?.missing;
+
+/// Keeps what a terminal shows, as rendered, so reviews, the saved output and
+/// the next launch have it. Only when it changed.
+export async function snapshot(id) {
+  const entry = terminals.get(id);
+  if (!entry || !entry.opened) return;
+  const text = buffer(id, 1500);
+  if (!text || text === entry.saved) return;
+  entry.saved = text;
+  await call("session_snapshot", { id, text });
+}
+
+export async function snapshotRunning() {
+  for (const id of state.running) await snapshot(id);
+}
+
+/// The buffer, or its last `limit` lines, for anything that quotes the agent.
+export function buffer(id, limit = Infinity) {
   const entry = terminals.get(id);
   if (!entry) return "";
   const lines = [];
   const active = entry.terminal.buffer.active;
-  for (let row = 0; row < active.length; row += 1) {
+  for (let row = Math.max(0, active.length - limit); row < active.length; row += 1) {
     lines.push(active.getLine(row)?.translateToString(true) ?? "");
   }
   return lines.join("\n").trimEnd();

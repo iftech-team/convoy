@@ -3609,3 +3609,31 @@ input {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+/* Above a stopped session's terminal: saved output, or a lost conversation. */
+.session-banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.session-banner--warn {
+  justify-content: space-between;
+  padding: 10px 14px;
+}
+
+.session-banner__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.session-banner__text {
+  margin-top: 2px;
+}

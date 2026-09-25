@@ -226,6 +226,7 @@ impl Workspace {
                     last_error: None,
                     model: None,
                     source: None,
+                    pr_url: None,
                     unknown: Default::default(),
                 }),
             }
@@ -241,8 +242,10 @@ impl Workspace {
                     status,
                     TaskStatus::Queued
                         | TaskStatus::Review
+                        | TaskStatus::Pr
                         | TaskStatus::Changes
                         | TaskStatus::Done
+                        | TaskStatus::Failed
                 ),
                 "Invalid task status."
             );
@@ -429,6 +432,7 @@ impl Workspace {
                         url: issue.url.clone(),
                         via_mcp: (connection.auth == TrackerAuth::Mcp).then_some(true),
                     }),
+                    pr_url: None,
                     unknown: Default::default(),
                 });
             }

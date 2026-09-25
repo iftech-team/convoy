@@ -154,12 +154,12 @@ const startReview = (dialog) =>
     foot: foot("Create review", "create-review"),
   });
 
-const sendFeedback = () =>
+const sendFeedback = (dialog) =>
   modal({
     title: "Send feedback to builder",
-    hint: "The text is typed into the builder's terminal. Nothing is submitted for you.",
+    hint: "Trim the reviewer's output, then insert it. It is typed into the builder's terminal; nothing is submitted for you.",
     wide: true,
-    body: field("Findings", textArea("draft-feedback", "", "", 12)),
+    body: field("Findings", textArea("draft-feedback", dialog.feedback ?? "", "", 14)),
     foot: foot("Insert", "insert-feedback"),
   });
 

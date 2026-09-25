@@ -105,7 +105,7 @@ pub fn on_clean_exit(workspace: &Workspace, session_id: &str, output: &str) -> R
     else {
         return Ok(Completion::Nothing);
     };
-    if task.status != TaskStatus::Review {
+    if !matches!(task.status, TaskStatus::Review | TaskStatus::Pr) {
         return Ok(Completion::Nothing);
     }
     let spec = task

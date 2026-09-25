@@ -39,3 +39,14 @@ pub static PROJECT_FILE: LazyLock<Regex> =
 pub fn is_uuid(value: &str) -> bool {
     UUID.is_match(value)
 }
+
+/// `codex resume <uuid>`, as Codex prints it when it exits.
+pub static CODEX_RESUME: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"codex resume ([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})")
+        .unwrap()
+});
+
+/// A GitHub pull request or GitLab merge request link.
+pub static PULL_REQUEST: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"https://(github\.com|gitlab\.com)/[^\s'"`)]+/(pull|merge_requests)/\d+"#).unwrap()
+});

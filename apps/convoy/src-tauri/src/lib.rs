@@ -98,6 +98,7 @@ pub fn run() {
             commands::session::session_stop,
             commands::session::session_hibernate,
             commands::session::session_output,
+            commands::session::session_snapshot,
             commands::session::terminal_write,
             commands::session::terminal_resize,
             commands::session::terminal_paste,
