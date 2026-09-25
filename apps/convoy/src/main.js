@@ -48,6 +48,7 @@ import { settingsPage } from "./views-settings.js";
 import { projectSettingsPage } from "./views-project.js";
 import { forgetIcon, onIconLoaded } from "./icons.js";
 import { runnable, specsView, tasksView } from "./views-planning.js";
+import { dashboardView, homeView } from "./views-home.js";
 import { PROJECT_DOC, docsView } from "./views-docs.js";
 
 const app = document.querySelector("#app");
@@ -79,6 +80,8 @@ window.addEventListener("unhandledrejection", (event) =>
 // ----------------------------------------------------------------- render --
 
 function content() {
+  if (state.page === "home") return homeView();
+  if (state.page === "dashboard") return dashboardView();
   if (state.files) return filesView();
   if (!project()) {
     return `<div class="empty">
@@ -312,7 +315,7 @@ function render() {
       ? `<div class="shell shell--page">${settingsPage()}${status()}</div>`
       : `<div class="shell${state.sidebarHidden ? " shell--nosidebar" : ""}">
           ${state.sidebarHidden ? "" : sidebar()}
-          <main class="main">${tabBar()}${state.files || state.page === "project" || state.sessionId ? "" : header()}${content()}</main>
+          <main class="main">${tabBar()}${state.files || state.page || state.sessionId ? "" : header()}${content()}</main>
           ${status()}
         </div>`;
 
@@ -420,7 +423,24 @@ async function showSaved(id) {
   if (terminal.missingConversation(id)) render();
 }
 
+/// Home or the Agent Dashboard, with what they show brought up to date.
+async function openHome(page = "home") {
+  if (state.page === "project") closeProjectSettings();
+  state.page = page;
+  state.sessionId = null;
+  state.files = null;
+  state.menu = null;
+  render();
+  await Promise.all([
+    loadWorkspace(),
+    loadAllTasks(),
+    state.diagnostics ? null : call("diagnostics_run").then((checks) => (state.diagnostics = checks ?? [])),
+  ]);
+  render();
+}
+
 function openSession(id) {
+  if (state.page === "home" || state.page === "dashboard") state.page = null;
   showSaved(id);
   const seen = recent.indexOf(id);
   if (seen >= 0) recent.splice(seen, 1);
@@ -562,12 +582,10 @@ const ACTIONS = {
     render();
     terminal.refit();
   },
-  home: () => {
-    state.sessionId = null;
-    state.files = null;
-    state.page = null;
-    render();
-  },
+  // Home is the macOS app's: every project at once. The project's own page
+  // is a click on the project.
+  home: () => openHome(),
+  dashboard: () => openHome("dashboard"),
   "remove-project": () =>
     openModal({ kind: "remove-project", id: state.projectId, path: project()?.path ?? "" }),
   "confirm-remove-project": async () => {
@@ -830,6 +848,8 @@ const SHORTCUT_ACTIONS = {
   // ⌘F finds in the terminal on screen, and in the sidebar otherwise.
   search: () => (terminalShown() ? openFind() : document.querySelector("#project-search")?.focus()),
   switcher: () => openPalette("terminals"),
+  home: () => openHome(),
+  dashboard: () => (state.page === "dashboard" ? openHome() : openHome("dashboard")),
   reopenTab: () => reopenTab(),
 
   // sessions — each acts on the open session, and does nothing without one
@@ -943,7 +963,7 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
+      "[data-layout],[data-needs-you],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -983,6 +1003,7 @@ app.addEventListener("click", async (event) => {
   if (data.doc) return openDoc(data.doc);
   if (data.activityOpen) {
     state.menu = null;
+    if (!data.activityProject) return openAnywhere(data.activityOpen);
     if (data.activityProject && data.activityProject !== state.projectId) await selectProject(data.activityProject);
     await loadSessions();
     if (state.sessions.some((item) => item.id === data.activityOpen)) return openSession(data.activityOpen);
@@ -1049,7 +1070,20 @@ app.addEventListener("click", async (event) => {
     if (handler) return handler();
     return;
   }
-  if (data.project) return selectProject(data.project);
+  if (data.project) {
+    if (state.page === "home" || state.page === "dashboard") state.page = null;
+    await selectProject(data.project);
+    return render();
+  }
+  if (data.settingsOpen) return openSettings(data.settingsOpen);
+  if (data.homeTasks) {
+    state.page = null;
+    state.taskScope = "all";
+    state.tab = "tasks";
+    await loadAllTasks();
+    await loadPlanning();
+    return render();
+  }
   if (data.tab) {
     if (state.page === "project") state.page = null;
     state.tab = data.tab;
@@ -1060,7 +1094,11 @@ app.addEventListener("click", async (event) => {
     if (data.tab === "docs") await loadDocs();
     return;
   }
-  if (data.start) return terminal.start(data.start);
+  if (data.start) {
+    // From Home or the Dashboard it may be another project's session.
+    if (!state.sessions.some((item) => item.id === data.start)) await openAnywhere(data.start);
+    return terminal.start(data.start);
+  }
   if (data.stop) return terminal.stop(data.stop);
   if (data.open) return openAnywhere(data.open);
   if (data.split) {
@@ -1214,6 +1252,10 @@ app.addEventListener("input", (event) => {
     }
     return;
   }
+  if (field.id === "dashboard-filter") {
+    state.dashboardFilter = field.value;
+    return render();
+  }
   if (field.id === "find-term") {
     state.find.term = field.value;
     findStep({ incremental: true });
@@ -1354,6 +1396,9 @@ async function openFolder() {
   if (added === undefined) return;
   if (added > 1) toast(`Added ${added} projects`);
   await loadWorkspace();
+  // The folder just opened is what to show next.
+  if (state.page === "home" || state.page === "dashboard") state.page = null;
+  render();
 }
 
 async function reconnectProject() {
@@ -2468,6 +2513,8 @@ function paletteEntries() {
     await then();
   };
   const actions = [
+    ["Home", "Every project at once", "home"],
+    ["Agent Dashboard", "Every session by what its agent is doing", "dashboard"],
     ["New session", "Creates a Claude Code or Codex session", "newSession"],
     ["Open folder…", "Add a repository or a folder of projects", "openFolder"],
     ["Resume current session", "Reconnect to the selected agent", "resume"],
@@ -2868,6 +2915,8 @@ try {
   await loadSettings();
   applyTheme();
   await loadWorkspace({ required: true });
+  // The window opens on Home, as the macOS app's does.
+  if (state.projects.length) openHome();
   await applyKeepAwake();
   setInterval(monitorTick, 2000);
   setInterval(applyKeepAwake, 10000);

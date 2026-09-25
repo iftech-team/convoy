@@ -227,7 +227,19 @@ try {
   await page.locator(".sidebar").waitFor({ state: "detached" });
   await page.keyboard.press(`${primary}+b`);
   await page.locator(".sidebar").waitFor();
+  // Home spans every project, as on macOS; the Dashboard sorts every session
+  // by what its agent is doing.
   await page.locator('[data-action="home"]').click();
+  await page.locator(".home__greeting").waitFor();
+  await page.locator(".home-block", { hasText: "Needs you" }).locator('[data-open="builder"]').waitFor();
+  await page.locator(".chip--warn", { hasText: "1 setup problem" }).waitFor();
+  if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/home.png` });
+  await page.keyboard.press(`${primary}+Alt+d`);
+  await page.locator(".home__greeting", { hasText: "Agent Dashboard" }).waitFor();
+  await page.locator(".board__column", { hasText: "Needs you" }).locator('[data-open="builder"]').waitFor();
+  await page.locator(".board__column", { hasText: "Idle" }).locator('[data-open="notes"]').waitFor();
+  if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/dashboard.png` });
+  await page.locator('.project-row [data-project="project"]').click();
   await page.locator(".header").waitFor();
 
   await page.locator('[data-tab="tasks"]').click();

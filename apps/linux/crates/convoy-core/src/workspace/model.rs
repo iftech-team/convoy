@@ -611,4 +611,6 @@ pub const SHORTCUT_ACTIONS: &[&str] = &[
     "limitsRefresh",
     "switcher",
     "reopenTab",
+    "home",
+    "dashboard",
 ];

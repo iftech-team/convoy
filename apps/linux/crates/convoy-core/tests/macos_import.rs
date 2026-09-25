@@ -101,7 +101,7 @@ fn swift_fixture(root: &Path, repo: &Path, child: &Path) -> MacSources {
         ("branchPrefix", json!("feature/")),
         (
             "keybindings",
-            json!({ "session.stop": "cmd+.", "go.sidebar": "cmd+b", "tab.switch": "cmd+e", "go.dashboard": "cmd+opt+d", "session.edit": "" }),
+            json!({ "session.stop": "cmd+.", "go.sidebar": "cmd+b", "tab.switch": "cmd+e", "limits.claudeUsage": "cmd+opt+u", "session.edit": "" }),
         ),
         (
             "trackerConnections",
@@ -294,7 +294,7 @@ fn everything_the_macos_app_saved_comes_across() {
     assert_eq!(
         settings.shortcuts.len(),
         3,
-        "no counterpart for go.dashboard; unbound is dropped"
+        "no counterpart for limits.claudeUsage; unbound is dropped"
     );
 
     let integrations =

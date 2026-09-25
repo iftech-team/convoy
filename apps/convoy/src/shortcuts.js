@@ -15,6 +15,8 @@ export const SHORTCUTS = [
   ["search", "mod+f", "Find in terminal, or find a project", "General"],
   ["settings", "mod+,", "Settings", "General"],
   ["sidebar", "mod+b", "Toggle sidebar", "General"],
+  ["home", "mod+shift+h", "Home", "General"],
+  ["dashboard", "mod+alt+d", "Agent Dashboard", "General"],
   ["files", "mod+shift+g", "Files & Changes", "General"],
   ["theme", "mod+alt+t", "Cycle theme", "General"],
   ["wake", "mod+alt+k", "Toggle keep awake", "General"],

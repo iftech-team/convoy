@@ -693,7 +693,7 @@ const resetText = (window) => {
   return `resets ${soon ? date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : date.toLocaleDateString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}`;
 };
 
-function limitsBlock(name, icon, reading, loading) {
+export function limitsBlock(name, icon, reading, loading) {
   const rows = reading?.windows?.length
     ? reading.windows
         .map(
@@ -867,7 +867,7 @@ export function tabBar() {
         </div>`;
     })
     .join("");
-  const home = !state.sessionId || state.page === "project";
+  const home = state.page === "home" || state.page === "dashboard";
   return `
     <div class="tabbar">
       <button class="tabbar__home${state.sidebarHidden ? "" : " tabbar__home--on"}" data-action="toggle-sidebar"

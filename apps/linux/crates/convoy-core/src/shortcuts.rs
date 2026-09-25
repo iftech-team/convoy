@@ -56,6 +56,8 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ("limitsRefresh", "Refresh AI limits"),
     ("switcher", "Switch terminal, recent first"),
     ("reopenTab", "Reopen closed tab"),
+    ("home", "Home"),
+    ("dashboard", "Agent Dashboard"),
 ];
 
 /// Defaults used when the workspace has no shortcut for an action: the
@@ -107,6 +109,8 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("limitsRefresh", "mod+alt+l"),
     ("switcher", "mod+e"),
     ("reopenTab", "mod+shift+t"),
+    ("home", "mod+shift+h"),
+    ("dashboard", "mod+alt+d"),
 ];
 
 /// `mod+shift+p` → `<Primary><Shift>p`. Returns nothing for anything the
