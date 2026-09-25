@@ -502,10 +502,18 @@ const queueConfirm = (dialog) =>
 
 // ------------------------------------------------------------------- misc --
 
+/// A new branch, from where HEAD is or from any branch, remote branch or tag.
 const newBranch = (dialog) =>
   modal({
     title: "New branch",
-    body: field("Branch name", textInput("draft-branch", dialog.branch)),
+    body: `
+      ${field("Branch name", textInput("draft-branch", dialog.branch))}
+      ${field(
+        "Start from",
+        `<input id="draft-base" list="branch-bases" value="${escape(dialog.base ?? "")}" placeholder="Current branch" spellcheck="false" />
+         <datalist id="branch-bases">${(state.files?.snapshot?.branches ?? []).map((name) => `<option value="${escape(name)}"></option>`).join("")}</datalist>`,
+        "Empty starts from where you are now.",
+      )}`,
     foot: foot("Create and switch", "confirm-branch"),
   });
 

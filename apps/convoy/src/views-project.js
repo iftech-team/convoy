@@ -177,6 +177,7 @@ export function projectSettingsPage() {
              <textarea class="pref-area" data-proj-text="review_template" rows="6" spellcheck="false"
                        placeholder="Empty uses the global template from Settings → Agents">${escape(project.review_template ?? "")}</textarea>
              <div class="pref-inline pref-inline--flush">
+               ${button({ label: "Insert default", action: "insert-review-default", kind: "quiet" })}
                ${button({ label: "Use global", data: { "proj-clear": "review_template" }, disabled: !project.review_template })}
              </div>
            </div>`,

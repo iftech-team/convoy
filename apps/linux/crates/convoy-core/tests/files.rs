@@ -429,3 +429,61 @@ fn upstream_counts_and_unstaging_everything() {
     let entry = change(&snapshot, "b.txt");
     assert_eq!((entry.index, entry.worktree), (' ', 'M'));
 }
+
+/// A branch can start from any base, not only from where HEAD is.
+#[test]
+fn a_branch_starts_from_the_chosen_base() {
+    let fixture = fixture();
+    let root = fixture.path();
+    let git = repository(root, "false");
+    fs::write(root.join("a.txt"), "one").unwrap();
+    git.mutate(root, &Action::StageAll).unwrap();
+    git.mutate(
+        root,
+        &Action::Commit {
+            message: "one".into(),
+            amend: false,
+        },
+    )
+    .unwrap();
+    git.run(root, &["tag", "v1"]).unwrap();
+    fs::write(root.join("a.txt"), "two").unwrap();
+    git.mutate(root, &Action::StageAll).unwrap();
+    git.mutate(
+        root,
+        &Action::Commit {
+            message: "two".into(),
+            amend: false,
+        },
+    )
+    .unwrap();
+
+    git.mutate(
+        root,
+        &Action::BranchFrom {
+            branch: "hotfix".into(),
+            base: "v1".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(git.snapshot(root).unwrap().branch, "hotfix");
+    assert_eq!(fs::read_to_string(root.join("a.txt")).unwrap(), "one");
+    assert!(git
+        .mutate(
+            root,
+            &Action::BranchFrom {
+                branch: "other".into(),
+                base: "--orphan".into()
+            }
+        )
+        .is_err());
+    assert!(git
+        .mutate(
+            root,
+            &Action::BranchFrom {
+                branch: "other".into(),
+                base: "missing".into()
+            }
+        )
+        .is_err());
+}

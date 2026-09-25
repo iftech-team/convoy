@@ -87,14 +87,18 @@ try {
       if (cmd === "project_refresh") return 0;
       if (cmd === "session_archive") { const item = sessions.find((entry) => entry.id === args.id); item.archived = args.archived; return null; }
       if (cmd === "files_snapshot") return {
-        branch: "main", files: [], log: [], branches: ["main"], directory: "/fixture/Example",
+        branch: "main", files: [], branches: ["main", "origin/main"], directory: "/fixture/Example",
+        log: [{ id: "abc1234def5678", short: "abc1234", subject: "Fix the login race", author: "Test", date: "2026-09-25T10:00:00Z" }],
         upstream: { name: "origin/main", ahead: 2, behind: 1 },
         changes: [
           { status: "UU", staged: false, untracked: false, conflict: true, path: "src/app.js", original: null },
           { status: " M", staged: false, untracked: false, conflict: false, path: "README.md", original: null },
         ],
       };
-      if (cmd === "files_read") return { kind: "text", text: "<<<<<<< HEAD", language: "diff", hash: "h" };
+      if (cmd === "files_read") return args.selection.path === "README.md"
+        ? { kind: "text", text: Array.from({ length: 3500 }, (_, i) => `+line ${i}`).join("\n"), language: "diff", hash: "r" }
+        : { kind: "text", text: "<<<<<<< HEAD", language: "diff", hash: "h" };
+      if (cmd === "review_template_default") return "DEFAULT BRIEF";
       if (["files_mutate", "files_open"].includes(cmd)) return cmd === "files_mutate" ? "" : null;
       if (cmd === "history_scan") return [{ agent: "claude", provider_id: "0199aaaa-0000-4000-8000-000000000001", title: "Fix flaky login", at: Date.now(), directory: "/fixture/worktrees/fix-login", profile_id: null, profile: null, session_id: null }];
       if (cmd === "transcripts_import") {
@@ -372,9 +376,29 @@ try {
   await page.locator('[data-action="file-open"]').click();
   await page.locator("#commit-message").fill("Resolve the merge");
   await page.locator('[data-action="commit-push"]').click();
-  await page.waitForFunction(() => window.checkCalls.filter((c) => c.cmd === "files_mutate").map((c) => c.args.mutation.action).join() === "stage,unstageAll,commit,push");
+  await page.waitForFunction(() => window.checkCalls.filter((c) => c.cmd === "files_mutate").map((c) => c.args.mutation.action).join().startsWith("stage,unstageAll,commit,push"));
   assert.deepEqual(await page.evaluate(() => window.checkCalls.find((c) => c.cmd === "files_open").args), { id: "project", path: "src/app.js", reveal: false });
   if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/files.png` });
+  // A long diff is drawn in part until asked; long lines can wrap.
+  await page.locator('[data-change="README.md"]').click();
+  await page.locator('[data-action="files-load-all"]', { hasText: "Load all 3,500 lines" }).click();
+  await page.locator(".preview__text .diff-line", { hasText: "+line 3499" }).waitFor();
+  await page.locator('[data-action="files-wrap"]').click();
+  await page.locator(".preview__text--wrap").waitFor();
+  // The log copies a commit's SHA or subject.
+  await page.locator('[data-files-view="log"]').click();
+  await page.locator('[data-commit="abc1234def5678"]').click();
+  await page.locator('[data-action="copy-sha"]').click();
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), "abc1234def5678");
+  await page.locator('[data-action="copy-subject"]').click();
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), "Fix the login race");
+  // A new branch can start from any base.
+  await page.locator('[data-files-view="branches"]').click();
+  await page.locator('[data-action="new-branch"]').click();
+  await page.locator("#draft-branch").fill("hotfix");
+  await page.locator("#draft-base").fill("origin/main");
+  await page.locator('[data-action="confirm-branch"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "files_mutate" && c.args.mutation.action === "branchFrom" && c.args.mutation.base === "origin/main" && c.args.mutation.branch === "hotfix"));
   await page.locator('[data-action="files-close"]').click();
   // Specifications: a search box, and each spec's own work — a task made for
   // it, a session linked as its builder, and the review brief.
@@ -555,6 +579,10 @@ try {
   // Escape belongs to the login in the terminal; Close ends it.
   await page.locator(".modal .button", { hasText: "Close" }).click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "session_stop" && c.args.id === "login:work"));
+  // The review brief can start from the built-in one.
+  await page.locator('[data-settings-section="Agents"]').click();
+  await page.locator('[data-action="insert-review-default"]').click();
+  await page.waitForFunction(() => window.savedSettings.review_template === "DEFAULT BRIEF");
   await page.locator('[data-settings-section="Notifications"]').click();
   await page.locator('[data-pref-toggle="notifications"]').click();
   await page.waitForFunction(() => window.savedSettings.notifications === true);

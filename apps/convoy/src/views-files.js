@@ -72,6 +72,8 @@ export function filesView() {
           action: "files-split",
           kind: files.sideBySide ? "primary" : "",
         })}
+        ${button({ label: "Wrap", action: "files-wrap", kind: files.wrap ? "primary" : "" })}
+        ${files.preview?.kind === "markdown" ? button({ label: files.raw ? "Rendered" : "Raw", action: "files-raw" }) : ""}
         ${button({ label: "Remote", icon: "git", action: "files-remote" })}
       </div>
       <div class="files__body">
@@ -183,6 +185,8 @@ function actions(files) {
   if (files.view === "log") {
     return `
       <div class="files__actions">
+        ${button({ label: "Copy SHA", action: "copy-sha" })}
+        ${button({ label: "Copy subject", action: "copy-subject" })}
         ${button({ label: "Revert", action: "revert", kind: "danger" })}
         ${button({ label: "Reset soft", action: "reset-soft", kind: "danger" })}
         ${button({ label: "Reset mixed", action: "reset-mixed", kind: "danger" })}
@@ -207,6 +211,8 @@ const tail = (path, max = 42) =>
 const selected = (files, path) =>
   files.selection && "path" in files.selection && files.selection.path === path;
 
+const LINES = 3000;
+
 function preview(files) {
   const shown = files.preview;
   if (!shown) {
@@ -217,7 +223,9 @@ function preview(files) {
                  src="data:${escape(shown.mime)};base64,${escape(shown.data)}" />`;
   }
   if (shown.kind === "markdown") {
-    return `<div class="preview__markdown">${markdown(shown.text)}</div>`;
+    return files.raw
+      ? `<pre class="preview__text${files.wrap ? " preview__text--wrap" : ""}">${escape(shown.text)}</pre>`
+      : `<div class="preview__markdown">${markdown(shown.text)}</div>`;
   }
   if (shown.kind === "split") {
     return `
@@ -237,7 +245,13 @@ function preview(files) {
   if (!shown.text.trim()) {
     return empty("check", "Nothing to show", "This selection has no differences.");
   }
-  return `<pre class="preview__text">${highlight(shown.text, shown.language)}</pre>`;
+  // A very long diff is drawn in part until asked for the rest, as on macOS:
+  // tens of thousands of lines make the page crawl.
+  const lines = shown.text.split("\n");
+  const cut = !files.loadAll && lines.length > LINES;
+  const text = cut ? lines.slice(0, LINES).join("\n") : shown.text;
+  return `<pre class="preview__text${files.wrap ? " preview__text--wrap" : ""}">${highlight(text, shown.language)}</pre>
+    ${cut ? `<div class="preview__more">${button({ label: `Load all ${lines.length.toLocaleString()} lines`, action: "files-load-all" })}</div>` : ""}`;
 }
 
 function side(cell, which) {

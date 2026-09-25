@@ -157,6 +157,7 @@ pub fn run() {
             commands::limits::limits_read,
             commands::limits::diagnostics_run,
             commands::limits::setup_checks,
+            commands::limits::review_template_default,
             commands::limits::worktrees_path,
             commands::limits::project_git,
             commands::icons::project_icon_set,

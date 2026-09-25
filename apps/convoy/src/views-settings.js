@@ -244,6 +244,7 @@ function agents(settings) {
       `<div class="pref-block">
          <textarea class="pref-area" data-pref-text="review_template" rows="6" spellcheck="false"
                    placeholder="Leave empty for the built-in brief">${escape(settings.review_template ?? "")}</textarea>
+         ${button({ label: "Insert default", action: "insert-review-default", kind: "quiet" })}
        </div>`,
       "Used by Start review and by automatic task reviews, unless the project sets its own in Project settings.",
     )}

@@ -83,30 +83,33 @@ All done on September 25, 2026, except the side panel, which was declined. Each 
 
 ## P2 — polish
 
+All done on September 25, 2026. Each row is covered by `apps/convoy/test/flows.mjs` or a Rust test.
+
 | Swift capability | Status | Note |
 |---|---|---|
-| Project hierarchy (parent/child, "Show group hierarchy") | PARTIAL | `Project.group` is a heading label. |
-| ⌘-click multi-select of sessions: archive, close tabs | MISSING | |
-| Move tab left/right shortcuts ⇧⌘←/→ | MISSING | In the tab menu only. |
-| Panes: Maximize, per-pane quick commands, suggestions in an empty pane, sessions from other projects | PARTIAL | |
-| Quick commands: edit in place, palette mode ⌘/ | PARTIAL | Add and remove only. |
-| Status-bar account switcher per agent | MISSING | |
-| Open Claude /usage ⌥⌘U; search sessions & projects ⇧⌘P | MISSING | Home ⇧⌘H is done. |
-| Spec WorkTasks (builder/reviewer pairs inside a spec) | MISSING | The import turns them into ordinary tasks linked to the spec. |
-| Task dependencies "Blocked by" | MISSING | The import keeps no dependency. |
-| Spec search box | MISSING | |
-| Diff: unified/split and wrap toggles, load all, rendered Markdown | PARTIAL | |
-| Log: copy SHA or subject | MISSING | |
-| Branch from a chosen base | PARTIAL | Name only. |
-| Review template "Insert default" (project and global) | MISSING | |
-| Shortcuts: reset one, unbind, show conflicts | PARTIAL | The core rejects duplicates. |
-| Keep-awake toggle target | PARTIAL | Swift toggles to "while running", Tauri to "always". |
-| Workspace options menu in the sidebar | MISSING | They are in Settings. |
+| Project hierarchy (parent/child, "Show group hierarchy") | done | Groups are rows that fold; with the hierarchy off they list flat. The group is still a label in the workspace, not a parent project. |
+| ⌘-click multi-select of sessions: archive, close tabs | done | Ctrl-click on Linux and Windows. |
+| Move tab left/right shortcuts ⇧⌘←/→ | done | |
+| Panes: Maximize, per-pane quick commands, suggestions in an empty pane, sessions from other projects | done | |
+| Quick commands: edit in place, palette mode ⌘/ | done | |
+| Status-bar account switcher per agent | done | Shown once an agent has an account to pick. |
+| Open Claude /usage ⌥⌘U; search sessions & projects ⇧⌘P | done | |
+| Spec WorkTasks (builder/reviewer pairs inside a spec) | done | Shown as the spec's tasks with their builder and reviewer sessions, findings, the review brief, and "link existing session". |
+| Task dependencies "Blocked by" | done | The core refuses circles and other projects' tasks. |
+| Spec search box | done | |
+| Diff: unified/split and wrap toggles, load all, rendered Markdown | done | Long diffs are drawn to 3,000 lines until "Load all". |
+| Log: copy SHA or subject | done | |
+| Branch from a chosen base | done | Core `BranchFrom`. |
+| Review template "Insert default" (project and global) | done | |
+| Shortcuts: reset one, unbind, show conflicts | done | Backspace unbinds; a key in use is refused and named. |
+| Keep-awake toggle target | done | Toggles to "while agents run", as on macOS. |
+| Workspace options menu in the sidebar | done | |
 
 ## Shortcuts still to add
 
-`tab.moveLeft`/`tab.moveRight` ⇧⌘←/→, `go.search` ⇧⌘P and `limits.claudeUsage` ⌥⌘U. The import leaves out an override of
-any of these until the action exists here.
+None: every macOS shortcut has an action here. The importer carries each
+binding across; ⌃⌘R for Refresh projects becomes ⌥⇧⌘R by default here, since
+⌃⌘R is Ctrl+R on Linux and Windows.
 
 Layouts differ on purpose: Tauri uses `ctrl+shift+1/2/4`, because on Linux and Windows
 `ctrl+alt+digit` and `mod+alt+digit` are the same keys. Swift uses `ctrl+1/2/4`.

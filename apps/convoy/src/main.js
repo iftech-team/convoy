@@ -881,8 +881,29 @@ const ACTIONS = {
   "new-branch": () => openModal({ kind: "branch", branch: "" }),
   "confirm-branch": async () => {
     const branch = value("draft-branch");
+    const base = value("draft-base").trim();
     closeDialog();
-    await mutate({ action: "branch", branch });
+    await mutate(base ? { action: "branchFrom", branch, base } : { action: "branch", branch });
+  },
+  "copy-sha": () => copyCommit("id"),
+  "copy-subject": () => copyCommit("subject"),
+  "files-wrap": () => {
+    state.files.wrap = !state.files.wrap;
+    render();
+  },
+  "files-raw": () => {
+    state.files.raw = !state.files.raw;
+    render();
+  },
+  "files-load-all": () => {
+    state.files.loadAll = true;
+    render();
+  },
+  "insert-review-default": async () => {
+    const text = await call("review_template_default");
+    if (text === undefined) return;
+    if (state.page === "project") return saveProjectField({ review_template: text });
+    return savePref({ review_template: text });
   },
   "confirm-generic": async () => {
     const run = state.dialog.run;
@@ -1673,6 +1694,14 @@ async function openClaudeUsage() {
   await loadWorkspace();
   openSession(id);
   await terminal.start(id);
+}
+
+async function copyCommit(what) {
+  const id = selectedCommit();
+  if (!id) return toast("Select a commit first.");
+  const commit = state.files?.snapshot?.log.find((entry) => entry.id === id);
+  await navigator.clipboard.writeText(what === "id" ? id : (commit?.subject ?? ""));
+  toast(what === "id" ? "SHA copied" : "Subject copied");
 }
 
 async function openFolder() {

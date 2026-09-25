@@ -601,3 +601,9 @@ pub async fn project_git(
     .await
     .map_err(|error| error.to_string())
 }
+
+/// The built-in review brief, for "Insert default".
+#[tauri::command]
+pub fn review_template_default() -> &'static str {
+    convoy_core::review::DEFAULT_TEMPLATE
+}

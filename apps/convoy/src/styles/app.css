@@ -4066,3 +4066,13 @@ input {
 .task-blocked {
   color: var(--state-failed);
 }
+
+/* Files: wrapped previews, and the rest of a long diff on request. */
+.preview__text--wrap {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.preview__more {
+  padding: 10px 16px 16px;
+}

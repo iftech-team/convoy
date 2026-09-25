@@ -43,6 +43,11 @@ pub enum Action {
     Branch {
         branch: String,
     },
+    /// A new branch started from `base` — a branch, a remote branch or a tag.
+    BranchFrom {
+        branch: String,
+        base: String,
+    },
     Revert {
         commit: String,
     },
@@ -113,6 +118,23 @@ impl Git {
                 }
                 args.push(branch);
                 self.run(root, &args)
+            }
+            Action::BranchFrom { branch, base } => {
+                ensure!(
+                    !branch.starts_with('-') && !base.starts_with('-'),
+                    "Invalid branch."
+                );
+                self.run(root, &["check-ref-format", "--branch", branch])?;
+                self.run(
+                    root,
+                    &[
+                        "rev-parse",
+                        "--verify",
+                        "--quiet",
+                        &format!("{base}^{{commit}}"),
+                    ],
+                )?;
+                self.run(root, &["switch", "-c", branch, base])
             }
             Action::Revert { commit } => {
                 self.run(root, &["revert", "--no-edit", revision(commit)?])

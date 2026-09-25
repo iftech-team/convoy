@@ -272,6 +272,10 @@ pub enum Mutation {
     Branch {
         branch: String,
     },
+    BranchFrom {
+        branch: String,
+        base: String,
+    },
     Revert {
         commit: String,
     },
@@ -298,6 +302,7 @@ impl From<Mutation> for Action {
             Mutation::Push => Action::Push,
             Mutation::Switch { branch } => Action::Switch { branch },
             Mutation::Branch { branch } => Action::Branch { branch },
+            Mutation::BranchFrom { branch, base } => Action::BranchFrom { branch, base },
             Mutation::Revert { commit } => Action::Revert { commit },
             Mutation::ResetSoft { commit } => Action::ResetSoft { commit },
             Mutation::ResetMixed { commit } => Action::ResetMixed { commit },
