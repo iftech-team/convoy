@@ -357,6 +357,21 @@ impl Workspace {
         })
     }
 
+    /// Moves a project to `index` in the list, which is the sidebar's order
+    /// unless projects are sorted by name.
+    pub fn move_project(&mut self, id: &str, index: usize) -> Result<&State> {
+        let id = id.to_string();
+        self.update(move |state| {
+            let Some(from) = state.projects.iter().position(|project| project.id == id) else {
+                bail!("Project not found.")
+            };
+            let project = state.projects.remove(from);
+            let to = index.min(state.projects.len());
+            state.projects.insert(to, project);
+            Ok(())
+        })
+    }
+
     pub fn remove_project(&mut self, id: &str) -> Result<&State> {
         let id = id.to_string();
         self.update(move |state| {

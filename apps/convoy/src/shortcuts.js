@@ -54,6 +54,7 @@ export const SHORTCUTS = [
   ["nextTab", "mod+shift+]", "Next section", "Project"],
   ["previousTab", "mod+shift+[", "Previous section", "Project"],
   ["reveal", "mod+alt+f", "Show project folder", "Project"],
+  ["projectRefresh", "mod+alt+shift+r", "Refresh projects in this folder", "Project"],
   ["copyPath", "mod+alt+c", "Copy folder path", "Project"],
   ["gitRefresh", "mod+alt+g", "Refresh Git status", "Project"],
   ["limits", "mod+shift+l", "AI Limits", "Limits"],

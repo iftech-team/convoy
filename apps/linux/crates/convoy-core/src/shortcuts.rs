@@ -58,6 +58,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ("reopenTab", "Reopen closed tab"),
     ("home", "Home"),
     ("dashboard", "Agent Dashboard"),
+    ("projectRefresh", "Refresh projects in this folder"),
 ];
 
 /// Defaults used when the workspace has no shortcut for an action: the
@@ -111,6 +112,9 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("reopenTab", "mod+shift+t"),
     ("home", "mod+shift+h"),
     ("dashboard", "mod+alt+d"),
+    // Not ⌃⌘R as on macOS: on Linux and Windows that is Ctrl+R, which the
+    // shell in every terminal needs for its history search.
+    ("projectRefresh", "mod+alt+shift+r"),
 ];
 
 /// `mod+shift+p` → `<Primary><Shift>p`. Returns nothing for anything the

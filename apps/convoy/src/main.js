@@ -49,6 +49,7 @@ import { projectSettingsPage } from "./views-project.js";
 import { forgetIcon, onIconLoaded } from "./icons.js";
 import { runnable, specsView, tasksView } from "./views-planning.js";
 import { dashboardView, homeView } from "./views-home.js";
+import { historyView } from "./views-history.js";
 import { PROJECT_DOC, docsView } from "./views-docs.js";
 
 const app = document.querySelector("#app");
@@ -101,6 +102,8 @@ function content() {
       return tasksView();
     case "docs":
       return docsView();
+    case "history":
+      return historyView();
     default:
       return sessionsView();
   }
@@ -662,6 +665,7 @@ const ACTIONS = {
   },
   refresh: () => loadWorkspace(),
   "macos-import": () => offerMacImport(false),
+  "history-refresh": () => loadHistory(),
   "find-next": () => findStep(),
   "find-previous": () => findStep({ previous: true }),
   "find-case": () => {
@@ -848,6 +852,7 @@ const SHORTCUT_ACTIONS = {
   // ⌘F finds in the terminal on screen, and in the sidebar otherwise.
   search: () => (terminalShown() ? openFind() : document.querySelector("#project-search")?.focus()),
   switcher: () => openPalette("terminals"),
+  projectRefresh: () => withProject(() => refreshProjects(state.projectId)),
   home: () => openHome(),
   dashboard: () => (state.page === "dashboard" ? openHome() : openHome("dashboard")),
   reopenTab: () => reopenTab(),
@@ -963,7 +968,7 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
+      "[data-layout],[data-needs-you],[data-history-copy],[data-history-resume],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -1072,6 +1077,11 @@ app.addEventListener("click", async (event) => {
   }
   if (data.project) {
     if (state.page === "home" || state.page === "dashboard") state.page = null;
+    // As on macOS, a click on the project shows the project, not its session.
+    if (state.projectId === data.project) {
+      state.sessionId = null;
+      state.files = null;
+    }
     await selectProject(data.project);
     return render();
   }
@@ -1092,6 +1102,7 @@ app.addEventListener("click", async (event) => {
     render();
     if (data.tab === "specs" || data.tab === "tasks") await loadPlanning();
     if (data.tab === "docs") await loadDocs();
+    if (data.tab === "history") await loadHistory();
     return;
   }
   if (data.start) {
@@ -1160,6 +1171,11 @@ app.addEventListener("click", async (event) => {
     state.files.branch = data.branch;
     return render();
   }
+  if (data.historyCopy) {
+    await navigator.clipboard.writeText(data.historyCopy);
+    return toast("Conversation ID copied");
+  }
+  if (data.historyResume) return resumeHistory(data.historyResume);
   if (data.taskScope) {
     state.taskScope = data.taskScope;
     if (data.taskScope === "all") await loadAllTasks();
@@ -1251,6 +1267,10 @@ app.addEventListener("input", (event) => {
       if (branch) branch.value = state.dialog.branch;
     }
     return;
+  }
+  if (field.id === "history-filter") {
+    state.historyFilter = field.value;
+    return render();
   }
   if (field.id === "dashboard-filter") {
     state.dashboardFilter = field.value;
@@ -1388,6 +1408,74 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
 });
 
 // ------------------------------------------------------------ operations --
+
+// ---------------------------------------------------------------- projects --
+
+/// Puts a project just before another. Across groups it joins the target's
+/// group, which is what a drag onto that group's row reads as.
+async function placeProject(id, before) {
+  const index = state.projects.findIndex((item) => item.id === before);
+  const from = state.projects.findIndex((item) => item.id === id);
+  if (index < 0 || from < 0) return;
+  const moving = state.projects[from];
+  const target = state.projects[index];
+  if ((moving.group ?? "") !== (target.group ?? "")) {
+    return toast(moving.group || target.group ? "Projects move within their group." : "");
+  }
+  if (await done("project_move", { id, index: from < index ? index - 1 : index })) await loadWorkspace();
+}
+
+/// Move up or down among the projects of the same group.
+async function moveProject(id, step) {
+  const moving = state.projects.find((item) => item.id === id);
+  const peers = state.projects.filter((item) => (item.group ?? "") === (moving?.group ?? ""));
+  const at = peers.findIndex((item) => item.id === id);
+  const next = peers[at + step];
+  if (!next) return render();
+  const index = state.projects.findIndex((item) => item.id === next.id);
+  if (await done("project_move", { id, index })) await loadWorkspace();
+}
+
+async function refreshProjects(id) {
+  const added = await call("project_refresh", { id });
+  if (added === undefined) return;
+  await loadWorkspace();
+  toast(added ? `Added ${plural(added, "project")}` : "No new projects in this folder");
+}
+
+// ----------------------------------------------------------------- history --
+
+async function loadHistory() {
+  const projectId = state.projectId;
+  if (!projectId) return;
+  const entries = await call("history_scan", { projectId });
+  if (entries === undefined || state.projectId !== projectId) return;
+  state.history = { projectId, entries };
+  render();
+}
+
+/// Opens the conversation's session, recording one first when there is none,
+/// and resumes it.
+async function resumeHistory(providerId) {
+  const entry = state.history?.entries.find((item) => item.provider_id === providerId);
+  if (!entry) return;
+  let id = entry.session_id;
+  if (!id) {
+    id = await call("transcripts_import", {
+      projectId: state.projectId,
+      agent: entry.agent,
+      providerId: entry.provider_id,
+      title: entry.title || "Imported conversation",
+      profileId: entry.profile_id,
+      directory: entry.directory,
+    });
+    if (!id) return;
+    await loadWorkspace();
+    await loadHistory();
+  }
+  await openAnywhere(id);
+  if (!isRunning(id)) await terminal.start(id);
+}
 
 async function openFolder() {
   const chosen = await openDialogNative({ directory: true, multiple: false });
@@ -1833,6 +1921,12 @@ async function runMenu(act) {
       case "reconnect":
         render();
         return reconnectProject();
+      case "refresh":
+        return refreshProjects(target.id);
+      case "move-up":
+        return moveProject(target.id, -1);
+      case "move-down":
+        return moveProject(target.id, 1);
       case "project-settings":
         return openProjectSettings();
       case "remove":
@@ -2942,6 +3036,35 @@ try {
 } catch (error) {
   fatal(error?.stack ?? String(error));
 }
+
+// Projects are reordered by dragging one onto another, within its group.
+let draggedProject = null;
+app.addEventListener("dragstart", (event) => {
+  const row = event.target.closest?.("[data-project-drag]");
+  if (!row) return;
+  draggedProject = row.dataset.projectDrag;
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", draggedProject);
+});
+app.addEventListener("dragover", (event) => {
+  const row = event.target.closest?.("[data-project-drag]");
+  if (!row || !draggedProject) return;
+  event.preventDefault();
+  for (const other of app.querySelectorAll(".project-row--drop")) other.classList.remove("project-row--drop");
+  if (row.dataset.projectDrag !== draggedProject) row.classList.add("project-row--drop");
+});
+app.addEventListener("drop", (event) => {
+  const row = event.target.closest?.("[data-project-drag]");
+  if (!row || !draggedProject) return;
+  event.preventDefault();
+  const id = draggedProject;
+  draggedProject = null;
+  if (row.dataset.projectDrag !== id) placeProject(id, row.dataset.projectDrag);
+});
+app.addEventListener("dragend", () => {
+  draggedProject = null;
+  for (const other of app.querySelectorAll(".project-row--drop")) other.classList.remove("project-row--drop");
+});
 
 // Task cards move between board columns by dragging.
 let draggedTask = null;

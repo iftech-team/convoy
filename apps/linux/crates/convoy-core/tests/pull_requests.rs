@@ -127,3 +127,29 @@ fn a_task_can_be_deleted_unless_its_agent_runs() {
         "the session is kept, unlinked"
     );
 }
+
+#[test]
+fn projects_keep_the_order_they_are_moved_into() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut workspace = Workspace::load(dir.path().join("workspace.json")).unwrap();
+    for name in ["a", "b", "c"] {
+        let folder = dir.path().join(name);
+        std::fs::create_dir_all(&folder).unwrap();
+        workspace.add_project(&folder).unwrap();
+    }
+    let titles = |workspace: &Workspace| -> Vec<String> {
+        workspace
+            .state()
+            .projects
+            .iter()
+            .map(|project| project.title.clone())
+            .collect()
+    };
+    let c = workspace.state().projects[2].id.clone();
+    workspace.move_project(&c, 0).unwrap();
+    assert_eq!(titles(&workspace), ["c", "a", "b"]);
+    workspace.move_project(&c, 9).unwrap();
+    assert_eq!(titles(&workspace), ["a", "b", "c"]);
+    let reloaded = Workspace::load(dir.path().join("workspace.json")).unwrap();
+    assert_eq!(titles(&reloaded), ["a", "b", "c"], "the order is saved");
+}

@@ -67,6 +67,27 @@ pub fn discover(root: &Path) -> Vec<PathBuf> {
     }
 }
 
+/// The projects strictly inside `root`, looked for even when `root` is a
+/// project itself — what "Refresh projects" adds. Unlike [`discover`] it never
+/// returns `root`, and a folder with nothing in it gives nothing.
+pub fn discover_within(root: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut count = 0usize;
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return found;
+    };
+    let mut entries: Vec<_> = entries.flatten().collect();
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let is_directory = entry.file_type().is_ok_and(|kind| kind.is_dir());
+        if is_directory && !name.starts_with('.') && !is_excluded(&name) {
+            visit(&entry.path(), 1, &mut count, &mut found);
+        }
+    }
+    found
+}
+
 fn visit(directory: &Path, depth: u32, count: &mut usize, found: &mut Vec<PathBuf>) {
     *count += 1;
     if *count > 3000 || depth > 10 {

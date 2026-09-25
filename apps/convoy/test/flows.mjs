@@ -65,6 +65,13 @@ try {
       if (cmd === "task_status") { tasks.find((item) => item.id === args.id).status = args.status; return null; }
       if (cmd === "task_delete") { tasks.splice(tasks.findIndex((item) => item.id === args.id), 1); return null; }
       if (cmd === "tasks_all") return tasks;
+      if (cmd === "project_move") { const [moved] = projects.splice(projects.findIndex((item) => item.id === args.id), 1); projects.splice(args.index, 0, moved); return null; }
+      if (cmd === "project_refresh") return 0;
+      if (cmd === "history_scan") return [{ agent: "claude", provider_id: "0199aaaa-0000-4000-8000-000000000001", title: "Fix flaky login", at: Date.now(), directory: "/fixture/worktrees/fix-login", profile_id: null, profile: null, session_id: null }];
+      if (cmd === "transcripts_import") {
+        sessions.push({ id: "imported", project_id: args.projectId, title: args.title, agent: args.agent, provider_id: args.providerId, started: true, running: false, pinned: false, review_of: null });
+        return "imported";
+      }
       if (cmd === "plugin:event|listen") { (listeners[args.event] ??= []).push(args.handler); return args.handler; }
       if (cmd === "limits_read") {
         const now = Date.now() / 1000;
@@ -267,6 +274,18 @@ try {
   await page.locator('[data-task-card="task"] .card__project', { hasText: "Example" }).waitFor();
   await page.locator('[data-task-scope="project"]').click();
   await page.locator('[data-task-view="list"]').click();
+  // History lists what the agents saved here and in worktrees; Resume records
+  // it as a session in its own folder and starts it.
+  await page.locator('[data-tab="history"]').click();
+  const saved = page.locator(".row", { hasText: "Fix flaky login" });
+  await saved.getByText("worktree fix-login").waitFor();
+  await saved.locator("[data-history-resume]").click();
+  await page.locator('.tab-item--selected[data-tab-open="imported"]').waitFor();
+  const imported = await page.evaluate(() => window.checkCalls.find((c) => c.cmd === "transcripts_import").args);
+  assert.equal(imported.directory, "/fixture/worktrees/fix-login");
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "session_start" && c.args.id === "imported"));
+  await page.locator('.project-row [data-project="project"]').click();
+  await page.locator('[data-tab="tasks"]').click();
   // New tasks publish as a pull request unless the project says otherwise.
   await page.locator('[data-action="new-task"]').click();
   await page.locator('.modal .choice [data-value="pr"][aria-pressed="true"]').waitFor();
@@ -307,7 +326,7 @@ try {
   if (shots) await page.screenshot({ path: `${shots}/new-session.png` });
   await page.locator('[data-action="create-session"]').click();
   await page.locator('.tab-item--selected[data-tab-open="fresh"]').waitFor();
-  const made = await page.evaluate(() => window.checkCalls.filter((c) => ["session_create", "worktree_create", "session_start"].includes(c.cmd)).map((c) => ({ cmd: c.cmd, ...c.args })));
+  const made = await page.evaluate(() => window.checkCalls.filter((c) => ["session_create", "worktree_create"].includes(c.cmd) || (c.cmd === "session_start" && c.args.id === "fresh")).map((c) => ({ cmd: c.cmd, ...c.args })));
   assert.deepEqual(made.map((c) => c.cmd), ["session_create", "worktree_create", "session_start"]);
   assert.equal(made[0].profileId, "work");
   assert.equal(made[0].agent, "codex");
@@ -418,6 +437,15 @@ try {
   await page.keyboard.press("Escape");
   await page.locator(".sidebar").waitFor();
 
+  // Projects move within their group, from the menu or by dragging.
+  await page.locator('[data-menu-project="other"]').click({ button: "right" });
+  await page.locator('[data-menu-act="move-up"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_move" && c.args.id === "other" && c.args.index === 0));
+  await page.locator('[data-project-drag="project"]').dragTo(page.locator('[data-project-drag="other"]'));
+  await page.waitForFunction(() => window.checkCalls.filter((c) => c.cmd === "project_move").length === 2);
+  await page.locator('[data-menu-project="project"]').click({ button: "right" });
+  await page.locator('[data-menu-act="refresh"]').click();
+  await page.locator(".toast", { hasText: "No new projects in this folder" }).waitFor();
   // Pinned sessions from every project sit above the projects, and every
   // project lists its sessions; opening one selects its project.
   await page.locator(".sidebar__group", { hasText: "Pinned" }).waitFor();

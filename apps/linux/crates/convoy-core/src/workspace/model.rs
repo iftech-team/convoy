@@ -613,4 +613,5 @@ pub const SHORTCUT_ACTIONS: &[&str] = &[
     "reopenTab",
     "home",
     "dashboard",
+    "projectRefresh",
 ];

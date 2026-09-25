@@ -21,6 +21,7 @@ const TABS = [
   ["specs", "Specs"],
   ["tasks", "Tasks"],
   ["docs", "Docs"],
+  ["history", "History"],
 ];
 
 // ---------------------------------------------------------------- sidebar --
@@ -132,7 +133,8 @@ export function sidebar() {
     const waiting = sessions.some((entry) => entry.running && state.agentState.get(entry.id) === "waiting");
     return `
       <div class="project-row${current ? " project-row--current" : ""}"
-           data-menu-project="${escape(item.id)}">
+           data-menu-project="${escape(item.id)}"
+           ${state.settings.sort_projects ? "" : `draggable="true" data-project-drag="${escape(item.id)}"`}>
         <button class="project-row__chevron" data-expand="${escape(item.id)}"
                 title="${expanded ? "Collapse" : "Expand"}"
                 ${sessions.length ? "" : 'style="visibility:hidden"'}>
@@ -228,12 +230,20 @@ export function contextMenu(menu) {
     entries = [
       item("New session…", "new-session", { icon: "plus" }),
       item("Import provider history…", "import-history", { icon: "history" }),
+      item(
+        state.projects.find((entry) => entry.id === menu.id)?.group ? "Refresh projects" : "Import projects from this folder",
+        "refresh",
+        { icon: "refresh" },
+      ),
       divider,
       item(revealLabel(), "reveal", { icon: "folder" }),
       item("Copy folder path", "copy-path", { icon: "copy" }),
       item("Reconnect folder…", "reconnect", { icon: "link" }),
       divider,
       item("Project settings…", "project-settings", { icon: "gear" }),
+      ...(state.settings.sort_projects
+        ? []
+        : [item("Move up", "move-up"), item("Move down", "move-down")]),
       divider,
       item("Remove from Convoy…", "remove", { icon: "trash", danger: true }),
     ].join("");

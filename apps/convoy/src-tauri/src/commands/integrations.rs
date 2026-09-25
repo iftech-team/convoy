@@ -117,12 +117,14 @@ pub fn transcripts_scan(
 /// Records an existing conversation as a session. It is marked started, so
 /// opening it resumes that exact conversation rather than beginning a new one.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn transcripts_import(
     project_id: String,
     agent: String,
     provider_id: String,
     title: String,
     profile_id: Option<String>,
+    directory: Option<String>,
     workspace: State<'_, Workspace>,
 ) -> Result<String, String> {
     let agent = Agent::parse(&agent).ok_or("Invalid provider.")?;
@@ -137,6 +139,7 @@ pub fn transcripts_import(
             &convoy_core::provider::launch::current_environment(),
         )?;
         let home = account.home.clone();
+        let project_path = Some(core.project(&project_id)?.path.clone());
 
         if let Some(existing) = core.state().sessions.iter().find(|session| {
             session.provider_id == provider_id
@@ -170,6 +173,10 @@ pub fn transcripts_import(
                 session.provider_id = identity;
                 session.started = true;
                 session.agent_home = Some(home);
+                // A conversation held in a worktree resumes only from there.
+                session.working_directory = directory
+                    .map(std::path::PathBuf::from)
+                    .filter(|folder| Some(folder.as_path()) != project_path.as_deref());
             }
             Ok(())
         })?;
@@ -307,4 +314,105 @@ pub fn usage_read(id: String, workspace: State<'_, Workspace>) -> Result<UsageVi
             .collect(),
         note,
     })
+}
+
+#[derive(Serialize)]
+pub struct HistoryEntry {
+    pub agent: String,
+    pub provider_id: String,
+    pub title: String,
+    pub at: f64,
+    /// The folder the conversation was held in: the project, or a worktree.
+    pub directory: String,
+    /// The account it belongs to; none is the system login.
+    pub profile_id: Option<String>,
+    pub profile: Option<String>,
+    /// The session already bound to it, when there is one.
+    pub session_id: Option<String>,
+}
+
+/// Every conversation the agents saved for a project: in its folder and in its
+/// sessions' worktrees, for both agents, under the system login and every
+/// account. Newest first, each once.
+#[tauri::command]
+pub fn history_scan(
+    project_id: String,
+    workspace: State<'_, Workspace>,
+) -> Result<Vec<HistoryEntry>, String> {
+    let storage = workspace.storage.clone();
+    let (folders, homes, sessions) = workspace.act(|core| {
+        let project = core.project(&project_id)?.clone();
+        let state = core.state();
+        let mut folders = vec![project.path.clone()];
+        for session in state.sessions.iter().filter(|s| s.project_id == project_id) {
+            if let Some(folder) = &session.working_directory {
+                if !folders.contains(folder) {
+                    folders.push(folder.clone());
+                }
+            }
+        }
+        let environment = convoy_core::provider::launch::current_environment();
+        let mut homes = Vec::new();
+        for agent in [Agent::Claude, Agent::Codex] {
+            let mut probe = convoy_core::model::Session::new(project_id.clone(), agent, "history");
+            let system = convoy_core::accounts::account_environment(
+                &probe,
+                &state.profiles,
+                &storage.accounts(),
+                &environment,
+            )?;
+            homes.push((agent, None, None, system.home));
+            for profile in state.profiles.iter().filter(|p| p.agent == agent) {
+                probe.profile_id = Some(profile.id.clone());
+                let account = convoy_core::accounts::account_environment(
+                    &probe,
+                    &state.profiles,
+                    &storage.accounts(),
+                    &environment,
+                )?;
+                homes.push((
+                    agent,
+                    Some(profile.id.clone()),
+                    Some(profile.label.clone()),
+                    account.home,
+                ));
+            }
+        }
+        let sessions: Vec<(String, Agent, String)> = state
+            .sessions
+            .iter()
+            .map(|s| (s.provider_id.clone(), s.agent, s.id.clone()))
+            .collect();
+        Ok((folders, homes, sessions))
+    })?;
+
+    let mut entries: Vec<HistoryEntry> = Vec::new();
+    for (agent, profile_id, profile, home) in &homes {
+        for folder in &folders {
+            for transcript in convoy_core::provider::transcripts::scan(*agent, home, folder) {
+                if entries
+                    .iter()
+                    .any(|entry| entry.provider_id == transcript.provider_id)
+                {
+                    continue;
+                }
+                let session_id = sessions
+                    .iter()
+                    .find(|(id, kind, _)| *id == transcript.provider_id && kind == agent)
+                    .map(|(_, _, session)| session.clone());
+                entries.push(HistoryEntry {
+                    agent: agent.as_str().to_string(),
+                    provider_id: transcript.provider_id,
+                    title: transcript.title,
+                    at: transcript.at,
+                    directory: folder.to_string_lossy().into_owned(),
+                    profile_id: profile_id.clone(),
+                    profile: profile.clone(),
+                    session_id,
+                });
+            }
+        }
+    }
+    entries.sort_by(|a, b| b.at.total_cmp(&a.at));
+    Ok(entries)
 }

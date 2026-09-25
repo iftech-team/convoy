@@ -745,7 +745,7 @@ impl Merge<'_> {
 }
 
 /// The macOS app's shortcut ids and their counterparts here.
-const SHORTCUT_IDS: [(&str, &str); 42] = [
+const SHORTCUT_IDS: [(&str, &str); 43] = [
     ("session.new", "newSession"),
     ("session.resume", "resume"),
     ("session.stop", "stop"),
@@ -788,6 +788,7 @@ const SHORTCUT_IDS: [(&str, &str); 42] = [
     ("tab.reopen", "reopenTab"),
     ("go.home", "home"),
     ("go.dashboard", "dashboard"),
+    ("project.refresh", "projectRefresh"),
 ];
 
 /// `cmd+shift+r` (macOS notation) as `mod+shift+r`, or nothing when this
