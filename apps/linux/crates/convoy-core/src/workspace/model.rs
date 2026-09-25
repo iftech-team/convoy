@@ -373,6 +373,9 @@ pub struct Task {
     /// queue passes it by until they are.
     #[serde(rename = "dependsOn", default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<String>,
+    /// The account its session signs in with; none is the system login.
+    #[serde(rename = "profileID", default, skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }

@@ -41,8 +41,13 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
 
   // ------------------------------------------------------------ helpers --
 
-  const modelList = (agent) =>
-    `<datalist id="models-${agent}">${MODELS[agent].map(([id, name]) => `<option value="${id}">${escape(name)}</option>`).join("")}</datalist>`;
+  // The agent's own models once read (see ensureModels in main.js); the
+  // well-known ones until then.
+  const modelList = (agent) => {
+    const loaded = state.models?.[`${agent}:`]?.map((model) => [model.id, model.name]);
+    const models = loaded?.length ? loaded : MODELS[agent];
+    return `<datalist id="models-${agent}">${models.map(([id, name]) => `<option value="${escape(id)}">${escape(name)}</option>`).join("")}</datalist>`;
+  };
 
   const agentSelect = (attrs, value) =>
     `<select ${attrs}>${AGENTS.map(([id, name]) => `<option value="${id}"${id === value ? " selected" : ""}>${name}</option>`).join("")}</select>`;

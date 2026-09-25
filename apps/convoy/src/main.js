@@ -300,8 +300,29 @@ function stepTabs(step) {
   return openTab(state.tabs[(Math.max(at, 0) + step + state.tabs.length) % state.tabs.length]);
 }
 
+/// The models of an agent for an account, read once and kept.
+const modelsLoading = new Set();
+function ensureModels(agent, profileId = "") {
+  const key = `${agent}:${profileId}`;
+  state.models ??= {};
+  if (state.models[key] || modelsLoading.has(key)) return;
+  modelsLoading.add(key);
+  call("models_list", { agent, profileId: profileId || null }).then((models) => {
+    modelsLoading.delete(key);
+    state.models[key] = models ?? [];
+    render();
+  });
+}
+
 function render() {
   syncTabs();
+  // A sheet choosing a model asks for the agent's list the first time.
+  if (state.dialog?.kind === "task") ensureModels(state.dialog.agent, state.dialog.profile_id ?? "");
+  if (state.dialog?.kind === "session" && state.dialog.agent) ensureModels(state.dialog.agent, state.dialog.account ?? "");
+  if (state.dialog && isImportDialog()) {
+    ensureModels("claude");
+    ensureModels("codex");
+  }
   const caret = document.activeElement?.id;
   const position = document.activeElement?.selectionStart;
   // Every change re-renders, and a scroller that jumps to the top each time
@@ -524,6 +545,8 @@ const DRAFT_FIELDS = {
   "draft-shared": "shared_paths",
   "draft-setup": "setup_command",
   "draft-review": "review_template",
+  "task-spec": "spec_id",
+  "task-account": "profile_id",
   ...Object.fromEntries(["title", "problem", "requirements", "acceptance", "constraints", "plan"].map((key) => [`spec-${key}`, key])),
   ...Object.fromEntries(["title", "details", "findings", "model"].map((key) => [`task-${key}`, key])),
 };
@@ -775,6 +798,7 @@ const ACTIONS = {
       agent: project()?.default_agent || state.settings.default_agent,
       mode: project()?.task_mode || "pr",
       model: "",
+      profile_id: activeAccount(project()?.default_agent || state.settings.default_agent),
       auto_review: false,
       spec_id: "",
     }),
@@ -1245,7 +1269,16 @@ app.addEventListener("click", async (event) => {
   if (data.set) {
     captureDraft();
     state.dialog[fieldFor(data.set)] = data.value;
-    if (state.dialog.kind === "session" && data.set === "agent") state.dialog.account = activeAccount(data.value);
+    if (state.dialog.kind === "session" && data.set === "agent") {
+      state.dialog.account = activeAccount(data.value);
+      state.dialog.model = "";
+    }
+    // An account and a model belong to one agent; switching lets them go.
+    if (state.dialog.kind === "task" && data.set === "agent") {
+      const own = (state.profiles ?? []).some((item) => item.id === state.dialog.profile_id && item.agent === data.value);
+      if (!own) state.dialog.profile_id = "";
+      state.dialog.model = "";
+    }
     return render();
   }
   if (data.toggle) {
@@ -1482,7 +1515,11 @@ app.addEventListener("change", async (event) => {
   }
   if (state.dialog?.kind === "session" && event.target.id === "draft-account") {
     state.dialog.account = event.target.value;
-    return;
+    return render();
+  }
+  if (state.dialog?.kind === "task" && ["task-account", "task-spec", "task-model"].includes(event.target.id)) {
+    state.dialog[DRAFT_FIELDS[event.target.id]] = event.target.value;
+    return render();
   }
   const projectKey = event.target.dataset?.projText ?? event.target.dataset?.projSelect;
   if (projectKey) return saveProjectField({ [projectKey]: event.target.value });
@@ -2538,6 +2575,10 @@ async function saveTask(run = false) {
   const before = findTask(id);
   if (model !== (before?.model ?? "") || (before && before.agent !== dialog.agent)) {
     if (!(await done("task_agent", { id, agent: dialog.agent, model }))) return;
+  }
+  const account = dialog.profile_id || null;
+  if ((account ?? "") !== (before?.profile_id ?? "")) {
+    if (!(await done("task_account", { id, profileId: account }))) return;
   }
   closeDialog();
   await reloadTasks();

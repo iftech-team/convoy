@@ -416,3 +416,32 @@ pub fn history_scan(
     entries.sort_by(|a, b| b.at.total_cmp(&a.at));
     Ok(entries)
 }
+
+/// The models an agent offers, for the account given (none is the system
+/// login): Codex's own list, or Claude Code's aliases and configured model.
+#[tauri::command]
+pub fn models_list(
+    agent: String,
+    profile_id: Option<String>,
+    workspace: State<'_, Workspace>,
+) -> Result<Vec<convoy_core::provider::models::Model>, String> {
+    let agent = Agent::parse(&agent).ok_or("Unknown agent.")?;
+    let storage = workspace.storage.clone();
+    let home = workspace.act(|core| {
+        let mut probe = convoy_core::model::Session::new(String::new(), agent, "models");
+        probe.profile_id = profile_id.filter(|id| !id.is_empty()).filter(|id| {
+            core.state()
+                .profiles
+                .iter()
+                .any(|p| &p.id == id && p.agent == agent)
+        });
+        Ok(convoy_core::accounts::account_environment(
+            &probe,
+            &core.state().profiles,
+            &storage.accounts(),
+            &convoy_core::provider::launch::current_environment(),
+        )?
+        .home)
+    })?;
+    Ok(convoy_core::provider::models::list(agent, &home))
+}

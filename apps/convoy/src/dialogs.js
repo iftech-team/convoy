@@ -41,10 +41,20 @@ const accountOptions = (agent) => [
   ...(state.profiles ?? []).filter((item) => item.agent === agent).map((item) => [item.id, item.label]),
 ];
 
-const select = (id, options, selected) =>
-  `<select id="${id}" class="field__select">${options
+const select = (id, options, selected, disabled = false) =>
+  `<select id="${id}" class="field__select"${disabled ? " disabled" : ""}>${options
     .map(([value, label]) => `<option value="${escape(value)}"${value === selected ? " selected" : ""}>${escape(label)}</option>`)
     .join("")}</select>`;
+
+/// The agent's models, read from its own files for the chosen account, with
+/// the CLI's default first. A model set earlier by name stays listed.
+export function modelSelect(id, agent, profileId, value) {
+  const models = state.models?.[`${agent}:${profileId}`];
+  const options = [["", "Default"], ...(models ?? []).map((model) => [model.id, model.name])];
+  if (value && !options.some(([option]) => option === value)) options.push([value, value]);
+  if (!models) options.push(["__loading", "Loading models…"]);
+  return select(id, options, value);
+}
 
 /// As the macOS app's sheet: any project, an optional name, an isolated
 /// worktree from a chosen ref, the agent and its account, and a first
@@ -110,7 +120,7 @@ function newSession(dialog) {
       ${field("Agent", choice("agent", AGENTS, dialog.agent))}
       <div class="field-row">
         ${field("Account", select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
-        ${field("Model", textInput("draft-model", dialog.model, "CLI default"))}
+        ${field("Model", modelSelect("draft-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}
       </div>
       ${field(
         "First message (optional)",
@@ -436,7 +446,6 @@ function blockedBy(dialog) {
       </label>`,
       )
       .join("")}</div>`,
-    "The queue waits for these to be done first.",
   );
 }
 
@@ -448,21 +457,22 @@ const taskForm = (dialog) => {
     wide: true,
     body: `
       ${field("Title", textInput("task-title", dialog.title))}
-      <div class="field-row">
-        ${field("Agent", choice("agent", AGENTS, dialog.agent))}
-        ${field("Model", textInput("task-model", dialog.model ?? "", "CLI default"))}
-      </div>
-      ${field(
-        "Specification",
+      ${field("Agent", choice("agent", AGENTS, dialog.agent))}
+      ${
+        // A list, not a row of buttons: a project may have a hundred specs.
         specs.length
-          ? choice(
-              "spec",
-              [["", "None"], ...specs.map((spec) => [spec.id, spec.title])],
-              dialog.spec_id ?? "",
+          ? field(
+              "Specification",
+              select(
+                "task-spec",
+                [["", "None"], ...specs.map((spec) => [spec.id, `${spec.title}${spec.approved ? "" : " · draft"}`])],
+                dialog.spec_id ?? "",
+                !!dialog.id,
+              ),
+              dialog.id ? "Fixed once the task exists." : "",
             )
-          : '<span class="field__note">No specifications in this project.</span>',
-        dialog.id ? "Fixed once the task exists." : "",
-      )}
+          : ""
+      }
       ${field(
         "Publishing",
         choice(
@@ -470,12 +480,22 @@ const taskForm = (dialog) => {
           [["none", "Do not publish"], ["pr", "Pull request"], ["push", "Push"]],
           dialog.mode,
         ),
-        "A pull request is the default, as on macOS.",
       )}
       ${setting("Hand to the other agent when it finishes", "", toggle("auto_review", dialog.auto_review, "Automatic review"))}
       ${blockedBy(dialog)}
       ${field("Details", textArea("task-details", dialog.details, "", 4))}
-      ${field("Findings", textArea("task-findings", dialog.findings, "", 3))}`,
+      ${field("Findings", textArea("task-findings", dialog.findings, "", 3))}
+      <button class="sheet-disclosure" data-toggle="advanced" aria-expanded="${!!dialog.advanced}">
+        ${dialog.advanced ? "▾" : "▸"} Advanced
+      </button>
+      ${
+        dialog.advanced
+          ? `<div class="sheet-box"><div class="field-row">
+               ${field("Model", modelSelect("task-model", dialog.agent, dialog.profile_id ?? "", dialog.model ?? ""))}
+               ${field("Account", select("task-account", accountOptions(dialog.agent), dialog.profile_id ?? ""))}
+             </div></div>`
+          : ""
+      }`,
     foot: `
       ${dialog.id ? button({ icon: "trash", kind: "quiet", title: "Delete task", action: "delete-task", disabled: dialog.status === "building" }) : ""}
       ${button({ label: "Cancel", data: { dismiss: "1" } })}

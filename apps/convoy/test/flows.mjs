@@ -99,6 +99,10 @@ try {
         ? { kind: "text", text: Array.from({ length: 3500 }, (_, i) => `+line ${i}`).join("\n"), language: "diff", hash: "r" }
         : { kind: "text", text: "<<<<<<< HEAD", language: "diff", hash: "h" };
       if (cmd === "review_template_default") return "DEFAULT BRIEF";
+      if (cmd === "models_list") return args.agent === "claude"
+        ? [{ id: "opus", name: "Opus · most capable" }, { id: "sonnet", name: "Sonnet · balanced" }]
+        : [{ id: "gpt-6", name: "GPT-6" }];
+      if (cmd === "task_account") { tasks.find((item) => item.id === args.id).profile_id = args.profileId; return null; }
       if (["files_mutate", "files_open"].includes(cmd)) return cmd === "files_mutate" ? "" : null;
       if (cmd === "history_scan") return [{ agent: "claude", provider_id: "0199aaaa-0000-4000-8000-000000000001", title: "Fix flaky login", at: Date.now(), directory: "/fixture/worktrees/fix-login", profile_id: null, profile: null, session_id: null }];
       if (cmd === "transcripts_import") {
@@ -337,8 +341,11 @@ try {
   // Grouped by status; the task's own form carries its model.
   await page.locator(".task-group", { hasText: "Queued" }).waitFor();
   await page.locator('.row[data-task="task"]').click();
+  // Model and account sit under Advanced; the models are the agent's own.
+  await page.locator('.modal [data-toggle="advanced"]').click();
   assert.equal(await page.locator("#task-model").inputValue(), "sonnet");
-  await page.locator("#task-model").fill("opus");
+  assert.deepEqual(await page.locator("#task-model option").allTextContents(), ["Default", "Opus · most capable", "Sonnet · balanced"]);
+  await page.locator("#task-model").selectOption("opus");
   await page.locator('[data-action="save-task"]').click();
   await page.locator('.row[data-task="task"]').waitFor();
   // On the board, a card dragged to another column takes that status.
@@ -427,6 +434,14 @@ try {
   // New tasks publish as a pull request unless the project says otherwise.
   await page.locator('[data-action="new-task"]').click();
   await page.locator('.modal .choice [data-value="pr"][aria-pressed="true"]').waitFor();
+  // Specs are a list to pick from, however many there are; Codex brings its
+  // own models and accounts under Advanced.
+  assert.deepEqual(await page.locator("#task-spec option").allTextContents(), ["None", "Checkout retries"]);
+  await page.locator('.modal .choice [data-value="codex"]').click();
+  await page.locator('.modal [data-toggle="advanced"]').click();
+  await page.locator("#task-model option", { hasText: "GPT-6" }).waitFor({ state: "attached" });
+  await page.locator("#task-account").selectOption("work");
+  if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/task-form.png` });
   await page.keyboard.press("Escape");
   await page.locator('.row[data-task="task"] [data-task-more="task"]').click();
   await page.locator('[data-menu-act="task-delete"]').click();

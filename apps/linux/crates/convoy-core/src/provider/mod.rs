@@ -3,6 +3,7 @@
 
 pub mod codex;
 pub mod launch;
+pub mod models;
 pub mod transcripts;
 
 use crate::workspace::model::{Agent, Session};

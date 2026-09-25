@@ -228,6 +228,7 @@ impl Workspace {
                     source: None,
                     pr_url: None,
                     depends_on: Vec::new(),
+                    profile_id: None,
                     unknown: Default::default(),
                 }),
             }
@@ -267,6 +268,29 @@ impl Workspace {
                 }
             }
             state.tasks[index].status = status;
+            Ok(())
+        })
+    }
+
+    /// The account a task's session signs in with; none is the system login.
+    pub fn set_task_account(&mut self, id: &str, profile_id: Option<String>) -> Result<&State> {
+        let id = id.to_string();
+        self.update(move |state| {
+            let Some(index) = find_task_index(state, &id) else {
+                bail!("Task unavailable.")
+            };
+            let profile_id = profile_id.filter(|value| !value.is_empty());
+            if let Some(profile) = &profile_id {
+                let agent = state.tasks[index].agent;
+                ensure!(
+                    state
+                        .profiles
+                        .iter()
+                        .any(|p| &p.id == profile && p.agent == agent),
+                    "That account is not one of this agent's."
+                );
+            }
+            state.tasks[index].profile_id = profile_id;
             Ok(())
         })
     }
@@ -432,7 +456,10 @@ impl Workspace {
                 worktree_removed: None,
                 review_of: None,
                 task_id: Some(task.id.clone()),
-                profile_id: profile_id.filter(|id| !id.is_empty()),
+                profile_id: profile_id
+                    .clone()
+                    .filter(|id| !id.is_empty())
+                    .or_else(|| task.profile_id.clone()),
                 unknown: Default::default(),
             };
             let session_id = session.id.clone();
@@ -522,6 +549,7 @@ impl Workspace {
                     }),
                     pr_url: None,
                     depends_on: Vec::new(),
+                    profile_id: None,
                     unknown: Default::default(),
                 });
             }
@@ -545,11 +573,24 @@ impl Workspace {
             let Some(index) = find_task_index(state, &id) else {
                 bail!("Task not found.")
             };
+            // An account belongs to one agent; switching agent lets it go.
+            let keeps_account = state.tasks[index]
+                .profile_id
+                .as_ref()
+                .is_none_or(|profile| {
+                    state
+                        .profiles
+                        .iter()
+                        .any(|p| &p.id == profile && p.agent == agent)
+                });
             let task = &mut state.tasks[index];
             ensure!(
                 task.status != TaskStatus::Building,
                 "Stop the task session before editing the task."
             );
+            if !keeps_account {
+                task.profile_id = None;
+            }
             if task.agent != agent || task.model != model {
                 task.agent = agent;
                 task.model = model;

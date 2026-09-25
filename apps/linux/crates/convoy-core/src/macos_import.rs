@@ -480,6 +480,7 @@ impl Merge<'_> {
                         source: None,
                         pr_url: None,
                         depends_on: Vec::new(),
+                        profile_id: None,
                         unknown: Default::default(),
                     });
                     self.report.tasks += 1;
@@ -566,6 +567,7 @@ impl Merge<'_> {
                 source,
                 pr_url: text(task, "prURL"),
                 depends_on: strings(task, "dependsOn"),
+                profile_id: None,
                 unknown: Default::default(),
             });
             self.report.tasks += 1;
