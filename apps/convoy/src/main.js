@@ -22,7 +22,7 @@ import {
   toast,
   visibleSessions,
 } from "./state.js";
-import { escape, numberValue, value } from "./ui.js";
+import { escape, value } from "./ui.js";
 import { SHORTCUTS, binding, capture, matches } from "./shortcuts.js";
 import { dialogView } from "./dialogs.js";
 import * as terminal from "./terminal.js";
@@ -33,10 +33,12 @@ import {
   sessionMenu,
   sessionsView,
   sidebar,
+  contextMenu,
   status,
   workbench,
 } from "./views.js";
 import { filesView, remoteMenu } from "./views-files.js";
+import { settingsPage } from "./views-settings.js";
 import { activityView, specsView, tasksView } from "./views-planning.js";
 
 const app = document.querySelector("#app");
@@ -91,6 +93,8 @@ function content() {
   }
 }
 
+let shown = null;
+
 function render() {
   const caret = document.activeElement?.id;
   const position = document.activeElement?.selectionStart;
@@ -103,24 +107,36 @@ function render() {
     ]),
   );
 
-  app.innerHTML = `
-    <div class="shell">
-      ${sidebar()}
-      <main class="main">${state.files ? "" : header()}${content()}</main>
-      ${status()}
-    </div>`;
+  app.innerHTML =
+    state.page === "settings"
+      ? `<div class="shell shell--page">${settingsPage()}${status()}</div>`
+      : `<div class="shell">
+          ${sidebar()}
+          <main class="main">${state.files ? "" : header()}${content()}</main>
+          ${status()}
+        </div>`;
 
   if (state.menu === "session") app.insertAdjacentHTML("beforeend", sessionMenu());
   if (state.menu === "quick") app.insertAdjacentHTML("beforeend", quickMenu());
   if (state.menu === "remote") app.insertAdjacentHTML("beforeend", remoteMenu());
+  if (state.menu?.kind) app.insertAdjacentHTML("beforeend", contextMenu(state.menu));
   if (state.dialog) app.insertAdjacentHTML("beforeend", isImportDialog() ? imports.dialog() : dialogView());
+
+  // Every click re-renders, and a dialog rebuilt from markup replays its
+  // opening animation — the whole modal blinked on each toggle. Only the
+  // render that opens a dialog or menu animates it.
+  const overlay = state.dialog ?? state.menu;
+  if (overlay && overlay === shown) {
+    for (const scrim of app.querySelectorAll(".scrim")) scrim.classList.add("scrim--settled");
+  }
+  shown = overlay;
 
   for (const [key, top] of scrolled) {
     const node = document.querySelector(`[data-scroll="${key}"]`);
     if (node) node.scrollTop = top;
   }
 
-  if (state.sessionId && !state.files) {
+  if (state.sessionId && !state.files && state.page !== "settings") {
     terminal.mount(state.sessionId);
     if (state.split) terminal.mount(state.split, "#terminal-host-split");
   }
@@ -218,14 +234,6 @@ function captureDraft() {
   for (const key of ["title", "details", "findings"]) {
     read(`task-${key}`, key);
   }
-  if (dialog.kind === "settings") {
-    dialog.settings.font_size = numberValue("set-font", dialog.settings.font_size);
-    dialog.settings.scrollback = numberValue("set-scrollback", dialog.settings.scrollback);
-    dialog.settings.hibernate_minutes = numberValue(
-      "set-hibernate",
-      dialog.settings.hibernate_minutes,
-    );
-  }
 }
 
 // -------------------------------------------------------------- actions ---
@@ -233,7 +241,7 @@ function captureDraft() {
 const ACTIONS = {
   // projects
   "open-folder": openFolder,
-  settings: openSettings,
+  settings: () => (state.page === "settings" ? closeSettings() : openSettings()),
   accounts: openAccounts,
   "import-history": openTranscripts,
   "project-settings": openProjectSettings,
@@ -346,7 +354,8 @@ const ACTIONS = {
   },
 
   // settings
-  "save-settings": saveSettings,
+  "close-settings": closeSettings,
+  "page-add-profile": addPageProfile,
   "add-profile": addProfile,
   "scan-transcripts": scanTranscripts,
 
@@ -486,7 +495,8 @@ app.addEventListener("click", async (event) => {
       "[data-change],[data-file],[data-commit],[data-branch],[data-task],[data-spec]," +
       "[data-approve],[data-export],[data-prepare],[data-status],[data-remove-profile]," +
       "[data-remove-command],[data-import],[data-task-view],[data-palette],[data-split],"
-      + "[data-capture],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
+      + "[data-capture],[data-expand],[data-project-more],[data-menu-act],[data-settings-section]," +
+      "[data-pref-set],[data-pref-toggle],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -496,6 +506,41 @@ app.addEventListener("click", async (event) => {
     return imports.editModel(state.dialog.id);
   }
   if (data.action === "import" || data.action === "integrations") await imports.loadTasks();
+  if (data.menuAct) return runMenu(data.menuAct);
+  if (data.projectMore) {
+    const box = target.getBoundingClientRect();
+    return openContextMenu("project", data.projectMore, box.left, box.bottom + 4);
+  }
+  if (data.expand) {
+    if (state.projectId !== data.expand) {
+      state.collapsed.delete(data.expand);
+      return selectProject(data.expand);
+    }
+    if (state.collapsed.has(data.expand)) state.collapsed.delete(data.expand);
+    else state.collapsed.add(data.expand);
+    return render();
+  }
+  if (state.page === "settings" && !state.dialog) {
+    if (data.settingsSection) {
+      state.settingsSection = data.settingsSection;
+      state.capturing = null;
+      return render();
+    }
+    if (data.prefSet === "profile_agent") {
+      state.profileAgent = data.value;
+      return render();
+    }
+    if (data.prefSet) return savePref({ [data.prefSet]: data.value });
+    if (data.prefToggle) return savePref({ [data.prefToggle]: !state.settings[data.prefToggle] });
+    if (data.capture) {
+      state.capturing = state.capturing === data.capture ? null : data.capture;
+      return render();
+    }
+  }
+  if (data.connAdd || data.connEdit || data.connRemove) {
+    await imports.onClick(target);
+    return;
+  }
   if (isImportDialog() || ["import", "integrations"].includes(data.action)) {
     if (await imports.onClick(target)) return;
   }
@@ -522,11 +567,6 @@ app.addEventListener("click", async (event) => {
   if (data.start) return terminal.start(data.start);
   if (data.stop) return terminal.stop(data.stop);
   if (data.open) return openSession(data.open);
-  if (data.capture) {
-    captureDraft();
-    state.dialog.capturing = data.capture;
-    return render();
-  }
   if (data.split) {
     state.split = data.split;
     return closeDialog();
@@ -541,18 +581,12 @@ app.addEventListener("click", async (event) => {
   }
   if (data.set) {
     captureDraft();
-    if (state.dialog.kind === "settings") state.dialog.settings[data.set] = data.value;
-    else state.dialog[fieldFor(data.set)] = data.value;
+    state.dialog[fieldFor(data.set)] = data.value;
     return render();
   }
   if (data.toggle) {
     captureDraft();
-    const key = data.toggle;
-    if (state.dialog.kind === "settings") {
-      state.dialog.settings[key] = !state.dialog.settings[key];
-    } else {
-      state.dialog[key] = !state.dialog[key];
-    }
+    state.dialog[data.toggle] = !state.dialog[data.toggle];
     return render();
   }
   if (data.filesView) {
@@ -618,6 +652,10 @@ app.addEventListener("input", (event) => {
     state.filter = field.value;
     return render();
   }
+  if (field.id === "settings-search") {
+    state.settingsQuery = field.value;
+    return render();
+  }
   if (field.id === "project-search") {
     state.search = field.value;
     return render();
@@ -635,6 +673,12 @@ app.addEventListener("input", (event) => {
 });
 
 app.addEventListener("change", async (event) => {
+  const key = event.target.dataset?.prefNumber;
+  if (key) {
+    const parsed = Number(event.target.value);
+    if (Number.isFinite(parsed)) return savePref({ [key]: Math.round(parsed) });
+    return render();
+  }
   if (isImportDialog() && imports.onChange(event.target)) return;
   if (event.target.dataset.toggleState) {
     state[event.target.dataset.toggleState] = event.target.checked;
@@ -643,8 +687,22 @@ app.addEventListener("change", async (event) => {
 });
 
 addEventListener("keydown", async (event) => {
+  // The shortcut editor on the settings page takes the next press whole.
+  if (state.page === "settings" && state.capturing && !state.dialog) {
+    event.preventDefault();
+    if (event.key === "Escape") {
+      state.capturing = null;
+      return render();
+    }
+    const pressed = capture(event);
+    if (!pressed) return;
+    const action = state.capturing;
+    state.capturing = null;
+    return savePref({ shortcuts: { ...(state.settings.shortcuts ?? {}), [action]: pressed } });
+  }
   if (event.key === "Escape") {
     if (state.menu || state.dialog) return closeDialog();
+    if (state.page === "settings") return closeSettings();
     return;
   }
   if (state.dialog?.kind === "palette") {
@@ -661,19 +719,6 @@ addEventListener("keydown", async (event) => {
     }
     return;
   }
-  // The shortcut editor is listening for the next press, and takes it whole
-  // rather than letting it also do what it is currently bound to.
-  if (state.dialog?.kind === "settings" && state.dialog.capturing) {
-    const pressed = capture(event);
-    if (pressed || event.key === "Escape") {
-      event.preventDefault();
-      if (pressed) state.dialog.settings.shortcuts[state.dialog.capturing] = pressed;
-      state.dialog.capturing = null;
-      return render();
-    }
-    return;
-  }
-
   const bound = SHORTCUTS.find(([action]) => matches(event, binding(action)));
   if (bound) {
     event.preventDefault();
@@ -859,26 +904,135 @@ async function openRemoveWorktree() {
   openModal({ kind: "remove-worktree", id: state.sessionId, ...plan });
 }
 
-async function openSettings() {
-  await loadProfiles();
-  openModal({
-    kind: "settings",
-    // `shortcuts` is copied rather than shared: a binding changed in the
-    // dialog and then cancelled must leave the live settings alone.
-    settings: { ...state.settings, shortcuts: { ...(state.settings.shortcuts ?? {}) } },
-    capturing: null,
-  });
+/// Settings is a page, as on macOS, and every change is saved as it is made.
+async function openSettings(section) {
+  state.page = "settings";
+  if (section) state.settingsSection = section;
+  state.capturing = null;
+  state.menu = null;
+  state.dialog = null;
+  state.profileAgent ??= state.settings.default_agent;
+  render();
+  await Promise.all([
+    loadProfiles(),
+    call("integrations_list").then((list) => {
+      if (list) state.integrations = list;
+    }),
+  ]);
+  render();
 }
 
-async function saveSettings() {
-  captureDraft();
-  if (!(await done("settings_save", { input: state.dialog.settings }))) return;
-  closeDialog();
-  await loadSettings();
-  terminal.applySettings();
-  await applyKeepAwake();
+function closeSettings() {
+  state.page = null;
+  state.capturing = null;
   render();
-  toast("Settings saved");
+}
+
+/// Saves one change. The core validates the whole set, so a rejected value
+/// is reported and the page shows what is actually stored.
+async function savePref(patch) {
+  const input = { ...state.settings, shortcuts: { ...(state.settings.shortcuts ?? {}) }, ...patch };
+  const saved = await done("settings_save", { input });
+  await loadSettings();
+  if (saved) {
+    terminal.applySettings();
+    await applyKeepAwake();
+  }
+  render();
+}
+
+async function addPageProfile() {
+  const label = value("pref-profile-label").trim();
+  if (!label) return toast("Give the account a label.");
+  if (!(await done("profile_add", { label, agent: state.profileAgent }))) return;
+  await loadProfiles();
+  render();
+  toast(`Added ${label}`);
+}
+
+/// Right-click and "…" menus in the sidebar.
+function openContextMenu(kind, id, x, y) {
+  state.dialog = null;
+  state.menu = { kind, id, x, y };
+  render();
+}
+
+async function runMenu(act) {
+  const menu = state.menu;
+  state.menu = null;
+  if (!menu?.kind) return render();
+  if (menu.kind === "project") {
+    const target = state.projects.find((item) => item.id === menu.id);
+    if (!target) return render();
+    if (state.projectId !== target.id) await selectProject(target.id);
+    switch (act) {
+      case "new-session":
+        return ACTIONS["new-session"]();
+      case "import-history":
+        return openTranscripts();
+      case "reveal":
+        render();
+        return call("path_reveal", { path: target.path });
+      case "copy-path":
+        await navigator.clipboard.writeText(target.path);
+        render();
+        return toast("Path copied");
+      case "reconnect":
+        render();
+        return reconnectProject();
+      case "project-settings":
+        return openProjectSettings();
+      case "remove":
+        return ACTIONS["remove-project"]();
+    }
+    return render();
+  }
+  const target = state.sessions.find((item) => item.id === menu.id);
+  if (!target) return render();
+  switch (act) {
+    case "open":
+      return openSession(target.id);
+    case "pin":
+      if (await done("session_pin", { id: target.id, pinned: !target.pinned })) await loadSessions();
+      return render();
+    case "start":
+      return terminal.start(target.id);
+    case "sleep":
+      await done("session_hibernate", { id: target.id });
+      return render();
+    case "stop":
+      return openModal({
+        kind: "confirm",
+        title: "Stop this agent?",
+        body: "This interrupts current work. The saved conversation stays with the agent.",
+        confirmLabel: "Stop",
+        danger: true,
+        run: () => terminal.stop(target.id),
+      });
+    case "edit":
+      state.sessionId = target.id;
+      return openEditSession();
+    case "review":
+      state.sessionId = target.id;
+      return openReview();
+    case "archive":
+      if (await done("session_archive", { id: target.id, archived: !target.archived })) {
+        if (!target.archived && state.sessionId === target.id) state.sessionId = null;
+        await loadSessions();
+      }
+      return render();
+    case "reveal-worktree":
+      render();
+      return call("path_reveal", { path: target.working_directory });
+    case "copy-worktree":
+      await navigator.clipboard.writeText(target.working_directory);
+      render();
+      return toast("Path copied");
+    case "remove-worktree":
+      state.sessionId = target.id;
+      return openRemoveWorktree();
+  }
+  return render();
 }
 
 async function loadProfiles() {
@@ -1357,3 +1511,13 @@ try {
 } catch (error) {
   fatal(error?.stack ?? String(error));
 }
+
+// Right-click on a project or a session in the sidebar opens its menu.
+app.addEventListener("contextmenu", (event) => {
+  const session = event.target.closest("[data-menu-session]");
+  const owner = event.target.closest("[data-menu-project]");
+  if (!session && !owner) return;
+  event.preventDefault();
+  if (session) return openContextMenu("session", session.dataset.menuSession, event.clientX, event.clientY);
+  return openContextMenu("project", owner.dataset.menuProject, event.clientX, event.clientY);
+});

@@ -6,6 +6,7 @@
 
 import { button, empty, escape, plural } from "./ui.js";
 import { state } from "./state.js";
+import { agentIcon } from "./icons.js";
 
 const COLUMNS = [
   ["queued", "Queued", "idle"],
@@ -105,11 +106,11 @@ function taskList(planning) {
         .map(
           (task) => `
         <div class="row" data-task="${escape(task.id)}">
-          <span class="row__mark">◇</span>
+          <span class="row__mark">${task.agent ? agentIcon(task.agent, 16) : "◇"}</span>
           <div class="row__body">
             <div class="row__title">${escape(task.title)}</div>
             <div class="row__meta">
-              ${task.source ? escape(`${task.source.tracker} ${task.source.key}`) + " · " : ""}${task.model ? escape(task.model) + " · " : ""}${escape(task.status)} · ${escape(MODES[task.mode] ?? task.mode)}
+              ${task.source ? escape(`${task.source.tracker === "jira" ? "Jira" : "Linear"} ${task.source.key}`) + " · " : ""}${task.model ? escape(task.model) + " · " : ""}${escape(task.status)} · ${escape(MODES[task.mode] ?? task.mode)}
               ${task.auto_review ? " · automatic review" : ""}
               ${task.last_error ? ` · ${escape(task.last_error)}` : ""}
             </div>

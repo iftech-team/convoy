@@ -8,7 +8,6 @@ import {
   group,
   modal,
   plural,
-  segmented,
   setting,
   textArea,
   textInput,
@@ -16,14 +15,11 @@ import {
 } from "./ui.js";
 import { markdown } from "./views-files.js";
 import { state, project, session } from "./state.js";
-import { SHORTCUTS, label } from "./shortcuts.js";
-
-const fallback = (action) =>
-  SHORTCUTS.find(([name]) => name === action)?.[1] ?? "";
+import { agentIcon } from "./icons.js";
 
 const AGENTS = [
-  ["claude", "Claude Code"],
-  ["codex", "Codex"],
+  ["claude", "Claude Code", agentIcon("claude", 15)],
+  ["codex", "Codex", agentIcon("codex", 15)],
 ];
 
 export function dialogView() {
@@ -183,63 +179,7 @@ const removeWorktree = (dialog) =>
     foot: foot("Remove worktree", "confirm-remove-worktree", "danger-solid"),
   });
 
-// ---------------------------------------------------------------- settings --
-
-const settings = (dialog) => {
-  const draft = dialog.settings;
-  return modal({
-    title: "Settings",
-    hint: "Shared with the other builds through the workspace file.",
-    body: `
-      ${group(
-        "Appearance",
-        `
-        ${setting("Theme", "System follows the desktop.", segmented("theme", [["system", "System"], ["light", "Light"], ["dark", "Dark"]], draft.theme))}
-        ${setting("Font size", "Terminal text, 10 to 24.", `<input type="number" id="set-font" min="10" max="24" value="${draft.font_size}" />`)}
-        ${setting("Scrollback", "Lines kept per terminal, 1000 to 50000.", `<input type="number" id="set-scrollback" min="1000" max="50000" step="1000" value="${draft.scrollback}" />`)}`,
-      )}
-      ${group(
-        "Agents",
-        `
-        ${setting("Default agent", "Preselected for a new session.", segmented("default_agent", AGENTS, draft.default_agent))}
-        ${setting("Claude usage status line", "Replaces that launch's own status line. Takes effect next launch.", toggle("claude_usage", draft.claude_usage, "Claude usage status line"))}
-        ${setting("Stop an idle Claude session after", "Minutes after it reports a finished turn. 0 disables it.", `<input type="number" id="set-hibernate" min="0" max="1440" step="5" value="${draft.hibernate_minutes}" />`)}`,
-      )}
-      ${group(
-        "Session",
-        `
-        ${setting("Notify when an agent finishes or needs input", "Only while the window is not focused.", toggle("notifications", draft.notifications, "Notifications"))}
-        ${setting("Keep the system awake", "Prevents idle suspension, not closing the lid.", segmented("keep_awake", [["off", "Never"], ["always", "Always"], ["sessions", "While running"]], draft.keep_awake))}`,
-      )}
-      ${group(
-        "Shortcuts",
-        SHORTCUTS.map(([action, , what]) =>
-          setting(
-            what,
-            "",
-            `<button class="button shortcut${dialog.capturing === action ? " shortcut--listening" : ""}"
-                     data-capture="${action}">
-               ${
-                 dialog.capturing === action
-                   ? "Press a key…"
-                   : escape(label(draft.shortcuts?.[action] || fallback(action)))
-               }
-             </button>`,
-          ),
-        ).join(""),
-      )}
-      ${group(
-        "Accounts",
-        setting(
-          `${state.profiles?.length ?? 0} saved`,
-          "Each profile gets its own provider home, so sign-ins stay separate.",
-          button({ label: "Manage accounts…", action: "accounts" }),
-        ),
-      )}`,
-    note: `State lives in <code>${escape(state.storage)}</code>.`,
-    foot: button({ label: "Linear & Jira", action: "integrations" }) + foot("Save", "save-settings"),
-  });
-};
+// ---------------------------------------------------------------- accounts --
 
 const accounts = (dialog) =>
   modal({
@@ -550,7 +490,6 @@ const VIEWS = {
   worktree: createWorktree,
   "worktree-setup": worktreeSetup,
   "remove-worktree": removeWorktree,
-  settings,
   accounts,
   transcripts,
   commands: quickCommands,

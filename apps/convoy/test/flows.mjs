@@ -18,7 +18,9 @@ try {
     window.checkCalls = calls;
     window.__TAURI_INTERNALS__ = { transformCallback: () => 1, invoke: async (cmd, args) => {
       calls.push({ cmd, args });
-      if (cmd === "settings_read") return { theme: "light", default_agent: "claude", font_size: 13, scrollback: 10000, claude_usage: false, notifications: false, keep_awake: "off", shortcuts: {} };
+      window.savedSettings ??= { theme: "light", default_agent: "claude", font_size: 13, scrollback: 10000, claude_usage: false, notifications: false, keep_awake: "off", hibernate_minutes: 0, shortcuts: {} };
+      if (cmd === "settings_read") return { ...window.savedSettings, storage: "/fixture" };
+      if (cmd === "settings_save") { window.savedSettings = { ...args.input }; return null; }
       if (cmd === "workspace_read") return { projects, running: ["builder"], storage: "/fixture/workspace.json" };
       if (cmd === "sessions_for") return sessions;
       if (cmd === "planning_read") return { tasks, specs: [], queued: tasks.length };
@@ -44,7 +46,7 @@ try {
     } };
   });
   await page.goto("http://127.0.0.1:1421");
-  await page.locator('[data-action="open-folder"]').click();
+  await page.locator('[data-action="open-folder"]').first().click();
   await page.getByRole("heading", { name: "Example", exact: true }).waitFor();
   await page.locator('[data-open="builder"]').first().click();
   await page.locator('[data-action="session-menu"]').click();
@@ -68,6 +70,44 @@ try {
   await page.locator("#task-model").fill("opus");
   await page.locator('[data-action="task-save"]').click();
   await page.locator('.row[data-task="task"]').waitFor();
+
+  // Sidebar: the project shows its icon, its sessions show the agent's mark,
+  // and right-click offers the project's and the session's actions.
+  const shots = process.env.CONVOY_TEST_SHOTS;
+  await page.locator('.project-row .project-icon svg').first().waitFor();
+  assert(await page.locator('.side-session .agent-icon').count() >= 1, "sessions show the agent's mark");
+  await page.locator('[data-menu-project="project"]').click({ button: "right" });
+  await page.locator('[data-menu-act="project-settings"]').waitFor();
+  if (shots) await page.waitForTimeout(250), await page.screenshot({ path: `${shots}/project-menu.png` });
+  await page.keyboard.press("Escape");
+  await page.locator('.side-session[data-menu-session="builder"]').click({ button: "right" });
+  await page.locator('[data-menu-act="stop"]').waitFor();
+  await page.keyboard.press("Escape");
+
+  // A click inside an open dialog re-renders it, and must not replay its
+  // entrance: the whole modal blinked on every toggle.
+  await page.locator('.header [data-action="new-session"]').click();
+  await page.locator('.choice [data-value="codex"]').click();
+  await page.locator(".scrim--settled .modal").waitFor();
+  assert.equal(await page.evaluate(() => document.querySelector(".modal").getAnimations().length), 0, "no animation after a toggle");
+  assert(await page.locator('.choice [data-value="codex"] .agent-icon').count(), "agent choices carry their marks");
+  if (shots) await page.screenshot({ path: `${shots}/new-session.png` });
+  await page.keyboard.press("Escape");
+
+  // Settings is a page, and a change is saved as soon as it is made.
+  await page.locator(".sidebar__gear").click();
+  await page.locator(".prefs__title", { hasText: "General" }).waitFor();
+  await page.locator('[data-settings-section="Appearance"]').click();
+  await page.locator('[data-pref-set="theme"][data-value="dark"]').click();
+  await page.waitForFunction(() => window.savedSettings.theme === "dark");
+  await page.locator("#settings-search").fill("jira");
+  assert.equal(await page.locator(".prefs__item").count(), 1, "search narrows the sections");
+  await page.locator('[data-settings-section="Linear & Jira"]').click();
+  await page.locator(".pref-row", { hasText: "Linear MCP" }).waitFor();
+  if (shots) await page.screenshot({ path: `${shots}/settings.png` });
+  await page.keyboard.press("Escape");
+  await page.locator(".sidebar").waitFor();
+
   const calls = await page.evaluate(() => window.checkCalls);
   assert(calls.some(c => c.cmd === "terminal_paste" && c.args.id === "builder" && c.args.text === "Fix the error path before shipping." && c.args.submit === false));
   assert(calls.some(c => c.cmd === "issues_import" && c.args.options.model === "sonnet"));
@@ -75,7 +115,7 @@ try {
   assert.deepEqual(errors, []);
   assert.equal(await page.locator(".toast--error").count(), 0);
   if (process.env.CONVOY_TEST_SCREENSHOT) await page.screenshot({ path: process.env.CONVOY_TEST_SCREENSHOT });
-  console.log("PASS: folder → builder → review → feedback; Linear MCP import → per-task model; no browser errors. IPC mocked.");
+  console.log("PASS: folder → builder → review → feedback; Linear MCP import → per-task model; sidebar menus; settled dialogs; settings page saves; no browser errors. IPC mocked.");
 } finally {
   await browser?.close();
   await server.close();

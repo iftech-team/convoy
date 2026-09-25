@@ -1,6 +1,6 @@
 // Every screen. Markup built from state; nothing here calls the backend.
 
-import { icons } from "./icons.js";
+import { agentIcon, icons, projectIcon } from "./icons.js";
 import {
   button,
   choice,
@@ -24,6 +24,53 @@ const TABS = [
 
 // ---------------------------------------------------------------- sidebar --
 
+/// "Show in Finder" on a Mac, the file manager's own name elsewhere.
+export const revealLabel = () =>
+  /Mac/.test(navigator.platform)
+    ? "Show in Finder"
+    : /Win/.test(navigator.platform)
+      ? "Show in Explorer"
+      : "Show in Files";
+
+/// The dot beside a session: what its agent last reported, or whether it runs.
+function stateDot(item) {
+  const reported = state.agentState.get(item.id);
+  const tone = !item.running
+    ? item.started
+      ? "stopped"
+      : "idle"
+    : reported === "waiting"
+      ? "waiting"
+      : reported === "done"
+        ? "done"
+        : "running";
+  const label = {
+    stopped: "Stopped",
+    idle: "Not started",
+    waiting: "Needs you",
+    done: "Finished its turn",
+    running: reported ?? "Running",
+  }[tone];
+  return `<span class="dot dot--${tone}" title="${escape(label)}"></span>`;
+}
+
+function sidebarSession(item) {
+  return `
+    <button class="side-session" data-open="${escape(item.id)}"
+            data-menu-session="${escape(item.id)}"
+            aria-current="${item.id === state.sessionId}"
+            title="${escape(item.notes || item.title)}">
+      ${stateDot(item)}
+      ${item.pinned ? `<span class="side-session__pin">${icons.pin}</span>` : ""}
+      <span class="side-session__title">${escape(item.title)}</span>
+      ${
+        item.branch
+          ? `<span class="chip chip--branch">${icons.branch}${escape(item.branch)}</span>`
+          : `${agentIcon(item.agent, 11)}${item.review_of ? '<span class="side-session__tag">review</span>' : ""}`
+      }
+    </button>`;
+}
+
 export function sidebar() {
   const needle = state.search.toLowerCase();
   const groups = new Map();
@@ -40,30 +87,42 @@ export function sidebar() {
     }
   }
 
-  const sessions = (item) =>
-    item.id !== state.projectId
-      ? ""
-      : state.sessions
-          .map(
-            (entry) => `
-        <button class="session-link${entry.running ? " session-link--running" : ""}"
-                data-open="${escape(entry.id)}"
-                aria-current="${entry.id === state.sessionId}">
-          <span class="session-link__dot"></span>
-          <span class="session-link__title">${escape(entry.title)}</span>
-        </button>`,
-          )
-          .join("");
-
-  const row = (item) => `
-    <button class="project" data-project="${escape(item.id)}"
-            data-menu-project="${escape(item.id)}"
-            aria-current="${item.id === state.projectId}">
-      <span class="project__icon">${escape(item.icon || "")}</span>
-      <span class="project__title">${escape(item.title)}</span>
-      ${item.running ? '<span class="project__running"></span>' : ""}
-      <span class="project__count">${item.sessions || ""}</span>
-    </button>${sessions(item)}`;
+  const row = (item) => {
+    const current = item.id === state.projectId;
+    // Sessions are loaded for the selected project, so that is the one that
+    // can open; the others show a chevron that selects and opens them.
+    const expanded = current && !state.collapsed.has(item.id) && !needle;
+    const sessions = current ? state.sessions.filter((entry) => !entry.archived) : [];
+    const waiting = current && sessions.some((entry) => entry.running && state.agentState.get(entry.id) === "waiting");
+    return `
+      <div class="project-row${current ? " project-row--current" : ""}"
+           data-menu-project="${escape(item.id)}">
+        <button class="project-row__chevron" data-expand="${escape(item.id)}"
+                title="${expanded ? "Collapse" : "Expand"}"
+                ${item.sessions || current ? "" : 'style="visibility:hidden"'}>
+          ${expanded ? icons.chevronDown : icons.chevronRight}
+        </button>
+        <button class="project-row__main" data-project="${escape(item.id)}" title="${escape(item.path)}">
+          ${projectIcon(item)}
+          <span class="project-row__title">${escape(item.title)}</span>
+        </button>
+        ${
+          waiting
+            ? '<span class="dot dot--waiting" title="A session needs you"></span>'
+            : item.running
+              ? `<span class="dot dot--running" title="${item.running} running"></span>`
+              : ""
+        }
+        ${item.sessions ? `<span class="project-row__count">${item.sessions}</span>` : ""}
+        <button class="project-row__more" data-project-more="${escape(item.id)}"
+                title="Actions for ${escape(item.title)}">${icons.more}</button>
+      </div>
+      ${
+        expanded && sessions.length
+          ? `<div class="project-row__sessions">${sessions.map(sidebarSession).join("")}</div>`
+          : ""
+      }`;
+  };
 
   const body = [
     ...[...groups].map(
@@ -84,14 +143,96 @@ export function sidebar() {
         <input id="project-search" type="search" placeholder="Find a project"
                value="${escape(state.search)}" spellcheck="false" />
       </div>
-      <div class="sidebar__label">Projects</div>
-      <div class="sidebar__list">
-        ${body || `<div class="sidebar__none">${state.search ? "Nothing matches." : "No projects yet."}</div>`}
+      <div class="sidebar__label">
+        <span>Projects</span>
+        <button class="sidebar__add" data-action="open-folder" title="Open folder">${icons.plus}</button>
+      </div>
+      <div class="sidebar__list" data-scroll="sidebar">
+        ${body || `<div class="sidebar__none">${state.search ? "No matching projects" : "No projects yet."}</div>`}
       </div>
       <div class="sidebar__footer">
-        ${button({ label: "Open folder…", icon: "folder", action: "open-folder" })}
+        <div class="sidebar__open">
+          <button class="sidebar__link" data-action="open-folder">${icons.folder} Open folder…</button>
+          <span class="sidebar__hint">A repository, or a folder of related projects.</span>
+        </div>
+        <button class="sidebar__gear" data-action="settings" title="Settings"
+                aria-pressed="${state.page === "settings"}">${icons.gear}</button>
       </div>
     </aside>`;
+}
+
+/// Right-click and "…" menus for a project or a sidebar session, opened at
+/// the pointer. Entries mirror the macOS app's.
+export function contextMenu(menu) {
+  const item = (label, act, { icon = "", enabled = true, danger = false, hint = "" } = {}) => `
+    <button class="menu__item${danger ? " menu__item--danger" : ""}" data-menu-act="${act}"
+            ${enabled ? "" : "disabled"}>
+      <span class="menu__icon">${icons[icon] ?? ""}</span>
+      <span>${escape(label)}</span>
+      ${hint ? `<span class="menu__hint">${escape(hint)}</span>` : ""}
+    </button>`;
+  const divider = '<div class="menu__divider"></div>';
+  let entries = "";
+
+  if (menu.kind === "project") {
+    entries = [
+      item("New session…", "new-session", { icon: "plus" }),
+      item("Import provider history…", "import-history", { icon: "history" }),
+      divider,
+      item(revealLabel(), "reveal", { icon: "folder" }),
+      item("Copy folder path", "copy-path", { icon: "copy" }),
+      item("Reconnect folder…", "reconnect", { icon: "link" }),
+      divider,
+      item("Project settings…", "project-settings", { icon: "gear" }),
+      divider,
+      item("Remove from Convoy…", "remove", { icon: "trash", danger: true }),
+    ].join("");
+  } else {
+    const target = state.sessions.find((entry) => entry.id === menu.id);
+    if (!target) return "";
+    const running = target.running;
+    entries = [
+      item("Open", "open", { icon: "open" }),
+      item(target.pinned ? "Unpin" : "Pin to top", "pin", { icon: "pin" }),
+      running
+        ? item("Sleep", "sleep", { icon: "moon", hint: "stops, keeps the conversation" }) +
+          item("Stop session…", "stop", { icon: "stop", danger: true })
+        : item(target.started ? "Resume" : "Start", "start", {
+            icon: "play",
+            enabled: !target.archived && !target.worktree_removed,
+          }),
+      divider,
+      item("Edit name & notes…", "edit", { icon: "edit" }),
+      item("Start review…", "review", { icon: "review" }),
+      item(target.archived ? "Restore" : "Archive", "archive", {
+        icon: "archive",
+        enabled: !running,
+        hint: running ? "stop it first" : "",
+      }),
+      ...(target.working_directory
+        ? [
+            divider,
+            item(`${revealLabel()} (worktree)`, "reveal-worktree", { icon: "folder" }),
+            item("Copy worktree path", "copy-worktree", { icon: "copy" }),
+            item("Remove worktree…", "remove-worktree", {
+              icon: "trash",
+              danger: true,
+              enabled: !running && target.owns_worktree,
+            }),
+          ]
+        : []),
+    ].join("");
+  }
+
+  // Kept on screen: a menu opened near the bottom or right edge flips.
+  const left = Math.min(menu.x, window.innerWidth - 260);
+  const top = Math.min(menu.y, window.innerHeight - (menu.kind === "project" ? 300 : 360));
+  return `
+    <div class="scrim scrim--clear" data-dismiss="1">
+      <div class="menu menu--context" role="menu" style="left:${Math.max(8, left)}px;top:${Math.max(8, top)}px">
+        ${entries}
+      </div>
+    </div>`;
 }
 
 // ----------------------------------------------------------------- header --
@@ -144,7 +285,7 @@ function sessionRow(item) {
 
   return `
     <div class="row" data-open="${escape(item.id)}">
-      <span class="row__mark">${item.agent === "claude" ? "✳" : "◉"}</span>
+      <span class="row__mark">${agentIcon(item.agent, 16)}</span>
       <div class="row__body">
         <div class="row__title">
           ${item.pinned ? '<span class="row__pin">★</span>' : ""}${escape(item.title)}

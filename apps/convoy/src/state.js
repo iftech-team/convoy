@@ -41,6 +41,13 @@ export const state = {
   queues: new Set(),
   /// What each running agent last reported, from its hooks.
   agentState: new Map(),
+  // Projects the user folded shut in the sidebar.
+  collapsed: new Set(),
+  // "settings" while the settings page replaces the window.
+  page: null,
+  settingsSection: "General",
+  settingsQuery: "",
+  capturing: null,
 };
 
 let onChange = () => {};

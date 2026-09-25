@@ -64,13 +64,14 @@ export const textArea = (id, value, placeholder = "", rows = 4) =>
   `<textarea id="${id}" spellcheck="false" rows="${rows}"
              placeholder="${escape(placeholder)}">${escape(value)}</textarea>`;
 
+/// Options are `[value, label]`, or `[value, label, iconMarkup]`.
 export const choice = (key, options, selected) => `
   <div class="choice">
     ${options
       .map(
-        ([value, label]) =>
+        ([value, label, mark = ""]) =>
           `<button data-set="${key}" data-value="${escape(value)}"
-                   aria-pressed="${value === selected}">${escape(label)}</button>`,
+                   aria-pressed="${value === selected}">${mark}${escape(label)}</button>`,
       )
       .join("")}
   </div>`;

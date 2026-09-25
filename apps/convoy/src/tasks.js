@@ -4,6 +4,7 @@
 // convoy-core. This file draws state and passes input back, as main.js does.
 
 import { invoke } from "@tauri-apps/api/core";
+import { agentIcon } from "./icons.js";
 
 const MODELS = {
   claude: [["opus", "Opus · most capable"], ["sonnet", "Sonnet · balanced"], ["haiku", "Haiku · fastest"]],
@@ -224,7 +225,9 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
       draft.testing = false;
       return render();
     }
-    state.dialog = { kind: "integrations" };
+    // From the settings page the list is on the page itself; elsewhere go
+    // back to the list the connection was opened from.
+    state.dialog = state.page === "settings" ? null : { kind: "integrations" };
     render();
   }
 
@@ -245,7 +248,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         const runnable = ["queued", "failed", "changes"].includes(task.status);
         return `
         <div class="row">
-          <span class="row__mark">${task.agent === "claude" ? "✳" : "◉"}</span>
+          <span class="row__mark">${agentIcon(task.agent, 16)}</span>
           <div class="row__body">
             <div class="row__title">${escape(task.title)}</div>
             <div class="row__meta">${meta}</div>
