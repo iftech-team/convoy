@@ -464,7 +464,26 @@ export function workbench() {
         ${button({ icon: "plus", action: "new-session", kind: "quiet", title: "New session" })}
         ${button({ icon: "more", action: "session-menu", kind: "quiet", title: "Session actions" })}
       </div>
+      ${state.find ? findBar() : ""}
       ${state.layout > 1 ? panesView() : '<div class="term" id="terminal-host"></div>'}
+    </div>`;
+}
+
+/// Find in the focused terminal: next and previous, match case, "n of m".
+function findBar() {
+  const find = state.find;
+  const count = !find.term ? "" : find.count ? `${find.index + 1} of ${find.count}` : "No matches";
+  return `
+    <div class="find-bar" role="search">
+      ${icons.search}
+      <input id="find-term" class="find-bar__input" type="search" placeholder="Find in terminal"
+             value="${escape(find.term)}" spellcheck="false" autocomplete="off" />
+      <span class="find-bar__count">${escape(count)}</span>
+      <button class="find-bar__button find-bar__case" data-action="find-case" aria-pressed="${find.caseSensitive}"
+              title="Match case">Aa</button>
+      <button class="find-bar__button find-bar__up" data-action="find-previous" title="Previous match (⇧↩)">${icons.chevronDown}</button>
+      <button class="find-bar__button" data-action="find-next" title="Next match (↩)">${icons.chevronDown}</button>
+      <button class="find-bar__button" data-action="find-close" title="Close (Esc)">${icons.close}</button>
     </div>`;
 }
 

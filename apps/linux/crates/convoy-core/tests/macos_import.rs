@@ -101,7 +101,7 @@ fn swift_fixture(root: &Path, repo: &Path, child: &Path) -> MacSources {
         ("branchPrefix", json!("feature/")),
         (
             "keybindings",
-            json!({ "session.stop": "cmd+.", "go.sidebar": "cmd+b", "tab.switch": "cmd+e", "session.edit": "" }),
+            json!({ "session.stop": "cmd+.", "go.sidebar": "cmd+b", "tab.switch": "cmd+e", "go.dashboard": "cmd+opt+d", "session.edit": "" }),
         ),
         (
             "trackerConnections",
@@ -284,9 +284,13 @@ fn everything_the_macos_app_saved_comes_across() {
         Some("mod+b")
     );
     assert_eq!(
+        settings.shortcuts.get("switcher").map(String::as_str),
+        Some("mod+e")
+    );
+    assert_eq!(
         settings.shortcuts.len(),
-        2,
-        "no counterpart for tab.switch; unbound is dropped"
+        3,
+        "no counterpart for go.dashboard; unbound is dropped"
     );
 
     let integrations =

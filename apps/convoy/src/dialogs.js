@@ -390,7 +390,8 @@ const palette = (dialog) => `
   <div class="scrim" data-dismiss="1">
     <div class="modal modal--palette" role="dialog" aria-modal="true" aria-label="Commands">
       <div class="palette__search">
-        <input id="palette-input" type="search" placeholder="Type a command, project or session"
+        <input id="palette-input" type="search"
+               placeholder="${dialog.mode === "terminals" ? "Switch to an open terminal…" : "Jump to a session or project, or run a command…"}"
                value="${escape(dialog.query)}" spellcheck="false" />
       </div>
       <div class="palette__list">
@@ -406,7 +407,11 @@ const palette = (dialog) => `
           </button>`,
                 )
                 .join("")
-            : '<div class="menu__empty">Nothing matches.</div>'
+            : `<div class="menu__empty">${
+                dialog.mode === "terminals" && !dialog.query
+                  ? "No open terminals. Pick a session in the sidebar, or start a new one."
+                  : "Nothing matches."
+              }</div>`
         }
       </div>
     </div>

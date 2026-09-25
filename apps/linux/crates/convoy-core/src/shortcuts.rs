@@ -17,7 +17,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ("next", "Next tab"),
     ("previous", "Previous tab"),
     ("settings", "Settings"),
-    ("search", "Search projects and sessions"),
+    ("search", "Find in terminal, or find a project"),
     ("resume", "Resume session"),
     ("stop", "Stop session"),
     ("sleep", "Sleep session"),
@@ -54,6 +54,8 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ("wake", "Toggle keep awake"),
     ("limits", "AI Limits"),
     ("limitsRefresh", "Refresh AI limits"),
+    ("switcher", "Switch terminal, recent first"),
+    ("reopenTab", "Reopen closed tab"),
 ];
 
 /// Defaults used when the workspace has no shortcut for an action: the
@@ -103,6 +105,8 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("wake", "mod+alt+k"),
     ("limits", "mod+shift+l"),
     ("limitsRefresh", "mod+alt+l"),
+    ("switcher", "mod+e"),
+    ("reopenTab", "mod+shift+t"),
 ];
 
 /// `mod+shift+p` → `<Primary><Shift>p`. Returns nothing for anything the

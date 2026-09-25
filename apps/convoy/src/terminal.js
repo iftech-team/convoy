@@ -9,6 +9,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { SearchAddon } from "@xterm/addon-search";
 import { call, done, state, changed, loadWorkspace, toast } from "./state.js";
 
 const terminals = new Map();
@@ -74,11 +75,14 @@ export function terminalFor(id) {
   const fit = new FitAddon();
   terminal.loadAddon(fit);
   terminal.loadAddon(new WebLinksAddon());
+  const search = new SearchAddon();
+  terminal.loadAddon(search);
+  search.onDidChangeResults(({ resultIndex, resultCount }) => findListener(id, resultIndex, resultCount));
 
   terminal.onData((data) => call("terminal_write", { id, data }));
   terminal.onResize(({ cols, rows }) => call("terminal_resize", { id, cols, rows }));
 
-  const entry = { terminal, fit, host, opened: false };
+  const entry = { terminal, fit, host, search, opened: false };
   terminals.set(id, entry);
   return entry;
 }
@@ -96,6 +100,55 @@ export function mount(id, slotSelector = "#terminal-host") {
     entry.fit.fit();
     if (!state.dialog && !state.menu && state.sessionId === id) entry.terminal.focus();
   });
+}
+
+// ------------------------------------------------------------------- find --
+
+let findListener = () => {};
+/// Told "match n of m" whenever a search's results change.
+export const onFindResults = (handler) => {
+  findListener = handler;
+};
+
+/// Finds `term` in one terminal's scrollback, highlighting every match.
+/// `incremental` keeps the current match while the term is still being typed.
+export function find(id, term, { previous = false, caseSensitive = false, incremental = false } = {}) {
+  const entry = terminals.get(id);
+  if (!entry) return false;
+  if (!term) {
+    entry.search.clearDecorations();
+    findListener(id, -1, 0);
+    return false;
+  }
+  const style = getComputedStyle(document.documentElement);
+  const read = (name) => style.getPropertyValue(name).trim();
+  const options = {
+    caseSensitive,
+    incremental,
+    decorations: {
+      matchBackground: read("--term-find"),
+      matchOverviewRuler: read("--term-find"),
+      activeMatchBackground: read("--term-find-active"),
+      activeMatchColorOverviewRuler: read("--term-find-active"),
+    },
+  };
+  return previous ? entry.search.findPrevious(term, options) : entry.search.findNext(term, options);
+}
+
+export function endFind(id) {
+  const entry = terminals.get(id);
+  if (!entry) return;
+  entry.search.clearDecorations();
+  entry.terminal.clearSelection();
+  entry.terminal.focus();
+}
+
+/// Types text into the terminal the way a paste does: to the agent, not run.
+export function insert(id, text) {
+  const entry = terminals.get(id);
+  if (!entry) return;
+  entry.terminal.paste(text);
+  entry.terminal.focus();
 }
 
 export function refit() {

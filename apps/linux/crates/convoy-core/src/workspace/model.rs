@@ -603,4 +603,6 @@ pub const SHORTCUT_ACTIONS: &[&str] = &[
     "wake",
     "limits",
     "limitsRefresh",
+    "switcher",
+    "reopenTab",
 ];

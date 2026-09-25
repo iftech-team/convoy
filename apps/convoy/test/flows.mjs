@@ -119,6 +119,36 @@ try {
   await page.locator(".toast", { hasText: "Terminal text 14 pt" }).waitFor();
   await page.keyboard.press(`${primary}+Digit0`);
   await page.locator(".toast", { hasText: "Terminal text 13 pt" }).waitFor();
+  // ⌘E lists open terminals most recent first, the one on screen last.
+  await page.keyboard.press(`${primary}+e`);
+  const switcher = page.locator(".modal--palette");
+  await switcher.locator("#palette-input[placeholder^='Switch to an open terminal']").waitFor();
+  assert.deepEqual(await switcher.locator(".palette__title").allTextContents(), ["Review: Fix login", "Fix login"]);
+  await page.keyboard.press("Enter");
+  await page.locator('.tab-item--selected[data-tab-open="review"]').waitFor();
+  await page.keyboard.press(`${primary}+e`);
+  await page.keyboard.press("Enter");
+  await page.locator('.tab-item--selected[data-tab-open="builder"]').waitFor();
+  // ⌘F finds in the terminal on screen; Escape closes the bar.
+  await page.keyboard.press(`${primary}+f`);
+  await page.locator("#find-term").fill("nothing like this");
+  await page.locator(".find-bar__count", { hasText: "No matches" }).waitFor();
+  await page.locator('[data-action="find-case"]').click();
+  await page.locator('[data-action="find-case"][aria-pressed="true"]').waitFor();
+  if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/find.png` });
+  await page.locator("#find-term").press("Escape");
+  await page.locator(".find-bar").waitFor({ state: "detached" });
+  // Files dropped onto a running terminal are typed in as quoted paths.
+  const host = await page.locator("#terminal-host").boundingBox();
+  assert(await page.evaluate(([x, y]) => window.convoyDrop(["/tmp/a b.txt", "/work/notes.md"], x, y), [host.x + 40, host.y + 40]));
+  const typed = process.platform === "win32" ? '"/tmp/a b.txt" /work/notes.md ' : "'/tmp/a b.txt' /work/notes.md ";
+  await page.waitForFunction((text) => window.checkCalls.some((c) => c.cmd === "terminal_write" && c.args.id === "builder" && c.args.data.includes(text)), typed);
+  await page.locator('.tab-item[data-tab-open="review"]').click({ button: "right" });
+  await page.locator('[data-tab-act="close"]').click();
+  await page.locator('.tab-item[data-tab-open="review"]').waitFor({ state: "detached" });
+  // ⇧⌘T brings the closed tab back.
+  await page.keyboard.press(`${primary}+Shift+t`);
+  await page.locator('.tab-item--selected[data-tab-open="review"]').waitFor();
   await page.locator('.tab-item[data-tab-open="review"]').click({ button: "right" });
   await page.locator('[data-tab-act="close"]').click();
   await page.locator('.tab-item[data-tab-open="review"]').waitFor({ state: "detached" });

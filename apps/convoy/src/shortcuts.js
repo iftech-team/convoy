@@ -12,7 +12,7 @@ import { state } from "./state.js";
 /// collide with the seven originals.
 export const SHORTCUTS = [
   ["palette", "mod+k", "Command palette", "General"],
-  ["search", "mod+f", "Search projects and sessions", "General"],
+  ["search", "mod+f", "Find in terminal, or find a project", "General"],
   ["settings", "mod+,", "Settings", "General"],
   ["sidebar", "mod+b", "Toggle sidebar", "General"],
   ["files", "mod+shift+g", "Files & Changes", "General"],
@@ -22,6 +22,8 @@ export const SHORTCUTS = [
   ["next", "ctrl+tab", "Next tab", "Sessions"],
   ["previous", "ctrl+shift+tab", "Previous tab", "Sessions"],
   ["closeTab", "mod+w", "Close tab", "Sessions"],
+  ["switcher", "mod+e", "Switch terminal, recent first", "Sessions"],
+  ["reopenTab", "mod+shift+t", "Reopen closed tab", "Sessions"],
   ["resume", "mod+shift+r", "Resume session", "Sessions"],
   ["stop", "mod+.", "Stop session", "Sessions"],
   ["sleep", "mod+alt+z", "Sleep session", "Sessions"],

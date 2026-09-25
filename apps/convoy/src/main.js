@@ -261,6 +261,11 @@ function closeTab(id) {
 
 function dropTab(id) {
   const at = state.tabs.indexOf(id);
+  if (at >= 0) {
+    const earlier = closedTabs.indexOf(id);
+    if (earlier >= 0) closedTabs.splice(earlier, 1);
+    closedTabs.push(id);
+  }
   state.tabs = state.tabs.filter((tab) => tab !== id);
   delete state.tabInfo[id];
   saveTabs();
@@ -391,7 +396,23 @@ async function openAnywhere(id) {
   openSession(id);
 }
 
+/// Session ids by most recent use, for the ⌘E switcher.
+const recent = [];
+/// Tabs closed this run, most recent last, for ⇧⌘T.
+const closedTabs = [];
+
+function reopenTab() {
+  while (closedTabs.length) {
+    const id = closedTabs.pop();
+    if (anySession(id)) return openAnywhere(id);
+  }
+}
+
 function openSession(id) {
+  const seen = recent.indexOf(id);
+  if (seen >= 0) recent.splice(seen, 1);
+  recent.unshift(id);
+  if (state.find && state.sessionId !== id) closeFind();
   // A session already in a pane takes the focus there; otherwise it goes
   // into the focused pane, as on macOS.
   if (state.layout > 1) {
@@ -595,6 +616,14 @@ const ACTIONS = {
   },
   refresh: () => loadWorkspace(),
   "macos-import": () => offerMacImport(false),
+  "find-next": () => findStep(),
+  "find-previous": () => findStep({ previous: true }),
+  "find-case": () => {
+    state.find.caseSensitive = !state.find.caseSensitive;
+    findStep({ incremental: true });
+    render();
+  },
+  "find-close": () => closeFind(),
   "macos-import-run": runMacImport,
   "refresh-activity": loadActivity,
 
@@ -761,7 +790,10 @@ const SHORTCUT_ACTIONS = {
   previous: () => stepTabs(-1),
   closeTab: () => state.sessionId && closeTab(state.sessionId),
   settings: () => (state.page === "settings" ? closeSettings() : openSettings()),
-  search: () => document.querySelector("#project-search")?.focus(),
+  // ⌘F finds in the terminal on screen, and in the sidebar otherwise.
+  search: () => (terminalShown() ? openFind() : document.querySelector("#project-search")?.focus()),
+  switcher: () => openPalette("terminals"),
+  reopenTab: () => reopenTab(),
 
   // sessions — each acts on the open session, and does nothing without one
   resume: () => withSession((current) => !current.running && terminal.start(current.id)),
@@ -1112,9 +1144,14 @@ app.addEventListener("input", (event) => {
     state.files.message = field.value;
     return;
   }
+  if (field.id === "find-term") {
+    state.find.term = field.value;
+    findStep({ incremental: true });
+    return render();
+  }
   if (field.id === "palette-input") {
     state.dialog.query = field.value;
-    state.dialog.results = paletteResults(field.value);
+    state.dialog.results = paletteResults(field.value, state.dialog.mode);
     state.dialog.index = 0;
     return render();
   }
@@ -1153,6 +1190,11 @@ addEventListener("keydown", async (event) => {
     const action = state.capturing;
     state.capturing = null;
     return savePref({ shortcuts: { ...(state.settings.shortcuts ?? {}), [action]: pressed } });
+  }
+  if (event.target.id === "find-term" && (event.key === "Enter" || event.key === "Escape")) {
+    event.preventDefault();
+    if (event.key === "Escape") return closeFind();
+    return findStep({ previous: event.shiftKey });
   }
   if (event.key === "Escape") {
     if (state.menu || state.dialog) return closeDialog();
@@ -2110,6 +2152,41 @@ async function createPullRequest() {
   if (url) toast(url);
 }
 
+// ------------------------------------------------------------------ find --
+
+/// Whether a session's terminal is what the window shows.
+const terminalShown = () =>
+  !!state.sessionId && !state.files && state.page !== "settings" && state.page !== "project" && !state.dialog;
+
+function openFind() {
+  if (!state.find) state.find = { term: "", caseSensitive: false, index: -1, count: 0 };
+  render();
+  const field = document.querySelector("#find-term");
+  field?.focus();
+  field?.select();
+}
+
+function closeFind() {
+  const id = state.sessionId;
+  state.find = null;
+  if (id) terminal.endFind(id);
+  render();
+}
+
+function findStep({ previous = false, incremental = false } = {}) {
+  const find = state.find;
+  if (!find || !state.sessionId) return;
+  terminal.find(state.sessionId, find.term, { previous, incremental, caseSensitive: find.caseSensitive });
+}
+
+terminal.onFindResults((id, index, count) => {
+  if (!state.find || id !== state.sessionId) return;
+  if (state.find.index === index && state.find.count === count) return;
+  state.find.index = index;
+  state.find.count = count;
+  render();
+});
+
 // -------------------------------------------------------------- palette ---
 
 function paletteEntries() {
@@ -2133,9 +2210,28 @@ function paletteEntries() {
   return entries.map(([title, kind, run]) => ({ title, kind, run }));
 }
 
-const paletteResults = (query) => {
+function terminalEntries() {
+  const open = state.tabs.filter((id) => anySession(id));
+  const current = state.sessionId;
+  const ordered = [
+    ...recent.filter((id) => open.includes(id) && id !== current),
+    ...open.filter((id) => !recent.includes(id) && id !== current),
+    ...(current && open.includes(current) ? [current] : []),
+  ];
+  return ordered.map((id) => {
+    const item = anySession(id);
+    const owner = state.projects.find((entry) => entry.id === item.project_id);
+    return {
+      title: item.title,
+      kind: [owner?.title, isRunning(id) ? (state.agentState.get(id) ?? "running") : "stopped"].filter(Boolean).join(" · "),
+      run: () => openAnywhere(id),
+    };
+  });
+}
+
+const paletteResults = (query, mode = "all") => {
   const needle = query.toLowerCase();
-  return paletteEntries().filter(
+  return (mode === "terminals" ? terminalEntries() : paletteEntries()).filter(
     (entry) =>
       !needle ||
       entry.title.toLowerCase().includes(needle) ||
@@ -2143,8 +2239,16 @@ const paletteResults = (query) => {
   );
 };
 
-function openPalette() {
-  openModal({ kind: "palette", query: "", results: paletteResults(""), index: 0 });
+/// "all" is the command palette; "terminals" is the ⌘E switcher: open tabs,
+/// most recently used first and the one on screen last, as on macOS.
+function openPalette(mode = "all") {
+  if (state.dialog?.kind === "palette" && state.dialog.mode === mode && mode === "terminals") {
+    // ⌘E again moves down the list, like ⌘Tab.
+    const count = state.dialog.results.length || 1;
+    state.dialog.index = (state.dialog.index + 1) % count;
+    return render();
+  }
+  openModal({ kind: "palette", mode, query: "", results: paletteResults("", mode), index: 0 });
   document.querySelector("#palette-input")?.focus();
 }
 
@@ -2309,6 +2413,51 @@ terminal.onExit(async (exit) => {
   if (queued && step.kind !== "nothing") await advanceQueue(projectId);
 });
 
+// ------------------------------------------------------------- file drop --
+
+/// A path as a shell reads it back: bare when it is plainly safe, quoted
+/// otherwise — single quotes on macOS and Linux, double quotes on Windows.
+function shellQuote(path) {
+  if (/^[\w@%+=:,./-]+$/.test(path)) return path;
+  if (/Win/.test(navigator.platform)) return `"${path.replaceAll('"', '""')}"`;
+  return `'${path.replaceAll("'", "'\\''")}'`;
+}
+
+/// The session whose terminal is under a point of the window, if any.
+function terminalAt(x, y) {
+  const spot = document.elementFromPoint(x, y);
+  const pane = spot?.closest("[data-pane]");
+  if (pane) return state.panes[Number(pane.dataset.pane)] ?? null;
+  return spot?.closest("#terminal-host") ? state.sessionId : null;
+}
+
+/// Files dropped onto a terminal are typed into it as quoted paths, as the
+/// macOS app does, without pressing Enter.
+function dropPaths(paths, x, y) {
+  const id = terminalAt(x, y);
+  if (!id || !paths?.length) return false;
+  if (!isRunning(id)) {
+    toast("Start the session to drop files into it.");
+    return false;
+  }
+  terminal.insert(id, `${paths.map(shellQuote).join(" ")} `);
+  return true;
+}
+window.convoyDrop = dropPaths;
+
+async function wireFileDrop() {
+  try {
+    const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+    await getCurrentWebview().onDragDropEvent(({ payload }) => {
+      if (payload.type !== "drop") return;
+      const scale = window.devicePixelRatio || 1;
+      dropPaths(payload.paths, payload.position.x / scale, payload.position.y / scale);
+    });
+  } catch {
+    /* no native window, as under the UI tests */
+  }
+}
+
 // ------------------------------------------------------------- bootstrap --
 
 // The window asks before it takes the agents with it.
@@ -2318,6 +2467,7 @@ await listen("window:closing", ({ payload }) =>
 
 try {
   await terminal.wire();
+  wireFileDrop();
   await loadSettings();
   applyTheme();
   await loadWorkspace({ required: true });

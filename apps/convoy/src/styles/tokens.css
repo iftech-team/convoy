@@ -60,6 +60,8 @@
   --term-fg: #26262b;
   --term-cursor: #5b5bd6;
   --term-selection: rgba(91, 91, 214, 0.18);
+  --term-find: #fde68a;
+  --term-find-active: #f59e0b;
 
   --header-height: 52px;
   --status-height: 34px;
@@ -96,6 +98,8 @@
     --term-fg: #d6d6dc;
     --term-cursor: #8b8bf0;
     --term-selection: rgba(110, 110, 230, 0.3);
+    --term-find: #6b5a14;
+    --term-find-active: #b45309;
   }
 }
 
@@ -128,4 +132,6 @@
   --term-fg: #d6d6dc;
   --term-cursor: #8b8bf0;
   --term-selection: rgba(110, 110, 230, 0.3);
+  --term-find: #6b5a14;
+  --term-find-active: #b45309;
 }
