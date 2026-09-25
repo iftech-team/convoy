@@ -7,7 +7,7 @@ import { anchorStyle } from "./views.js";
 
 import { icons } from "./icons.js";
 import { button, escape, empty } from "./ui.js";
-import { state } from "./state.js";
+import { project, session, state } from "./state.js";
 
 const VIEWS = [
   ["changes", "Changes", "diff"],
@@ -15,6 +15,23 @@ const VIEWS = [
   ["log", "Log", "clock"],
   ["branches", "Branches", "git"],
 ];
+
+/// What Files & Changes can show from here: the open session's folder, its
+/// project, and the other projects of the same group — the macOS picker for a
+/// folder of repositories, where each repository is a project.
+function fileTargets() {
+  const current = project();
+  const targets = [];
+  const open = session();
+  if (open?.working_directory) targets.push([open.id, `${open.title} (worktree)`]);
+  if (current) targets.push([current.id, current.title]);
+  if (current?.group) {
+    for (const item of state.projects) {
+      if (item.group === current.group && item.id !== current.id) targets.push([item.id, item.title]);
+    }
+  }
+  return targets;
+}
 
 export function filesView() {
   const files = state.files;
@@ -31,10 +48,22 @@ export function filesView() {
               `<button data-files-view="${key}" aria-pressed="${files.view === key}">${label}</button>`,
           ).join("")}
         </div>
+        ${
+          fileTargets().length > 1
+            ? `<select id="files-repo" class="files__repo" title="Repository">${fileTargets()
+                .map(([id, name]) => `<option value="${escape(id)}"${id === files.id ? " selected" : ""}>${escape(name)}</option>`)
+                .join("")}</select>`
+            : ""
+        }
         <span class="crumb__muted">
           ${snapshot ? escape(snapshot.branch) : "…"}
           ${snapshot ? ` · ${snapshot.changes.length} changed` : ""}
         </span>
+        ${
+          snapshot?.upstream
+            ? `<span class="files__sync" title="Compared with ${escape(snapshot.upstream.name)}">↑${snapshot.upstream.ahead} ↓${snapshot.upstream.behind}</span>`
+            : ""
+        }
         <span class="section__spacer"></span>
         ${button({ icon: "refresh", action: "files-refresh", kind: "icon", title: "Refresh" })}
         ${button({
@@ -137,6 +166,15 @@ function actions(files) {
         ${button({ label: "Stage", action: "stage" })}
         ${button({ label: "Unstage", action: "unstage" })}
         ${button({ label: "Stage all", action: "stage-all" })}
+        ${button({ label: "Unstage all", action: "unstage-all" })}
+        ${
+          files.selection && files.snapshot.changes.some((change) => change.path === files.selection.path && change.conflict)
+            ? button({ label: "Mark resolved", action: "resolve", kind: "primary" })
+            : ""
+        }
+        ${button({ icon: "open", action: "file-open", kind: "quiet", title: "Open in its app" })}
+        ${button({ icon: "folder", action: "file-reveal", kind: "quiet", title: "Show in folder" })}
+        ${button({ icon: "copy", action: "file-copy", kind: "quiet", title: "Copy path" })}
         ${button({ label: "Discard", action: "discard", kind: "danger" })}
         ${button({ label: "Trash", action: "trash", kind: "danger" })}
         ${button({ label: "Discard hunk", action: "discard-hunk", kind: "danger" })}
@@ -284,6 +322,7 @@ function commitBar(files) {
                 spellcheck="false">${escape(files.message)}</textarea>
       <div class="commit-bar__actions">
         ${button({ label: "Commit", action: "commit", kind: "primary" })}
+        ${button({ label: "Commit & Push", action: "commit-push" })}
         ${button({ label: "Amend", action: "amend" })}
         ${button({ label: "Generate with Claude", action: "generate", icon: "bolt" })}
       </div>

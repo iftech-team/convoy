@@ -353,3 +353,79 @@ fn the_branch_list_leaves_out_the_remote_head() {
         snapshot.branches
     );
 }
+
+/// Ahead and behind are counted against the tracked branch, and unstaging
+/// everything works whether or not anything is committed yet.
+#[test]
+fn upstream_counts_and_unstaging_everything() {
+    let fixture = fixture();
+    let origin = fixture.path().join("origin");
+    let git = repository(&origin, "false");
+    fs::write(origin.join("a.txt"), "a").unwrap();
+    // Before the first commit, unstaging everything drops the index entries.
+    git.mutate(&origin, &Action::StageAll).unwrap();
+    git.mutate(&origin, &Action::UnstageAll).unwrap();
+    assert!(git
+        .snapshot(&origin)
+        .unwrap()
+        .changes
+        .iter()
+        .all(|change| change.untracked));
+    git.mutate(&origin, &Action::StageAll).unwrap();
+    git.mutate(
+        &origin,
+        &Action::Commit {
+            message: "one".into(),
+            amend: false,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        git.snapshot(&origin).unwrap().upstream,
+        None,
+        "nothing is tracked yet"
+    );
+
+    let clone = fixture.path().join("clone");
+    git.run(fixture.path(), &["clone", "-q", "origin", "clone"])
+        .unwrap();
+    let local = repository(&clone, "false");
+    fs::write(clone.join("b.txt"), "b").unwrap();
+    local.mutate(&clone, &Action::StageAll).unwrap();
+    local
+        .mutate(
+            &clone,
+            &Action::Commit {
+                message: "two".into(),
+                amend: false,
+            },
+        )
+        .unwrap();
+    fs::write(origin.join("c.txt"), "c").unwrap();
+    git.mutate(&origin, &Action::StageAll).unwrap();
+    git.mutate(
+        &origin,
+        &Action::Commit {
+            message: "three".into(),
+            amend: false,
+        },
+    )
+    .unwrap();
+    local.mutate(&clone, &Action::Fetch).unwrap();
+
+    let upstream = local
+        .snapshot(&clone)
+        .unwrap()
+        .upstream
+        .expect("the clone tracks origin");
+    assert_eq!((upstream.ahead, upstream.behind), (1, 1));
+    assert!(upstream.name.starts_with("origin/"));
+
+    // After a commit, unstaging everything leaves the change in the worktree.
+    fs::write(clone.join("b.txt"), "changed").unwrap();
+    local.mutate(&clone, &Action::StageAll).unwrap();
+    local.mutate(&clone, &Action::UnstageAll).unwrap();
+    let snapshot = local.snapshot(&clone).unwrap();
+    let entry = change(&snapshot, "b.txt");
+    assert_eq!((entry.index, entry.worktree), (' ', 'M'));
+}

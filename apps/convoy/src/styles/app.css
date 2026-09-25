@@ -3899,3 +3899,21 @@ input {
   font: inherit;
   font-size: 12.5px;
 }
+
+/* Files & Changes: which repository, and how far it is from its upstream. */
+.files__repo {
+  max-width: 220px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.files__sync {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}

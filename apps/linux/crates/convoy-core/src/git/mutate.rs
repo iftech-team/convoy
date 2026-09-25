@@ -21,6 +21,7 @@ pub enum Action {
         original: Option<String>,
     },
     StageAll,
+    UnstageAll,
     Discard {
         path: String,
     },
@@ -74,6 +75,14 @@ impl Git {
                 self.run(root, &args)
             }
             Action::StageAll => self.run(root, &["add", "--all"]),
+            Action::UnstageAll => {
+                if self.succeeds(root, &["rev-parse", "--verify", "HEAD"]) {
+                    self.run(root, &["reset", "-q"])
+                } else {
+                    // Nothing is committed yet: every staged file is new.
+                    self.run(root, &["rm", "--cached", "-r", "-q", "--", "."])
+                }
+            }
             Action::Discard { path } => {
                 self.run(root, &["restore", "--worktree", "--", relative(path)?])
             }

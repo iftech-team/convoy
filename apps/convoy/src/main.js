@@ -793,6 +793,21 @@ const ACTIONS = {
   stage: () => mutate({ action: "stage", path: selectedPath(), original: selectedOriginal() }),
   unstage: () => mutate({ action: "unstage", path: selectedPath(), original: selectedOriginal() }),
   "stage-all": () => mutate({ action: "stageAll" }),
+  "unstage-all": () => mutate({ action: "unstageAll" }),
+  // Resolving a conflict is staging the file once its markers are gone.
+  resolve: () => mutate({ action: "stage", path: selectedPath(), original: selectedOriginal() }),
+  "commit-push": async () => {
+    if (await commit(false)) await mutate({ action: "push" });
+  },
+  "file-open": () => fileAct(false),
+  "file-reveal": () => fileAct(true),
+  "file-copy": async () => {
+    const path = selectedPath();
+    if (!path) return toast("Select a file first.");
+    const root = state.files.snapshot?.directory ?? "";
+    await navigator.clipboard.writeText(`${root}${/[\\/]$/.test(root) ? "" : "/"}${path}`);
+    toast("Path copied");
+  },
   discard: () =>
     confirmThen("Discard changes to this file?", selectedPath(), () =>
       mutate({ action: "discard", path: selectedPath() }),
@@ -1296,6 +1311,11 @@ app.addEventListener("input", (event) => {
 });
 
 app.addEventListener("change", async (event) => {
+  if (event.target.id === "files-repo" && state.files) {
+    state.files = { ...state.files, id: event.target.value, snapshot: null, selection: null, preview: null, branch: null };
+    render();
+    return loadFiles();
+  }
   if (state.dialog?.kind === "session" && event.target.id === "draft-project") {
     captureDraft();
     return sessionProject(state.dialog, event.target.value);
@@ -2415,6 +2435,12 @@ async function advanceQueue(projectId) {
 
 // ---------------------------------------------------------------- files ---
 
+async function fileAct(reveal) {
+  const path = selectedPath();
+  if (!path) return toast("Select a file first.");
+  await done("files_open", { id: state.files.id, path, reveal });
+}
+
 async function openFiles() {
   const id = state.sessionId ?? state.projectId;
   if (!id) return;
@@ -2477,9 +2503,10 @@ async function mutate(mutation) {
   if (mutation.commit === "" && "commit" in mutation) return toast("Select a commit first.");
   state.menu = null;
   const output = await call("files_mutate", { id: state.files.id, mutation });
-  if (output === undefined) return;
+  if (output === undefined) return false;
   if (output.trim()) toast(output.trim().slice(0, 160));
   await loadFiles();
+  return true;
 }
 
 async function trashFile() {
@@ -2509,12 +2536,15 @@ async function confirmHunk() {
   await mutate({ action: "discardHunk", path, hunk, hash });
 }
 
+/// Commits what is staged. The message is kept when the commit fails, so it
+/// is not lost to a hook or an empty index.
 async function commit(amend) {
   const message = document.querySelector("#commit-message")?.value ?? state.files.message;
   state.files.message = message;
-  await mutate({ action: "commit", message, amend });
-  state.files.message = "";
+  const made = await mutate({ action: "commit", message, amend });
+  if (made) state.files.message = "";
   render();
+  return made;
 }
 
 async function generateMessage() {

@@ -124,6 +124,7 @@ pub fn run() {
             commands::files::files_hunks,
             commands::files::files_mutate,
             commands::files::files_trash,
+            commands::files::files_open,
             commands::files::commit_generate,
             commands::files::pr_create,
             commands::planning::planning_read,

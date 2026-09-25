@@ -155,6 +155,7 @@ impl Git {
                 files: crate::files::folder_files(root)?,
                 log: Vec::new(),
                 branches: Vec::new(),
+                upstream: None,
             });
         }
         let raw = self.run(root, &["status", "--porcelain=v1", "-z"])?;
@@ -192,6 +193,8 @@ impl Git {
             ],
         )?;
 
+        let upstream = self.upstream(root);
+
         let mut files: Vec<String> = listed
             .split('\0')
             .filter(|name| !name.is_empty())
@@ -227,6 +230,40 @@ impl Git {
                 .map(|(_, name)| name.to_string())
                 .filter(|name| !name.is_empty())
                 .collect(),
+            upstream,
+        })
+    }
+
+    /// The tracked branch and the counts either side of it.
+    fn upstream(&self, root: &Path) -> Option<Upstream> {
+        let name = self
+            .run(
+                root,
+                &[
+                    "rev-parse",
+                    "--abbrev-ref",
+                    "--symbolic-full-name",
+                    "@{upstream}",
+                ],
+            )
+            .ok()?
+            .trim()
+            .to_string();
+        let counts = self
+            .run(
+                root,
+                &["rev-list", "--left-right", "--count", "@{upstream}...HEAD"],
+            )
+            .ok()?;
+        let mut parts = counts
+            .split_whitespace()
+            .map(|part| part.parse::<u32>().ok());
+        let behind = parts.next()??;
+        let ahead = parts.next()??;
+        Some(Upstream {
+            name,
+            ahead,
+            behind,
         })
     }
 
@@ -293,4 +330,14 @@ pub struct Snapshot {
     pub files: Vec<String>,
     pub log: Vec<Commit>,
     pub branches: Vec<String>,
+    /// The branch it tracks, and how far each side has moved: commits here
+    /// not pushed, and commits there not pulled. `None` without an upstream.
+    pub upstream: Option<Upstream>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Upstream {
+    pub name: String,
+    pub ahead: u32,
+    pub behind: u32,
 }

@@ -67,6 +67,16 @@ try {
       if (cmd === "tasks_all") return tasks;
       if (cmd === "project_move") { const [moved] = projects.splice(projects.findIndex((item) => item.id === args.id), 1); projects.splice(args.index, 0, moved); return null; }
       if (cmd === "project_refresh") return 0;
+      if (cmd === "files_snapshot") return {
+        branch: "main", files: [], log: [], branches: ["main"], directory: "/fixture/Example",
+        upstream: { name: "origin/main", ahead: 2, behind: 1 },
+        changes: [
+          { status: "UU", staged: false, untracked: false, conflict: true, path: "src/app.js", original: null },
+          { status: " M", staged: false, untracked: false, conflict: false, path: "README.md", original: null },
+        ],
+      };
+      if (cmd === "files_read") return { kind: "text", text: "<<<<<<< HEAD", language: "diff", hash: "h" };
+      if (["files_mutate", "files_open"].includes(cmd)) return cmd === "files_mutate" ? "" : null;
       if (cmd === "history_scan") return [{ agent: "claude", provider_id: "0199aaaa-0000-4000-8000-000000000001", title: "Fix flaky login", at: Date.now(), directory: "/fixture/worktrees/fix-login", profile_id: null, profile: null, session_id: null }];
       if (cmd === "transcripts_import") {
         sessions.push({ id: "imported", project_id: args.projectId, title: args.title, agent: args.agent, provider_id: args.providerId, started: true, running: false, pinned: false, review_of: null });
@@ -293,6 +303,20 @@ try {
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "session_start" && c.args.id === "imported"));
   await page.locator('.project-row [data-project="project"]').click();
   await page.locator('[data-tab="tasks"]').click();
+  // Files & Changes: ahead and behind its upstream, a conflict marked
+  // resolved, everything unstaged, and Commit & Push in one go.
+  await page.locator('.tabbar [data-action="files"]').click();
+  await page.locator(".files__sync", { hasText: "↑2 ↓1" }).waitFor();
+  await page.locator('[data-change="src/app.js"]').click();
+  await page.locator('[data-action="resolve"]').click();
+  await page.locator('[data-action="unstage-all"]').click();
+  await page.locator('[data-action="file-open"]').click();
+  await page.locator("#commit-message").fill("Resolve the merge");
+  await page.locator('[data-action="commit-push"]').click();
+  await page.waitForFunction(() => window.checkCalls.filter((c) => c.cmd === "files_mutate").map((c) => c.args.mutation.action).join() === "stage,unstageAll,commit,push");
+  assert.deepEqual(await page.evaluate(() => window.checkCalls.find((c) => c.cmd === "files_open").args), { id: "project", path: "src/app.js", reveal: false });
+  if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/files.png` });
+  await page.locator('[data-action="files-close"]').click();
   // New tasks publish as a pull request unless the project says otherwise.
   await page.locator('[data-action="new-task"]').click();
   await page.locator('.modal .choice [data-value="pr"][aria-pressed="true"]').waitFor();

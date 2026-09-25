@@ -38,6 +38,15 @@ pub struct SnapshotView {
     pub log: Vec<CommitView>,
     pub branches: Vec<String>,
     pub directory: String,
+    /// The tracked branch and how far either side has moved.
+    pub upstream: Option<UpstreamView>,
+}
+
+#[derive(Serialize)]
+pub struct UpstreamView {
+    pub name: String,
+    pub ahead: u32,
+    pub behind: u32,
 }
 
 fn view_of(snapshot: Snapshot, directory: String) -> SnapshotView {
@@ -69,6 +78,11 @@ fn view_of(snapshot: Snapshot, directory: String) -> SnapshotView {
             .collect(),
         branches: snapshot.branches,
         directory,
+        upstream: snapshot.upstream.map(|upstream| UpstreamView {
+            name: upstream.name,
+            ahead: upstream.ahead,
+            behind: upstream.behind,
+        }),
     }
 }
 
@@ -236,6 +250,7 @@ pub enum Mutation {
         original: Option<String>,
     },
     StageAll,
+    UnstageAll,
     Discard {
         path: String,
     },
@@ -274,6 +289,7 @@ impl From<Mutation> for Action {
             Mutation::Stage { path, original } => Action::Stage { path, original },
             Mutation::Unstage { path, original } => Action::Unstage { path, original },
             Mutation::StageAll => Action::StageAll,
+            Mutation::UnstageAll => Action::UnstageAll,
             Mutation::Discard { path } => Action::Discard { path },
             Mutation::DiscardHunk { path, hunk, hash } => Action::DiscardHunk { path, hunk, hash },
             Mutation::Commit { message, amend } => Action::Commit { message, amend },
@@ -459,4 +475,30 @@ mod tests {
         assert!(folder.exists(), "the folder went with it");
         std::fs::remove_dir_all(&folder).ok();
     }
+}
+
+/// Opens a file of the repository in its default app, or shows it in the file
+/// manager. The path must stay inside the repository.
+#[tauri::command]
+pub fn files_open(
+    id: String,
+    path: String,
+    reveal: bool,
+    app: tauri::AppHandle,
+    workspace: State<'_, Workspace>,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let directory = directory_or_project(&workspace, &id)?;
+    let target = convoy_core::files::paths::trash_target(&directory, &path)
+        .map_err(|error| error.to_string())?;
+    if !target.exists() {
+        return Err("That file is no longer there.".into());
+    }
+    if reveal {
+        app.opener().reveal_item_in_dir(&target)
+    } else {
+        app.opener()
+            .open_path(target.to_string_lossy(), None::<&str>)
+    }
+    .map_err(|error| error.to_string())
 }
