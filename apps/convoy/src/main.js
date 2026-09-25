@@ -301,6 +301,11 @@ function stepTabs(step) {
 }
 
 function render() {
+  // Anything re-renders — an agent reporting, the activity feed — and a
+  // dialog is rebuilt from state. What is typed in it is read back first, or
+  // it would be lost. Only when this very dialog is on screen, so a dialog
+  // just opened never takes an old one's fields.
+  if (state.dialog && state.dialog === shown && !isImportDialog()) captureDraft();
   syncTabs();
   const caret = document.activeElement?.id;
   const position = document.activeElement?.selectionStart;
@@ -519,6 +524,7 @@ function captureDraft() {
   read("draft-provider", "provider_id");
   read("draft-brief", "brief");
   read("draft-branch", "branch");
+  read("draft-feedback", "feedback");
   read("draft-base", "base");
   read("draft-account", "account");
   read("draft-label", "label");

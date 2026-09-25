@@ -140,6 +140,13 @@ try {
   assert.match(prefilled, /^Please address the review findings below/);
   assert.match(prefilled, /a token refresh race/, "the reviewer's saved output is in it");
   await page.locator("#draft-feedback").fill("Fix the error path before shipping.");
+  // A redraw from elsewhere — here the backend reporting a change — keeps
+  // what was typed. It used to put the field back, which is what failed on
+  // the slower Windows runner.
+  await page.evaluate(() => window.emitTauri("session:changed", "builder"));
+  await page.waitForFunction(() => window.checkCalls.filter((c) => c.cmd === "sessions_for").length > 0);
+  await page.waitForTimeout(100);
+  assert.equal(await page.locator("#draft-feedback").inputValue(), "Fix the error path before shipping.");
   await page.locator('[data-action="insert-feedback"]').click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "terminal_paste"));
   // A session has the whole height, with a tab like the macOS app's.
