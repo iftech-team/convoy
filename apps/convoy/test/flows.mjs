@@ -95,6 +95,11 @@ try {
         { name: "gh", found: false, path: null, version: null, purpose: "Opens pull requests.", install: "Install the GitHub CLI." },
       ];
       if (cmd === "worktrees_path") return "/fixture/worktrees";
+      if (cmd === "setup_checks") return [
+        { id: "gh", title: "GitHub CLI login", detail: "Not installed or not logged in.", status: "warning", fix: "Run gh auth login." },
+        { id: "login.claude", title: "Claude login", detail: "Logged in", status: "ok", fix: null },
+        { id: "support", title: "Convoy's data folder", detail: "/fixture", status: "ok", fix: null },
+      ];
       const report = { projects: 3, projects_existing: 0, sessions: 5, tasks: 2, specs: 0, quick_commands: 0, activity: 4, settings: !!args?.settings, shortcuts: 0, connections: 0, warnings: [] };
       if (cmd === "macos_import_preview") return report;
       if (cmd === "macos_import_run") return { ...report, warnings: ["2 sessions run in a worktree the macOS app made."] };
@@ -429,7 +434,10 @@ try {
   await page.locator('[data-pref-set="theme"][data-value="dark"]').click();
   await page.waitForFunction(() => window.savedSettings.theme === "dark");
   await page.locator('[data-settings-section="Setup"]').click();
-  await page.locator(".pref-row", { hasText: "gh" }).locator(".pref-missing").waitFor();
+  await page.locator(".pref-row", { has: page.locator(".pref-row__title", { hasText: /^gh$/ }) }).locator(".pref-missing").waitFor();
+  // Past the tools: logins and Convoy's own pieces, as on macOS.
+  await page.locator(".pref-row", { hasText: "Claude login" }).locator(".pref-ok").waitFor();
+  await page.locator(".pref-row", { hasText: "GitHub CLI login" }).getByText("Run gh auth login.").waitFor();
   if (shots) await page.screenshot({ path: `${shots}/setup.png` });
   await page.locator('[data-action="macos-import"]').click();
   await page.locator('.modal [data-toggle="settings"][aria-pressed="false"]').waitFor();

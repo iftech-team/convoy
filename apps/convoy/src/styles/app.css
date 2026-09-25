@@ -3917,3 +3917,7 @@ input {
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
 }
+
+.pref-missing--failed {
+  color: var(--state-failed);
+}

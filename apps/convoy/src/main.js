@@ -442,7 +442,7 @@ async function openHome(page = "home") {
   await Promise.all([
     loadWorkspace(),
     loadAllTasks(),
-    state.diagnostics ? null : call("diagnostics_run").then((checks) => (state.diagnostics = checks ?? [])),
+    state.diagnostics && state.setupChecks ? null : loadProfiles().then(loadSetup),
   ]);
   render();
 }
@@ -1866,9 +1866,21 @@ async function runMacImport() {
 
 async function runDiagnostics() {
   state.diagnostics = null;
+  state.setupChecks = null;
   render();
-  state.diagnostics = (await call("diagnostics_run")) ?? [];
+  await loadSetup();
   render();
+}
+
+/// The tools, then everything else the macOS Setup check looks at, for the
+/// accounts new sessions start with.
+async function loadSetup() {
+  const [tools, checks] = await Promise.all([
+    call("diagnostics_run"),
+    call("setup_checks", { claudeProfile: activeAccount("claude") || null, codexProfile: activeAccount("codex") || null }),
+  ]);
+  state.diagnostics = tools ?? [];
+  state.setupChecks = checks ?? [];
 }
 
 function closeSettings() {

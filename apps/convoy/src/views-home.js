@@ -58,7 +58,12 @@ export function homeView() {
   const recent = [...sessions].reverse().filter((item) => !isRunning(item.id)).slice(0, 6);
   const tasks = state.allTasks ?? [];
   const count = (...statuses) => tasks.filter((task) => statuses.includes(task.status)).length;
-  const missing = (state.diagnostics ?? []).filter((check) => !check.found).length;
+  // Tools not found, and every other check that is not fine, as on macOS.
+  // A missing gh is counted once, not again as a missing gh login.
+  const noGh = (state.diagnostics ?? []).some((check) => check.name === "gh" && !check.found);
+  const missing =
+    (state.diagnostics ?? []).filter((check) => !check.found).length +
+    (state.setupChecks ?? []).filter((check) => check.status !== "ok" && !(noGh && check.id === "gh")).length;
   const limits = state.limits ?? {};
   const activity = (state.activity ?? []).slice(0, 6);
 

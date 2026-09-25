@@ -115,6 +115,25 @@ function setup() {
       rows,
       "Looked up through your login shell, so the PATH matches what an agent session sees. Sign in to Claude Code and Codex in their own terminals.",
     )}
+    ${
+      state.setupChecks?.length
+        ? groupBox(
+            "Checks",
+            state.setupChecks
+              .map((check) =>
+                row(
+                  check.title,
+                  check.status === "ok" ? check.detail : [check.detail, check.fix].filter(Boolean).join(" "),
+                  check.status === "ok"
+                    ? `<span class="pref-ok">${icons.check} OK</span>`
+                    : `<span class="pref-missing${check.status === "failed" ? " pref-missing--failed" : ""}">${icons.warn} ${check.status === "failed" ? "Problem" : "Look at"}</span>`,
+                ),
+              )
+              .join(""),
+            "Logins are checked for the accounts new sessions start with.",
+          )
+        : ""
+    }
     <div class="pref-actions">${button({ label: "Check again", icon: "refresh", action: "run-diagnostics" })}</div>
     ${state.macImport ? groupBox(
       "macOS app",

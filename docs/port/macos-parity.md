@@ -58,26 +58,28 @@ All done on September 25, 2026. Each row is covered by `apps/convoy/test/flows.m
 
 ## P1 — used every week
 
+All done on September 25, 2026, except the side panel, which was declined. Each row is covered by `apps/convoy/test/flows.mjs` or a Rust test.
+
 | Swift capability | Status | Note |
 |---|---|---|
-| Home page: Needs you, Running, Recent, task counts, limits, activity, projects | MISSING | |
-| Agent Dashboard ⌥⌘D: every session by state | MISSING | |
-| Codex session ID captured from `codex resume <uuid>` output | MISSING | It can only be typed in Edit session today. |
-| Saved output shown in place when the session is stopped | PARTIAL | Only a "Saved output…" dialog. |
-| "Conversation not found → Start fresh" banner | PARTIAL | Only a menu item. |
-| Feedback to the builder, filled with the reviewer's output | PARTIAL | Starts empty. |
-| Files & Changes as a side panel beside the terminal ⇧⌘G | PARTIAL | Full page today. |
-| Repo picker for group folders; ahead/behind counts | MISSING | |
-| Commit & Push; unstage all; mark resolved; reveal, open, copy path | MISSING | |
-| Tasks: drag between board columns | MISSING | |
-| Tasks: PR URL detected → `pr` status, "Open pull request" | MISSING | Rust has no `pr` status. |
-| Tasks: delete; set any status; open reviewer; Run now in the form | MISSING | |
-| Tasks: list grouped by status, hide done, all projects | MISSING | |
-| Default task mode `pr` for new projects | PARTIAL | Tauri defaults to `none`. The import keeps `pr`. |
-| Project order: drag, Move up/down | MISSING | |
-| Refresh projects / import subprojects ⌃⌘R | MISSING | |
-| Transcript history panel: every saved conversation, one-click Resume | PARTIAL | Tauri has Scan-and-import per item. |
-| Setup checks: gh auth, Claude/Codex logged in, hooks, support folder | PARTIAL | Tools found or missing only. |
+| Home page: Needs you, Running, Recent, task counts, limits, activity, projects | done | The window opens on it; ⇧⌘H. A project's own page is a click on the project. |
+| Agent Dashboard ⌥⌘D: every session by state | done | A page rather than a second window. |
+| Codex session ID captured from `codex resume <uuid>` output | done | Read from the output by the backend. |
+| Saved output shown in place when the session is stopped | done | The page now saves each running terminal's rendered text; before this, the Tauri client never wrote history. |
+| "Conversation not found → Start fresh" banner | done | |
+| Feedback to the builder, filled with the reviewer's output | done | |
+| Files & Changes as a side panel beside the terminal ⇧⌘G | declined | Files & Changes stays a full page by choice. |
+| Repo picker for group folders; ahead/behind counts | done | Here each repository in a group is its own project, so the picker switches between the session's worktree, its project and the group's other projects. |
+| Commit & Push; unstage all; mark resolved; reveal, open, copy path | done | |
+| Tasks: drag between board columns | done | Onto Running runs the task. |
+| Tasks: PR URL detected → `pr` status, "Open pull request" | done | New `pr` status in the core; the macOS importer keeps it. |
+| Tasks: delete; set any status; open reviewer; Run now in the form | done | |
+| Tasks: list grouped by status, hide done, all projects | done | |
+| Default task mode `pr` for new projects | done | |
+| Project order: drag, Move up/down | done | Within a group. Sorting by name still wins when on. |
+| Refresh projects / import subprojects ⌃⌘R | done | Bound to ⌥⇧⌘R: ⌃⌘R is Ctrl+R on Linux and Windows, which terminals need. |
+| Transcript history panel: every saved conversation, one-click Resume | done | A History tab: project folder and worktrees, both agents, every account. |
+| Setup checks: gh auth, Claude/Codex logged in, hooks, support folder | done | For the accounts new sessions use. |
 
 ## P2 — polish
 
@@ -89,7 +91,7 @@ All done on September 25, 2026. Each row is covered by `apps/convoy/test/flows.m
 | Panes: Maximize, per-pane quick commands, suggestions in an empty pane, sessions from other projects | PARTIAL | |
 | Quick commands: edit in place, palette mode ⌘/ | PARTIAL | Add and remove only. |
 | Status-bar account switcher per agent | MISSING | |
-| Open Claude /usage ⌥⌘U; search sessions & projects ⇧⌘P; Home ⇧⌘H | MISSING | |
+| Open Claude /usage ⌥⌘U; search sessions & projects ⇧⌘P | MISSING | Home ⇧⌘H is done. |
 | Spec WorkTasks (builder/reviewer pairs inside a spec) | MISSING | The import turns them into ordinary tasks linked to the spec. |
 | Task dependencies "Blocked by" | MISSING | The import keeps no dependency. |
 | Spec search box | MISSING | |
@@ -103,8 +105,7 @@ All done on September 25, 2026. Each row is covered by `apps/convoy/test/flows.m
 
 ## Shortcuts still to add
 
-`tab.moveLeft`/`tab.moveRight` ⇧⌘←/→, `project.refresh` ⌃⌘R, `go.search` ⇧⌘P, `go.home` ⇧⌘H,
-`go.dashboard` ⌥⌘D and `limits.claudeUsage` ⌥⌘U. The import leaves out an override of
+`tab.moveLeft`/`tab.moveRight` ⇧⌘←/→, `go.search` ⇧⌘P and `limits.claudeUsage` ⌥⌘U. The import leaves out an override of
 any of these until the action exists here.
 
 Layouts differ on purpose: Tauri uses `ctrl+shift+1/2/4`, because on Linux and Windows
