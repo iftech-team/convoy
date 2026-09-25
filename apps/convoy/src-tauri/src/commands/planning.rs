@@ -47,6 +47,9 @@ pub struct TaskView {
     pub pr_url: Option<String>,
     /// The session reviewing its work, when there is one.
     pub review_session_id: Option<String>,
+    pub depends_on: Vec<String>,
+    /// The titles of the tasks it still waits for.
+    pub blocked_by: Vec<String>,
 }
 
 fn task_view(state: &convoy_core::model::State, task: &convoy_core::model::Task) -> TaskView {
@@ -66,6 +69,11 @@ fn task_view(state: &convoy_core::model::State, task: &convoy_core::model::Task)
         session_id: task.session_id.clone(),
         last_error: task.last_error.clone(),
         pr_url: task.pr_url.clone(),
+        depends_on: task.depends_on.clone(),
+        blocked_by: convoy_core::queue::blocked_by(state, task)
+            .into_iter()
+            .map(|other| other.title.clone())
+            .collect(),
         review_session_id: task.session_id.as_ref().and_then(|builder| {
             state
                 .sessions
@@ -143,6 +151,24 @@ pub fn tasks_all(workspace: State<'_, Workspace>) -> Result<Vec<TaskView>, Strin
             .map(|task| task_view(state, task))
             .collect())
     })
+}
+
+#[tauri::command]
+pub fn task_dependencies(
+    id: String,
+    depends_on: Vec<String>,
+    workspace: State<'_, Workspace>,
+) -> Result<(), String> {
+    workspace.act(|workspace| workspace.set_task_dependencies(&id, depends_on).map(|_| ()))
+}
+
+#[tauri::command]
+pub fn task_link_session(
+    id: String,
+    session_id: String,
+    workspace: State<'_, Workspace>,
+) -> Result<(), String> {
+    workspace.act(|workspace| workspace.link_task_session(&id, &session_id).map(|_| ()))
 }
 
 #[tauri::command]

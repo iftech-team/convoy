@@ -34,16 +34,22 @@ export function specsView() {
         ${button({ label: "New specification", icon: "plus", action: "new-spec", kind: "primary" })}
       </div>`;
   }
+  const needle = (state.specFilter ?? "").toLowerCase();
+  const specs = planning.specs.filter(
+    (spec) => !needle || `${spec.title} ${spec.problem} ${spec.requirements}`.toLowerCase().includes(needle),
+  );
   return `
     <div class="section">
       <h2 class="section__title">Specifications
         <span class="section__count">${planning.specs.length}</span>
       </h2>
+      <input id="spec-filter" class="section__filter" type="search" placeholder="Find a specification"
+             value="${escape(state.specFilter ?? "")}" spellcheck="false" />
       <span class="section__spacer"></span>
       ${button({ label: "New specification", icon: "plus", action: "new-spec", kind: "primary" })}
     </div>
     <div class="list">
-      ${planning.specs
+      ${specs
         .map(
           (spec) => `
         <div class="row" data-spec="${escape(spec.id)}">
@@ -128,6 +134,7 @@ function taskRow(task) {
           ${owner ? `${escape(owner)} · ` : ""}${task.source ? escape(`${task.source.tracker === "jira" ? "Jira" : "Linear"} ${task.source.key}`) + " · " : ""}${task.model ? escape(task.model) + " · " : ""}${escape(MODES[task.mode] ?? task.mode)}
           ${task.auto_review ? " · automatic review" : ""}
           ${task.last_error ? ` · ${escape(task.last_error)}` : ""}
+          ${task.blocked_by?.length ? ` · <span class="task-blocked">waits for ${escape(task.blocked_by.join(", "))}</span>` : ""}
         </div>
       </div>
       <div class="row__actions">
@@ -187,6 +194,7 @@ function board(tasks) {
                     <span class="badge--muted badge">${escape(MODES[task.mode] ?? task.mode)}</span>
                     ${task.auto_review ? '<span class="badge--muted badge">auto review</span>' : ""}
                     ${task.pr_url ? '<span class="badge--muted badge">PR</span>' : ""}
+                    ${task.blocked_by?.length ? `<span class="badge task-blocked" title="Waits for ${escape(task.blocked_by.join(", "))}">blocked</span>` : ""}
                   </div>
                 </button>`,
                       )

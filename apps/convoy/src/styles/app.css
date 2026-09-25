@@ -4021,3 +4021,48 @@ input {
   bottom: 34px;
   min-width: 220px;
 }
+
+/* Specs: their work, and a task that waits for others. */
+.spec-work {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.spec-work__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spec-work__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.spec-work__link {
+  width: auto;
+  max-width: 220px;
+}
+
+.spec-work__findings {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
+
+.check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.task-blocked {
+  color: var(--state-failed);
+}

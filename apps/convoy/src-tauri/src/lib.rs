@@ -134,6 +134,8 @@ pub fn run() {
             commands::planning::task_save,
             commands::planning::task_status,
             commands::planning::task_delete,
+            commands::planning::task_dependencies,
+            commands::planning::task_link_session,
             commands::planning::tasks_all,
             commands::planning::task_prepare,
             commands::planning::queue_summary,

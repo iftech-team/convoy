@@ -9,6 +9,7 @@ let browser;
 try {
   browser = await chromium.launch({ executablePath: process.env.CONVOY_TEST_BROWSER || undefined, headless: true });
   const page = await browser.newPage({ viewport: { width: 1280, height: 840 } });
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:1421" });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript(() => {
@@ -29,7 +30,10 @@ try {
       if (cmd === "settings_save") { window.savedSettings = { ...args.input }; return null; }
       if (cmd === "workspace_read") return { projects, sessions, running: ["builder"], storage: "/fixture/workspace.json" };
       if (cmd === "sessions_for") return sessions.filter((item) => item.project_id === args.projectId);
-      if (cmd === "planning_read") return { tasks, specs: [], queued: tasks.length };
+      if (cmd === "planning_read") return {
+        tasks, queued: tasks.length,
+        specs: [{ id: "spec1", title: "Checkout retries", problem: "Payments time out", requirements: "Retry twice", acceptance: "", constraints: "", plan: "", revision: 1, approved: true }],
+      };
       if (cmd === "tasks_for") return tasks;
       if (cmd === "quick_commands_read") return [{ id: "q1", title: "Run tests", text: "npm test", submit: true, project_id: "project" }];
       if (["quick_command_send", "quick_command_save"].includes(cmd)) return null;
@@ -62,7 +66,20 @@ try {
         return { created: ["task"], skipped: 0 };
       }
       if (cmd === "task_agent") { tasks[0].model = args.model; tasks[0].agent = args.agent; return null; }
-      if (cmd === "task_save") { const task = tasks.find((item) => item.id === args.input.id); if (task) Object.assign(task, { title: args.input.title, mode: args.input.mode }); return args.input.id ?? "new"; }
+      if (cmd === "task_save") {
+        const task = tasks.find((item) => item.id === args.input.id);
+        if (task) { Object.assign(task, { title: args.input.title, mode: args.input.mode }); return task.id; }
+        const id = `new${tasks.length}`;
+        tasks.push({ id, project_id: args.input.project_id, title: args.input.title, details: "", findings: "", agent: args.input.agent, status: "queued", mode: args.input.mode, auto_review: args.input.auto_review, spec_id: args.input.spec_id, session_id: null, depends_on: [], blocked_by: [] });
+        return id;
+      }
+      if (cmd === "task_dependencies") {
+        const task = tasks.find((item) => item.id === args.id);
+        task.depends_on = args.dependsOn;
+        task.blocked_by = args.dependsOn.map((id) => tasks.find((item) => item.id === id).title);
+        return null;
+      }
+      if (cmd === "task_link_session") { tasks.find((item) => item.id === args.id).session_id = args.sessionId; return null; }
       if (cmd === "task_status") { tasks.find((item) => item.id === args.id).status = args.status; return null; }
       if (cmd === "task_delete") { tasks.splice(tasks.findIndex((item) => item.id === args.id), 1); return null; }
       if (cmd === "tasks_all") return tasks;
@@ -359,6 +376,30 @@ try {
   assert.deepEqual(await page.evaluate(() => window.checkCalls.find((c) => c.cmd === "files_open").args), { id: "project", path: "src/app.js", reveal: false });
   if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/files.png` });
   await page.locator('[data-action="files-close"]').click();
+  // Specifications: a search box, and each spec's own work — a task made for
+  // it, a session linked as its builder, and the review brief.
+  await page.locator('[data-tab="specs"]').click();
+  await page.locator("#spec-filter").fill("nothing");
+  await page.locator('.row[data-spec="spec1"]').waitFor({ state: "detached" });
+  await page.locator("#spec-filter").fill("retries");
+  await page.locator('.row[data-spec="spec1"]').click();
+  await page.locator('[data-action="spec-new-task"]').click();
+  assert.equal(await page.locator("#task-title").inputValue(), "Checkout retries");
+  await page.locator('[data-action="save-task"]').click();
+  await page.locator('.row[data-spec="spec1"]').click();
+  const work = page.locator(".spec-work", { hasText: "Checkout retries" });
+  await work.locator("select").selectOption("builder");
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_link_session" && c.args.sessionId === "builder"));
+  await work.locator("[data-spec-brief]").click();
+  await page.locator(".toast", { hasText: "Review brief copied" }).waitFor();
+  assert.match(await page.evaluate(() => navigator.clipboard.readText()), /Review the login changes/);
+  await page.keyboard.press("Escape");
+  // "Blocked by": the task waits for another, and says so.
+  await page.locator('[data-tab="tasks"]').click();
+  await page.locator('.row[data-task="task"]').click();
+  await page.locator('.modal [data-depends-on]').first().check();
+  await page.locator('[data-action="save-task"]').click();
+  await page.locator('.row[data-task="task"] .task-blocked', { hasText: "waits for Checkout retries" }).waitFor();
   // New tasks publish as a pull request unless the project says otherwise.
   await page.locator('[data-action="new-task"]').click();
   await page.locator('.modal .choice [data-value="pr"][aria-pressed="true"]').waitFor();

@@ -227,6 +227,7 @@ impl Workspace {
                     model: None,
                     source: None,
                     pr_url: None,
+                    depends_on: Vec::new(),
                     unknown: Default::default(),
                 }),
             }
@@ -270,6 +271,68 @@ impl Workspace {
         })
     }
 
+    /// Sets the tasks this one waits for. Refused when one is of another
+    /// project, or when they would wait for each other in a circle.
+    pub fn set_task_dependencies(&mut self, id: &str, depends_on: Vec<String>) -> Result<&State> {
+        let id = id.to_string();
+        self.update(move |state| {
+            let Some(index) = find_task_index(state, &id) else {
+                bail!("Task unavailable.")
+            };
+            let mut unique = Vec::new();
+            for other in depends_on {
+                if !unique.contains(&other) {
+                    unique.push(other);
+                }
+            }
+            state.tasks[index].depends_on = unique;
+            Ok(())
+        })
+    }
+
+    /// Makes an existing session the one that builds a task — the macOS
+    /// app's "Link existing session". The session must be of the task's
+    /// project and not already building another task.
+    pub fn link_task_session(&mut self, id: &str, session_id: &str) -> Result<&State> {
+        let (id, session_id) = (id.to_string(), session_id.to_string());
+        self.update(move |state| {
+            let Some(index) = find_task_index(state, &id) else {
+                bail!("Task unavailable.")
+            };
+            ensure!(
+                state.tasks[index].status != TaskStatus::Building,
+                "Stop the task session before linking another."
+            );
+            let project = state.tasks[index].project_id.clone();
+            let Some(session) = state
+                .sessions
+                .iter()
+                .find(|session| session.id == session_id)
+            else {
+                bail!("Session not found.")
+            };
+            ensure!(
+                session.project_id == project,
+                "Link a session of the task's own project."
+            );
+            ensure!(
+                session.task_id.as_deref().is_none_or(|other| other == id),
+                "That session already builds another task."
+            );
+            let previous = state.tasks[index].session_id.replace(session_id.clone());
+            state.tasks[index].spec_revision = None;
+            for session in state.sessions.iter_mut() {
+                if Some(&session.id) == previous.as_ref() {
+                    session.task_id = None;
+                }
+                if session.id == session_id {
+                    session.task_id = Some(id.clone());
+                }
+            }
+            Ok(())
+        })
+    }
+
     /// Removes a task. One whose agent is running must be stopped first; its
     /// session stays, no longer linked to anything.
     pub fn delete_task(&mut self, id: &str) -> Result<&State> {
@@ -283,6 +346,9 @@ impl Workspace {
                 "Stop the task session before deleting the task."
             );
             state.tasks.remove(index);
+            for task in state.tasks.iter_mut() {
+                task.depends_on.retain(|other| *other != id);
+            }
             for session in state.sessions.iter_mut() {
                 if session.task_id.as_deref() == Some(id.as_str()) {
                     session.task_id = None;
@@ -455,6 +521,7 @@ impl Workspace {
                         via_mcp: (connection.auth == TrackerAuth::Mcp).then_some(true),
                     }),
                     pr_url: None,
+                    depends_on: Vec::new(),
                     unknown: Default::default(),
                 });
             }

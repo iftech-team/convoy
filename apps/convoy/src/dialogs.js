@@ -364,6 +364,39 @@ const quickCommands = (dialog) =>
 
 // ---------------------------------------------------------------- planning --
 
+/// The spec's own work, as the macOS app's WorkTasks: each task with its
+/// builder and reviewer sessions, its status, and the review brief.
+function specWork(dialog) {
+  const tasks = (state.planning?.tasks ?? []).filter((task) => task.spec_id === dialog.id);
+  const sessions = state.allSessions.filter((item) => item.project_id === state.projectId);
+  const title = (id) => sessions.find((item) => item.id === id)?.title ?? "session";
+  const rows = tasks
+    .map(
+      (task) => `
+      <div class="spec-work">
+        <div class="spec-work__head">
+          <strong>${escape(task.title)}</strong>
+          <span class="badge badge--muted">${escape(task.status)}</span>
+        </div>
+        <div class="spec-work__actions">
+          ${task.session_id ? button({ label: `Builder: ${title(task.session_id)}`, icon: "terminal", data: { open: task.session_id } }) : ""}
+          ${task.review_session_id ? button({ label: `Reviewer: ${title(task.review_session_id)}`, icon: "review", data: { open: task.review_session_id } }) : ""}
+          ${task.session_id ? button({ label: "Copy review brief", icon: "copy", data: { "spec-brief": task.session_id } }) : ""}
+          <select class="field__select spec-work__link" data-link-task="${escape(task.id)}" title="Link an existing session as the builder">
+            <option value="">Link existing session…</option>
+            ${sessions
+              .filter((item) => item.id !== task.session_id)
+              .map((item) => `<option value="${escape(item.id)}">${escape(item.title)}</option>`)
+              .join("")}
+          </select>
+        </div>
+        ${task.findings ? `<p class="spec-work__findings">${escape(task.findings)}</p>` : ""}
+      </div>`,
+    )
+    .join("");
+  return group("Work", rows || '<p class="modal__hint">No tasks for this specification yet.</p>');
+}
+
 const specForm = (dialog) =>
   modal({
     title: dialog.id ? "Specification" : "New specification",
@@ -375,12 +408,37 @@ const specForm = (dialog) =>
       ${field("Requirements", textArea("spec-requirements", dialog.requirements, "", 4))}
       ${field("Acceptance", textArea("spec-acceptance", dialog.acceptance, "", 3))}
       ${field("Constraints", textArea("spec-constraints", dialog.constraints, "", 3))}
-      ${field("Plan", textArea("spec-plan", dialog.plan, "", 4))}`,
+      ${field("Plan", textArea("spec-plan", dialog.plan, "", 4))}
+      ${dialog.id ? specWork(dialog) : ""}`,
     foot: `
       ${button({ label: "Cancel", data: { dismiss: "1" } })}
+      ${dialog.id ? button({ label: "New task for this spec", icon: "plus", action: "spec-new-task" }) : ""}
       ${dialog.id && !dialog.approved ? button({ label: "Approve revision", action: "approve-spec" }) : ""}
       ${button({ label: "Save", action: "save-spec", kind: "primary" })}`,
   });
+
+/// Which tasks of the project this one waits for. The queue passes it by
+/// until they are done; a circle is refused when saving.
+function blockedBy(dialog) {
+  const others = (state.planning?.tasks ?? []).filter(
+    (task) => task.id !== dialog.id && (task.project_id ?? state.projectId) === (dialog.project_id ?? state.projectId),
+  );
+  if (!others.length) return "";
+  const chosen = new Set(dialog.depends_on ?? []);
+  return field(
+    "Blocked by",
+    `<div class="check-list">${others
+      .map(
+        (task) => `
+      <label class="check">
+        <input type="checkbox" data-depends-on="${escape(task.id)}" ${chosen.has(task.id) ? "checked" : ""} />
+        ${escape(task.title)}${task.status === "done" ? " · done" : ""}
+      </label>`,
+      )
+      .join("")}</div>`,
+    "The queue waits for these to be done first.",
+  );
+}
 
 const taskForm = (dialog) => {
   const specs = state.planning?.specs ?? [];
@@ -415,6 +473,7 @@ const taskForm = (dialog) => {
         "A pull request is the default, as on macOS.",
       )}
       ${setting("Hand to the other agent when it finishes", "", toggle("auto_review", dialog.auto_review, "Automatic review"))}
+      ${blockedBy(dialog)}
       ${field("Details", textArea("task-details", dialog.details, "", 4))}
       ${field("Findings", textArea("task-findings", dialog.findings, "", 3))}`,
     foot: `

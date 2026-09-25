@@ -34,6 +34,15 @@ pub enum Step {
     },
 }
 
+/// The tasks this one waits for that are not done yet.
+pub fn blocked_by<'a>(state: &'a crate::model::State, task: &Task) -> Vec<&'a Task> {
+    task.depends_on
+        .iter()
+        .filter_map(|id| state.tasks.iter().find(|other| &other.id == id))
+        .filter(|other| other.status != TaskStatus::Done)
+        .collect()
+}
+
 /// The branch a queued pull-request task gets.
 pub fn worktree_branch(task: &Task) -> String {
     format!("convoy/task-{}", &task.id[..task.id.len().min(8)])
@@ -49,11 +58,12 @@ pub fn next_step(workspace: &Workspace, project_id: &str, running: Running<'_>) 
     if building {
         return Step::Waiting;
     }
-    let Some(task) = state
-        .tasks
-        .iter()
-        .find(|task| task.project_id == project_id && task.status == TaskStatus::Queued)
-    else {
+    // A queued task waits while any task it depends on is not done.
+    let Some(task) = state.tasks.iter().find(|task| {
+        task.project_id == project_id
+            && task.status == TaskStatus::Queued
+            && blocked_by(state, task).is_empty()
+    }) else {
         return Step::Empty;
     };
     Step::Run {
@@ -165,13 +175,26 @@ pub fn summary(workspace: &Workspace, project_id: &str) -> Vec<String> {
                 crate::model::PublishMode::Pr => "pull request",
                 crate::model::PublishMode::Push => "push",
             };
+            let waits = blocked_by(workspace.state(), task);
             format!(
-                "{}: {mode}{}",
+                "{}: {mode}{}{}",
                 task.title,
                 if task.auto_review {
                     ", automatic review"
                 } else {
                     ""
+                },
+                if waits.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        ", waits for {}",
+                        waits
+                            .iter()
+                            .map(|other| other.title.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
                 }
             )
         })

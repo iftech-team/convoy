@@ -779,6 +779,20 @@ const ACTIONS = {
       spec_id: "",
     }),
   "save-task": () => saveTask(false),
+  "spec-new-task": () => {
+    const spec = state.dialog;
+    openModal({
+      kind: "task",
+      title: spec.title,
+      details: "",
+      findings: "",
+      agent: project()?.default_agent || state.settings.default_agent,
+      mode: project()?.task_mode || "pr",
+      model: "",
+      auto_review: true,
+      spec_id: spec.id,
+    });
+  },
   "run-task-now": () => saveTask(true),
   "delete-task": () => {
     const id = state.dialog?.id;
@@ -1018,7 +1032,7 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
+      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -1286,6 +1300,12 @@ app.addEventListener("click", async (event) => {
     state.menu = null;
     return render();
   }
+  if (data.specBrief) {
+    const brief = await call("review_brief", { id: data.specBrief });
+    if (brief === undefined) return;
+    await navigator.clipboard.writeText(brief);
+    return toast("Review brief copied");
+  }
   if (data.historyCopy) {
     await navigator.clipboard.writeText(data.historyCopy);
     return toast("Conversation ID copied");
@@ -1389,6 +1409,10 @@ app.addEventListener("input", (event) => {
     }
     return;
   }
+  if (field.id === "spec-filter") {
+    state.specFilter = field.value;
+    return render();
+  }
   if (field.id === "history-filter") {
     state.historyFilter = field.value;
     return render();
@@ -1411,6 +1435,21 @@ app.addEventListener("input", (event) => {
 });
 
 app.addEventListener("change", async (event) => {
+  if (event.target.dataset?.linkTask && event.target.value) {
+    const id = event.target.dataset.linkTask;
+    if (await done("task_link_session", { id, sessionId: event.target.value })) {
+      await loadWorkspace();
+      await loadPlanning();
+      toast("Session linked");
+    }
+    return render();
+  }
+  if (event.target.dataset?.dependsOn !== undefined && state.dialog?.kind === "task") {
+    const picked = [...document.querySelectorAll("[data-depends-on]:checked")].map((box) => box.dataset.dependsOn);
+    state.dialog.depends_on = picked;
+    return;
+  }
+  if (event.target.id === "spec-filter") return;
   if (event.target.id === "files-repo" && state.files) {
     state.files = { ...state.files, id: event.target.value, snapshot: null, selection: null, preview: null, branch: null };
     render();
@@ -2461,6 +2500,11 @@ async function saveTask(run = false) {
     },
   });
   if (!id) return;
+  const wanted = dialog.depends_on ?? [];
+  const had = findTask(id)?.depends_on ?? [];
+  if (wanted.length !== had.length || wanted.some((other) => !had.includes(other))) {
+    if (!(await done("task_dependencies", { id, dependsOn: wanted }))) return;
+  }
   const model = (dialog.model ?? "").trim();
   const before = findTask(id);
   if (model !== (before?.model ?? "") || (before && before.agent !== dialog.agent)) {

@@ -153,3 +153,120 @@ fn projects_keep_the_order_they_are_moved_into() {
     let reloaded = Workspace::load(dir.path().join("workspace.json")).unwrap();
     assert_eq!(titles(&reloaded), ["a", "b", "c"], "the order is saved");
 }
+
+fn task(workspace: &mut Workspace, project: &str, title: &str) -> String {
+    workspace
+        .save_task(TaskInput {
+            id: None,
+            project_id: project.to_string(),
+            spec_id: None,
+            title: title.into(),
+            details: String::new(),
+            findings: String::new(),
+            agent: Agent::Claude,
+            mode: PublishMode::None,
+            auto_review: false,
+        })
+        .unwrap();
+    workspace.state().tasks.last().unwrap().id.clone()
+}
+
+/// The queue passes a task by while one it waits for is not done; a circle
+/// and a task of another project are refused.
+#[test]
+fn a_blocked_task_waits_and_circles_are_refused() {
+    let (dir, mut workspace) = workspace();
+    let project = workspace.state().projects[0].id.clone();
+    let schema = task(&mut workspace, &project, "Schema");
+    let api = task(&mut workspace, &project, "API");
+    // "API" is first in the queue once it no longer waits.
+    workspace
+        .set_task_dependencies(&schema, vec![api.clone()])
+        .unwrap();
+    let next = |workspace: &Workspace| match convoy_core::queue::next_step(
+        workspace,
+        &project,
+        &|_: &str| false,
+    ) {
+        convoy_core::queue::Step::Run { task_id, .. } => task_id,
+        _ => String::new(),
+    };
+    assert_eq!(next(&workspace), api, "Schema waits for API");
+    assert!(
+        workspace
+            .set_task_dependencies(&api, vec![schema.clone()])
+            .is_err(),
+        "a circle"
+    );
+    assert!(
+        workspace
+            .set_task_dependencies(&api, vec![api.clone()])
+            .is_err(),
+        "itself"
+    );
+
+    let elsewhere = dir.path().join("other");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    workspace.add_project(&elsewhere).unwrap();
+    let other = workspace.state().projects[1].id.clone();
+    let foreign = task(&mut workspace, &other, "Foreign");
+    assert!(
+        workspace
+            .set_task_dependencies(&schema, vec![foreign])
+            .is_err(),
+        "another project"
+    );
+
+    workspace.delete_task(&api).unwrap();
+    assert!(workspace
+        .state()
+        .tasks
+        .iter()
+        .find(|t| t.id == schema)
+        .unwrap()
+        .depends_on
+        .is_empty());
+}
+
+/// "Link existing session": the session builds the task from then on, and
+/// the one it replaces is let go.
+#[test]
+fn an_existing_session_can_be_linked_to_a_task() {
+    let (_dir, mut workspace) = workspace();
+    let project = workspace.state().projects[0].id.clone();
+    let spec_task = task(&mut workspace, &project, "Login flow");
+    workspace
+        .add_session(NewSession::new(
+            project.clone(),
+            Agent::Codex,
+            "Earlier work",
+        ))
+        .unwrap();
+    let earlier = workspace.state().sessions.last().unwrap().id.clone();
+    workspace.link_task_session(&spec_task, &earlier).unwrap();
+    assert_eq!(
+        workspace.state().tasks[0].session_id.as_deref(),
+        Some(earlier.as_str())
+    );
+    assert_eq!(
+        workspace.session(&earlier).unwrap().task_id.as_deref(),
+        Some(spec_task.as_str())
+    );
+
+    workspace
+        .add_session(NewSession::new(project.clone(), Agent::Codex, "Later work"))
+        .unwrap();
+    let later = workspace.state().sessions.last().unwrap().id.clone();
+    workspace.link_task_session(&spec_task, &later).unwrap();
+    assert_eq!(
+        workspace.session(&earlier).unwrap().task_id,
+        None,
+        "the old one is let go"
+    );
+
+    let second = task(&mut workspace, &project, "Another");
+    assert!(
+        workspace.link_task_session(&second, &later).is_err(),
+        "one task per session"
+    );
+}

@@ -93,6 +93,20 @@ fn text(value: &Value, key: &str) -> Option<String> {
     value.get(key).and_then(Value::as_str).map(str::to_string)
 }
 
+fn strings(value: &Value, key: &str) -> Vec<String> {
+    value
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn flag(value: &Value, key: &str) -> Option<bool> {
     value.get(key).and_then(Value::as_bool)
 }
@@ -465,6 +479,7 @@ impl Merge<'_> {
                         model: None,
                         source: None,
                         pr_url: None,
+                        depends_on: Vec::new(),
                         unknown: Default::default(),
                     });
                     self.report.tasks += 1;
@@ -550,9 +565,23 @@ impl Merge<'_> {
                 model: text(task, "model").filter(|value| !value.is_empty()),
                 source,
                 pr_url: text(task, "prURL"),
+                depends_on: strings(task, "dependsOn"),
                 unknown: Default::default(),
             });
             self.report.tasks += 1;
+        }
+        // A dependency survives only when the task it names came across too,
+        // in the same project.
+        let owners: HashMap<String, String> = state
+            .tasks
+            .iter()
+            .map(|task| (task.id.clone(), task.project_id.clone()))
+            .collect();
+        for task in state.tasks.iter_mut() {
+            let project = task.project_id.clone();
+            let own = task.id.clone();
+            task.depends_on
+                .retain(|id| *id != own && owners.get(id) == Some(&project));
         }
     }
 

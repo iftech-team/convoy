@@ -369,6 +369,10 @@ pub struct Task {
     /// The pull request its session opened, as the agent printed it.
     #[serde(rename = "prURL", default, skip_serializing_if = "Option::is_none")]
     pub pr_url: Option<String>,
+    /// Tasks of the same project that must be done before this one; the
+    /// queue passes it by until they are.
+    #[serde(rename = "dependsOn", default, skip_serializing_if = "Vec::is_empty")]
+    pub depends_on: Vec<String>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }

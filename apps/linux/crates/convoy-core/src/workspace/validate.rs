@@ -372,6 +372,7 @@ pub fn validate_planning(state: &Value) -> Result<()> {
             );
         }
     }
+    dependencies(tasks)?;
 
     for profile in profiles {
         text(field(profile, "label"), 100, true)?;
@@ -416,5 +417,69 @@ pub fn validate_planning(state: &Value) -> Result<()> {
         );
     }
 
+    Ok(())
+}
+
+/// A task may wait for others of its own project, never for itself and never
+/// in a circle — the queue would wait forever.
+fn dependencies(tasks: &[Value]) -> Result<()> {
+    let mut graph: std::collections::HashMap<&str, (&str, Vec<&str>)> =
+        std::collections::HashMap::new();
+    for task in tasks {
+        let (Some(id), Some(project)) =
+            (string(field(task, "id")), string(field(task, "projectID")))
+        else {
+            continue;
+        };
+        let wanted = match field(task, "dependsOn") {
+            None => Vec::new(),
+            Some(value) => {
+                let items = value.as_array();
+                ensure!(
+                    items.is_some_and(|items| items.iter().all(Value::is_string)),
+                    "Invalid task dependencies."
+                );
+                items.unwrap().iter().filter_map(Value::as_str).collect()
+            }
+        };
+        graph.insert(id, (project, wanted));
+    }
+    for (id, (project, wanted)) in &graph {
+        for other in wanted {
+            ensure!(
+                other != id && graph.get(other).is_some_and(|(owner, _)| owner == project),
+                "A task can only wait for other tasks of its project."
+            );
+        }
+    }
+    // Depth-first search; a node met again while still on the path closes a
+    // circle.
+    fn visit<'a>(
+        id: &'a str,
+        graph: &std::collections::HashMap<&'a str, (&'a str, Vec<&'a str>)>,
+        path: &mut Vec<&'a str>,
+        done: &mut HashSet<&'a str>,
+    ) -> bool {
+        if done.contains(id) {
+            return true;
+        }
+        if path.contains(&id) {
+            return false;
+        }
+        path.push(id);
+        let fine = graph
+            .get(id)
+            .is_none_or(|(_, wanted)| wanted.iter().all(|next| visit(next, graph, path, done)));
+        path.pop();
+        done.insert(id);
+        fine
+    }
+    let mut done = HashSet::new();
+    for id in graph.keys() {
+        ensure!(
+            visit(id, &graph, &mut Vec::new(), &mut done),
+            "Those tasks would wait for each other in a circle."
+        );
+    }
     Ok(())
 }
