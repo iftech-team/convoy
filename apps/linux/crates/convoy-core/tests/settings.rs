@@ -30,8 +30,13 @@ fn every_action_has_a_description_and_a_distinct_valid_default() {
         assert!(seen.insert(*binding), "{binding} is bound twice");
         // On Linux and Windows `mod` is Control, so `ctrl+x` and `mod+x`
         // are one key there: defaults must differ in that form too.
-        let there = binding.replacen("mod+ctrl+", "mod+", 1).replacen("ctrl+", "mod+", 1);
-        assert!(seen_there.insert(there.clone()), "{binding} collides with another default as {there} on Linux and Windows");
+        let there = binding
+            .replacen("mod+ctrl+", "mod+", 1)
+            .replacen("ctrl+", "mod+", 1);
+        assert!(
+            seen_there.insert(there.clone()),
+            "{binding} collides with another default as {there} on Linux and Windows"
+        );
     }
 }
 
