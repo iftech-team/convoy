@@ -27,7 +27,7 @@ import {
   visibleSessions,
 } from "./state.js";
 import { escape, plural, value } from "./ui.js";
-import { SHORTCUTS, binding, capture, matches } from "./shortcuts.js";
+import { SHORTCUTS, binding, capture, label, matches } from "./shortcuts.js";
 import { dialogView } from "./dialogs.js";
 import * as terminal from "./terminal.js";
 import {
@@ -2306,25 +2306,117 @@ terminal.onFindResults((id, index, count) => {
 
 // -------------------------------------------------------------- palette ---
 
+/// Everything the palette can reach: every project's sessions, the projects,
+/// and the macOS app's list of actions, each with its shortcut.
 function paletteEntries() {
-  const entries = [
-    ["New session", "Action", () => ACTIONS["new-session"]()],
-    ["Open folder", "Action", openFolder],
-    ["Files & Changes", "Action", openFiles],
-    ["Project settings", "Action", openProjectSettings],
-    ["Import provider history", "Action", openTranscripts],
-    ["Accounts", "Action", openAccounts],
-    ["Settings", "Action", openSettings],
-    ["Activity", "Action", () => openActivity()],
-    ["Docs & specs", "Action", () => withProject(() => showTab("docs"))],
-  ];
+  const entries = [];
+  for (const item of state.allSessions) {
+    const owner = state.projects.find((entry) => entry.id === item.project_id);
+    const running = isRunning(item.id);
+    const reported = running ? state.agentState.get(item.id) : null;
+    entries.push({
+      kind: "Session",
+      title: item.title,
+      subtitle: [
+        owner?.title,
+        item.agent === "claude" ? "Claude Code" : "Codex",
+        item.branch ? `⎇ ${item.branch}` : "",
+        item.review_of ? "review" : "",
+        reported ?? "",
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      running,
+      needsYou: reported === "waiting",
+      run: () => openAnywhere(item.id),
+    });
+  }
   for (const item of state.projects) {
-    entries.push([item.title, "Project", () => selectProject(item.id)]);
+    entries.push({ kind: "Project", title: item.title, subtitle: item.path, run: () => selectProject(item.id).then(render) });
   }
-  for (const item of visibleSessions()) {
-    entries.push([item.title, "Session", () => openSession(item.id)]);
+  const bound = (action) => label(binding(action));
+  const inFiles = (then) => async () => {
+    if (!state.files) await openFiles();
+    await then();
+  };
+  const actions = [
+    ["New session", "Creates a Claude Code or Codex session", "newSession"],
+    ["Open folder…", "Add a repository or a folder of projects", "openFolder"],
+    ["Resume current session", "Reconnect to the selected agent", "resume"],
+    ["Stop current session", "Interrupts the running agent", "stop"],
+    ["Sleep current session", "Stops it; opening it resumes the conversation", "sleep"],
+    ["Close tab", "Closes the selected terminal tab", "closeTab"],
+    ["Reopen closed tab", "", "reopenTab"],
+    ["Switch terminal", "Open terminals, most recent first", "switcher"],
+    ["Find in terminal", "", "search"],
+    ["Toggle sidebar", "Show or hide the project list", "sidebar"],
+    ["Edit session name & notes", "", "edit"],
+    ["Pin or unpin session", "", "pin"],
+    ["Start review of current session", "Hands the work to the other agent", "review"],
+    ["Send feedback to builder", "From a review session", "feedback"],
+    ["Quick commands", "Send a saved command to this terminal", "quick"],
+    ["One pane", "", "layout1"],
+    ["Two panes", "", "layout2"],
+    ["Four panes", "", "layout4"],
+    ["AI Limits", "Account usage for Codex and Claude", "limits"],
+    ["Refresh AI limits", "Reads the current usage from your login", "limitsRefresh"],
+    ["Go to Sessions", "", "sessionsTab"],
+    ["Go to Reviews", "", "reviewsTab"],
+    ["Go to Specs", "", "specsTab"],
+    ["Go to Tasks", "", "tasksTab"],
+    ["Go to Docs & Specs", "", "docsTab"],
+    ["Next section", "", "nextTab"],
+    ["Previous section", "", "previousTab"],
+    ["New specification", "", "newSpec"],
+    ["New task", "Queue work for an agent in the current project", "newTask"],
+    ["Import Linear or Jira issues", "As tasks in the current project", "importIssues"],
+    ["Show project folder", "", "reveal"],
+    ["Copy project path", "", "copyPath"],
+    ["Toggle keep awake", "", "wake"],
+    ["Activity", "What the agents did, newest first", "activity"],
+    ["Settings…", "Appearance, terminal, agents, git, notifications", "settings"],
+    ["Files & Changes", "Browse files, stage, commit, push, log", "files"],
+  ].map(([title, subtitle, action]) => ({ kind: "Action", title, subtitle, shortcut: bound(action), run: () => SHORTCUT_ACTIONS[action]() }));
+  const more = [
+    ["Theme: System", "Follow the system appearance", () => savePref({ theme: "system" })],
+    ["Theme: Light", "", () => savePref({ theme: "light" })],
+    ["Theme: Dark", "", () => savePref({ theme: "dark" })],
+    ["Setup check", "Find missing CLIs and configuration problems", () => openSettings("Setup")],
+    ["Accounts", "Sign-ins for Claude Code and Codex", openAccounts],
+    ["Project settings", "", openProjectSettings],
+    ["Import provider history", "Conversations the agent already has for this folder", openTranscripts],
+    ["Git: Commit…", "The commit composer in Files & Changes", inFiles(() => showFilesView("changes"))],
+    ["Git: Push", "", inFiles(() => ACTIONS.push())],
+    ["Git: Pull (fast-forward)", "", inFiles(() => ACTIONS.pull())],
+    ["Git: Fetch", "", inFiles(() => ACTIONS.fetch())],
+    ["Git: Log", "Recent commits with revert and reset", inFiles(() => showFilesView("log"))],
+    ["Git: Files", "Browse the project tree", inFiles(() => showFilesView("files"))],
+    ["Git: Branches", "", inFiles(() => showFilesView("branches"))],
+  ].map(([title, subtitle, run]) => ({ kind: "Action", title, subtitle, run }));
+  return [...entries, ...actions, ...more];
+}
+
+function showFilesView(view) {
+  if (!state.files) return;
+  state.files.view = view;
+  render();
+}
+
+/// The macOS app's ranking: prefix, then a word's start, then anywhere in the
+/// title, then the subtitle, then the letters in order.
+function paletteScore(query, title, subtitle = "") {
+  const q = query.toLowerCase();
+  const t = title.toLowerCase();
+  if (t.startsWith(q)) return 100;
+  if (t.split(" ").some((word) => word.startsWith(q))) return 80;
+  if (t.includes(q)) return 60;
+  if (subtitle.toLowerCase().includes(q)) return 30;
+  let at = 0;
+  for (const letter of q) {
+    at = t.indexOf(letter, at) + 1;
+    if (!at) return 0;
   }
-  return entries.map(([title, kind, run]) => ({ title, kind, run }));
+  return 15;
 }
 
 function terminalEntries() {
@@ -2338,23 +2430,46 @@ function terminalEntries() {
   return ordered.map((id) => {
     const item = anySession(id);
     const owner = state.projects.find((entry) => entry.id === item.project_id);
+    const index = state.tabs.indexOf(id);
     return {
+      kind: "Session",
       title: item.title,
-      kind: [owner?.title, isRunning(id) ? (state.agentState.get(id) ?? "running") : "stopped"].filter(Boolean).join(" · "),
+      subtitle: [owner?.title, isRunning(id) ? (state.agentState.get(id) ?? "running") : "stopped", id === current ? "current" : ""]
+        .filter(Boolean)
+        .join(" · "),
+      shortcut: index < 9 ? label(`mod+${index + 1}`) : "",
       run: () => openAnywhere(id),
     };
   });
 }
 
-const paletteResults = (query, mode = "all") => {
-  const needle = query.toLowerCase();
-  return (mode === "terminals" ? terminalEntries() : paletteEntries()).filter(
-    (entry) =>
-      !needle ||
-      entry.title.toLowerCase().includes(needle) ||
-      entry.kind.toLowerCase().includes(needle),
-  );
-};
+function paletteResults(query, mode = "all") {
+  const needle = query.trim();
+  if (mode === "terminals") {
+    const items = terminalEntries();
+    return needle ? items.filter((item) => paletteScore(needle, item.title, item.subtitle) > 0) : items;
+  }
+  const items = paletteEntries();
+  if (!needle) {
+    // As on macOS: who needs you, what runs, a few recent, a few actions.
+    const sessions = items.filter((item) => item.kind === "Session");
+    return [
+      ...sessions.filter((item) => item.needsYou),
+      ...sessions.filter((item) => item.running && !item.needsYou),
+      ...sessions.filter((item) => !item.running).slice(0, 6),
+      ...items.filter((item) => item.kind === "Action").slice(0, 6),
+    ];
+  }
+  return items
+    .map((item) => {
+      const score = paletteScore(needle, item.title, item.subtitle);
+      return [item, score && score + (item.needsYou ? 10 : 0) + (item.running ? 5 : 0) + (item.kind === "Session" ? 2 : 0)];
+    })
+    .filter(([, score]) => score > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 40)
+    .map(([item]) => item);
+}
 
 /// "all" is the command palette; "terminals" is the ⌘E switcher: open tabs,
 /// most recently used first and the one on screen last, as on macOS.
@@ -2396,6 +2511,7 @@ async function monitorTick() {
   }
   if (report.changed) await loadSessions();
   else if (touched) render();
+  updateBadge();
 }
 
 async function notify(entry) {
@@ -2416,6 +2532,34 @@ async function notify(entry) {
     body: entry.title,
     ...(prefs.notification_sound === "none" ? {} : { sound: prefs.notification_sound || "default" }),
   });
+  notified = { id: entry.id, state: entry.state };
+}
+
+/// The session the last notification was about. Desktop notifications give
+/// no click callback, but clicking one brings the window forward: coming back
+/// while that session still waits opens it, as clicking does on macOS.
+let notified = null;
+addEventListener("focus", () => {
+  const last = notified;
+  notified = null;
+  if (last && isRunning(last.id) && state.agentState.get(last.id) === last.state && state.sessionId !== last.id) {
+    openAnywhere(last.id);
+  }
+});
+
+/// The Dock badge counts the sessions waiting for you. Windows has no badge;
+/// there the call fails and nothing is shown.
+let badge = 0;
+async function updateBadge() {
+  const waiting = state.running.filter((id) => state.agentState.get(id) === "waiting").length;
+  if (waiting === badge) return;
+  badge = waiting;
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().setBadgeCount(waiting || undefined);
+  } catch {
+    /* unsupported here */
+  }
 }
 
 // ------------------------------------------------------------ git polling --
@@ -2493,6 +2637,7 @@ async function applyKeepAwake() {
 }
 
 terminal.onExit(async (exit) => {
+  updateBadge();
   if (exit.id.startsWith("login:")) {
     if (state.dialog?.id === exit.id) {
       state.dialog.finished = true;

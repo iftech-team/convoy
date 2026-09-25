@@ -9,6 +9,17 @@ export default defineConfig({
     strictPort: true,
     watch: { ignored: ["**/src-tauri/**"] },
   },
+  // Modules the page imports only when first needed. Listed so the dev server
+  // prepares them up front instead of reloading the page when one first
+  // loads, which reset the UI tests part way through.
+  optimizeDeps: {
+    include: [
+      "@tauri-apps/api/webview",
+      "@tauri-apps/api/window",
+      "@tauri-apps/plugin-fs",
+      "@tauri-apps/plugin-notification",
+    ],
+  },
   build: {
     target: "es2022",
     sourcemap: true,

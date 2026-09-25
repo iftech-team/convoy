@@ -40,19 +40,21 @@ own settings.
 
 ## P0 — the daily loop
 
+All done on September 25, 2026. Each row is covered by `apps/convoy/test/flows.mjs`, except where the note says otherwise.
+
 | Swift capability | Status | Note |
 |---|---|---|
-| New Session sheet starts the agent at once (`NewSessionSheet`) | PARTIAL | Tauri needs a title and a separate Start. Missing: pick any project, worktree toggle, base ref and branch, note, skip setup, keep open, auto-title. |
-| Find in terminal ⌘F: next/previous, match case, "n of m" (`TerminalSearchBar`) | MISSING | xterm's search addon covers it. |
-| Switch terminal, recent first ⌘E (`Store.recentTabs`) | MISSING | |
-| Reopen closed tab ⇧⌘T (`Store.reopenClosedTab`) | MISSING | |
-| Drop files onto the terminal to paste quoted paths | MISSING | |
-| Pick an account for a new session; log in from a terminal (Settings → Accounts) | PARTIAL | Profiles can be added and removed, but `session_create` takes no profile. |
-| Pinned sessions from every project in the sidebar (`Store.pinnedSessions`) | MISSING | |
-| Sessions under every project in the sidebar, collapsed state kept | PARTIAL | Only the selected project expands; `state.collapsed` is not saved. |
-| Command palette over all projects' sessions and about 40 actions, fuzzy match | PARTIAL | 9 actions, current project's sessions only, substring match. |
-| Clicking a notification opens its session (`Notifier.onOpen`) | MISSING | |
-| Dock badge with the count of sessions waiting | MISSING | |
+| New Session sheet starts the agent at once (`NewSessionSheet`) | done | Any project, optional name (auto-titled), worktree from any branch/remote/tag with a branch that follows the name, account, note, run/skip setup, keep open. |
+| Find in terminal ⌘F: next/previous, match case, "n of m" (`TerminalSearchBar`) | done | xterm's search add-on. With no terminal on screen, ⌘F still finds a project. |
+| Switch terminal, recent first ⌘E (`Store.recentTabs`) | done | Pressing ⌘E again moves down the list. |
+| Reopen closed tab ⇧⌘T (`Store.reopenClosedTab`) | done | Tabs closed this run. |
+| Drop files onto the terminal to paste quoted paths | done | Through Tauri's native drop event. The test drives the handler; a real drag has not been tried on each platform. On Windows, Tauri's native drop can stop HTML5 drag inside the page, so check tab reordering there. |
+| Pick an account for a new session; log in from a terminal (Settings → Accounts) | done | "Use" is remembered per machine. "Log in…" runs `claude /login` or `codex login` in the account's home. Not yet tried against the real CLIs. |
+| Pinned sessions from every project in the sidebar (`Store.pinnedSessions`) | done | |
+| Sessions under every project in the sidebar, collapsed state kept | done | |
+| Command palette over all projects' sessions and about 40 actions, fuzzy match | done | The macOS ranking, with shortcuts shown. |
+| Clicking a notification opens its session (`Notifier.onOpen`) | done, differently | Tauri's desktop notifications have no click callback. Coming back to the window while the notified session still waits opens it; clicking the notification does exactly that. |
+| Dock badge with the count of sessions waiting | done | macOS and Linux. Windows has no badge; an overlay icon would be the equivalent. |
 
 ## P1 — used every week
 
@@ -101,8 +103,7 @@ own settings.
 
 ## Shortcuts still to add
 
-`tab.switch` ⌘E, `tab.reopen` ⇧⌘T, `tab.moveLeft`/`tab.moveRight` ⇧⌘←/→,
-`project.refresh` ⌃⌘R, `go.find` ⌘F in a terminal, `go.search` ⇧⌘P, `go.home` ⇧⌘H,
+`tab.moveLeft`/`tab.moveRight` ⇧⌘←/→, `project.refresh` ⌃⌘R, `go.search` ⇧⌘P, `go.home` ⇧⌘H,
 `go.dashboard` ⌥⌘D and `limits.claudeUsage` ⌥⌘U. The import leaves out an override of
 any of these until the action exists here.
 

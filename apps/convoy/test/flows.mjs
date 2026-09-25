@@ -18,7 +18,7 @@ try {
     window.checkCalls = calls;
     // A pinned session in a second project, for the sidebar's Pinned list.
     const elsewhere = [{ id: "notes", project_id: "other", title: "Release notes", agent: "codex", provider_id: "", started: false, running: false, pinned: true, review_of: null }];
-    window.__TAURI_INTERNALS__ = { transformCallback: () => 1, invoke: async (cmd, args) => {
+    window.__TAURI_INTERNALS__ = { metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } }, transformCallback: () => 1, invoke: async (cmd, args) => {
       calls.push({ cmd, args });
       window.savedSettings ??= { theme: "light", default_agent: "claude", font_size: 13, scrollback: 10000, claude_usage: false, notifications: false, keep_awake: "off", hibernate_minutes: 0, shortcuts: {} };
       if (cmd === "settings_read") return { ...window.savedSettings, storage: "/fixture" };
@@ -87,6 +87,7 @@ try {
         return "fresh";
       }
       if (cmd === "worktree_create") return { branch: args.branch, shared_paths: [], setup_command: null, directory: "/fixture/worktrees/x" };
+      if (cmd === "plugin:window|set_badge_count") { window.badge = args.value; return null; }
       if (cmd === "account_login") return `login:${args.profileId}`;
       if (cmd === "session_stop") return null;
       if (cmd === "session_start") { sessions.find((item) => item.id === args.id).running = true; return null; }
@@ -139,6 +140,19 @@ try {
   await page.keyboard.press(`${primary}+e`);
   await page.keyboard.press("Enter");
   await page.locator('.tab-item--selected[data-tab-open="builder"]').waitFor();
+  // ⌘K reaches every project's sessions and the actions, best match first.
+  await page.keyboard.press(`${primary}+k`);
+  await page.locator("#palette-input").fill("notes");
+  const first = page.locator(".palette__row").first();
+  assert.equal(await first.locator(".palette__title").textContent(), "Release notes");
+  assert.match(await first.locator(".palette__subtitle").textContent(), /^Other · Codex/);
+  await page.locator("#palette-input").fill("git push");
+  await page.locator(".palette__row", { hasText: "Git: Push" }).waitFor();
+  await page.locator("#palette-input").fill("switch");
+  assert.equal(await page.locator(".palette__row").first().locator(".palette__kind").textContent(), primary === "Meta" ? "⌘E" : "Ctrl+E");
+  await page.keyboard.press("Escape");
+  // The Dock badge counts the sessions waiting for you.
+  await page.waitForFunction(() => window.badge === 1);
   // ⌘F finds in the terminal on screen; Escape closes the bar.
   await page.keyboard.press(`${primary}+f`);
   await page.waitForFunction(() => document.activeElement?.id === "find-term");

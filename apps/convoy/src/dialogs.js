@@ -480,8 +480,11 @@ const palette = (dialog) => `
                   (entry, index) => `
           <button class="palette__row${index === dialog.index ? " palette__row--on" : ""}"
                   data-palette="${index}">
-            <span class="palette__title">${escape(entry.title)}</span>
-            <span class="palette__kind">${escape(entry.kind)}</span>
+            <span class="palette__text">
+              <span class="palette__title">${entry.needsYou ? '<span class="dot dot--waiting"></span>' : entry.running ? '<span class="dot dot--running"></span>' : ""}${escape(entry.title)}</span>
+              ${entry.subtitle ? `<span class="palette__subtitle">${escape(entry.subtitle)}</span>` : ""}
+            </span>
+            <span class="palette__kind">${escape(entry.shortcut || entry.kind)}</span>
           </button>`,
                 )
                 .join("")
