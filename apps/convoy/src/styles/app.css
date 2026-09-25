@@ -3921,3 +3921,50 @@ input {
 .pref-missing--failed {
   color: var(--state-failed);
 }
+
+/* An empty pane offers sessions to show. */
+.pane__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.pane__suggestion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(320px, 90%);
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pane__suggestion:hover {
+  background: var(--bg-hover);
+}
+
+.pane__suggestion span:first-of-type {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pane__empty-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.shortcut--unbound {
+  color: var(--text-faint);
+}

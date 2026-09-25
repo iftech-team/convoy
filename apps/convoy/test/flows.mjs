@@ -31,7 +31,8 @@ try {
       if (cmd === "sessions_for") return sessions.filter((item) => item.project_id === args.projectId);
       if (cmd === "planning_read") return { tasks, specs: [], queued: tasks.length };
       if (cmd === "tasks_for") return tasks;
-      if (["quick_commands_read"].includes(cmd)) return [];
+      if (cmd === "quick_commands_read") return [{ id: "q1", title: "Run tests", text: "npm test", submit: true, project_id: "project" }];
+      if (["quick_command_send", "quick_command_save"].includes(cmd)) return null;
       if (cmd === "activity_read") return window.activity ??= [
         { id: "e2", at: new Date().toISOString(), kind: "waiting", session_id: "builder", title: "Fix login", detail: "Permission to run tests", project_id: "project", project: "Example" },
         { id: "e1", at: new Date(Date.now() - 60000).toISOString(), kind: "started", session_id: "builder", title: "Fix login", detail: "Agent process launched", project_id: "project", project: "Example" },
@@ -240,11 +241,46 @@ try {
   await page.locator('.modal [data-split="review"]').click();
   await page.locator('.pane[data-pane="1"] .pane__title', { hasText: "Review: Fix login" }).waitFor();
   await page.locator("#terminal-host-1 .xterm").waitFor();
+  // An empty pane suggests sessions from any project; the picker lists them.
+  await page.locator('.pane[data-pane="2"] .pane__suggestion', { hasText: "Release notes" }).waitFor();
+  await page.locator('[data-pane-pick="2"]').click();
+  await page.locator(".modal .menu__item", { hasText: "Release notes" }).getByText("Other ·").waitFor();
+  await page.keyboard.press("Escape");
   await page.locator('.pane[data-pane="0"] .pane__label').click();
   await page.locator('.pane--focused[data-pane="0"]').waitFor();
   if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/panes.png` });
-  await page.locator('[data-layout="1"]').click();
+  // Maximize puts the pane's session back in one pane.
+  await page.locator('[data-pane-max="0"]').click();
   assert.equal(await page.locator(".workbench__panes").count(), 0);
+  await page.locator('.tab-item--selected[data-tab-open="builder"]').waitFor();
+  // ⌘/ is the palette over quick commands, sending to this terminal.
+  await page.keyboard.press(`${primary}+Slash`);
+  await page.locator("#palette-input[placeholder^='Send a quick command']").waitFor();
+  await page.locator(".palette__row", { hasText: "Run tests" }).waitFor();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "quick_command_send" && c.args.commandId === "q1" && c.args.sessionId === "builder"));
+  // Quick commands are edited in place, keeping their id.
+  await page.locator('.workbench__bar [data-action="quick-menu"]').click();
+  await page.locator('[data-action="manage-commands"]').click();
+  await page.locator('[data-command-edit="q1"]').click();
+  assert.equal(await page.locator("#draft-title").inputValue(), "Run tests");
+  await page.locator("#draft-title").fill("Run all tests");
+  await page.locator('[data-action="add-command"]', { hasText: "Save command" }).click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "quick_command_save" && c.args.id === "q1" && c.args.title === "Run all tests"));
+  await page.keyboard.press("Escape");
+  // ⇧⌘P searches sessions and projects only.
+  await page.keyboard.press(`${primary}+Shift+p`);
+  await page.locator("#palette-input").fill("git push");
+  await page.locator(".modal--palette .menu__empty", { hasText: "Nothing matches" }).waitFor();
+  await page.locator("#palette-input").fill("other");
+  await page.locator(".palette__row", { hasText: "Other" }).first().waitFor();
+  await page.keyboard.press("Escape");
+  // ⇧⌘→ moves the tab right.
+  const order = () => page.evaluate(() => [...document.querySelectorAll(".tab-item")].map((tab) => tab.dataset.tabOpen));
+  const before = await order();
+  await page.keyboard.press(`${primary}+Shift+ArrowRight`);
+  await page.waitForFunction((first) => document.querySelector(".tab-item").dataset.tabOpen !== first, before[0]);
+  assert.equal((await order()).indexOf("builder"), before.indexOf("builder") + 1);
   await page.locator(".status__needs", { hasText: "1 needs you" }).waitFor();
   await page.locator('[data-action="awake-menu"]').click();
   await page.locator('.menu--awake [data-action="awake-settings"]').waitFor();
@@ -449,6 +485,18 @@ try {
   await page.locator('[data-settings-section="Shortcuts"]').click();
   await page.locator(".pref-group__title", { hasText: "Project" }).waitFor();
   assert(await page.locator(".shortcut").count() >= 30, "the macOS set of shortcuts is listed");
+  // Backspace leaves a shortcut unbound; the row can go back to its default;
+  // a key another action has is refused and named.
+  await page.locator('[data-capture="palette"]').click();
+  await page.keyboard.press("Backspace");
+  await page.waitForFunction(() => window.savedSettings.shortcuts.palette === "");
+  await page.locator('[data-capture="palette"]', { hasText: "None" }).waitFor();
+  await page.locator('[data-shortcut-reset="palette"]').click();
+  await page.waitForFunction(() => !("palette" in window.savedSettings.shortcuts));
+  await page.locator('[data-capture="palette"]').click();
+  await page.keyboard.press(`${primary}+b`);
+  await page.locator(".toast", { hasText: "is already “Toggle sidebar”" }).waitFor();
+  await page.keyboard.press("Escape");
   // Accounts, per agent as on macOS: which one new sessions use, and a login
   // terminal that ends when the dialog closes.
   await page.locator('[data-settings-section="Accounts"]').click();

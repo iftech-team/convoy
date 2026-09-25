@@ -12,6 +12,7 @@ import { state } from "./state.js";
 /// collide with the seven originals.
 export const SHORTCUTS = [
   ["palette", "mod+k", "Command palette", "General"],
+  ["searchAll", "mod+shift+p", "Search sessions and projects", "General"],
   ["search", "mod+f", "Find in terminal, or find a project", "General"],
   ["settings", "mod+,", "Settings", "General"],
   ["sidebar", "mod+b", "Toggle sidebar", "General"],
@@ -26,6 +27,8 @@ export const SHORTCUTS = [
   ["closeTab", "mod+w", "Close tab", "Sessions"],
   ["switcher", "mod+e", "Switch terminal, recent first", "Sessions"],
   ["reopenTab", "mod+shift+t", "Reopen closed tab", "Sessions"],
+  ["moveTabLeft", "mod+shift+left", "Move tab left", "Sessions"],
+  ["moveTabRight", "mod+shift+right", "Move tab right", "Sessions"],
   ["resume", "mod+shift+r", "Resume session", "Sessions"],
   ["stop", "mod+.", "Stop session", "Sessions"],
   ["sleep", "mod+alt+z", "Sleep session", "Sessions"],
@@ -59,6 +62,7 @@ export const SHORTCUTS = [
   ["gitRefresh", "mod+alt+g", "Refresh Git status", "Project"],
   ["limits", "mod+shift+l", "AI Limits", "Limits"],
   ["limitsRefresh", "mod+alt+l", "Refresh AI limits", "Limits"],
+  ["claudeUsage", "mod+alt+u", "Open Claude /usage", "Limits"],
 ];
 
 export const SHORTCUT_GROUPS = ["General", "Sessions", "Panes", "Project", "Limits"];
@@ -68,6 +72,8 @@ export const SHORTCUT_GROUPS = ["General", "Sessions", "Panes", "Project", "Limi
 export function binding(action) {
   const saved = state.settings.shortcuts?.[action];
   const fallback = SHORTCUTS.find(([name]) => name === action)?.[1] ?? "";
+  // An empty value is an action unbound on purpose.
+  if (saved === "") return "";
   return saved && valid(saved) ? saved : fallback;
 }
 

@@ -59,6 +59,10 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ("home", "Home"),
     ("dashboard", "Agent Dashboard"),
     ("projectRefresh", "Refresh projects in this folder"),
+    ("moveTabLeft", "Move tab left"),
+    ("moveTabRight", "Move tab right"),
+    ("searchAll", "Search sessions and projects"),
+    ("claudeUsage", "Open Claude /usage"),
 ];
 
 /// Defaults used when the workspace has no shortcut for an action: the
@@ -115,6 +119,10 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     // Not ⌃⌘R as on macOS: on Linux and Windows that is Ctrl+R, which the
     // shell in every terminal needs for its history search.
     ("projectRefresh", "mod+alt+shift+r"),
+    ("moveTabLeft", "mod+shift+left"),
+    ("moveTabRight", "mod+shift+right"),
+    ("searchAll", "mod+shift+p"),
+    ("claudeUsage", "mod+alt+u"),
 ];
 
 /// `mod+shift+p` → `<Primary><Shift>p`. Returns nothing for anything the

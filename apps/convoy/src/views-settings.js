@@ -456,20 +456,24 @@ function shortcuts(settings) {
       groupBox(
         group,
         SHORTCUTS.filter(([, , , owner]) => owner === group)
-          .map(([action, , what]) =>
-            row(
+          .map(([action, , what]) => {
+            const saved = settings.shortcuts?.[action];
+            const custom = saved !== undefined && saved !== fallback(action);
+            const shown = saved === "" ? "None" : label(saved || fallback(action));
+            return row(
               what,
               "",
-              `<button class="button shortcut${state.capturing === action ? " shortcut--listening" : ""}"
+              `<button class="button shortcut${state.capturing === action ? " shortcut--listening" : ""}${saved === "" ? " shortcut--unbound" : ""}"
                        data-capture="${action}">
-                 ${state.capturing === action ? "Press a key…" : escape(label(settings.shortcuts?.[action] || fallback(action)))}
-               </button>`,
-            ),
-          )
+                 ${state.capturing === action ? "Press a key… (⌫ for none)" : escape(shown)}
+               </button>
+               ${custom ? button({ icon: "refresh", kind: "quiet", title: "Back to the default", data: { "shortcut-reset": action } }) : ""}`,
+            );
+          })
           .join(""),
       ),
     ).join("") +
-    `<p class="pref-group__footer">Click a shortcut, then press the new keys. Escape cancels. ${button({ label: "Restore defaults", action: "reset-shortcuts", kind: "quiet" })}</p>`
+    `<p class="pref-group__footer">Click a shortcut, then press the new keys. Backspace leaves it unbound; Escape cancels. A key already in use is refused and named. ${button({ label: "Restore defaults", action: "reset-shortcuts", kind: "quiet" })}</p>`
   );
 }
 

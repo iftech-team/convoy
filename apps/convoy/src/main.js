@@ -301,11 +301,6 @@ function stepTabs(step) {
 }
 
 function render() {
-  // Anything re-renders — an agent reporting, the activity feed — and a
-  // dialog is rebuilt from state. What is typed in it is read back first, or
-  // it would be lost. Only when this very dialog is on screen, so a dialog
-  // just opened never takes an old one's fields.
-  if (state.dialog && state.dialog === shown && !isImportDialog()) captureDraft();
   syncTabs();
   const caret = document.activeElement?.id;
   const position = document.activeElement?.selectionStart;
@@ -510,35 +505,35 @@ const openModal = (dialog) => {
 
 /// Reads whatever the open dialog's fields currently hold, so a re-render
 /// caused by a toggle does not lose typing.
+/// A dialog's text fields and the draft key each one fills.
+const DRAFT_FIELDS = {
+  "draft-title": "title",
+  "draft-model": "model",
+  "draft-prompt": "prompt",
+  "draft-notes": "notes",
+  "draft-provider": "provider_id",
+  "draft-brief": "brief",
+  "draft-branch": "branch",
+  "draft-feedback": "feedback",
+  "draft-base": "base",
+  "draft-account": "account",
+  "draft-label": "label",
+  "draft-text": "text",
+  "draft-group": "group",
+  "draft-icon": "icon",
+  "draft-shared": "shared_paths",
+  "draft-setup": "setup_command",
+  "draft-review": "review_template",
+  ...Object.fromEntries(["title", "problem", "requirements", "acceptance", "constraints", "plan"].map((key) => [`spec-${key}`, key])),
+  ...Object.fromEntries(["title", "details", "findings", "model"].map((key) => [`task-${key}`, key])),
+};
+
 function captureDraft() {
   const dialog = state.dialog;
   if (!dialog) return;
-  const read = (id, key) => {
+  for (const [id, key] of Object.entries(DRAFT_FIELDS)) {
     const element = document.querySelector(`#${id}`);
     if (element) dialog[key] = element.value;
-  };
-  read("draft-title", "title");
-  read("draft-model", "model");
-  read("draft-prompt", "prompt");
-  read("draft-notes", "notes");
-  read("draft-provider", "provider_id");
-  read("draft-brief", "brief");
-  read("draft-branch", "branch");
-  read("draft-feedback", "feedback");
-  read("draft-base", "base");
-  read("draft-account", "account");
-  read("draft-label", "label");
-  read("draft-text", "text");
-  read("draft-group", "group");
-  read("draft-icon", "icon");
-  read("draft-shared", "shared_paths");
-  read("draft-setup", "setup_command");
-  read("draft-review", "review_template");
-  for (const key of ["title", "problem", "requirements", "acceptance", "constraints", "plan"]) {
-    read(`spec-${key}`, key);
-  }
-  for (const key of ["title", "details", "findings", "model"]) {
-    read(`task-${key}`, key);
   }
 }
 
@@ -873,6 +868,10 @@ const SHORTCUT_ACTIONS = {
   // ⌘F finds in the terminal on screen, and in the sidebar otherwise.
   search: () => (terminalShown() ? openFind() : document.querySelector("#project-search")?.focus()),
   switcher: () => openPalette("terminals"),
+  searchAll: () => openPalette("search"),
+  moveTabLeft: () => state.sessionId && moveTab(state.sessionId, state.tabs.indexOf(state.sessionId) - 1),
+  moveTabRight: () => state.sessionId && moveTab(state.sessionId, state.tabs.indexOf(state.sessionId) + 1),
+  claudeUsage: () => withProject(openClaudeUsage),
   projectRefresh: () => withProject(() => refreshProjects(state.projectId)),
   home: () => openHome(),
   dashboard: () => (state.page === "dashboard" ? openHome() : openHome("dashboard")),
@@ -897,7 +896,8 @@ const SHORTCUT_ACTIONS = {
   edit: () => withSession(() => openEditSession()),
   review: () => withSession(() => openReview()),
   feedback: () => withSession((current) => current.review_of && ACTIONS["send-feedback"]()),
-  quick: () => withSession(() => ACTIONS["quick-menu"]()),
+  // ⌘/ as on macOS: the palette over this project's quick commands.
+  quick: () => withSession(() => openPalette("quick")),
   split: () => setLayout(state.layout === 2 ? 1 : 2),
   layout1: () => setLayout(1),
   layout2: () => setLayout(2),
@@ -937,8 +937,9 @@ const SHORTCUT_ACTIONS = {
   theme: () =>
     savePref({ theme: { system: "light", light: "dark", dark: "system" }[state.settings.theme] ?? "system" }),
   wake: () => {
-    const next = state.settings.keep_awake === "off" ? "always" : "off";
-    toast(next === "off" ? "Sleep allowed" : "Keeping the computer awake");
+    // As on macOS: on means "while agents run", the setting most people want.
+    const next = state.settings.keep_awake === "off" ? "sessions" : "off";
+    toast(next === "off" ? "Sleep allowed" : "Keeping the computer awake while agents run");
     return savePref({ keep_awake: next });
   },
   limits: () => openLimits(),
@@ -989,7 +990,7 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-history-copy],[data-history-resume],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
+      "[data-layout],[data-needs-you],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -1133,13 +1134,28 @@ app.addEventListener("click", async (event) => {
   }
   if (data.stop) return terminal.stop(data.stop);
   if (data.open) return openAnywhere(data.open);
-  if (data.split) {
-    const pane = state.dialog?.pane ?? state.focus;
+  if (data.split || data.splitInto) {
+    const [pane, id] = data.splitInto
+      ? [Number(data.splitInto.split(":")[0]), data.splitInto.slice(data.splitInto.indexOf(":") + 1)]
+      : [state.dialog?.pane ?? state.focus, data.split];
     state.dialog = null;
-    state.panes[pane] = data.split;
+    state.panes[pane] = id;
     state.focus = pane;
     savePanes();
-    return openTab(data.split);
+    return openAnywhere(id);
+  }
+  if (data.paneNew !== undefined) {
+    state.focus = Number(data.paneNew);
+    return ACTIONS["new-session"]();
+  }
+  if (data.paneMax !== undefined) {
+    const id = state.panes[Number(data.paneMax)];
+    await setLayout(1);
+    return id ? openAnywhere(id) : render();
+  }
+  if (data.paneQuick !== undefined) {
+    await focusPane(Number(data.paneQuick));
+    return ACTIONS["quick-menu"]();
   }
   if (data.panePick !== undefined) {
     state.focus = Number(data.panePick);
@@ -1191,6 +1207,23 @@ app.addEventListener("click", async (event) => {
   if (data.branch) {
     state.files.branch = data.branch;
     return render();
+  }
+  if (data.commandEdit) {
+    const command = state.quickCommands.find((item) => item.id === data.commandEdit);
+    if (!command) return;
+    Object.assign(state.dialog, {
+      editing: command.id,
+      title: command.title,
+      text: command.text,
+      submit: command.submit,
+      scoped: !!command.project_id,
+    });
+    return render();
+  }
+  if (data.shortcutReset) {
+    const next = { ...(state.settings.shortcuts ?? {}) };
+    delete next[data.shortcutReset];
+    return savePref({ shortcuts: next });
   }
   if (data.historyCopy) {
     await navigator.clipboard.writeText(data.historyCopy);
@@ -1252,6 +1285,12 @@ const fieldFor = (key) =>
 
 app.addEventListener("input", (event) => {
   const field = event.target;
+  // Anything re-renders — an agent reporting, the activity feed — and a
+  // dialog is rebuilt from its state, so what is typed goes into that state
+  // as it is typed. Reading the fields back at render time instead would undo
+  // a handler that had just set them.
+  const draftKey = DRAFT_FIELDS[field.id];
+  if (draftKey && state.dialog && !isImportDialog() && field.closest(".modal")) state.dialog[draftKey] = field.value;
   if (isImportDialog() && imports.onInput(field)) return;
   if (field.id === "session-filter") {
     state.filter = field.value;
@@ -1351,9 +1390,19 @@ addEventListener("keydown", async (event) => {
       state.capturing = null;
       return render();
     }
+    const action = state.capturing;
+    // Backspace or Delete leaves the action unbound, as on macOS.
+    if (event.key === "Backspace" || event.key === "Delete") {
+      state.capturing = null;
+      return savePref({ shortcuts: { ...(state.settings.shortcuts ?? {}), [action]: "" } });
+    }
     const pressed = capture(event);
     if (!pressed) return;
-    const action = state.capturing;
+    const taken = SHORTCUTS.find(([other]) => other !== action && binding(other) === pressed);
+    if (taken) {
+      toast(`${label(pressed)} is already “${taken[2]}”. Change that one first, or press another.`);
+      return;
+    }
     state.capturing = null;
     return savePref({ shortcuts: { ...(state.settings.shortcuts ?? {}), [action]: pressed } });
   }
@@ -1501,6 +1550,29 @@ async function resumeHistory(providerId) {
   }
   await openAnywhere(id);
   if (!isRunning(id)) await terminal.start(id);
+}
+
+/// ⌥⌘U as on macOS: a Claude session in this project that runs /usage, or
+/// the one already open.
+async function openClaudeUsage() {
+  const existing = state.sessions.find((item) => item.agent === "claude" && item.title === "Claude usage" && isRunning(item.id));
+  if (existing) {
+    openSession(existing.id);
+    return toast("Claude usage session selected. Run /usage there to refresh.");
+  }
+  const id = await call("session_create", {
+    projectId: state.projectId,
+    agent: "claude",
+    title: "Claude usage",
+    prompt: "/usage",
+    model: "",
+    profileId: activeAccount("claude") || null,
+    notes: null,
+  });
+  if (!id) return;
+  await loadWorkspace();
+  openSession(id);
+  await terminal.start(id);
 }
 
 async function openFolder() {
@@ -2084,7 +2156,7 @@ async function addQuickCommand() {
   captureDraft();
   const dialog = state.dialog;
   const saved = await done("quick_command_save", {
-    id: "",
+    id: dialog.editing ?? "",
     title: dialog.title,
     text: dialog.text,
     submit: dialog.submit,
@@ -2092,8 +2164,7 @@ async function addQuickCommand() {
   });
   if (!saved) return;
   await loadSessions();
-  state.dialog.title = "";
-  state.dialog.text = "";
+  Object.assign(state.dialog, { title: "", text: "", submit: false, scoped: true, editing: null });
   render();
 }
 
@@ -2760,8 +2831,30 @@ function terminalEntries() {
   });
 }
 
+/// ⌘/: this project's and the global quick commands, sent to the open session.
+function quickEntries() {
+  const id = state.sessionId;
+  if (!id) return [];
+  return state.quickCommands.map((command) => ({
+    kind: "Action",
+    title: command.title,
+    subtitle: command.text.slice(0, 90).replace(/\n/g, " "),
+    shortcut: command.submit ? "↩ sends" : command.project_id ? "" : "global",
+    run: () => done("quick_command_send", { sessionId: id, commandId: command.id }),
+  }));
+}
+
 function paletteResults(query, mode = "all") {
   const needle = query.trim();
+  if (mode === "quick" || mode === "search") {
+    const items = mode === "quick" ? quickEntries() : paletteEntries().filter((item) => item.kind !== "Action");
+    if (!needle) return items.slice(0, 40);
+    return items
+      .map((item) => [item, paletteScore(needle, item.title, item.subtitle)])
+      .filter(([, score]) => score > 0)
+      .sort((a, b) => b[1] - a[1])
+      .map(([item]) => item);
+  }
   if (mode === "terminals") {
     const items = terminalEntries();
     return needle ? items.filter((item) => paletteScore(needle, item.title, item.subtitle) > 0) : items;

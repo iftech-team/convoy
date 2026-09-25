@@ -337,19 +337,20 @@ const quickCommands = (dialog) =>
                 setting(
                   command.title,
                   `${command.text.slice(0, 80)}${command.submit ? " · sends Enter" : ""}`,
-                  button({
-                    icon: "trash",
-                    kind: "quiet",
-                    data: { "remove-command": command.id },
-                    title: "Remove",
-                  }),
+                  button({ icon: "edit", kind: "quiet", data: { "command-edit": command.id }, title: "Edit" }) +
+                    button({
+                      icon: "trash",
+                      kind: "quiet",
+                      data: { "remove-command": command.id },
+                      title: "Remove",
+                    }),
                 ),
               )
               .join("")
           : '<p class="modal__hint">Nothing saved yet.</p>',
       )}
       ${group(
-        "New command",
+        dialog.editing ? "Edit command" : "New command",
         `
         ${field("Name", textInput("draft-title", dialog.title))}
         ${field("Text", textArea("draft-text", dialog.text, "", 4))}
@@ -358,7 +359,7 @@ const quickCommands = (dialog) =>
       )}`,
     foot: `
       ${button({ label: "Close", data: { dismiss: "1" } })}
-      ${button({ label: "Add command", action: "add-command", kind: "primary" })}`,
+      ${button({ label: dialog.editing ? "Save command" : "Add command", action: "add-command", kind: "primary" })}`,
   });
 
 // ---------------------------------------------------------------- planning --
@@ -473,7 +474,15 @@ const palette = (dialog) => `
     <div class="modal modal--palette" role="dialog" aria-modal="true" aria-label="Commands">
       <div class="palette__search">
         <input id="palette-input" type="search"
-               placeholder="${dialog.mode === "terminals" ? "Switch to an open terminal…" : "Jump to a session or project, or run a command…"}"
+               placeholder="${
+                 dialog.mode === "terminals"
+                   ? "Switch to an open terminal…"
+                   : dialog.mode === "quick"
+                     ? "Send a quick command to this terminal…"
+                     : dialog.mode === "search"
+                       ? "Search sessions and projects…"
+                       : "Jump to a session or project, or run a command…"
+               }"
                value="${escape(dialog.query)}" spellcheck="false" />
       </div>
       <div class="palette__list">
@@ -495,7 +504,9 @@ const palette = (dialog) => `
             : `<div class="menu__empty">${
                 dialog.mode === "terminals" && !dialog.query
                   ? "No open terminals. Pick a session in the sidebar, or start a new one."
-                  : "Nothing matches."
+                  : dialog.mode === "quick" && !dialog.query
+                    ? "No quick commands yet — add them in Settings → Quick Commands."
+                    : "Nothing matches."
               }</div>`
         }
       </div>
@@ -512,15 +523,16 @@ const markdownPreview = (dialog) =>
       ${button({ label: "Copy", action: "copy-markdown", kind: "primary" })}`,
   });
 
-/// Which other session to show beside this one. A split is two terminals, not
-/// two windows: the same list, minus the one already on screen.
+/// Which session a pane shows: any session of any project, minus those
+/// already on screen. A split is terminals side by side, not windows.
 function splitPicker(dialog) {
   const pane = dialog.pane ?? state.focus;
   const shown = new Set(state.panes.filter((id, at) => id && at !== pane && at < state.layout));
-  const others = state.sessions.filter((item) => !item.archived && !shown.has(item.id));
+  const others = state.allSessions.filter((item) => !shown.has(item.id));
+  const name = (item) => state.projects.find((entry) => entry.id === item.project_id)?.title ?? "";
   return modal({
     title: `Session for pane ${pane + 1}`,
-    hint: "Any session of this project. It keeps running when the pane is closed.",
+    hint: "Any session, from any project. It keeps running when the pane is closed.",
     body: others.length
       ? `<div class="plain-list plain-list--rows">
            ${others
@@ -528,12 +540,12 @@ function splitPicker(dialog) {
                (item) => `
              <button class="menu__item" data-split="${escape(item.id)}">
                <span>${escape(item.title)}</span>
-               <span class="menu__hint">${item.running ? "running" : item.started ? "stopped" : "never started"}</span>
+               <span class="menu__hint">${escape(name(item))} · ${item.running ? "running" : item.started ? "stopped" : "never started"}</span>
              </button>`,
              )
              .join("")}
          </div>`
-      : '<p class="modal__hint">There is no other session in this project.</p>',
+      : '<p class="modal__hint">There is no other session.</p>',
     foot: button({ label: "Cancel", data: { dismiss: "1" } }),
   });
 }

@@ -614,4 +614,8 @@ pub const SHORTCUT_ACTIONS: &[&str] = &[
     "home",
     "dashboard",
     "projectRefresh",
+    "moveTabLeft",
+    "moveTabRight",
+    "searchAll",
+    "claudeUsage",
 ];

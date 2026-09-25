@@ -454,3 +454,36 @@ fn docs_list_read_and_write_only_markdown_inside_the_project() {
         );
     }
 }
+
+/// An action can be left unbound on purpose, and still only one action may
+/// have any one key.
+#[test]
+fn a_shortcut_can_be_unbound_but_not_shared() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut workspace = convoy_core::Workspace::load(dir.path().join("workspace.json")).unwrap();
+    let save = |workspace: &mut convoy_core::Workspace, pairs: &[(&str, &str)]| {
+        workspace
+            .save_settings(convoy_core::workspace::SettingsPatch {
+                shortcuts: Some(
+                    pairs
+                        .iter()
+                        .map(|(a, b)| (a.to_string(), b.to_string()))
+                        .collect(),
+                ),
+                ..Default::default()
+            })
+            .map(|_| ())
+    };
+    save(&mut workspace, &[("palette", ""), ("search", "")]).unwrap();
+    let resolved = convoy_core::shortcuts::resolve(&workspace.settings().shortcuts);
+    let palette = resolved
+        .iter()
+        .find(|(name, ..)| *name == "palette")
+        .unwrap();
+    assert_eq!(
+        (palette.1.as_str(), palette.2.as_str()),
+        ("", ""),
+        "unbound stays unbound"
+    );
+    assert!(save(&mut workspace, &[("palette", "mod+k"), ("search", "mod+k")]).is_err());
+}

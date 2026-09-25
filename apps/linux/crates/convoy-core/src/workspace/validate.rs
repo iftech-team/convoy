@@ -198,10 +198,11 @@ pub fn validate_settings(settings: &Value) -> Result<()> {
             let allowed = crate::workspace::model::SHORTCUT_ACTIONS;
             let mut seen: HashSet<&str> = HashSet::new();
             map.iter().all(|(key, value)| {
+                // An empty value is an action left unbound on purpose.
                 allowed.contains(&key.as_str())
-                    && value
-                        .as_str()
-                        .is_some_and(|accel| SHORTCUT.is_match(accel) && seen.insert(accel))
+                    && value.as_str().is_some_and(|accel| {
+                        accel.is_empty() || (SHORTCUT.is_match(accel) && seen.insert(accel))
+                    })
             })
         });
         ensure!(valid, "Invalid or duplicate shortcut.");

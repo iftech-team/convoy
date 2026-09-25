@@ -535,6 +535,17 @@ function findBar() {
 
 /// Two or four panes, as in the macOS app. Each shows its own session; the
 /// focused one is the session the bars and tabs refer to.
+/// What an empty pane offers: running sessions first, then recent ones, from
+/// any project, minus those already on screen.
+function paneSuggestions() {
+  const shown = new Set(state.panes.filter(Boolean));
+  const candidates = state.allSessions.filter((item) => !shown.has(item.id));
+  return [
+    ...candidates.filter((item) => isRunning(item.id)),
+    ...[...candidates].reverse().filter((item) => !isRunning(item.id)),
+  ].slice(0, 4);
+}
+
 function panesView() {
   const cells = Array.from({ length: state.layout }, (_, index) => {
     const id = state.panes[index];
@@ -545,7 +556,18 @@ function panesView() {
         <div class="pane pane--empty${focused ? " pane--focused" : ""}" data-pane="${index}">
           <div class="pane__label"><span class="pane__number">${index + 1}</span> Empty pane</div>
           <div class="pane__empty">
-            ${button({ label: "Choose a session…", icon: "terminal", data: { "pane-pick": index } })}
+            ${paneSuggestions()
+              .map((item) => `
+              <button class="pane__suggestion" data-split-into="${index}:${escape(item.id)}">
+                ${agentIcon(item.agent, 12)}
+                <span>${escape(item.title)}</span>
+                <span class="pane__project">${escape(state.projects.find((entry) => entry.id === item.project_id)?.title ?? "")}</span>
+              </button>`)
+              .join("")}
+            <div class="pane__empty-actions">
+              ${button({ label: "Choose a session…", icon: "terminal", data: { "pane-pick": index } })}
+              ${button({ label: "New session", icon: "plus", data: { "pane-new": index } })}
+            </div>
           </div>
         </div>`;
     }
@@ -564,6 +586,8 @@ function panesView() {
               ? ""
               : button({ label: info.started ? "Resume" : "Start", icon: "play", kind: "quiet", data: { start: id } })
           }
+          ${running ? button({ icon: "bolt", kind: "quiet", title: "Quick commands", data: { "pane-quick": index } }) : ""}
+          ${button({ icon: "paneOne", kind: "quiet", title: "Maximize (one pane)", data: { "pane-max": index } })}
           ${button({ icon: "close", kind: "quiet", title: "Close pane", data: { "pane-close": index } })}
         </div>
         <div class="term" id="terminal-host-${index}"></div>
@@ -835,7 +859,8 @@ function activityPanel() {
 
 /// What a tab shows for a session, from the loaded list when its project is
 /// the open one, else from what was remembered when it was opened.
-export const tabInfo = (id) => state.sessions.find((item) => item.id === id) ?? state.tabInfo?.[id];
+export const tabInfo = (id) =>
+  state.sessions.find((item) => item.id === id) ?? state.tabInfo?.[id] ?? state.allSessions.find((item) => item.id === id);
 
 /// A tab's state, drawn as macOS draws it: a check once the agent finished
 /// its turn, a warning when it needs you, a dot while it works.
