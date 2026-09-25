@@ -11,7 +11,8 @@ import {
   setting,
   toggle,
 } from "./ui.js";
-import { isRunning, project, session, state, visibleSessions } from "./state.js";
+import { anySession, isRunning, project, session, state, visibleSessions } from "./state.js";
+import { TASK_STATUSES, runnable } from "./views-planning.js";
 import { missingConversation } from "./terminal.js";
 
 const TABS = [
@@ -236,8 +237,29 @@ export function contextMenu(menu) {
       divider,
       item("Remove from Convoy…", "remove", { icon: "trash", danger: true }),
     ].join("");
+  } else if (menu.kind === "task") {
+    const task = [...(state.planning?.tasks ?? []), ...(state.allTasks ?? [])].find((entry) => entry.id === menu.id);
+    if (!task) return "";
+    const building = task.status === "building";
+    entries = [
+      item("Run", "task-run", { icon: "play", enabled: runnable(task) }),
+      item("Open session", "task-session", { icon: "terminal", enabled: !!task.session_id }),
+      item("Open reviewer", "task-reviewer", { icon: "review", enabled: !!task.review_session_id }),
+      task.pr_url ? item("Open pull request", "task-pr", { icon: "open" }) : "",
+      task.source?.url ? item(`Open ${task.source.key}`, "task-issue", { icon: "open" }) : "",
+      item("Edit…", "task-edit", { icon: "edit" }),
+      divider,
+      ...TASK_STATUSES.filter(([key]) => key !== "building" && key !== task.status).map(([key, label]) =>
+        item(`Set status: ${label}`, `task-status:${key}`, {
+          enabled: !building,
+          hint: building ? "stop it first" : "",
+        }),
+      ),
+      divider,
+      item("Delete task…", "task-delete", { icon: "trash", danger: true, enabled: !building }),
+    ].join("");
   } else {
-    const target = state.sessions.find((entry) => entry.id === menu.id);
+    const target = anySession(menu.id);
     if (!target) return "";
     const running = target.running;
     entries = [
@@ -275,7 +297,7 @@ export function contextMenu(menu) {
 
   // Kept on screen: a menu opened near the bottom or right edge flips.
   const left = Math.min(menu.x, window.innerWidth - 260);
-  const top = Math.min(menu.y, window.innerHeight - (menu.kind === "project" ? 300 : 360));
+  const top = Math.min(menu.y, window.innerHeight - (menu.kind === "project" ? 300 : menu.kind === "task" ? 480 : 360));
   return `
     <div class="scrim scrim--clear" data-dismiss="1">
       <div class="menu menu--context" role="menu" style="left:${Math.max(8, left)}px;top:${Math.max(8, top)}px">

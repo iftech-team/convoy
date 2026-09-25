@@ -270,6 +270,28 @@ impl Workspace {
         })
     }
 
+    /// Removes a task. One whose agent is running must be stopped first; its
+    /// session stays, no longer linked to anything.
+    pub fn delete_task(&mut self, id: &str) -> Result<&State> {
+        let id = id.to_string();
+        self.update(move |state| {
+            let Some(index) = find_task_index(state, &id) else {
+                bail!("Task unavailable.")
+            };
+            ensure!(
+                state.tasks[index].status != TaskStatus::Building,
+                "Stop the task session before deleting the task."
+            );
+            state.tasks.remove(index);
+            for session in state.sessions.iter_mut() {
+                if session.task_id.as_deref() == Some(id.as_str()) {
+                    session.task_id = None;
+                }
+            }
+            Ok(())
+        })
+    }
+
     /// Creates (or reuses) the session that will build a task. Returns the
     /// state; the caller looks the session up through `task.session_id`.
     pub fn prepare_task(&mut self, id: &str, profile_id: Option<String>) -> Result<&State> {

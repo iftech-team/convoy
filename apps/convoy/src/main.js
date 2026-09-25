@@ -47,7 +47,7 @@ import { filesView, remoteMenu } from "./views-files.js";
 import { settingsPage } from "./views-settings.js";
 import { projectSettingsPage } from "./views-project.js";
 import { forgetIcon, onIconLoaded } from "./icons.js";
-import { specsView, tasksView } from "./views-planning.js";
+import { runnable, specsView, tasksView } from "./views-planning.js";
 import { PROJECT_DOC, docsView } from "./views-docs.js";
 
 const app = document.querySelector("#app");
@@ -508,7 +508,7 @@ function captureDraft() {
   for (const key of ["title", "problem", "requirements", "acceptance", "constraints", "plan"]) {
     read(`spec-${key}`, key);
   }
-  for (const key of ["title", "details", "findings"]) {
+  for (const key of ["title", "details", "findings", "model"]) {
     read(`task-${key}`, key);
   }
 }
@@ -722,11 +722,20 @@ const ACTIONS = {
       details: "",
       findings: "",
       agent: project()?.default_agent || state.settings.default_agent,
-      mode: project()?.task_mode || "none",
+      mode: project()?.task_mode || "pr",
+      model: "",
       auto_review: false,
       spec_id: "",
     }),
-  "save-task": saveTask,
+  "save-task": () => saveTask(false),
+  "run-task-now": () => saveTask(true),
+  "delete-task": () => {
+    const id = state.dialog?.id;
+    if (!id) return;
+    closeDialog();
+    state.menu = { kind: "task", id };
+    return runTaskMenu("task-delete", id);
+  },
   "queue-start": startQueue,
   "queue-stop": () => {
     state.queues.delete(state.projectId);
@@ -934,7 +943,7 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
+      "[data-layout],[data-needs-you],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -1112,6 +1121,23 @@ app.addEventListener("click", async (event) => {
   if (data.branch) {
     state.files.branch = data.branch;
     return render();
+  }
+  if (data.taskScope) {
+    state.taskScope = data.taskScope;
+    if (data.taskScope === "all") await loadAllTasks();
+    return render();
+  }
+  if (data.taskGroup) {
+    state.foldedStatuses ??= new Set();
+    if (state.foldedStatuses.has(data.taskGroup)) state.foldedStatuses.delete(data.taskGroup);
+    else state.foldedStatuses.add(data.taskGroup);
+    return render();
+  }
+  if (data.taskRun) return runTask(data.taskRun);
+  if (data.taskPr) return done("task_pr_open", { id: data.taskPr });
+  if (data.taskMore) {
+    const box = target.getBoundingClientRect();
+    return openContextMenu("task", data.taskMore, box.left - 180, box.bottom + 4);
   }
   if (data.taskView) {
     state.taskView = data.taskView;
@@ -1769,6 +1795,10 @@ async function runMenu(act) {
     }
     return render();
   }
+  if (menu.kind === "task") return runTaskMenu(act, menu.id);
+  // A pinned session may belong to another project.
+  const owner = anySession(menu.id)?.project_id;
+  if (owner && owner !== state.projectId) await selectProject(owner);
   const target = state.sessions.find((item) => item.id === menu.id);
   if (!target) return render();
   switch (act) {
@@ -2103,13 +2133,15 @@ function openTask(id) {
   openModal({ kind: "task", ...task });
 }
 
-async function saveTask() {
+/// Saves the form; with `run`, starts the task straight away, as the macOS
+/// sheet's "Run now" does.
+async function saveTask(run = false) {
   captureDraft();
   const dialog = state.dialog;
-  const saved = await done("task_save", {
+  const id = await call("task_save", {
     input: {
       id: dialog.id ?? null,
-      project_id: state.projectId,
+      project_id: dialog.project_id ?? state.projectId,
       spec_id: dialog.spec_id || null,
       title: dialog.title,
       details: dialog.details,
@@ -2119,16 +2151,88 @@ async function saveTask() {
       auto_review: dialog.auto_review,
     },
   });
-  if (!saved) return;
+  if (!id) return;
+  const model = (dialog.model ?? "").trim();
+  const before = findTask(id);
+  if (model !== (before?.model ?? "") || (before && before.agent !== dialog.agent)) {
+    if (!(await done("task_agent", { id, agent: dialog.agent, model }))) return;
+  }
   closeDialog();
-  await loadPlanning();
+  await reloadTasks();
+  if (run) await runTask(id);
 }
 
 async function setTaskStatus(status) {
   const id = state.dialog.id;
   if (!(await done("task_status", { id, status }))) return;
   closeDialog();
+  await reloadTasks();
+}
+
+const findTask = (id) =>
+  state.planning?.tasks.find((item) => item.id === id) ?? state.allTasks?.find((item) => item.id === id);
+
+async function loadAllTasks() {
+  state.allTasks = (await call("tasks_all")) ?? [];
+}
+
+/// Reloads whichever task lists are on screen.
+async function reloadTasks() {
   await loadPlanning();
+  if (state.taskScope === "all") await loadAllTasks();
+  render();
+}
+
+/// Prepares the task's session and starts it, as Run does on macOS.
+async function runTask(id) {
+  const sessionId = await call("task_prepare", { id, profileId: null });
+  if (!sessionId) return;
+  await loadWorkspace();
+  await reloadTasks();
+  await openAnywhere(sessionId);
+  await terminal.start(sessionId);
+  await reloadTasks();
+}
+
+async function moveTask(id, status) {
+  const task = findTask(id);
+  if (!task || task.status === status) return;
+  if (status === "building") return runnable(task) ? runTask(id) : toast("Only a queued, failed or returned task can run.");
+  if (await done("task_status", { id, status })) await reloadTasks();
+}
+
+async function runTaskMenu(act, id) {
+  const task = findTask(id);
+  if (!task) return render();
+  if (act.startsWith("task-status:")) return moveTask(id, act.slice("task-status:".length));
+  switch (act) {
+    case "task-run":
+      return runTask(id);
+    case "task-session":
+      return openAnywhere(task.session_id);
+    case "task-reviewer":
+      return openAnywhere(task.review_session_id);
+    case "task-pr":
+      render();
+      return done("task_pr_open", { id });
+    case "task-issue":
+      render();
+      return done("issue_open", { id });
+    case "task-edit":
+      return openModal({ kind: "task", ...task });
+    case "task-delete":
+      return openModal({
+        kind: "confirm",
+        title: `Delete "${task.title}"?`,
+        body: "The task goes; its session and anything the agent changed stay.",
+        confirmLabel: "Delete",
+        danger: true,
+        run: async () => {
+          if (await done("task_delete", { id })) await reloadTasks();
+        },
+      });
+  }
+  return render();
 }
 
 async function prepareTask(id) {
@@ -2790,6 +2894,35 @@ try {
   fatal(error?.stack ?? String(error));
 }
 
+// Task cards move between board columns by dragging.
+let draggedTask = null;
+app.addEventListener("dragstart", (event) => {
+  const card = event.target.closest?.("[data-task-card]");
+  if (!card) return;
+  draggedTask = card.dataset.taskCard;
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", draggedTask);
+});
+app.addEventListener("dragover", (event) => {
+  const column = event.target.closest?.("[data-task-column]");
+  if (!column || !draggedTask) return;
+  event.preventDefault();
+  for (const other of app.querySelectorAll(".board__column--drop")) other.classList.remove("board__column--drop");
+  column.classList.add("board__column--drop");
+});
+app.addEventListener("drop", (event) => {
+  const column = event.target.closest?.("[data-task-column]");
+  if (!column || !draggedTask) return;
+  event.preventDefault();
+  const id = draggedTask;
+  draggedTask = null;
+  moveTask(id, column.dataset.taskColumn);
+});
+app.addEventListener("dragend", () => {
+  draggedTask = null;
+  for (const other of app.querySelectorAll(".board__column--drop")) other.classList.remove("board__column--drop");
+});
+
 // Tabs are reordered by dragging one onto another.
 let draggedTab = null;
 app.addEventListener("dragstart", (event) => {
@@ -2826,6 +2959,11 @@ app.addEventListener("contextmenu", (event) => {
     event.preventDefault();
     state.menu = { kind: "tab", id: tab.dataset.tabOpen, x: event.clientX, y: event.clientY };
     return render();
+  }
+  const task = event.target.closest("[data-task-menu]");
+  if (task) {
+    event.preventDefault();
+    return openContextMenu("task", task.dataset.taskMenu, event.clientX, event.clientY);
   }
   const session = event.target.closest("[data-menu-session]");
   const owner = event.target.closest("[data-menu-project]");

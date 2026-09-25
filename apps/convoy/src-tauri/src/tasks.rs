@@ -389,3 +389,29 @@ pub fn issue_open(
         .open_url(url, None::<&str>)
         .map_err(|e| e.to_string())
 }
+
+/// Opens the pull request a task's session opened. Only the link recorded on
+/// the task is opened, never one the page supplies.
+#[tauri::command]
+pub fn task_pr_open(
+    id: String,
+    app: tauri::AppHandle,
+    workspace: State<'_, Workspace>,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let url = workspace.with(|workspace| {
+        workspace
+            .state()
+            .tasks
+            .iter()
+            .find(|task| task.id == id)
+            .and_then(|task| task.pr_url.clone())
+            .ok_or_else(|| "This task has no pull request.".to_string())
+    })?;
+    if !url.starts_with("https://") {
+        return Err("Pull request links must use HTTPS.".into());
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
+}

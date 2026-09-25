@@ -57,10 +57,14 @@ try {
       if (cmd === "integrations_list") return [{ id: "linear", kind: "linear", auth: "mcp", name: "Linear MCP", has_secret: false }];
       if (cmd === "issues_parse_keys") return [{ key: "ENG-7", title: "Test imported task", details: "", origin: "linear:test" }];
       if (cmd === "issues_import") {
-        tasks.push({ id: "task", title: "ENG-7: Test imported task", details: "", findings: "", agent: args.options.agent, model: args.options.model, status: "queued", mode: "none", auto_review: false, source: { tracker: "linear", key: "ENG-7", origin: "linear:test" } });
+        tasks.push({ id: "task", project_id: "project", title: "ENG-7: Test imported task", details: "", findings: "", agent: args.options.agent, model: args.options.model, status: "queued", mode: "none", auto_review: false, source: { tracker: "linear", key: "ENG-7", origin: "linear:test" } });
         return { created: ["task"], skipped: 0 };
       }
       if (cmd === "task_agent") { tasks[0].model = args.model; tasks[0].agent = args.agent; return null; }
+      if (cmd === "task_save") { const task = tasks.find((item) => item.id === args.input.id); if (task) Object.assign(task, { title: args.input.title, mode: args.input.mode }); return args.input.id ?? "new"; }
+      if (cmd === "task_status") { tasks.find((item) => item.id === args.id).status = args.status; return null; }
+      if (cmd === "task_delete") { tasks.splice(tasks.findIndex((item) => item.id === args.id), 1); return null; }
+      if (cmd === "tasks_all") return tasks;
       if (cmd === "plugin:event|listen") { (listeners[args.event] ??= []).push(args.handler); return args.handler; }
       if (cmd === "limits_read") {
         const now = Date.now() / 1000;
@@ -231,12 +235,34 @@ try {
   await page.locator("#imp-manual").fill("ENG-7 Test imported task");
   await page.locator("#imp-model").fill("sonnet");
   await page.locator('[data-action="import-run"]:not([disabled])').click();
+  // Grouped by status; the task's own form carries its model.
+  await page.locator(".task-group", { hasText: "Queued" }).waitFor();
   await page.locator('.row[data-task="task"]').click();
-  await page.locator('[data-action="edit-task-model"]').click();
   assert.equal(await page.locator("#task-model").inputValue(), "sonnet");
   await page.locator("#task-model").fill("opus");
-  await page.locator('[data-action="task-save"]').click();
+  await page.locator('[data-action="save-task"]').click();
   await page.locator('.row[data-task="task"]').waitFor();
+  // On the board, a card dragged to another column takes that status.
+  await page.locator('[data-task-view="board"]').click();
+  await page.locator('[data-task-card="task"]').dragTo(page.locator('[data-task-column="review"]'));
+  await page.locator('[data-task-column="review"] [data-task-card="task"]').waitFor();
+  // Its menu sets any status, and deletes after asking.
+  await page.locator('[data-task-card="task"]').click({ button: "right" });
+  await page.locator('[data-menu-act="task-status:changes"]').click();
+  await page.locator('[data-task-column="changes"] [data-task-card="task"]').waitFor();
+  // Every project's tasks, each marked with its project.
+  await page.locator('[data-task-scope="all"]').click();
+  await page.locator('[data-task-card="task"] .card__project', { hasText: "Example" }).waitFor();
+  await page.locator('[data-task-scope="project"]').click();
+  await page.locator('[data-task-view="list"]').click();
+  // New tasks publish as a pull request unless the project says otherwise.
+  await page.locator('[data-action="new-task"]').click();
+  await page.locator('.modal .choice [data-value="pr"][aria-pressed="true"]').waitFor();
+  await page.keyboard.press("Escape");
+  await page.locator('.row[data-task="task"] [data-task-more="task"]').click();
+  await page.locator('[data-menu-act="task-delete"]').click();
+  await page.locator('.modal [data-action="confirm-generic"]').click();
+  await page.locator('.row[data-task="task"]').waitFor({ state: "detached" });
 
   // Sidebar: the project shows its icon, its sessions show the agent's mark,
   // and right-click offers the project's and the session's actions.
@@ -405,6 +431,7 @@ try {
   assert(calls.some(c => c.cmd === "terminal_paste" && c.args.id === "builder" && c.args.text === "Fix the error path before shipping." && c.args.submit === false));
   assert(calls.some(c => c.cmd === "issues_import" && c.args.options.model === "sonnet"));
   assert(calls.some(c => c.cmd === "task_agent" && c.args.model === "opus"));
+  assert.deepEqual(calls.filter((c) => c.cmd === "task_status").map((c) => c.args.status), ["review", "changes"]);
   assert.deepEqual(errors, []);
   assert.equal(await page.locator(".toast--error").count(), 0);
   if (process.env.CONVOY_TEST_SCREENSHOT) await page.screenshot({ path: process.env.CONVOY_TEST_SCREENSHOT });

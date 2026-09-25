@@ -3637,3 +3637,38 @@ input {
 .session-banner__text {
   margin-top: 2px;
 }
+
+/* Tasks: groups in the list, and a column a card is dragged over. */
+.task-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  margin: 14px 0 6px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-group__chevron {
+  display: grid;
+  place-items: center;
+  width: 12px;
+}
+
+.board__column--drop {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
+.card__project {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}

@@ -30,6 +30,7 @@ pub struct SpecView {
 #[derive(Serialize)]
 pub struct TaskView {
     pub id: String,
+    pub project_id: String,
     pub title: String,
     pub details: String,
     pub findings: String,
@@ -44,6 +45,38 @@ pub struct TaskView {
     pub last_error: Option<String>,
     /// The pull request its session opened.
     pub pr_url: Option<String>,
+    /// The session reviewing its work, when there is one.
+    pub review_session_id: Option<String>,
+}
+
+fn task_view(state: &convoy_core::model::State, task: &convoy_core::model::Task) -> TaskView {
+    TaskView {
+        id: task.id.clone(),
+        project_id: task.project_id.clone(),
+        title: task.title.clone(),
+        details: task.details.clone(),
+        findings: task.findings.clone(),
+        agent: task.agent.as_str().to_string(),
+        model: task.model.clone(),
+        source: task.source.clone(),
+        status: task.status.as_str().to_string(),
+        mode: mode_name(task.mode).to_string(),
+        auto_review: task.auto_review,
+        spec_id: task.spec_id.clone(),
+        session_id: task.session_id.clone(),
+        last_error: task.last_error.clone(),
+        pr_url: task.pr_url.clone(),
+        review_session_id: task.session_id.as_ref().and_then(|builder| {
+            state
+                .sessions
+                .iter()
+                .rev()
+                .find(|session| {
+                    session.review_of.as_ref() == Some(builder) && !session.is_archived()
+                })
+                .map(|session| session.id.clone())
+        }),
+    }
 }
 
 #[derive(Serialize)]
@@ -88,22 +121,7 @@ pub fn planning_read(
             .tasks
             .iter()
             .filter(|task| task.project_id == project_id)
-            .map(|task| TaskView {
-                id: task.id.clone(),
-                title: task.title.clone(),
-                details: task.details.clone(),
-                findings: task.findings.clone(),
-                agent: task.agent.as_str().to_string(),
-                model: task.model.clone(),
-                source: task.source.clone(),
-                status: task.status.as_str().to_string(),
-                mode: mode_name(task.mode).to_string(),
-                auto_review: task.auto_review,
-                spec_id: task.spec_id.clone(),
-                session_id: task.session_id.clone(),
-                last_error: task.last_error.clone(),
-                pr_url: task.pr_url.clone(),
-            })
+            .map(|task| task_view(state, task))
             .collect();
         let queued = tasks.iter().filter(|task| task.status == "queued").count();
         Ok(PlanningView {
@@ -112,6 +130,24 @@ pub fn planning_read(
             queued,
         })
     })
+}
+
+/// Every project's tasks, for the list that spans them.
+#[tauri::command]
+pub fn tasks_all(workspace: State<'_, Workspace>) -> Result<Vec<TaskView>, String> {
+    workspace.with(|workspace| {
+        let state = workspace.state();
+        Ok(state
+            .tasks
+            .iter()
+            .map(|task| task_view(state, task))
+            .collect())
+    })
+}
+
+#[tauri::command]
+pub fn task_delete(id: String, workspace: State<'_, Workspace>) -> Result<(), String> {
+    workspace.act(|workspace| workspace.delete_task(&id).map(|_| ()))
 }
 
 #[derive(Deserialize)]
@@ -181,7 +217,8 @@ pub struct TaskFormInput {
 }
 
 #[tauri::command]
-pub fn task_save(input: TaskFormInput, workspace: State<'_, Workspace>) -> Result<(), String> {
+/// Returns the task's id, so a new task can be run at once.
+pub fn task_save(input: TaskFormInput, workspace: State<'_, Workspace>) -> Result<String, String> {
     let agent = Agent::parse(&input.agent).ok_or("Unknown agent.")?;
     let mode = match input.mode.as_str() {
         "none" => PublishMode::None,
@@ -189,20 +226,26 @@ pub fn task_save(input: TaskFormInput, workspace: State<'_, Workspace>) -> Resul
         "push" => PublishMode::Push,
         other => return Err(format!("Unknown publication mode: {other}")),
     };
+    let existing = input.id.clone().filter(|id| !id.is_empty());
     workspace.act(|workspace| {
-        workspace
-            .save_task(TaskInput {
-                id: input.id,
-                project_id: input.project_id,
-                spec_id: input.spec_id,
-                title: input.title,
-                details: input.details,
-                findings: input.findings,
-                agent,
-                mode,
-                auto_review: input.auto_review,
-            })
-            .map(|_| ())
+        let state = workspace.save_task(TaskInput {
+            id: input.id,
+            project_id: input.project_id,
+            spec_id: input.spec_id,
+            title: input.title,
+            details: input.details,
+            findings: input.findings,
+            agent,
+            mode,
+            auto_review: input.auto_review,
+        })?;
+        Ok(existing.unwrap_or_else(|| {
+            state
+                .tasks
+                .last()
+                .map(|task| task.id.clone())
+                .unwrap_or_default()
+        }))
     })
 }
 
@@ -215,8 +258,10 @@ pub fn task_status(
     let status = match status.as_str() {
         "queued" => TaskStatus::Queued,
         "review" => TaskStatus::Review,
+        "pr" => TaskStatus::Pr,
         "changes" => TaskStatus::Changes,
         "done" => TaskStatus::Done,
+        "failed" => TaskStatus::Failed,
         other => return Err(format!("Invalid task status: {other}")),
     };
     workspace.act(|workspace| workspace.set_task_status(&id, status).map(|_| ()))

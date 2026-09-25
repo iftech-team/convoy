@@ -389,7 +389,10 @@ const taskForm = (dialog) => {
     wide: true,
     body: `
       ${field("Title", textInput("task-title", dialog.title))}
-      ${field("Agent", choice("agent", AGENTS, dialog.agent))}
+      <div class="field-row">
+        ${field("Agent", choice("agent", AGENTS, dialog.agent))}
+        ${field("Model", textInput("task-model", dialog.model ?? "", "CLI default"))}
+      </div>
       ${field(
         "Specification",
         specs.length
@@ -408,16 +411,17 @@ const taskForm = (dialog) => {
           [["none", "Do not publish"], ["pr", "Pull request"], ["push", "Push"]],
           dialog.mode,
         ),
-        "No publishing is the default.",
+        "A pull request is the default, as on macOS.",
       )}
       ${setting("Hand to the other agent when it finishes", "", toggle("auto_review", dialog.auto_review, "Automatic review"))}
       ${field("Details", textArea("task-details", dialog.details, "", 4))}
       ${field("Findings", textArea("task-findings", dialog.findings, "", 3))}`,
     foot: `
+      ${dialog.id ? button({ icon: "trash", kind: "quiet", title: "Delete task", action: "delete-task", disabled: dialog.status === "building" }) : ""}
       ${button({ label: "Cancel", data: { dismiss: "1" } })}
-      ${dialog.id ? button({ label: "Agent & model", action: "edit-task-model" }) : ""}
       ${dialog.id ? button({ label: "Back to queue", data: { status: "queued" } }) : ""}
       ${dialog.id ? button({ label: "Accept", data: { status: "done" } }) : ""}
+      ${!dialog.id || ["queued", "failed", "changes"].includes(dialog.status) ? button({ label: "Run now", icon: "play", action: "run-task-now" }) : ""}
       ${button({ label: "Save", action: "save-task", kind: "primary" })}`,
   });
 };

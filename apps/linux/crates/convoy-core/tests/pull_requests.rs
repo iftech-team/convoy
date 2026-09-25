@@ -98,3 +98,32 @@ fn a_task_whose_session_opens_a_pull_request_awaits_it() {
         Some("https://github.com/acme/app/pull/42")
     );
 }
+
+#[test]
+fn a_task_can_be_deleted_unless_its_agent_runs() {
+    let (_dir, mut workspace) = workspace();
+    let project = workspace.state().projects[0].id.clone();
+    workspace
+        .save_task(TaskInput {
+            id: None,
+            project_id: project,
+            spec_id: None,
+            title: "Throwaway".into(),
+            details: String::new(),
+            findings: String::new(),
+            agent: Agent::Codex,
+            mode: PublishMode::None,
+            auto_review: false,
+        })
+        .unwrap();
+    let task = workspace.state().tasks[0].id.clone();
+    workspace.prepare_task(&task, None).unwrap();
+    let session = workspace.state().tasks[0].session_id.clone().unwrap();
+    workspace.delete_task(&task).unwrap();
+    assert!(workspace.state().tasks.is_empty());
+    assert_eq!(
+        workspace.session(&session).unwrap().task_id,
+        None,
+        "the session is kept, unlinked"
+    );
+}
