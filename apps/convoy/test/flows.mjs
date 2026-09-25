@@ -13,16 +13,18 @@ try {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript(() => {
     const projects = [], tasks = [];
-    const sessions = [{ id: "builder", title: "Fix login", agent: "claude", provider_id: "id", started: true, running: true, review_of: null }];
+    const sessions = [{ id: "builder", project_id: "project", title: "Fix login", agent: "claude", provider_id: "id", started: true, running: true, review_of: null }];
     const calls = [];
     window.checkCalls = calls;
+    // A pinned session in a second project, for the sidebar's Pinned list.
+    const elsewhere = [{ id: "notes", project_id: "other", title: "Release notes", agent: "codex", provider_id: "", started: false, running: false, pinned: true, review_of: null }];
     window.__TAURI_INTERNALS__ = { transformCallback: () => 1, invoke: async (cmd, args) => {
       calls.push({ cmd, args });
       window.savedSettings ??= { theme: "light", default_agent: "claude", font_size: 13, scrollback: 10000, claude_usage: false, notifications: false, keep_awake: "off", hibernate_minutes: 0, shortcuts: {} };
       if (cmd === "settings_read") return { ...window.savedSettings, storage: "/fixture" };
       if (cmd === "settings_save") { window.savedSettings = { ...args.input }; return null; }
-      if (cmd === "workspace_read") return { projects, running: ["builder"], storage: "/fixture/workspace.json" };
-      if (cmd === "sessions_for") return sessions;
+      if (cmd === "workspace_read") return { projects, sessions, running: ["builder"], storage: "/fixture/workspace.json" };
+      if (cmd === "sessions_for") return sessions.filter((item) => item.project_id === args.projectId);
       if (cmd === "planning_read") return { tasks, specs: [], queued: tasks.length };
       if (cmd === "tasks_for") return tasks;
       if (["quick_commands_read", "profiles_read"].includes(cmd)) return [];
@@ -39,10 +41,14 @@ try {
       if (cmd === "doc_prompts") return { project_doc: "Write the project document", spec: "Draft the specification" };
       if (cmd === "monitor_tick") return { states: [{ id: "builder", state: "waiting", notable: false }], hibernate: [], changed: false };
       if (cmd === "plugin:dialog|open") return "/fixture/Example";
-      if (cmd === "project_open") { projects.push({ id: "project", title: "Example", path: args.path, sessions: 1, running: 1 }); return 1; }
+      if (cmd === "project_open") {
+        projects.push({ id: "project", title: "Example", path: args.path, sessions: 1, running: 1 }, { id: "other", title: "Other", path: "/fixture/Other", sessions: 1, running: 0 });
+        sessions.push(...elsewhere);
+        return 2;
+      }
       if (cmd === "git_status") return { branch: "main", changed_files: 1 };
       if (cmd === "review_brief") return "Review the login changes. Tests pass.";
-      if (cmd === "review_create") { sessions.push({ id: "review", title: "Review: Fix login", agent: "codex", provider_id: "", started: false, running: false, review_of: "builder" }); return "review"; }
+      if (cmd === "review_create") { sessions.push({ id: "review", project_id: "project", title: "Review: Fix login", agent: "codex", provider_id: "", started: false, running: false, review_of: "builder" }); return "review"; }
       if (cmd === "review_builder") return "builder";
       if (cmd === "integrations_list") return [{ id: "linear", kind: "linear", auth: "mcp", name: "Linear MCP", has_secret: false }];
       if (cmd === "issues_parse_keys") return [{ key: "ENG-7", title: "Test imported task", details: "", origin: "linear:test" }];
@@ -99,6 +105,7 @@ try {
   assert.equal(await page.evaluate(() => document.activeElement.id), "draft-feedback", "terminal must not steal dialog focus");
   await page.locator("#draft-feedback").fill("Fix the error path before shipping.");
   await page.locator('[data-action="insert-feedback"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "terminal_paste"));
   // A session has the whole height, with a tab like the macOS app's.
   assert.equal(await page.locator(".header").count(), 0, "the project header gives way to the session");
   await page.locator('.tab-item[data-tab-open="builder"]').waitFor();
@@ -273,6 +280,19 @@ try {
   if (shots) await page.screenshot({ path: `${shots}/settings.png` });
   await page.keyboard.press("Escape");
   await page.locator(".sidebar").waitFor();
+
+  // Pinned sessions from every project sit above the projects, and every
+  // project lists its sessions; opening one selects its project.
+  await page.locator(".sidebar__group", { hasText: "Pinned" }).waitFor();
+  const pinnedRow = page.locator('.project-row__sessions--pinned [data-open="notes"]');
+  await pinnedRow.getByText("Other").waitFor();
+  assert.equal(await page.locator('.project-row__sessions:not(.project-row__sessions--pinned) [data-open="notes"]').count(), 1);
+  await page.locator('[data-expand="other"]').click();
+  assert.equal(await page.locator('.project-row__sessions:not(.project-row__sessions--pinned) [data-open="notes"]').count(), 0);
+  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem("convoy.collapsedProjects"))), ["other"]);
+  await pinnedRow.click();
+  await page.locator('.project-row--current [data-project="other"]').waitFor();
+  await page.locator('.tab-item--selected[data-tab-open="notes"]').waitFor();
 
   const calls = await page.evaluate(() => window.checkCalls);
   assert(calls.some(c => c.cmd === "terminal_paste" && c.args.id === "builder" && c.args.text === "Fix the error path before shipping." && c.args.submit === false));

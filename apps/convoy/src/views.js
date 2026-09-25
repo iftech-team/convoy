@@ -53,25 +53,28 @@ function stateDot(item) {
   return `<span class="dot dot--${tone}" title="${escape(label)}"></span>`;
 }
 
-function sidebarSession(item) {
+function sidebarSession(item, { showProject = false } = {}) {
+  const owner = showProject ? state.projects.find((entry) => entry.id === item.project_id) : null;
   return `
     <button class="side-session" data-open="${escape(item.id)}"
             data-menu-session="${escape(item.id)}"
             aria-current="${item.id === state.sessionId}"
             title="${escape(item.notes || item.title)}">
       ${stateDot(item)}
-      ${item.pinned ? `<span class="side-session__pin">${icons.pin}</span>` : ""}
+      ${item.pinned && !showProject ? `<span class="side-session__pin">${icons.pin}</span>` : ""}
       <span class="side-session__text">
         <span class="side-session__title">${escape(item.title)}</span>
         ${
-          state.settings.compact_sidebar === false
-            ? `<span class="side-session__detail">${escape(
-                [
-                  item.running ? (state.agentState.get(item.id) ?? "Running") : item.started ? "Stopped" : "Saved",
-                  item.agent === "claude" ? "Claude Code" : "Codex",
-                ].join(" · "),
-              )}</span>`
-            : ""
+          owner
+            ? `<span class="side-session__detail">${escape(owner.title)}</span>`
+            : state.settings.compact_sidebar === false
+              ? `<span class="side-session__detail">${escape(
+                  [
+                    item.running ? (state.agentState.get(item.id) ?? "Running") : item.started ? "Stopped" : "Saved",
+                    item.agent === "claude" ? "Claude Code" : "Codex",
+                  ].join(" · "),
+                )}</span>`
+              : ""
         }
       </span>
       ${
@@ -80,6 +83,13 @@ function sidebarSession(item) {
           : `${agentIcon(item.agent, 11)}${item.review_of ? '<span class="side-session__tag">review</span>' : ""}`
       }
     </button>`;
+}
+
+/// A project's sessions as the sidebar lists them: the selected project's
+/// come from its own, fresher list.
+function sessionsOf(id) {
+  const source = id === state.projectId ? state.sessions : state.allSessions;
+  return source.filter((entry) => entry.project_id === id && !entry.archived);
 }
 
 /// The second line of a detailed project row: its branch and changes, or
@@ -114,17 +124,16 @@ export function sidebar() {
 
   const row = (item) => {
     const current = item.id === state.projectId;
-    // Sessions are loaded for the selected project, so that is the one that
-    // can open; the others show a chevron that selects and opens them.
-    const expanded = current && !state.collapsed.has(item.id) && !needle;
-    const sessions = current ? state.sessions.filter((entry) => !entry.archived) : [];
-    const waiting = current && sessions.some((entry) => entry.running && state.agentState.get(entry.id) === "waiting");
+    // Every project lists its sessions, as on macOS, unless folded shut.
+    const sessions = sessionsOf(item.id);
+    const expanded = sessions.length > 0 && !state.collapsed.has(item.id) && !needle;
+    const waiting = sessions.some((entry) => entry.running && state.agentState.get(entry.id) === "waiting");
     return `
       <div class="project-row${current ? " project-row--current" : ""}"
            data-menu-project="${escape(item.id)}">
         <button class="project-row__chevron" data-expand="${escape(item.id)}"
                 title="${expanded ? "Collapse" : "Expand"}"
-                ${item.sessions || current ? "" : 'style="visibility:hidden"'}>
+                ${sessions.length ? "" : 'style="visibility:hidden"'}>
           ${expanded ? icons.chevronDown : icons.chevronRight}
         </button>
         <button class="project-row__main" data-project="${escape(item.id)}" title="${escape(item.path)}">
@@ -152,7 +161,14 @@ export function sidebar() {
       }`;
   };
 
+  const pinned = needle ? [] : state.allSessions.filter((entry) => entry.pinned && !entry.archived);
   const body = [
+    pinned.length
+      ? `<div class="sidebar__group">Pinned</div>
+         <div class="project-row__sessions project-row__sessions--pinned">${pinned
+           .map((entry) => sidebarSession(entry, { showProject: true }))
+           .join("")}</div>`
+      : "",
     ...[...groups].map(
       ([name, items]) =>
         `<div class="sidebar__group">${escape(name)}</div>${items.map(row).join("")}`,

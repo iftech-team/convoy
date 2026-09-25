@@ -5,6 +5,25 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
+const COLLAPSED = "convoy.collapsedProjects";
+
+function remembered(key) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) ?? "[]");
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCollapsed() {
+  try {
+    localStorage.setItem(COLLAPSED, JSON.stringify([...state.collapsed]));
+  } catch {
+    /* not remembered */
+  }
+}
+
 export const state = {
   settings: {
     theme: "system",
@@ -19,6 +38,9 @@ export const state = {
   },
   projects: [],
   sessions: [],
+  /// Every project's sessions that are not archived. `sessions` is the
+  /// selected project's, archived ones included when they are shown.
+  allSessions: [],
   quickCommands: [],
   storage: "",
   running: [],
@@ -40,8 +62,8 @@ export const state = {
   queues: new Set(),
   /// What each running agent last reported, from its hooks.
   agentState: new Map(),
-  // Projects the user folded shut in the sidebar.
-  collapsed: new Set(),
+  // Projects the user folded shut in the sidebar, kept across launches.
+  collapsed: new Set(remembered(COLLAPSED)),
   // Open terminal tabs, in the order shown, and what each one displays.
   tabs: [],
   tabInfo: {},
@@ -113,6 +135,9 @@ export const project = () =>
 export const session = () =>
   state.sessions.find((item) => item.id === state.sessionId);
 export const isRunning = (id) => state.running.includes(id);
+export const anySession = (id) =>
+  state.sessions.find((item) => item.id === id) ??
+  state.allSessions.find((item) => item.id === id);
 
 /// Sessions of the selected project, filtered the way the list shows them.
 export function visibleSessions() {
@@ -153,6 +178,7 @@ export async function loadWorkspace({ required = false } = {}) {
   }
   const view = result.value;
   state.projects = view.projects;
+  state.allSessions = view.sessions ?? [];
   state.running = view.running;
   state.storage = view.storage;
   if (!state.projectId && view.projects.length) {
@@ -175,6 +201,11 @@ export async function loadSessions() {
     archived: state.showArchived,
   });
   state.sessions = sessions ?? [];
+  // The selected project's list is the fresher one.
+  state.allSessions = [
+    ...state.allSessions.filter((item) => item.project_id !== state.projectId),
+    ...state.sessions.filter((item) => !item.archived),
+  ];
   // A pane showing a session of this project that has since been archived
   // or removed would draw something that is not there.
   state.panes = state.panes.map((id) => {

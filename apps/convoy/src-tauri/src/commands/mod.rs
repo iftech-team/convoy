@@ -157,6 +157,9 @@ pub struct SessionView {
 #[derive(Serialize)]
 pub struct WorkspaceView {
     pub projects: Vec<ProjectView>,
+    /// Every project's sessions that are not archived, for the sidebar, the
+    /// pinned list and the palette, which all span projects.
+    pub sessions: Vec<SessionView>,
     pub running: Vec<String>,
     pub storage: String,
 }
@@ -225,8 +228,15 @@ pub fn workspace_read(
                 }
             })
             .collect();
+        let sessions = state
+            .sessions
+            .iter()
+            .filter(|session| !session.is_archived())
+            .map(|session| view_of(session, running.contains(&session.id)))
+            .collect();
         Ok(WorkspaceView {
             projects,
+            sessions,
             running: running.clone(),
             storage: storage.clone(),
         })

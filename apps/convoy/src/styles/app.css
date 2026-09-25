@@ -3453,3 +3453,10 @@ input {
 .import-warnings {
   color: var(--text-muted);
 }
+
+/* Pinned sessions from every project, above the projects as on macOS. */
+.project-row__sessions--pinned {
+  margin: 0 0 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}

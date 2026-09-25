@@ -15,6 +15,8 @@ import {
   loadSessions,
   loadSettings,
   loadWorkspace,
+  anySession,
+  saveCollapsed,
   observe,
   project,
   session,
@@ -377,6 +379,16 @@ async function selectProject(id) {
   state.planning = null;
   await loadSessions();
   if (state.tab === "specs" || state.tab === "tasks") await loadPlanning();
+}
+
+/// Opens a session of any project, selecting its project first.
+async function openAnywhere(id) {
+  const target = anySession(id);
+  if (!target) return;
+  state.page = null;
+  if (target.project_id !== state.projectId) await selectProject(target.project_id);
+  if (!state.sessions.some((item) => item.id === id)) return render();
+  openSession(id);
 }
 
 function openSession(id) {
@@ -923,12 +935,9 @@ app.addEventListener("click", async (event) => {
     return openContextMenu("project", data.projectMore, box.left, box.bottom + 4);
   }
   if (data.expand) {
-    if (state.projectId !== data.expand) {
-      state.collapsed.delete(data.expand);
-      return selectProject(data.expand);
-    }
     if (state.collapsed.has(data.expand)) state.collapsed.delete(data.expand);
     else state.collapsed.add(data.expand);
+    saveCollapsed();
     return render();
   }
   if (state.page === "settings" && !state.dialog) {
@@ -984,7 +993,7 @@ app.addEventListener("click", async (event) => {
   }
   if (data.start) return terminal.start(data.start);
   if (data.stop) return terminal.stop(data.stop);
-  if (data.open) return openSession(data.open);
+  if (data.open) return openAnywhere(data.open);
   if (data.split) {
     const pane = state.dialog?.pane ?? state.focus;
     state.dialog = null;
