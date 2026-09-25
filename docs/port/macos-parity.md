@@ -1,0 +1,120 @@
+# Retiring the Swift app: parity checklist
+
+September 25, 2026 · compared against Convoy 0.6.4
+
+The goal is one codebase: the Rust core (`apps/linux/crates/convoy-core`) plus the
+Tauri client (`apps/convoy`) on macOS, Windows and Linux. The Swift app
+(`Sources/Convoy`) keeps shipping until every **P0** and **P1** row below is done.
+The GTK client (`apps/linux/crates/convoy-gtk`) retires alongside it: Tauri already
+covers Linux.
+
+Status: **MISSING**, **PARTIAL**, or **done** (kept only where a row was fixed
+after the survey). Swift file and symbol names are given so each row can be
+checked against the original.
+
+## Moving the data across
+
+Done. `convoy_core::macos_import` reads `~/Library/Application Support/Convoy`
+(workspace, activity, saved terminal output, icons) and the app's UserDefaults.
+It merges them into the Rust workspace. The Tauri client offers the import once,
+when its workspace is still empty, and keeps it under Settings → Setup for later
+runs. Running it again adds only what is new; a project already here keeps its
+own settings.
+
+- **Brought across:** projects, with a parent's name as the group label; sessions, marked started when the provider still has the conversation; specs; tasks, with their Linear/Jira source; quick commands; activity; settings; shortcuts; Linear and Jira connections.
+- **Left behind:**
+  - Tracker keys stay in the macOS Keychain, so each connection asks for its key once.
+  - Claude login sessions have no conversation to resume.
+  - Window, pane and panel layout.
+- On this Mac the dry run brought 62 projects, 40 sessions and 11 tasks, and the workspace validated.
+
+## Before the switch (not features)
+
+| Item | Status | Note |
+|---|---|---|
+| Storage location on macOS | MISSING | Tauri keeps its data in `~/.config/Convoy Desktop Preview/`. Move it to `~/Library/Application Support/Convoy Tauri/` (or similar), and never write into the Swift folder while both apps exist. |
+| Signed, notarized macOS build in `convoy-release.yml` | MISSING | Today only Windows and Linux are built there. `Convoy.zip` is still the Swift app. |
+| Bundle identity | MISSING | Swift uses `com.iftech.convoy`. Tauri should take it over at the switch so notification permission and the Dock entry carry over. |
+| Update path for existing Swift users | MISSING | The last Swift release should point at the Tauri download, and the Tauri app should run the import on first launch (already built). |
+| Quit keeps agents running when the window closes | PARTIAL | Swift asks only on Quit. Tauri asks to stop everything when the window closes (`lib.rs` `on_window_event`). On macOS, closing the window should not quit. |
+
+## P0 — the daily loop
+
+| Swift capability | Status | Note |
+|---|---|---|
+| New Session sheet starts the agent at once (`NewSessionSheet`) | PARTIAL | Tauri needs a title and a separate Start. Missing: pick any project, worktree toggle, base ref and branch, note, skip setup, keep open, auto-title. |
+| Find in terminal ⌘F: next/previous, match case, "n of m" (`TerminalSearchBar`) | MISSING | xterm's search addon covers it. |
+| Switch terminal, recent first ⌘E (`Store.recentTabs`) | MISSING | |
+| Reopen closed tab ⇧⌘T (`Store.reopenClosedTab`) | MISSING | |
+| Drop files onto the terminal to paste quoted paths | MISSING | |
+| Pick an account for a new session; log in from a terminal (Settings → Accounts) | PARTIAL | Profiles can be added and removed, but `session_create` takes no profile. |
+| Pinned sessions from every project in the sidebar (`Store.pinnedSessions`) | MISSING | |
+| Sessions under every project in the sidebar, collapsed state kept | PARTIAL | Only the selected project expands; `state.collapsed` is not saved. |
+| Command palette over all projects' sessions and about 40 actions, fuzzy match | PARTIAL | 9 actions, current project's sessions only, substring match. |
+| Clicking a notification opens its session (`Notifier.onOpen`) | MISSING | |
+| Dock badge with the count of sessions waiting | MISSING | |
+
+## P1 — used every week
+
+| Swift capability | Status | Note |
+|---|---|---|
+| Home page: Needs you, Running, Recent, task counts, limits, activity, projects | MISSING | |
+| Agent Dashboard ⌥⌘D: every session by state | MISSING | |
+| Codex session ID captured from `codex resume <uuid>` output | MISSING | It can only be typed in Edit session today. |
+| Saved output shown in place when the session is stopped | PARTIAL | Only a "Saved output…" dialog. |
+| "Conversation not found → Start fresh" banner | PARTIAL | Only a menu item. |
+| Feedback to the builder, filled with the reviewer's output | PARTIAL | Starts empty. |
+| Files & Changes as a side panel beside the terminal ⇧⌘G | PARTIAL | Full page today. |
+| Repo picker for group folders; ahead/behind counts | MISSING | |
+| Commit & Push; unstage all; mark resolved; reveal, open, copy path | MISSING | |
+| Tasks: drag between board columns | MISSING | |
+| Tasks: PR URL detected → `pr` status, "Open pull request" | MISSING | Rust has no `pr` status. |
+| Tasks: delete; set any status; open reviewer; Run now in the form | MISSING | |
+| Tasks: list grouped by status, hide done, all projects | MISSING | |
+| Default task mode `pr` for new projects | PARTIAL | Tauri defaults to `none`. The import keeps `pr`. |
+| Project order: drag, Move up/down | MISSING | |
+| Refresh projects / import subprojects ⌃⌘R | MISSING | |
+| Transcript history panel: every saved conversation, one-click Resume | PARTIAL | Tauri has Scan-and-import per item. |
+| Setup checks: gh auth, Claude/Codex logged in, hooks, support folder | PARTIAL | Tools found or missing only. |
+
+## P2 — polish
+
+| Swift capability | Status | Note |
+|---|---|---|
+| Project hierarchy (parent/child, "Show group hierarchy") | PARTIAL | `Project.group` is a heading label. |
+| ⌘-click multi-select of sessions: archive, close tabs | MISSING | |
+| Move tab left/right shortcuts ⇧⌘←/→ | MISSING | In the tab menu only. |
+| Panes: Maximize, per-pane quick commands, suggestions in an empty pane, sessions from other projects | PARTIAL | |
+| Quick commands: edit in place, palette mode ⌘/ | PARTIAL | Add and remove only. |
+| Status-bar account switcher per agent | MISSING | |
+| Open Claude /usage ⌥⌘U; search sessions & projects ⇧⌘P; Home ⇧⌘H | MISSING | |
+| Spec WorkTasks (builder/reviewer pairs inside a spec) | MISSING | The import turns them into ordinary tasks linked to the spec. |
+| Task dependencies "Blocked by" | MISSING | The import keeps no dependency. |
+| Spec search box | MISSING | |
+| Diff: unified/split and wrap toggles, load all, rendered Markdown | PARTIAL | |
+| Log: copy SHA or subject | MISSING | |
+| Branch from a chosen base | PARTIAL | Name only. |
+| Review template "Insert default" (project and global) | MISSING | |
+| Shortcuts: reset one, unbind, show conflicts | PARTIAL | The core rejects duplicates. |
+| Keep-awake toggle target | PARTIAL | Swift toggles to "while running", Tauri to "always". |
+| Workspace options menu in the sidebar | MISSING | They are in Settings. |
+
+## Shortcuts still to add
+
+`tab.switch` ⌘E, `tab.reopen` ⇧⌘T, `tab.moveLeft`/`tab.moveRight` ⇧⌘←/→,
+`project.refresh` ⌃⌘R, `go.find` ⌘F in a terminal, `go.search` ⇧⌘P, `go.home` ⇧⌘H,
+`go.dashboard` ⌥⌘D and `limits.claudeUsage` ⌥⌘U. The import leaves out an override of
+any of these until the action exists here.
+
+Layouts differ on purpose: Tauri uses `ctrl+shift+1/2/4`, because on Linux and Windows
+`ctrl+alt+digit` and `mod+alt+digit` are the same keys. Swift uses `ctrl+1/2/4`.
+
+## Already at parity
+
+Projects with icons and colors, and project settings. Sessions in a real PTY with
+resume, pin, archive, sleep and recovery. Tabs with drag reorder. 1/2/4 panes.
+Reviews. Worktrees with setup and shared files. Files & Changes: stage, hunks,
+commit with a generated message, push, pull, PR, log. Docs and specs from
+`.specdesk/`. Tasks with the auto-run queue and auto-review. Linear/Jira import.
+Hook-driven agent state. Notifications. AI limits. Keep awake. Folder trust.
+Activity. Per-terminal zoom. The Settings page. Most shortcuts.

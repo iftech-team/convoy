@@ -523,6 +523,7 @@ version = "0.1.0"
 dependencies = [
  "convoy-core",
  "convoy-pty",
+ "plist",
  "serde",
  "serde_json",
  "tauri",

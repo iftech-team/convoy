@@ -148,6 +148,8 @@ pub fn run() {
             commands::limits::project_git,
             commands::icons::project_icon_set,
             commands::icons::icon_data,
+            commands::macos::macos_import_preview,
+            commands::macos::macos_import_run,
             monitor::monitor_tick,
             power::keep_awake,
             quit_now,

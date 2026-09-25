@@ -115,7 +115,16 @@ function setup() {
       rows,
       "Looked up through your login shell, so the PATH matches what an agent session sees. Sign in to Claude Code and Codex in their own terminals.",
     )}
-    <div class="pref-actions">${button({ label: "Check again", icon: "refresh", action: "run-diagnostics" })}</div>`;
+    <div class="pref-actions">${button({ label: "Check again", icon: "refresh", action: "run-diagnostics" })}</div>
+    ${state.macImport ? groupBox(
+      "macOS app",
+      row(
+        "Import from the macOS app",
+        `${plural(state.macImport.projects + state.macImport.projects_existing, "project")} and ${plural(state.macImport.sessions, "session")} to bring across.`,
+        button({ label: "Import…", action: "macos-import" }),
+      ),
+      "Projects, sessions, tasks, quick commands and saved terminal output. Run it again later to pick up what changed there.",
+    ) : ""}`;
 }
 
 function general(settings) {

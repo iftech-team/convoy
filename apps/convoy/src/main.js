@@ -22,7 +22,7 @@ import {
   toast,
   visibleSessions,
 } from "./state.js";
-import { escape, value } from "./ui.js";
+import { escape, plural, value } from "./ui.js";
 import { SHORTCUTS, binding, capture, matches } from "./shortcuts.js";
 import { dialogView } from "./dialogs.js";
 import * as terminal from "./terminal.js";
@@ -411,6 +411,12 @@ async function refreshGitStatus() {
 // ------------------------------------------------------------- dialogs ----
 
 const closeDialog = () => {
+  // Turning the offer down once is an answer; Settings → Setup still has it.
+  if (state.dialog?.kind === "macos-import") {
+    try {
+      localStorage.setItem(MAC_OFFERED, "1");
+    } catch {}
+  }
   state.dialog = null;
   state.menu = null;
   render();
@@ -576,6 +582,8 @@ const ACTIONS = {
     render();
   },
   refresh: () => loadWorkspace(),
+  "macos-import": () => offerMacImport(false),
+  "macos-import-run": runMacImport,
   "refresh-activity": loadActivity,
 
   // menus
@@ -929,6 +937,7 @@ app.addEventListener("click", async (event) => {
       state.capturing = null;
       render();
       if (data.settingsSection === "Setup" && !state.diagnostics) await runDiagnostics();
+      if (data.settingsSection === "Setup") checkMacImport().then(render);
       return;
     }
     if (data.prefSet === "profile_agent") {
@@ -1449,6 +1458,49 @@ async function openSettings(section) {
   ]);
   render();
   if (state.settingsSection === "Setup") runDiagnostics();
+  checkMacImport().then(render);
+}
+
+/// The macOS app's workspace, when this Mac has one. Offered once on its own
+/// when this workspace is still empty; Settings → Setup offers it any time.
+const MAC_OFFERED = "convoy.macImportOffered";
+
+async function checkMacImport() {
+  state.macImport = (await call("macos_import_preview", { settings: false })) ?? null;
+  return state.macImport;
+}
+
+async function offerMacImport(offer) {
+  const settings = offer;
+  const report = await call("macos_import_preview", { settings });
+  if (!report) return toast("There is no macOS app workspace on this Mac.");
+  openModal({ kind: "macos-import", report, settings, offer });
+}
+
+async function runMacImport() {
+  const dialog = state.dialog;
+  if (!dialog || dialog.busy) return;
+  dialog.busy = true;
+  render();
+  const report = await call("macos_import_run", { settings: !!dialog.settings });
+  try {
+    localStorage.setItem(MAC_OFFERED, "1");
+  } catch {}
+  if (!report) {
+    dialog.busy = false;
+    return render();
+  }
+  closeDialog();
+  if (dialog.settings) {
+    await loadSettings();
+    applyTheme();
+  }
+  await loadWorkspace();
+  await loadPlanning();
+  loadActivity();
+  checkMacImport();
+  toast(`Imported ${plural(report.projects, "project")} and ${plural(report.sessions, "session")}`);
+  if (report.warnings.length) openModal({ kind: "macos-import-done", warnings: report.warnings });
 }
 
 async function runDiagnostics() {
@@ -2268,6 +2320,13 @@ try {
   scheduleGitPolling();
   loadActivity();
   setInterval(loadActivity, 5000);
+  let offered = false;
+  try {
+    offered = localStorage.getItem(MAC_OFFERED) === "1";
+  } catch {}
+  if (!offered && !state.projects.length && (await checkMacImport())?.projects && !state.dialog) {
+    await offerMacImport(true);
+  }
 } catch (error) {
   fatal(error?.stack ?? String(error));
 }

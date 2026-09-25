@@ -17,6 +17,7 @@ pub mod hash;
 pub mod history;
 pub mod integrations;
 pub mod json;
+pub mod macos_import;
 pub mod monitor;
 pub mod patterns;
 pub mod planning;

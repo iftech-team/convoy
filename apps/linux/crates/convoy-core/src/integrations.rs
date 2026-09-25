@@ -618,6 +618,19 @@ impl Integrations {
         Ok(&self.connections[index])
     }
 
+    /// Adds a connection brought over from another app, keeping any that is
+    /// already here. Unlike [`Integrations::save`] it accepts one without its
+    /// secret: the user enters the key when first using it.
+    pub fn import(&mut self, connection: Connection) -> Result<bool> {
+        if connection.id.is_empty() || self.connections.iter().any(|item| item.id == connection.id)
+        {
+            return Ok(false);
+        }
+        self.connections.push(connection);
+        self.write()?;
+        Ok(true)
+    }
+
     pub fn remove(&mut self, id: &str) -> Result<()> {
         self.connections.retain(|connection| connection.id != id);
         self.write()

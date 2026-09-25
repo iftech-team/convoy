@@ -3440,3 +3440,16 @@ input {
   font-weight: 600;
   color: var(--text-muted);
 }
+
+/* Importing from the macOS app */
+.import-counts,
+.import-warnings {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.import-warnings {
+  color: var(--text-muted);
+}

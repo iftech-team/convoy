@@ -461,7 +461,53 @@ const quitting = (dialog) =>
       ${button({ label: "Stop and quit", action: "quit", kind: "danger-solid" })}`,
   });
 
+/// The macOS app's workspace, counted before anything is written.
+function macosImport(dialog) {
+  const report = dialog.report;
+  const counts = [
+    [report.projects, "project"],
+    [report.sessions, "session"],
+    [report.tasks, "task"],
+    [report.specs, "spec"],
+    [report.quick_commands, "quick command"],
+    [report.connections, "Linear or Jira connection"],
+    [report.activity, "activity event", "activity events"],
+  ]
+    .filter(([count]) => count > 0)
+    .map(([count, one, many]) => `<li>${escape(plural(count, one, many))}</li>`)
+    .join("");
+  const existing = report.projects_existing
+    ? `<p class="modal__hint">${escape(plural(report.projects_existing, "project is", "projects are"))} already here; ${report.projects_existing === 1 ? "it keeps" : "they keep"} ${report.projects_existing === 1 ? "its" : "their"} settings and gain the sessions.</p>`
+    : "";
+  const warnings = report.warnings.map((warning) => `<li>${escape(warning)}</li>`).join("");
+  return modal({
+    title: "Import from the macOS app",
+    hint: "Nothing in the macOS app changes. Sessions resume the same conversations.",
+    body: `
+      ${counts ? `<ul class="import-counts">${counts}</ul>` : '<p class="modal__hint">Everything the macOS app has is already here.</p>'}
+      ${existing}
+      ${setting(
+        "Settings and shortcuts",
+        "Theme, notifications, awake mode, AI limits and your shortcuts. Replaces the ones set here.",
+        toggle("settings", dialog.settings, "Import settings and shortcuts"),
+      )}
+      ${warnings ? `<ul class="import-warnings">${warnings}</ul>` : ""}`,
+    foot: `
+      ${button({ label: dialog.offer ? "Not now" : "Cancel", data: { dismiss: "1" } })}
+      ${button({ label: dialog.busy ? "Importing…" : "Import", action: "macos-import-run", kind: "primary", disabled: dialog.busy })}`,
+  });
+}
+
+const macosImportDone = (dialog) =>
+  modal({
+    title: "Imported, with notes",
+    body: `<ul class="import-warnings">${dialog.warnings.map((warning) => `<li>${escape(warning)}</li>`).join("")}</ul>`,
+    foot: button({ label: "Done", kind: "primary", data: { dismiss: "1" } }),
+  });
+
 const VIEWS = {
+  "macos-import": macosImport,
+  "macos-import-done": macosImportDone,
   "doc-spec": docSpec,
   split: splitPicker,
   quit: quitting,

@@ -64,6 +64,9 @@ try {
         { name: "gh", found: false, path: null, version: null, purpose: "Opens pull requests.", install: "Install the GitHub CLI." },
       ];
       if (cmd === "worktrees_path") return "/fixture/worktrees";
+      const report = { projects: 3, projects_existing: 0, sessions: 5, tasks: 2, specs: 0, quick_commands: 0, activity: 4, settings: !!args?.settings, shortcuts: 0, connections: 0, warnings: [] };
+      if (cmd === "macos_import_preview") return report;
+      if (cmd === "macos_import_run") return { ...report, warnings: ["2 sessions run in a worktree the macOS app made."] };
       if (cmd === "project_detail") {
         const p = projects.find((item) => item.id === args.id);
         return { id: p.id, title: p.title, path: p.path, group: "", icon: p.icon ?? "", setup_command: "", shared_paths: "", review_template: "",
@@ -76,6 +79,13 @@ try {
     } };
   });
   await page.goto("http://127.0.0.1:1421");
+  // An empty workspace on a Mac with the macOS app's data is offered it once.
+  const offer = page.locator(".modal", { hasText: "Import from the macOS app" });
+  await offer.getByText("3 projects").waitFor();
+  assert.equal(await offer.locator('[data-toggle="settings"]').getAttribute("aria-pressed"), "true");
+  await offer.getByRole("button", { name: "Not now" }).click();
+  await offer.waitFor({ state: "detached" });
+  assert.equal(await page.evaluate(() => localStorage.getItem("convoy.macImportOffered")), "1");
   await page.locator('[data-action="open-folder"]').first().click();
   await page.getByRole("heading", { name: "Example", exact: true }).waitFor();
   await page.locator('[data-open="builder"]').first().click();
@@ -243,6 +253,13 @@ try {
   await page.locator('[data-settings-section="Setup"]').click();
   await page.locator(".pref-row", { hasText: "gh" }).locator(".pref-missing").waitFor();
   if (shots) await page.screenshot({ path: `${shots}/setup.png` });
+  await page.locator('[data-action="macos-import"]').click();
+  await page.locator('.modal [data-toggle="settings"][aria-pressed="false"]').waitFor();
+  if (shots) await page.screenshot({ path: `${shots}/macos-import.png` });
+  await page.locator('[data-action="macos-import-run"]').click();
+  await page.locator(".modal", { hasText: "Imported, with notes" }).waitFor();
+  assert.deepEqual(await page.evaluate(() => window.checkCalls.find((c) => c.cmd === "macos_import_run").args), { settings: false });
+  await page.keyboard.press("Escape");
   await page.locator('[data-settings-section="Shortcuts"]').click();
   await page.locator(".pref-group__title", { hasText: "Project" }).waitFor();
   assert(await page.locator(".shortcut").count() >= 30, "the macOS set of shortcuts is listed");

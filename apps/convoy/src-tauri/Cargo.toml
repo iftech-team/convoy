@@ -40,6 +40,10 @@ convoy-pty = { path = "crates/pty" }
 # cannot run it on.
 trash = "5.2"
 
+# The macOS app keeps its settings in a property list; importing them reads it.
+[target.'cfg(target_os = "macos")'.dependencies]
+plist = "1"
+
 [dev-dependencies]
 # The `test` feature gives a real AppHandle, so the exit rules are checked
 # through the same event channel the window uses.

@@ -37,6 +37,13 @@ impl Trackers {
         }
         action(guard.as_mut().expect("just loaded"))
     }
+
+    /// Drops the cached copy, so the next call reads what is on disk now.
+    pub fn forget(&self) {
+        if let Ok(mut guard) = self.inner.lock() {
+            *guard = None;
+        }
+    }
 }
 
 /// A connection as the page sees it: never the secret, only whether one is saved.

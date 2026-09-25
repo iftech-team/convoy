@@ -9,6 +9,7 @@ pub mod files;
 pub mod icons;
 pub mod integrations;
 pub mod limits;
+pub mod macos;
 pub mod planning;
 pub mod project;
 pub mod session;
