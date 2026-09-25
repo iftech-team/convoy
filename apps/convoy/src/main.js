@@ -129,6 +129,78 @@ function saveTabs() {
   }
 }
 
+// ------------------------------------------------------------------ panes --
+
+const PANES_KEY = "convoy.panes";
+
+try {
+  const saved = JSON.parse(localStorage.getItem(PANES_KEY) ?? "null");
+  if (saved && [1, 2, 4].includes(saved.layout)) {
+    state.layout = saved.layout;
+    state.panes = saved.panes ?? [];
+    state.focus = Math.min(saved.focus ?? 0, saved.layout - 1);
+  }
+} catch {
+  /* single pane */
+}
+
+function savePanes() {
+  try {
+    localStorage.setItem(PANES_KEY, JSON.stringify({ layout: state.layout, panes: state.panes, focus: state.focus }));
+  } catch {
+    /* the layout simply is not restored */
+  }
+}
+
+/// One, two or four panes. The open session stays in view, in the focused
+/// pane; panes beyond the layout keep their session for when it grows back.
+function setLayout(count) {
+  state.menu = null;
+  state.layout = count;
+  if (state.sessionId) {
+    const at = state.panes.indexOf(state.sessionId);
+    if (at >= 0 && at < count) state.focus = at;
+    else {
+      state.focus = Math.min(state.focus, count - 1);
+      state.panes[state.focus] = state.sessionId;
+    }
+  } else {
+    state.focus = 0;
+  }
+  savePanes();
+  render();
+  requestAnimationFrame(terminal.refit);
+}
+
+function focusPane(index) {
+  if (index === state.focus && state.panes[index] === state.sessionId) return;
+  state.focus = index;
+  savePanes();
+  const id = state.panes[index];
+  if (id) return openTab(id);
+  render();
+}
+
+function closePane(index) {
+  state.panes[index] = null;
+  if (index === state.focus) {
+    const other = state.panes.findIndex((id, at) => id && at < state.layout);
+    if (other >= 0) {
+      state.focus = other;
+      savePanes();
+      return openTab(state.panes[other]);
+    }
+    state.sessionId = null;
+  }
+  savePanes();
+  render();
+}
+
+function stepPane(step) {
+  if (state.layout < 2) return;
+  return focusPane((state.focus + step + state.layout) % state.layout);
+}
+
 /// The open session always has a tab, and a tab remembers what it shows so
 /// it can be drawn while another project is open. Archived sessions leave.
 function syncTabs() {
@@ -265,9 +337,12 @@ function render() {
     }
   }
 
-  if (state.sessionId && !state.files && state.page !== "settings") {
-    terminal.mount(state.sessionId);
-    if (state.split) terminal.mount(state.split, "#terminal-host-split");
+  if (state.sessionId && !state.files && state.page !== "settings" && state.page !== "project") {
+    if (state.layout > 1) {
+      state.panes.forEach((id, index) => id && index < state.layout && terminal.mount(id, `#terminal-host-${index}`));
+    } else {
+      terminal.mount(state.sessionId);
+    }
   }
 
   // Typing re-renders, so the caret goes back where it was.
@@ -305,6 +380,14 @@ async function selectProject(id) {
 }
 
 function openSession(id) {
+  // A session already in a pane takes the focus there; otherwise it goes
+  // into the focused pane, as on macOS.
+  if (state.layout > 1) {
+    const at = state.panes.indexOf(id);
+    if (at >= 0 && at < state.layout) state.focus = at;
+    else state.panes[state.focus] = id;
+    savePanes();
+  }
   state.sessionId = id;
   state.files = null;
   render();
@@ -380,11 +463,10 @@ const ACTIONS = {
   "import-history": openTranscripts,
   "project-settings": openProjectSettings,
   "close-project-settings": closeProjectSettings,
-  "layout-one": () => {
-    state.split = null;
-    render();
-  },
-  "layout-two": () => (state.sessionId && !state.split ? ACTIONS["open-split"]() : undefined),
+  "layout-1": () => setLayout(1),
+  "layout-2": () => setLayout(2),
+  "layout-4": () => setLayout(4),
+  "awake-settings": () => openSettings("General"),
   "awake-menu": () => {
     state.menu = state.menu?.kind === "awake" ? null : { kind: "awake" };
     render();
@@ -498,11 +580,8 @@ const ACTIONS = {
 
   // menus
   quit: () => call("quit_now"),
-  "open-split": () => openModal({ kind: "split" }),
-  "close-split": () => {
-    state.split = null;
-    changed();
-  },
+  "open-split": () => setLayout(2),
+  "close-split": () => setLayout(1),
   "session-menu": () => {
     state.menu = "session";
     render();
@@ -684,7 +763,13 @@ const SHORTCUT_ACTIONS = {
   review: () => withSession(() => openReview()),
   feedback: () => withSession((current) => current.review_of && ACTIONS["send-feedback"]()),
   quick: () => withSession(() => ACTIONS["quick-menu"]()),
-  split: () => withSession(() => state.sessions.length > 1 && ACTIONS["open-split"]()),
+  split: () => setLayout(state.layout === 2 ? 1 : 2),
+  layout1: () => setLayout(1),
+  layout2: () => setLayout(2),
+  layout4: () => setLayout(4),
+  paneNext: () => stepPane(1),
+  panePrevious: () => stepPane(-1),
+  paneClose: () => state.layout > 1 && closePane(state.focus),
 
   // project
   openFolder: () => openFolder(),
@@ -768,7 +853,8 @@ app.addEventListener("click", async (event) => {
       + "[data-capture],[data-expand],[data-project-more],[data-menu-act],[data-settings-section]," +
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
-      "[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
+      "[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
+      "[data-layout],[data-needs-you],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -783,12 +869,20 @@ app.addEventListener("click", async (event) => {
     state.menu = null;
     return savePref({ keep_awake: data.awake });
   }
+  if (data.needsYou) return openTab(data.needsYou);
   if (data.tabClose) return closeTab(data.tabClose);
   if (data.tabOpen) return openTab(data.tabOpen);
   if (data.tabAct) {
     const id = state.menu?.id;
     state.menu = null;
     const at = state.tabs.indexOf(id);
+    if (data.tabAct.startsWith("pane-")) {
+      const pane = Number(data.tabAct.slice(5));
+      state.panes[pane] = id;
+      state.focus = pane;
+      savePanes();
+      return openTab(id);
+    }
     if (data.tabAct === "left") return moveTab(id, at - 1);
     if (data.tabAct === "right") return moveTab(id, at + 1);
     if (data.tabAct === "close") return closeTab(id);
@@ -883,9 +977,19 @@ app.addEventListener("click", async (event) => {
   if (data.stop) return terminal.stop(data.stop);
   if (data.open) return openSession(data.open);
   if (data.split) {
-    state.split = data.split;
-    return closeDialog();
+    const pane = state.dialog?.pane ?? state.focus;
+    state.dialog = null;
+    state.panes[pane] = data.split;
+    state.focus = pane;
+    savePanes();
+    return openTab(data.split);
   }
+  if (data.panePick !== undefined) {
+    state.focus = Number(data.panePick);
+    return openModal({ kind: "split", pane: Number(data.panePick) });
+  }
+  if (data.paneClose !== undefined) return closePane(Number(data.paneClose));
+  if (data.layout) return setLayout(Number(data.layout));
   if (data.quick) {
     state.menu = null;
     render();
@@ -1073,6 +1177,15 @@ addEventListener(
     if (state.capturing || state.dialog?.kind === "palette") return;
     // ⌘1–⌘9 (Ctrl elsewhere) select a tab, as in the macOS app.
     const primary = /mac/i.test(navigator.platform) ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+    // ⌘+ / ⌘− / ⌘0 zoom the focused terminal only.
+    if (primary && !event.altKey && state.sessionId && !state.dialog && ["Equal", "NumpadAdd", "Minus", "NumpadSubtract", "Digit0", "Numpad0"].includes(event.code)) {
+      event.preventDefault();
+      event.stopPropagation();
+      const step = /Equal|Add/.test(event.code) ? 1 : /Minus|Subtract/.test(event.code) ? -1 : 0;
+      const size = terminal.zoom(state.sessionId, step);
+      if (size) toast(`Terminal text ${size} pt`);
+      return;
+    }
     const digit = /^Digit([1-9])$/.exec(event.code ?? "");
     if (primary && digit && !event.altKey && !event.shiftKey && state.tabs[Number(digit[1]) - 1]) {
       event.preventDefault();
@@ -2202,4 +2315,12 @@ app.addEventListener("contextmenu", (event) => {
   event.preventDefault();
   if (session) return openContextMenu("session", session.dataset.menuSession, event.clientX, event.clientY);
   return openContextMenu("project", owner.dataset.menuProject, event.clientX, event.clientY);
+});
+
+// Clicking inside a pane focuses it — its session becomes the one the bars
+// and tabs describe. Buttons in the pane do their own thing.
+app.addEventListener("mousedown", (event) => {
+  const pane = event.target.closest?.("[data-pane]");
+  if (!pane || event.target.closest("button")) return;
+  focusPane(Number(pane.dataset.pane));
 });

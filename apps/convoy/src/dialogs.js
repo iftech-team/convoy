@@ -424,13 +424,13 @@ const markdownPreview = (dialog) =>
 
 /// Which other session to show beside this one. A split is two terminals, not
 /// two windows: the same list, minus the one already on screen.
-function splitPicker() {
-  const others = state.sessions.filter(
-    (item) => item.id !== state.sessionId && !item.archived,
-  );
+function splitPicker(dialog) {
+  const pane = dialog.pane ?? state.focus;
+  const shown = new Set(state.panes.filter((id, at) => id && at !== pane && at < state.layout));
+  const others = state.sessions.filter((item) => !item.archived && !shown.has(item.id));
   return modal({
-    title: "Open split terminal",
-    hint: "The chosen session appears beside this one and keeps running when the split is closed.",
+    title: `Session for pane ${pane + 1}`,
+    hint: "Any session of this project. It keeps running when the pane is closed.",
     body: others.length
       ? `<div class="plain-list plain-list--rows">
            ${others

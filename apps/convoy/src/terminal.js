@@ -24,6 +24,36 @@ function theme() {
   };
 }
 
+// ------------------------------------------------------------------- zoom --
+
+// Each terminal's zoom, as an offset from the Settings size so a change there
+// still moves every terminal. Kept per session across launches.
+const ZOOM_KEY = "convoy.zoom";
+let zooms = {};
+try {
+  zooms = JSON.parse(localStorage.getItem(ZOOM_KEY) ?? "{}") ?? {};
+} catch {
+  zooms = {};
+}
+
+const sizeFor = (id) => Math.max(8, Math.min(32, state.settings.font_size + (zooms[id] ?? 0)));
+
+/// ⌘+ / ⌘− / ⌘0: one terminal larger, smaller, or back to the Settings size.
+export function zoom(id, step) {
+  const entry = terminals.get(id);
+  if (!entry) return;
+  zooms[id] = step === 0 ? 0 : (zooms[id] ?? 0) + step;
+  if (!zooms[id]) delete zooms[id];
+  try {
+    localStorage.setItem(ZOOM_KEY, JSON.stringify(zooms));
+  } catch {
+    /* not remembered */
+  }
+  entry.terminal.options.fontSize = sizeFor(id);
+  if (entry.host.isConnected) entry.fit.fit();
+  return entry.terminal.options.fontSize;
+}
+
 export function terminalFor(id) {
   if (terminals.has(id)) return terminals.get(id);
 
@@ -33,7 +63,7 @@ export function terminalFor(id) {
   const style = getComputedStyle(document.documentElement);
   const terminal = new Terminal({
     fontFamily: style.getPropertyValue("--font-mono").trim(),
-    fontSize: state.settings.font_size,
+    fontSize: sizeFor(id),
     // The font's own line height, as SwiftTerm draws it in the macOS app.
     lineHeight: 1,
     cursorBlink: true,
@@ -77,8 +107,8 @@ export function refit() {
 /// Font size, scrollback and colours reach terminals that are already open, so
 /// a settings change is visible without restarting a session.
 export function applySettings() {
-  for (const entry of terminals.values()) {
-    entry.terminal.options.fontSize = state.settings.font_size;
+  for (const [id, entry] of terminals) {
+    entry.terminal.options.fontSize = sizeFor(id);
     entry.terminal.options.scrollback = state.settings.scrollback;
     entry.terminal.options.theme = theme();
     if (entry.host.isConnected) entry.fit.fit();

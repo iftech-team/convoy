@@ -1391,8 +1391,11 @@ pub fn shortcuts(app: &Rc<App>) {
         .description("Press a combination with Ctrl. Clear a field to restore its default.")
         .build();
 
+    // Only the shortcuts this window can act on; the rest belong to other
+    // clients sharing the workspace file.
     let rows: Vec<(String, adw::EntryRow)> = convoy_core::shortcuts::resolve(&saved)
         .into_iter()
+        .filter(|(action, _, _)| crate::app::action_for(action).is_some())
         .map(|(action, stored, _)| {
             let row = adw::EntryRow::builder()
                 .title(convoy_core::shortcuts::description(action))
@@ -1415,10 +1418,13 @@ pub fn shortcuts(app: &Rc<App>) {
         let dialog = dialog.clone();
         let rows = rows.clone();
         move |_| {
-            let mut shortcuts = std::collections::BTreeMap::new();
+            // Edits the saved map in place, so shortcuts set by another
+            // client for actions this one does not have are kept.
+            let mut shortcuts = app.workspace.borrow().settings().shortcuts.clone();
             for (action, row) in &rows {
                 let value = row.text().trim().to_lowercase();
                 if value.is_empty() {
+                    shortcuts.remove(action);
                     continue;
                 }
                 if convoy_core::shortcuts::to_accelerator(&value).is_none() {

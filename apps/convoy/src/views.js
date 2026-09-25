@@ -401,9 +401,6 @@ export function reviewsView() {
 export function workbench() {
   const current = session();
   if (!current) return "";
-  const other = state.split
-    ? state.sessions.find((item) => item.id === state.split)
-    : null;
   const reported = state.agentState.get(current.id);
   const label = current.running
     ? (reported ?? "Running")
@@ -451,34 +448,47 @@ export function workbench() {
         ${button({ icon: "plus", action: "new-session", kind: "quiet", title: "New session" })}
         ${button({ icon: "more", action: "session-menu", kind: "quiet", title: "Session actions" })}
       </div>
-      ${
-        other
-          ? `<div class="workbench__panes">
-               <div class="pane">
-                 <div class="pane__label">${escape(current.title)}</div>
-                 <div class="term" id="terminal-host"></div>
-               </div>
-               <div class="pane">
-                 <div class="pane__label">
-                   ${escape(other.title)}
-                   ${
-                     other.running
-                       ? button({ label: "Stop", icon: "stop", kind: "quiet", data: { stop: other.id } })
-                       : button({
-                           label: other.started ? "Resume" : "Start",
-                           icon: "play",
-                           kind: "quiet",
-                           data: { start: other.id },
-                         })
-                   }
-                   ${button({ icon: "close", action: "close-split", kind: "quiet", title: "Close the split" })}
-                 </div>
-                 <div class="term" id="terminal-host-split"></div>
-               </div>
-             </div>`
-          : '<div class="term" id="terminal-host"></div>'
-      }
+      ${state.layout > 1 ? panesView() : '<div class="term" id="terminal-host"></div>'}
     </div>`;
+}
+
+/// Two or four panes, as in the macOS app. Each shows its own session; the
+/// focused one is the session the bars and tabs refer to.
+function panesView() {
+  const cells = Array.from({ length: state.layout }, (_, index) => {
+    const id = state.panes[index];
+    const info = id ? tabInfo(id) : null;
+    const focused = index === state.focus;
+    if (!info) {
+      return `
+        <div class="pane pane--empty${focused ? " pane--focused" : ""}" data-pane="${index}">
+          <div class="pane__label"><span class="pane__number">${index + 1}</span> Empty pane</div>
+          <div class="pane__empty">
+            ${button({ label: "Choose a session…", icon: "terminal", data: { "pane-pick": index } })}
+          </div>
+        </div>`;
+    }
+    const running = state.running.includes(id);
+    const owner = state.projects.find((item) => item.id === info.project_id);
+    return `
+      <div class="pane${focused ? " pane--focused" : ""}" data-pane="${index}">
+        <div class="pane__label">
+          <span class="pane__number" style="background:${owner ? projectTint(owner) : "var(--text-faint)"}">${index + 1}</span>
+          ${agentIcon(info.agent, 11)}
+          <span class="pane__title">${escape(info.title)}</span>
+          <span class="pane__project">${escape(owner?.title ?? "")}</span>
+          <span class="section__spacer"></span>
+          ${
+            running
+              ? ""
+              : button({ label: info.started ? "Resume" : "Start", icon: "play", kind: "quiet", data: { start: id } })
+          }
+          ${button({ icon: "close", kind: "quiet", title: "Close pane", data: { "pane-close": index } })}
+        </div>
+        <div class="term" id="terminal-host-${index}"></div>
+      </div>`;
+  }).join("");
+  return `<div class="workbench__panes workbench__panes--${state.layout}">${cells}</div>`;
 }
 
 /// The thirteen entries, each offered only when it applies.
@@ -517,8 +527,9 @@ export function sessionMenu() {
         )}
         ${item("Remove worktree…", "remove-worktree", !busy && current.owns_worktree)}
         <div class="menu__divider"></div>
-        ${item("Open split terminal…", "open-split", state.sessions.length > 1)}
-        ${item("Close split view", "close-split", !!state.split)}
+        ${item("Two panes", "layout-2", state.layout !== 2)}
+        ${item("Four panes", "layout-4", state.layout !== 4)}
+        ${item("Single pane", "layout-1", state.layout > 1)}
       </div>
     </div>`;
 }
@@ -563,18 +574,16 @@ export function status() {
       </button>
       <span class="status__spacer"></span>
       ${queues ? `<span class="status__item">${icons.bolt} ${queues} queue${queues > 1 ? "s" : ""}</span><span class="status__sep"></span>` : ""}
+      ${needsYouButton()}
       <span class="status__item">${icons.terminal} ${running} running</span>
       <span class="status__sep"></span>
-      <button class="status__item status__button" data-action="awake-menu" aria-pressed="${state.menu?.kind === "awake"}">
-        ${icons.awake} ${escape(awakeLabel())} ${icons.chevronDown}
+      <button class="status__item status__button${awakeActive() ? " status__button--on" : ""}" data-action="awake-menu"
+              aria-pressed="${state.menu?.kind === "awake"}" title="Keep the computer awake while agents work">
+        ${awakeActive() ? icons.cupFilled : icons.cup} ${awakeActive() ? "Awake" : "Keep awake"} ${icons.chevronDown}
       </button>
     </footer>`;
 }
 
-const awakeLabel = () =>
-  ({ off: "Sleep allowed", always: "Awake", sessions: "Awake while running" })[
-    state.settings.keep_awake
-  ] ?? "Awake";
 
 export { escape, empty, group, setting, segmented, choice, toggle, button };
 
@@ -587,12 +596,14 @@ const peak = (reading) =>
 function limitsSummary() {
   const limits = state.limits;
   if (!limits) return "";
+  // A reading older than five minutes says so, as on macOS.
+  const stale = (reading) => !!reading?.updated_at && Date.now() / 1000 - reading.updated_at > 300;
   const parts = [
-    ["Codex", peak(limits.codex)],
-    ["Claude", peak(limits.claude)],
+    ["Codex", peak(limits.codex), stale(limits.codex)],
+    ["Claude", peak(limits.claude), stale(limits.claude)],
   ]
     .filter(([, percent]) => percent !== null)
-    .map(([name, percent]) => `<span class="status__limit${percent >= 90 ? " status__limit--high" : ""}">${name} ${Math.round(percent)}% used</span>`);
+    .map(([name, percent, stale]) => `<span class="status__limit${percent >= 90 ? " status__limit--high" : ""}">${name} ${Math.round(percent)}% used${stale ? " · cached" : ""}</span>`);
   return parts.join("");
 }
 
@@ -774,7 +785,12 @@ export function tabBar() {
             <span class="tab-item__title">${escape(info.title)}</span>
             <span class="tab-item__project">${escape(owner?.title ?? "")}</span>
           </span>
-          ${index < 9 && !selected ? `<span class="tab-item__number">${/mac/i.test(navigator.platform) ? "⌘" : "Ctrl+"}${index + 1}</span>` : ""}
+          ${
+            state.layout > 1 && state.panes.indexOf(id) >= 0 && state.panes.indexOf(id) < state.layout
+              ? `<span class="tab-item__pane" style="background:${owner ? projectTint(owner) : "var(--text-faint)"}" title="In pane ${state.panes.indexOf(id) + 1}">${state.panes.indexOf(id) + 1}</span>`
+              : ""
+          }
+          ${index < 9 && !selected && !(state.layout > 1 && state.panes.includes(id)) ? `<span class="tab-item__number">${/mac/i.test(navigator.platform) ? "⌘" : "Ctrl+"}${index + 1}</span>` : ""}
           <button class="tab-item__close" data-tab-close="${escape(id)}"
                   title="${running ? "Stop and close" : "Close tab"}">${icons.close}</button>
         </div>`;
@@ -792,9 +808,16 @@ export function tabBar() {
       </div>
       <span class="tabbar__actions">
         <span class="layouts">
-          <button class="layouts__button" data-action="layout-one" aria-pressed="${!state.split}" title="One pane">${icons.paneOne}</button>
-          <button class="layouts__button" data-action="layout-two" aria-pressed="${!!state.split}" title="Two panes"
-                  ${state.sessionId ? "" : "disabled"}>${icons.split}</button>
+          ${[
+            [1, "paneOne", "One pane"],
+            [2, "split", "Two panes"],
+            [4, "paneFour", "Four panes"],
+          ]
+            .map(
+              ([count, glyph, name]) =>
+                `<button class="layouts__button" data-layout="${count}" aria-pressed="${state.layout === count}" title="${name}">${icons[glyph]}</button>`,
+            )
+            .join("")}
         </span>
         <button class="button button--icon counted" data-action="files" title="Files & Changes">
           ${icons.git}
@@ -813,6 +836,12 @@ function tabMenu(menu) {
   return `
     <div class="scrim scrim--clear" data-dismiss="1">
       <div class="menu menu--context" role="menu" style="left:${Math.max(8, Math.min(menu.x, window.innerWidth - 240))}px;top:${menu.y}px">
+        ${
+          state.layout > 1
+            ? Array.from({ length: state.layout }, (_, index) => item(`Open in pane ${index + 1}`, `pane-${index}`)).join("") +
+              '<div class="menu__divider"></div>'
+            : ""
+        }
         ${item("Move left", "left", at > 0)}
         ${item("Move right", "right", at < state.tabs.length - 1)}
         <div class="menu__divider"></div>
@@ -822,7 +851,24 @@ function tabMenu(menu) {
     </div>`;
 }
 
-/// "Awake ⌄": the keep-awake modes, from the status bar.
+/// Whether the computer is being kept awake right now, not just allowed to be.
+export const awakeActive = () =>
+  state.settings.keep_awake === "always" || (state.settings.keep_awake === "sessions" && state.running.length > 0);
+
+/// "N need you": agents waiting for an answer, in any project. Opens the first.
+function needsYouButton() {
+  const waiting = state.running.filter((id) => state.agentState.get(id) === "waiting");
+  if (!waiting.length) return "";
+  const titles = waiting.map((id) => tabInfo(id)?.title).filter(Boolean).join(", ");
+  return `
+    <button class="status__item status__button status__needs" data-needs-you="${escape(waiting[0])}"
+            title="${escape(titles)}">
+      ${icons.warn} ${waiting.length} need${waiting.length === 1 ? "s" : ""} you
+    </button>
+    <span class="status__sep"></span>`;
+}
+
+/// "Awake ⌄", as on macOS: the three modes, then Settings.
 function awakeMenu() {
   const mode = state.settings.keep_awake;
   const item = (value, name) => `
@@ -832,9 +878,14 @@ function awakeMenu() {
   return `
     <div class="scrim scrim--clear" data-dismiss="1">
       <div class="menu menu--awake" role="menu">
-        ${item("always", "Always keep awake")}
-        ${item("sessions", "While a session runs")}
-        ${item("off", "Allow sleep")}
+        <div class="menu__heading">Keep awake</div>
+        ${item("always", "Always while Convoy is open")}
+        ${item("sessions", "While a session is running")}
+        ${item("off", "Off — normal system sleep")}
+        <div class="menu__divider"></div>
+        <button class="menu__item" data-action="awake-settings">
+          <span class="menu__icon">${icons.gear}</span><span>Settings…</span>
+        </button>
       </div>
     </div>`;
 }

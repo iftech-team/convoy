@@ -30,7 +30,13 @@ export const SHORTCUTS = [
   ["review", "mod+alt+r", "Start review", "Sessions"],
   ["feedback", "mod+shift+b", "Send feedback to builder", "Sessions"],
   ["quick", "mod+/", "Quick commands", "Sessions"],
-  ["split", "mod+\\", "Open split terminal", "Sessions"],
+  ["split", "mod+\\", "Toggle two panes", "Panes"],
+  ["layout1", "ctrl+alt+1", "One pane", "Panes"],
+  ["layout2", "ctrl+alt+2", "Two panes", "Panes"],
+  ["layout4", "ctrl+alt+4", "Four panes", "Panes"],
+  ["paneNext", "mod+alt+right", "Focus next pane", "Panes"],
+  ["panePrevious", "mod+alt+left", "Focus previous pane", "Panes"],
+  ["paneClose", "mod+shift+w", "Close focused pane", "Panes"],
   ["openFolder", "mod+o", "Open folder", "Project"],
   ["newTask", "mod+shift+n", "New task", "Project"],
   ["newSpec", "mod+alt+n", "New specification", "Project"],
@@ -50,7 +56,7 @@ export const SHORTCUTS = [
   ["limitsRefresh", "mod+alt+l", "Refresh AI limits", "Limits"],
 ];
 
-export const SHORTCUT_GROUPS = ["General", "Sessions", "Project", "Limits"];
+export const SHORTCUT_GROUPS = ["General", "Sessions", "Panes", "Project", "Limits"];
 
 /// What is bound to an action right now: the saved value if there is one and
 /// it is well formed, the default otherwise.

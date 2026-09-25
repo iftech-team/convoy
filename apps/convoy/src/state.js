@@ -26,7 +26,6 @@ export const state = {
   sessionId: null,
   /// A second session shown beside the first. In memory only: which two
   /// terminals someone had open is not worth writing to the workspace.
-  split: null,
   tab: "sessions",
   filter: "",
   search: "",
@@ -46,6 +45,10 @@ export const state = {
   // Open terminal tabs, in the order shown, and what each one displays.
   tabs: [],
   tabInfo: {},
+  // 1, 2 or 4 panes; what each shows; which one has focus.
+  layout: 1,
+  panes: [],
+  focus: 0,
   // Branch and changed files per project, for detailed sidebar rows.
   projectGit: new Map(),
   // "settings" while the settings page replaces the window.
@@ -172,12 +175,12 @@ export async function loadSessions() {
     archived: state.showArchived,
   });
   state.sessions = sessions ?? [];
-  // A split pointing at a session that has been archived or removed would
-  // render a pane for something that is not there.
-  if (state.split && !state.sessions.some((item) => item.id === state.split)) {
-    state.split = null;
-  }
-  if (state.split === state.sessionId) state.split = null;
+  // A pane showing a session of this project that has since been archived
+  // or removed would draw something that is not there.
+  state.panes = state.panes.map((id) => {
+    const item = state.sessions.find((entry) => entry.id === id);
+    return item && item.archived ? null : id;
+  });
   if (state.sessionId && !state.sessions.some((s) => s.id === state.sessionId)) {
     state.sessionId = null;
   }

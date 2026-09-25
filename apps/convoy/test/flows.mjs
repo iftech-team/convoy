@@ -37,7 +37,7 @@ try {
       if (cmd === "doc_write") { window.docs[args.path] = args.text; return null; }
       if (cmd === "spec_create") { const path = ".specdesk/specs/checkout-retries.md"; window.docs[path] = "# Checkout retries\n\n## Problem\n"; return path; }
       if (cmd === "doc_prompts") return { project_doc: "Write the project document", spec: "Draft the specification" };
-      if (cmd === "monitor_tick") return { states: [], hibernate: [], changed: false };
+      if (cmd === "monitor_tick") return { states: [{ id: "builder", state: "waiting", notable: false }], hibernate: [], changed: false };
       if (cmd === "plugin:dialog|open") return "/fixture/Example";
       if (cmd === "project_open") { projects.push({ id: "project", title: "Example", path: args.path, sessions: 1, running: 1 }); return 1; }
       if (cmd === "git_status") return { branch: "main", changed_files: 1 };
@@ -97,6 +97,11 @@ try {
   await page.keyboard.press(`${primary}+1`);
   await page.locator('.tab-item--selected[data-tab-open="builder"]').waitFor();
   if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/tabs.png` });
+  // ⌘+ / ⌘0 zoom this terminal only, from the Settings size (13).
+  await page.keyboard.press(`${primary}+Equal`);
+  await page.locator(".toast", { hasText: "Terminal text 14 pt" }).waitFor();
+  await page.keyboard.press(`${primary}+Digit0`);
+  await page.locator(".toast", { hasText: "Terminal text 13 pt" }).waitFor();
   await page.locator('.tab-item[data-tab-open="review"]').click({ button: "right" });
   await page.locator('[data-tab-act="close"]').click();
   await page.locator('.tab-item[data-tab-open="review"]').waitFor({ state: "detached" });
@@ -109,10 +114,21 @@ try {
   await page.locator('[data-action="stop-session"]').click();
   await page.locator(".modal", { hasText: "Stop this agent?" }).waitFor();
   await page.keyboard.press("Escape");
-  await page.locator('[data-action="layout-two"]').click();
-  await page.locator(".modal").waitFor();
-  await page.keyboard.press("Escape");
+  // Four panes, as on macOS: empty ones offer a session, clicking focuses.
+  await page.locator('[data-layout="4"]').click();
+  assert.equal(await page.locator(".workbench__panes--4 .pane").count(), 4);
+  await page.locator('[data-pane-pick="1"]').click();
+  await page.locator('.modal [data-split="review"]').click();
+  await page.locator('.pane[data-pane="1"] .pane__title', { hasText: "Review: Fix login" }).waitFor();
+  await page.locator("#terminal-host-1 .xterm").waitFor();
+  await page.locator('.pane[data-pane="0"] .pane__label').click();
+  await page.locator('.pane--focused[data-pane="0"]').waitFor();
+  if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/panes.png` });
+  await page.locator('[data-layout="1"]').click();
+  assert.equal(await page.locator(".workbench__panes").count(), 0);
+  await page.locator(".status__needs", { hasText: "1 needs you" }).waitFor();
   await page.locator('[data-action="awake-menu"]').click();
+  await page.locator('.menu--awake [data-action="awake-settings"]').waitFor();
   await page.locator('[data-awake="sessions"]').click();
   await page.waitForFunction(() => window.savedSettings.keep_awake === "sessions");
 

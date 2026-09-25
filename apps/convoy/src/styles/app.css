@@ -3348,3 +3348,95 @@ input {
   max-height: calc(100vh - 60px);
   overflow-y: auto;
 }
+
+/* ----------------------------------------------------------- 2 or 4 panes -- */
+
+.workbench__panes--4 {
+  grid-template-rows: 1fr 1fr;
+}
+
+.workbench__panes--4 .pane:nth-child(n + 3) {
+  border-top: 1px solid var(--border);
+}
+
+.workbench__panes--4 .pane:nth-child(3) {
+  border-left: none;
+}
+
+.pane {
+  position: relative;
+}
+
+/* The focused pane is the session the bars describe. */
+.pane--focused::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  pointer-events: none;
+}
+
+.pane__label {
+  height: 28px;
+  padding: 0 6px 0 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.pane__label .button {
+  margin-left: 0;
+}
+
+.pane__number,
+.tab-item__pane {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  background: var(--text-faint);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.pane__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pane__project {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.pane__empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  background: var(--term-bg);
+}
+
+.pane .term {
+  padding: 6px 4px 6px 10px;
+}
+
+.status__button--on {
+  color: var(--accent-text);
+}
+
+.status__needs {
+  color: var(--state-review);
+  font-weight: 550;
+}
+
+.menu__heading {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
