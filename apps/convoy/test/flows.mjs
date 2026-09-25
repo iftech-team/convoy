@@ -47,9 +47,9 @@ try {
       if (cmd === "monitor_tick") return { states: [{ id: "builder", state: "waiting", notable: false }], hibernate: [], changed: false };
       if (cmd === "plugin:dialog|open") return "/fixture/Example";
       if (cmd === "project_open") {
-        projects.push({ id: "project", title: "Example", path: args.path, sessions: 1, running: 1 }, { id: "other", title: "Other", path: "/fixture/Other", sessions: 1, running: 0 });
+        projects.push({ id: "project", title: "Example", path: args.path, sessions: 1, running: 1 }, { id: "other", title: "Other", path: "/fixture/Other", sessions: 1, running: 0 }, { id: "alpha", title: "Alpha", path: "/fixture/clients/alpha", group: "clients", sessions: 0, running: 0 });
         sessions.push(...elsewhere);
-        return 2;
+        return 3;
       }
       if (cmd === "git_status") return { branch: "main", changed_files: 1 };
       if (cmd === "review_brief") return "Review the login changes. Tests pass.";
@@ -68,6 +68,7 @@ try {
       if (cmd === "tasks_all") return tasks;
       if (cmd === "project_move") { const [moved] = projects.splice(projects.findIndex((item) => item.id === args.id), 1); projects.splice(args.index, 0, moved); return null; }
       if (cmd === "project_refresh") return 0;
+      if (cmd === "session_archive") { const item = sessions.find((entry) => entry.id === args.id); item.archived = args.archived; return null; }
       if (cmd === "files_snapshot") return {
         branch: "main", files: [], log: [], branches: ["main"], directory: "/fixture/Example",
         upstream: { name: "origin/main", ahead: 2, behind: 1 },
@@ -533,6 +534,37 @@ try {
   await page.locator('[data-menu-project="project"]').click({ button: "right" });
   await page.locator('[data-menu-act="refresh"]').click();
   await page.locator(".toast", { hasText: "No new projects in this folder" }).waitFor();
+  // A group is a row that folds its projects; with the hierarchy off, they
+  // sit in the list like any other.
+  await page.locator('[data-group-toggle="clients"]').click();
+  await page.locator('[data-project="alpha"]').waitFor({ state: "detached" });
+  await page.locator('[data-group-toggle="clients"]').click();
+  await page.locator('[data-project="alpha"]').waitFor();
+  await page.locator('[data-action="workspace-menu"]').click();
+  await page.locator('[data-workspace-option="hierarchy"]').click();
+  await page.locator('[data-group-toggle="clients"]').waitFor({ state: "detached" });
+  await page.locator('[data-project="alpha"]').waitFor();
+  await page.locator('[data-action="workspace-menu"]').click();
+  await page.locator('[data-workspace-option="hierarchy"]').click();
+  await page.locator('[data-group-toggle="clients"]').waitFor();
+  // The sidebar's own menu, as on macOS.
+  await page.locator('[data-action="workspace-menu"]').click();
+  await page.locator('[data-workspace-option="sort"]').click();
+  await page.waitForFunction(() => window.savedSettings.sort_projects === true);
+  await page.locator('[data-action="workspace-menu"]').click();
+  await page.locator('[data-workspace-option="sort"]').click();
+  await page.waitForFunction(() => window.savedSettings.sort_projects === false);
+  // ⌘-click picks sessions; the picked ones are archived together.
+  await page.locator('.side-session[data-open="review"]').click({ modifiers: [primary] });
+  await page.locator(".sidebar__selection", { hasText: "1 selected" }).waitFor();
+  await page.locator('[data-action="selection-archive"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "session_archive" && c.args.id === "review" && c.args.archived === true));
+  await page.locator(".sidebar__selection").waitFor({ state: "detached" });
+  // The status bar says which account new Codex sessions use, and changes it.
+  await page.locator('.status [data-action="account-menu"][data-agent="codex"]').click();
+  await page.locator('[data-account-pick="codex:"]').click();
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("convoy.activeAccount")).codex), "");
+  await page.locator('.status [data-action="account-menu"][data-agent="codex"]', { hasText: "System" }).waitFor();
   // Pinned sessions from every project sit above the projects, and every
   // project lists its sessions; opening one selects its project.
   await page.locator(".sidebar__group", { hasText: "Pinned" }).waitFor();

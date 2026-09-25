@@ -551,6 +551,34 @@ const ACTIONS = {
   "layout-2": () => setLayout(2),
   "layout-4": () => setLayout(4),
   "awake-settings": () => openSettings("General"),
+  "workspace-menu": () => {
+    state.menu = state.menu?.kind === "workspace" ? null : { kind: "workspace" };
+    render();
+  },
+  "account-menu": async () => {
+    const agent = state.actionData?.agent ?? "claude";
+    await loadProfiles();
+    state.menu = { kind: "account", agent };
+    render();
+  },
+  "selection-archive": async () => {
+    const ids = [...state.selected];
+    const running = ids.filter((id) => isRunning(id));
+    for (const id of ids.filter((id) => !isRunning(id))) await done("session_archive", { id, archived: true });
+    state.selected = new Set(running);
+    await loadWorkspace();
+    if (running.length) toast(`${plural(running.length, "running session")} kept — stop ${running.length === 1 ? "it" : "them"} first.`);
+    render();
+  },
+  "selection-close": () => {
+    for (const id of state.selected) if (state.tabs.includes(id)) closeTab(id);
+    state.selected = new Set();
+    render();
+  },
+  "selection-clear": () => {
+    state.selected = new Set();
+    render();
+  },
   "awake-menu": () => {
     state.menu = state.menu?.kind === "awake" ? null : { kind: "awake" };
     render();
@@ -990,7 +1018,7 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
+      "[data-layout],[data-needs-you],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -1092,8 +1120,10 @@ app.addEventListener("click", async (event) => {
   if (data.action) {
     // Menus open under the control that asked for them.
     const box = target.getBoundingClientRect();
-    state.anchor = { top: box.bottom + 4, right: Math.max(8, window.innerWidth - box.right) };
+    state.anchor = { top: box.bottom + 4, right: Math.max(8, window.innerWidth - box.right), left: box.left };
     const handler = ACTIONS[data.action];
+    // What else the clicked control says, for actions that need it.
+    state.actionData = { ...data };
     if (handler) return handler();
     return;
   }
@@ -1133,6 +1163,12 @@ app.addEventListener("click", async (event) => {
     return terminal.start(data.start);
   }
   if (data.stop) return terminal.stop(data.stop);
+  // ⌘-click (Ctrl-click elsewhere) picks sessions in the sidebar.
+  if (data.open && (event.metaKey || event.ctrlKey) && target.classList.contains("side-session")) {
+    if (state.selected.has(data.open)) state.selected.delete(data.open);
+    else state.selected.add(data.open);
+    return render();
+  }
   if (data.open) return openAnywhere(data.open);
   if (data.split || data.splitInto) {
     const [pane, id] = data.splitInto
@@ -1224,6 +1260,31 @@ app.addEventListener("click", async (event) => {
     const next = { ...(state.settings.shortcuts ?? {}) };
     delete next[data.shortcutReset];
     return savePref({ shortcuts: next });
+  }
+  if (data.groupToggle) {
+    const key = `group:${data.groupToggle}`;
+    if (state.collapsed.has(key)) state.collapsed.delete(key);
+    else state.collapsed.add(key);
+    saveCollapsed();
+    return render();
+  }
+  if (data.workspaceOption) {
+    state.menu = null;
+    if (data.workspaceOption === "hierarchy") {
+      state.groupHierarchy = !state.groupHierarchy;
+      try {
+        localStorage.setItem("convoy.groupHierarchy", state.groupHierarchy ? "1" : "0");
+      } catch {}
+      return render();
+    }
+    if (data.workspaceOption === "sort") return savePref({ sort_projects: !state.settings.sort_projects });
+    if (data.workspaceOption === "compact") return savePref({ compact_sidebar: state.settings.compact_sidebar === false });
+  }
+  if (data.accountPick) {
+    const [agent, id] = data.accountPick.split(":");
+    rememberAccount(agent, id);
+    state.menu = null;
+    return render();
   }
   if (data.historyCopy) {
     await navigator.clipboard.writeText(data.historyCopy);
@@ -3150,6 +3211,8 @@ try {
   await loadSettings();
   applyTheme();
   await loadWorkspace({ required: true });
+  // The status bar's account chips need them.
+  await loadProfiles();
   // The window opens on Home, as the macOS app's does.
   if (state.projects.length) openHome();
   await applyKeepAwake();

@@ -11,7 +11,7 @@ import {
   setting,
   toggle,
 } from "./ui.js";
-import { anySession, isRunning, project, session, state, visibleSessions } from "./state.js";
+import { activeAccount, anySession, isRunning, project, session, state, visibleSessions } from "./state.js";
 import { TASK_STATUSES, runnable } from "./views-planning.js";
 import { missingConversation } from "./terminal.js";
 
@@ -59,7 +59,7 @@ function stateDot(item) {
 function sidebarSession(item, { showProject = false } = {}) {
   const owner = showProject ? state.projects.find((entry) => entry.id === item.project_id) : null;
   return `
-    <button class="side-session" data-open="${escape(item.id)}"
+    <button class="side-session${state.selected?.has(item.id) ? " side-session--selected" : ""}" data-open="${escape(item.id)}"
             data-menu-session="${escape(item.id)}"
             aria-current="${item.id === state.sessionId}"
             title="${escape(item.notes || item.title)}">
@@ -173,12 +173,22 @@ export function sidebar() {
            .map((entry) => sidebarSession(entry, { showProject: true }))
            .join("")}</div>`
       : "",
-    ...[...groups].map(
-      ([name, items]) =>
-        `<div class="sidebar__group">${escape(name)}</div>${items.map(row).join("")}`,
-    ),
+    // With the hierarchy on, a group is a row that folds its projects away,
+    // as on macOS; off, its projects sit in the list like any other.
+    ...(state.groupHierarchy === false
+      ? [...groups.values()].flat().map(row)
+      : [...groups].map(([name, items]) => {
+          const folded = state.collapsed.has(`group:${name}`) && !needle;
+          return `
+            <button class="sidebar__group sidebar__group--fold" data-group-toggle="${escape(name)}" aria-expanded="${!folded}">
+              ${folded ? icons.chevronRight : icons.chevronDown}<span>${escape(name)}</span>
+              <span class="project-row__count">${items.length}</span>
+            </button>
+            ${folded ? "" : `<div class="sidebar__children">${items.map(row).join("")}</div>`}`;
+        })),
     ...loose.map(row),
   ].join("");
+  const selected = state.selected?.size ?? 0;
 
   return `
     <aside class="sidebar">
@@ -193,11 +203,22 @@ export function sidebar() {
       </div>
       <div class="sidebar__label">
         <span>Projects</span>
+        <button class="sidebar__add" data-action="workspace-menu" title="Workspace options">${icons.more}</button>
         <button class="sidebar__add" data-action="open-folder" title="Open folder">${icons.plus}</button>
       </div>
       <div class="sidebar__list" data-scroll="sidebar">
         ${body || `<div class="sidebar__none">${state.search ? "No matching projects" : "No projects yet."}</div>`}
       </div>
+      ${
+        selected
+          ? `<div class="sidebar__selection">
+               <span>${selected} selected</span>
+               ${button({ label: "Archive", action: "selection-archive", kind: "quiet" })}
+               ${button({ label: "Close tabs", action: "selection-close", kind: "quiet" })}
+               ${button({ icon: "close", action: "selection-clear", kind: "quiet", title: "Clear selection" })}
+             </div>`
+          : ""
+      }
       <div class="sidebar__footer">
         <div class="sidebar__open">
           <button class="sidebar__link" data-action="open-folder">${icons.folder} Open folder…</button>
@@ -212,6 +233,8 @@ export function sidebar() {
 /// Right-click and "…" menus for a project or a sidebar session, opened at
 /// the pointer. Entries mirror the macOS app's.
 export function contextMenu(menu) {
+  if (menu.kind === "workspace") return workspaceMenu();
+  if (menu.kind === "account") return accountMenu(menu.agent);
   if (menu.kind === "limits") return limitsPanel();
   if (menu.kind === "awake") return awakeMenu();
   if (menu.kind === "tab") return tabMenu(menu);
@@ -677,6 +700,7 @@ export function status() {
         ${icons.limits} <strong>AI Limits</strong>
         ${limitsSummary()}
       </button>
+      ${accountChip("claude")}${accountChip("codex")}
       <span class="status__spacer"></span>
       ${queues ? `<span class="status__item">${icons.bolt} ${queues} queue${queues > 1 ? "s" : ""}</span><span class="status__sep"></span>` : ""}
       ${needsYouButton()}
@@ -975,6 +999,56 @@ function needsYouButton() {
 }
 
 /// "Awake ⌄", as on macOS: the three modes, then Settings.
+/// The sidebar's own options, as the macOS sidebar menu has them.
+function workspaceMenu() {
+  const item = (on, act, name) => `
+    <button class="menu__item" data-workspace-option="${act}">
+      <span class="menu__icon">${on ? icons.check : ""}</span><span>${name}</span>
+    </button>`;
+  return `
+    <div class="scrim scrim--clear" data-dismiss="1">
+      <div class="menu menu--anchored" role="menu" style="${anchorStyle()}">
+        <div class="menu__heading">Sidebar</div>
+        ${item(state.groupHierarchy !== false, "hierarchy", "Show group hierarchy")}
+        ${item(!!state.settings.sort_projects, "sort", "Sort projects by name")}
+        ${item(state.settings.compact_sidebar !== false, "compact", "Compact rows")}
+        <div class="menu__divider"></div>
+        <button class="menu__item" data-action="settings"><span class="menu__icon">${icons.gear}</span><span>Settings…</span></button>
+      </div>
+    </div>`;
+}
+
+/// Which account new sessions of one agent start with, from the status bar.
+function accountMenu(agent) {
+  const active = activeAccount(agent);
+  const item = (id, name) => `
+    <button class="menu__item" data-account-pick="${agent}:${escape(id)}">
+      <span class="menu__icon">${active === id ? icons.check : ""}</span><span>${escape(name)}</span>
+    </button>`;
+  return `
+    <div class="scrim scrim--clear" data-dismiss="1">
+      <div class="menu menu--status" role="menu" style="left:${Math.max(8, state.anchor?.left ?? 8)}px">
+        <div class="menu__heading">${agent === "claude" ? "Claude Code" : "Codex"} account</div>
+        ${item("", "System login")}
+        ${(state.profiles ?? []).filter((profile) => profile.agent === agent).map((profile) => item(profile.id, profile.label)).join("")}
+        <div class="menu__divider"></div>
+        <button class="menu__item" data-settings-open="Accounts"><span class="menu__icon">${icons.person}</span><span>Manage accounts…</span></button>
+      </div>
+    </div>`;
+}
+
+/// The account chip for an agent, shown once there is an account to pick.
+function accountChip(agent) {
+  if (!(state.profiles ?? []).some((profile) => profile.agent === agent)) return "";
+  const id = activeAccount(agent);
+  const name = id ? state.profiles.find((profile) => profile.id === id)?.label : "System";
+  return `
+    <button class="status__item status__button" data-action="account-menu" data-agent="${agent}"
+            title="Account for new ${agent === "claude" ? "Claude Code" : "Codex"} sessions">
+      ${agentIcon(agent, 12)} ${escape(name ?? "System")} ${icons.chevronDown}
+    </button>`;
+}
+
 function awakeMenu() {
   const mode = state.settings.keep_awake;
   const item = (value, name) => `

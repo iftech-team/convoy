@@ -64,6 +64,16 @@ export const state = {
   agentState: new Map(),
   // Projects the user folded shut in the sidebar, kept across launches.
   collapsed: new Set(remembered(COLLAPSED)),
+  // Groups as folding rows (on) or a flat list (off); per machine.
+  groupHierarchy: (() => {
+    try {
+      return localStorage.getItem("convoy.groupHierarchy") !== "0";
+    } catch {
+      return true;
+    }
+  })(),
+  // Sessions picked with ⌘-click (Ctrl-click elsewhere) in the sidebar.
+  selected: new Set(),
   // Open terminal tabs, in the order shown, and what each one displays.
   tabs: [],
   tabInfo: {},
