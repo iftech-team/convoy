@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+import { chromium, webkit } from "playwright";
 import { createServer } from "vite";
 import assert from "node:assert/strict";
 
@@ -7,9 +7,17 @@ const server = await createServer({ server: { host: "127.0.0.1", port: 1421, str
 await server.listen();
 let browser;
 try {
-  browser = await chromium.launch({ executablePath: process.env.CONVOY_TEST_BROWSER || undefined, headless: true });
+  // CONVOY_TEST_ENGINE=webkit runs it in WebKit, which is what the macOS
+  // app draws with; Chromium is the default.
+  browser =
+    process.env.CONVOY_TEST_ENGINE === "webkit"
+      ? await webkit.launch({ headless: true })
+      : await chromium.launch({ executablePath: process.env.CONVOY_TEST_BROWSER || undefined, headless: true });
   const page = await browser.newPage({ viewport: { width: 1280, height: 840 } });
-  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:1421" });
+  // Headless WebKit lets the page write the clipboard but not the test read
+  // it back, so those checks run in Chromium only.
+  const readClipboard = () => (process.env.CONVOY_TEST_ENGINE === "webkit" ? Promise.resolve(null) : page.evaluate(() => navigator.clipboard.readText()));
+  if (process.env.CONVOY_TEST_ENGINE !== "webkit") await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:1421" });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript(() => {
@@ -396,9 +404,9 @@ try {
   await page.locator('[data-files-view="log"]').click();
   await page.locator('[data-commit="abc1234def5678"]').click();
   await page.locator('[data-action="copy-sha"]').click();
-  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), "abc1234def5678");
+  if (await readClipboard() !== null) assert.equal(await readClipboard(), "abc1234def5678");
   await page.locator('[data-action="copy-subject"]').click();
-  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), "Fix the login race");
+  if (await readClipboard() !== null) assert.equal(await readClipboard(), "Fix the login race");
   // A new branch can start from any base.
   await page.locator('[data-files-view="branches"]').click();
   await page.locator('[data-action="new-branch"]').click();
@@ -423,7 +431,7 @@ try {
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_link_session" && c.args.sessionId === "builder"));
   await work.locator("[data-spec-brief]").click();
   await page.locator(".toast", { hasText: "Review brief copied" }).waitFor();
-  assert.match(await page.evaluate(() => navigator.clipboard.readText()), /Review the login changes/);
+  if (await readClipboard() !== null) assert.match(await readClipboard(), /Review the login changes/);
   await page.keyboard.press("Escape");
   // "Blocked by": the task waits for another, and says so.
   await page.locator('[data-tab="tasks"]').click();
@@ -445,6 +453,12 @@ try {
   await page.keyboard.press("Escape");
   await page.locator('.row[data-task="task"] [data-task-more="task"]').click();
   await page.locator('[data-menu-act="task-delete"]').click();
+  // A destructive button keeps its colour under the pointer.
+  await page.locator('.modal [data-action="confirm-generic"]').hover();
+  assert.equal(
+    await page.locator('.modal [data-action="confirm-generic"]').evaluate((node) => getComputedStyle(node).backgroundColor),
+    "rgb(239, 68, 68)",
+  );
   await page.locator('.modal [data-action="confirm-generic"]').click();
   await page.locator('.row[data-task="task"]').waitFor({ state: "detached" });
 

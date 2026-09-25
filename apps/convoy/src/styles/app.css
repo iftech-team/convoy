@@ -39,6 +39,33 @@ input {
   color: inherit;
 }
 
+/* Selects drawn like the text fields beside them. The system control is
+   shorter than an input in WebKit and did not line up in a form. */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  font: inherit;
+  color: var(--text);
+  padding-right: 30px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%238a8a8e' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 4 5 1.5 7.5 4M2.5 6 5 8.5 7.5 6'/%3E%3C/svg%3E")
+    no-repeat right 11px center / 10px 10px;
+  outline: none;
+  cursor: pointer;
+}
+
+select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+select:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 ::selection {
   background: var(--accent-soft);
 }
@@ -1453,8 +1480,18 @@ input {
   color: #fff;
 }
 
-.button--danger-solid:hover {
-  filter: brightness(1.06);
+/* Its own hover and press: `.button:hover` would otherwise paint the light
+   hover background behind white text, and the button vanished under the
+   pointer. */
+.button--danger-solid:hover,
+.button--danger-solid:active {
+  background: var(--state-failed);
+  color: #fff;
+  filter: brightness(1.08);
+}
+
+.button--danger-solid:active {
+  filter: brightness(0.94);
 }
 
 .modal--wide {
@@ -3518,14 +3555,12 @@ input {
 }
 
 /* The New Session sheet */
+.field select,
 .field__select {
   width: 100%;
-  padding: 7px 8px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
+  /* The height a text field has, so a row of both lines up. */
+  height: 39px;
+  padding: 0 30px 0 10px;
 }
 
 .field-row {
