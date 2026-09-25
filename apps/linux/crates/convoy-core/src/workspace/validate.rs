@@ -8,7 +8,7 @@
 use crate::json::{
     array, boolean, integer, nonempty, safe_integer, string, truthy, truthy_opt, utf16_len,
 };
-use crate::patterns::{SHORTCUT, UUID};
+use crate::patterns::{BRANCH_PREFIX, SHORTCUT, UUID};
 use crate::{bail, ensure, Result};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -219,6 +219,60 @@ pub fn validate_settings(settings: &Value) -> Result<()> {
     }
     if let Some(value) = settings.get("notifications") {
         ensure!(value.is_boolean(), "Invalid notification setting.");
+    }
+    for key in [
+        "worktreeByDefault",
+        "sortProjects",
+        "yoloClaude",
+        "yoloCodex",
+        "notifyWaiting",
+        "notifyDone",
+        "notifyWhenFocused",
+        "autoTrust",
+        "statusHooks",
+        "gitStatus",
+        "compactSidebar",
+    ] {
+        if let Some(value) = settings.get(key) {
+            ensure!(value.is_boolean(), "Invalid settings.");
+        }
+    }
+    if let Some(value) = settings.get("branchPrefix") {
+        ensure!(
+            value
+                .as_str()
+                .is_some_and(|prefix| utf16_len(prefix) <= 60 && BRANCH_PREFIX.is_match(prefix)),
+            "Invalid branch prefix. Use letters, digits, dots, dashes and slashes."
+        );
+    }
+    if let Some(value) = settings.get("notificationSound") {
+        ensure!(
+            value
+                .as_str()
+                .is_some_and(|sound| crate::model::NOTIFICATION_SOUNDS.contains(&sound)),
+            "Unknown notification sound."
+        );
+    }
+    if settings.get("gitPollSeconds").is_some() {
+        ensure!(
+            integer(settings.get("gitPollSeconds"))
+                .is_some_and(|value| (0.0..=600.0).contains(&value)),
+            "Git refresh must be between 0 and 600 seconds."
+        );
+    }
+    for key in ["worktreeSetup", "worktreeShared"] {
+        if let Some(value) = settings.get(key) {
+            ensure!(
+                value.as_str().is_some_and(|text| utf16_len(text) <= 16_000),
+                "Worktree setup is too long."
+            );
+        }
+    }
+    if let Some(value) = settings.get("reviewTemplate") {
+        ensure!(
+            value.as_str().is_some_and(|text| utf16_len(text) <= 16_000),
+            "The review template is too long."
+        );
     }
     Ok(())
 }

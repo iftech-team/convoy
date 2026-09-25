@@ -1,6 +1,6 @@
 // Inline SVG rather than an icon font: a few dozen glyphs do not justify a
 // download, and `currentColor` makes them follow the theme for free.
-const icon = (paths, size = 16) =>
+export const icon = (paths, size = 16) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none"
         stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
         stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
@@ -53,6 +53,14 @@ export const icons = {
   sparkles: icon('<path d="M6.5 2.5 7.6 6 11 7l-3.4 1.1L6.5 11.5 5.4 8.1 2 7l3.4-1z"/><path d="M12 10.5l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z"/>', 14),
   keyboard: icon('<rect x="1.8" y="4" width="12.4" height="8" rx="1.3"/><path d="M4.5 6.5h.1M7 6.5h.1M9.5 6.5h.1M12 6.5h-.1M5 9.5h6"/>', 14),
   bell: icon('<path d="M4 11V7.5a4 4 0 0 1 8 0V11l1 1.2H3z"/><path d="M6.8 13.8a1.3 1.3 0 0 0 2.4 0"/>', 14),
+  sidebar: icon('<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6 3v10"/>', 14),
+  checkCircle: icon('<circle cx="8" cy="8" r="6" fill="currentColor" stroke="none"/><path d="m5.5 8.2 1.7 1.7 3.3-3.6" stroke="#fff"/>', 13),
+  paneOne: icon('<rect x="2.5" y="3" width="11" height="10" rx="1.2"/>', 14),
+  home: icon('<path d="M2.5 7.5 8 3l5.5 4.5V13H9.8V9.8H6.2V13H2.5z"/>', 14),
+  book: icon('<path d="M3 2.8h4a1.5 1.5 0 0 1 1 .5 1.5 1.5 0 0 1 1-.5h4v10H9a1 1 0 0 0-1 .9 1 1 0 0 0-1-.9H3z"/><path d="M8 3.3v10.4"/>', 14),
+  doc: icon('<path d="M3.5 1.8h6l3 3v9.4h-9z"/><path d="M9.5 1.8v3h3M5.5 8h5M5.5 10.5h5"/>', 13),
+  page: icon('<path d="M3.5 1.8h6l3 3v9.4h-9z"/><path d="M9.5 1.8v3h3"/>', 13),
+  bell: icon('<path d="M4 11V7.5a4 4 0 0 1 8 0V11l1 1.2H3z"/><path d="M6.8 13.8a1.3 1.3 0 0 0 2.4 0"/>', 14),
   warn: icon('<path d="M8 2.8 14 13H2z"/><path d="M8 6.8v2.6M8 11.3v.1"/>', 14),
 };
 
@@ -79,8 +87,94 @@ export function projectTint(project) {
   return PALETTE[Number(hash % BigInt(PALETTE.length))];
 }
 
-/** The project's emoji, or a folder in its colour. */
-export const projectIcon = (project, size = 15) =>
-  project.icon && !/^(gh|img|sf):/.test(project.icon)
-    ? `<span class="project-icon project-icon--emoji" style="font-size:${size - 1}px">${project.icon.replace(/[&<>"']/g, "")}</span>`
-    : `<span class="project-icon" style="color:${projectTint(project)}">${icon('<path d="M1.8 4.2h4.1l1.2 1.5h7.1v6.6a.8.8 0 0 1-.8.8H2.6a.8.8 0 0 1-.8-.8z"' + (project.group_folder ? ' fill="currentColor" fill-opacity=".25"' : "") + "/>", size)}</span>`;
+/// The macOS app's symbol choices, keyed by their SF Symbols names so a
+/// project's `sf:` icon means the same thing in either app.
+export const SYMBOLS = {
+  folder: '<path d="M1.8 4.2h4.1l1.2 1.5h7.1v6.6a.8.8 0 0 1-.8.8H2.6a.8.8 0 0 1-.8-.8z"/>',
+  shippingbox: '<path d="M2.5 5 8 2.5 13.5 5v6L8 13.5 2.5 11z"/><path d="M2.5 5 8 7.5 13.5 5M8 7.5v6M5.2 3.8l5.5 2.5"/>',
+  cart: '<path d="M1.8 2.5h2l1.5 7.5h7l1.4-5.5H4.3"/><circle cx="6" cy="12.8" r="1"/><circle cx="11.5" cy="12.8" r="1"/>',
+  creditcard: '<rect x="1.8" y="3.5" width="12.4" height="9" rx="1.3"/><path d="M1.8 6.5h12.4M4 10h3"/>',
+  iphone: '<rect x="4.5" y="1.8" width="7" height="12.4" rx="1.5"/><path d="M7 3.5h2"/>',
+  globe: '<circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12"/>',
+  "server.rack": '<rect x="2.5" y="2.5" width="11" height="4.5" rx="1"/><rect x="2.5" y="9" width="11" height="4.5" rx="1"/><path d="M5 4.8h.1M5 11.3h.1"/>',
+  cpu: '<rect x="4" y="4" width="8" height="8" rx="1"/><rect x="6.3" y="6.3" width="3.4" height="3.4"/><path d="M6 2v2M10 2v2M6 12v2M10 12v2M2 6h2M2 10h2M12 6h2M12 10h2"/>',
+  terminal: '<rect x="1.8" y="2.5" width="12.4" height="11" rx="1.3"/><path d="m4.5 6 2 2-2 2M8 10.5h3.5"/>',
+  gearshape: '<circle cx="8" cy="8" r="2"/><path d="M8 1.8v1.7M8 12.5v1.7M1.8 8h1.7M12.5 8h1.7M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M3.6 12.4l1.2-1.2M11.2 4.8l1.2-1.2"/>',
+  "building.2": '<path d="M2 14V4.5l5-2V14M7 6.5l7 1.5V14M1.5 14h13M4 6h1M4 8.5h1M4 11h1M9.5 10h1.5M9.5 12h1.5"/>',
+  "truck.box": '<path d="M1.5 4h8v7h-8zM9.5 6.5h2.7l2.3 2.5V11h-5"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="11.5" cy="12" r="1.2"/>',
+  "chart.bar": '<path d="M2 14h12M3.5 12V8M7 12V4M10.5 12V6.5M14 12V9.5"/>',
+  "lock.shield": '<path d="M8 1.8 13 3.8v4c0 3-2.2 5.2-5 6.4-2.8-1.2-5-3.4-5-6.4v-4z"/><rect x="6" y="7.5" width="4" height="3.2" rx=".6"/><path d="M6.8 7.5V6.5a1.2 1.2 0 0 1 2.4 0v1"/>',
+  "doc.text": '<path d="M3.5 1.8h6l3 3v9.4h-9z"/><path d="M9.5 1.8v3h3M5.5 8h5M5.5 10.5h5"/>',
+  network: '<circle cx="8" cy="3.5" r="1.7"/><circle cx="3.5" cy="12.5" r="1.7"/><circle cx="12.5" cy="12.5" r="1.7"/><path d="M8 5.2v3M8 8.2 4.5 11M8 8.2l3.5 2.8"/>',
+  cloud: '<path d="M4.5 12.5a3 3 0 0 1-.3-6A4 4 0 0 1 12 6.2a3.2 3.2 0 0 1 .4 6.3z"/>',
+  "wrench.and.screwdriver": '<path d="M9.5 2.2a3 3 0 0 0 3.8 3.8L6 13.3a1.4 1.4 0 0 1-2-2l7.3-7.3M2.5 2.5l3 3M2 3.5 3.5 2"/>',
+};
+
+/// Image icons are read through the backend once and kept as data URLs.
+const images = new Map();
+const pending = new Set();
+let onImage = () => {};
+export const onIconLoaded = (handler) => {
+  onImage = handler;
+};
+
+function imageFor(path) {
+  if (images.has(path)) return images.get(path);
+  if (!pending.has(path)) {
+    pending.add(path);
+    import("@tauri-apps/api/core")
+      .then(({ invoke }) => invoke("icon_data", { path }))
+      .then((url) => images.set(path, url))
+      .catch(() => images.set(path, null))
+      .finally(() => {
+        pending.delete(path);
+        onImage();
+      });
+  }
+  return undefined;
+}
+
+export const forgetIcon = (path) => images.delete(path);
+
+/**
+ * The project's icon, as the macOS app draws it: an image (GitHub avatar,
+ * favicon, upload), a symbol, an emoji, or a folder in its colour. A chosen
+ * colour shows as a dot on anything but the folder.
+ */
+export function projectIcon(project, size = 15) {
+  const value = project.icon ?? "";
+  const tint = projectTint(project);
+  const dot = project.color && value ? `<span class="project-icon__dot" style="background:${project.color}"></span>` : "";
+  let inner;
+  if (/^(gh|img):/.test(value)) {
+    const url = imageFor(value.replace(/^(gh|img):/, ""));
+    inner = url
+      ? `<img src="${url}" width="${size}" height="${size}" alt="" />`
+      : icon(SYMBOLS.folder, size);
+  } else if (value.startsWith("sf:")) {
+    inner = icon(SYMBOLS[value.slice(3)] ?? SYMBOLS.folder, size);
+  } else if (value) {
+    inner = `<span style="font-size:${size - 1}px">${value.replace(/[&<>"']/g, "")}</span>`;
+  } else {
+    inner = icon(SYMBOLS.folder, size);
+  }
+  return `<span class="project-icon" style="color:${tint};width:${size + 2}px">${inner}${dot}</span>`;
+}
+
+/// The app icon — the same artwork as the macOS app's AppIcon.svg: three
+/// chevrons in convoy on the violet squircle, without the drop shadow that
+/// only reads at dock size.
+export const appMark = (size = 22) => `
+  <svg width="${size}" height="${size}" viewBox="100 100 824 824" aria-hidden="true">
+    <defs>
+      <linearGradient id="convoy-mark" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#6B78E6"/><stop offset="1" stop-color="#3D47A8"/>
+      </linearGradient>
+    </defs>
+    <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#convoy-mark)"/>
+    <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="86">
+      <path d="M300 340 L472 512 L300 684" stroke-opacity="0.45"/>
+      <path d="M440 340 L612 512 L440 684" stroke-opacity="0.7"/>
+      <path d="M580 340 L752 512 L580 684"/>
+    </g>
+  </svg>`;

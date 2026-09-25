@@ -41,11 +41,21 @@ pub struct ProjectPatch {
     pub setup_command: Option<String>,
     pub shared_paths: Option<String>,
     pub review_template: Option<String>,
+    /// `Some("")` clears it back to the global default.
+    pub default_agent: Option<String>,
+    pub base_ref: Option<String>,
+    pub branch_prefix: Option<String>,
+    pub task_mode: Option<String>,
+    pub auto_run_tasks: Option<bool>,
 }
 
 impl ProjectPatch {
-    fn values(&self) -> [Option<&String>; 8] {
+    fn values(&self) -> [Option<&String>; 12] {
         [
+            self.default_agent.as_ref(),
+            self.base_ref.as_ref(),
+            self.branch_prefix.as_ref(),
+            self.task_mode.as_ref(),
             self.title.as_ref(),
             self.group.as_ref(),
             self.color.as_ref(),
@@ -106,6 +116,23 @@ pub struct SettingsPatch {
     pub hibernate_minutes: Option<i64>,
     pub shortcuts: Option<std::collections::BTreeMap<String, String>>,
     pub claude_usage: Option<bool>,
+    pub worktree_by_default: Option<bool>,
+    pub branch_prefix: Option<String>,
+    pub sort_projects: Option<bool>,
+    pub yolo_claude: Option<bool>,
+    pub yolo_codex: Option<bool>,
+    pub review_template: Option<String>,
+    pub notify_waiting: Option<bool>,
+    pub notify_done: Option<bool>,
+    pub notify_when_focused: Option<bool>,
+    pub notification_sound: Option<String>,
+    pub auto_trust: Option<bool>,
+    pub status_hooks: Option<bool>,
+    pub git_status: Option<bool>,
+    pub git_poll_seconds: Option<i64>,
+    pub compact_sidebar: Option<bool>,
+    pub worktree_setup: Option<String>,
+    pub worktree_shared: Option<String>,
 }
 
 pub struct Workspace {
@@ -205,6 +232,11 @@ impl Workspace {
                     setup_command: None,
                     shared_paths: None,
                     review_template: None,
+                    default_agent: None,
+                    base_ref: None,
+                    branch_prefix: None,
+                    task_mode: None,
+                    auto_run_tasks: None,
                     unknown: Default::default(),
                 });
             }
@@ -223,6 +255,47 @@ impl Workspace {
         );
         if let Some(title) = &patch.title {
             ensure!(!title.trim().is_empty(), "Enter a project name.");
+        }
+        if let Some(color) = patch.color.as_deref().filter(|value| !value.is_empty()) {
+            ensure!(
+                color.len() == 7
+                    && color.starts_with('#')
+                    && color[1..].chars().all(|c| c.is_ascii_hexdigit()),
+                "Enter a colour as #RRGGBB."
+            );
+        }
+        let default_agent = match patch.default_agent.as_deref() {
+            None => None,
+            Some("") => Some(None),
+            Some(value) => Some(Some(
+                Agent::parse(value).ok_or_else(|| ConvoyError::message("Unknown agent."))?,
+            )),
+        };
+        if let Some(prefix) = patch.branch_prefix.as_deref() {
+            ensure!(
+                crate::patterns::BRANCH_PREFIX.is_match(prefix.trim().trim_matches('/')),
+                "Invalid branch prefix. Use letters, digits, dots, dashes and slashes."
+            );
+        }
+        if let Some(base) = patch
+            .base_ref
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            ensure!(
+                !base.starts_with('-')
+                    && base.len() <= 150
+                    && base
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || "._/-~^@{}".contains(c)),
+                "Invalid base ref."
+            );
+        }
+        if let Some(mode) = patch.task_mode.as_deref() {
+            ensure!(
+                ["pr", "push", "none", ""].contains(&mode),
+                "Unknown task mode."
+            );
         }
         if let Some(path) = patch.path.as_deref().filter(|value| !value.is_empty()) {
             let path = Path::new(path);
@@ -259,6 +332,26 @@ impl Workspace {
             }
             if let Some(value) = patch.review_template {
                 project.review_template = Some(value);
+            }
+            if let Some(value) = default_agent {
+                project.default_agent = value;
+            }
+            // An empty value falls back to the global setting.
+            let optional = |value: String| {
+                let value = value.trim().trim_matches('/').to_string();
+                (!value.is_empty()).then_some(value)
+            };
+            if let Some(value) = patch.base_ref {
+                project.base_ref = optional(value);
+            }
+            if let Some(value) = patch.branch_prefix {
+                project.branch_prefix = optional(value);
+            }
+            if let Some(value) = patch.task_mode {
+                project.task_mode = optional(value);
+            }
+            if let Some(value) = patch.auto_run_tasks {
+                project.auto_run_tasks = Some(value);
             }
             Ok(())
         })
@@ -415,6 +508,32 @@ impl Workspace {
             hibernate_minutes: patch.hibernate_minutes.unwrap_or(current.hibernate_minutes),
             shortcuts: patch.shortcuts.unwrap_or(current.shortcuts),
             claude_usage: patch.claude_usage.unwrap_or(current.claude_usage),
+            worktree_by_default: patch
+                .worktree_by_default
+                .unwrap_or(current.worktree_by_default),
+            branch_prefix: patch
+                .branch_prefix
+                .map(|value| value.trim().trim_matches('/').to_string())
+                .unwrap_or(current.branch_prefix),
+            sort_projects: patch.sort_projects.unwrap_or(current.sort_projects),
+            yolo_claude: patch.yolo_claude.unwrap_or(current.yolo_claude),
+            yolo_codex: patch.yolo_codex.unwrap_or(current.yolo_codex),
+            review_template: patch.review_template.unwrap_or(current.review_template),
+            notify_waiting: patch.notify_waiting.unwrap_or(current.notify_waiting),
+            notify_done: patch.notify_done.unwrap_or(current.notify_done),
+            notify_when_focused: patch
+                .notify_when_focused
+                .unwrap_or(current.notify_when_focused),
+            notification_sound: patch
+                .notification_sound
+                .unwrap_or(current.notification_sound),
+            auto_trust: patch.auto_trust.unwrap_or(current.auto_trust),
+            status_hooks: patch.status_hooks.unwrap_or(current.status_hooks),
+            git_status: patch.git_status.unwrap_or(current.git_status),
+            git_poll_seconds: patch.git_poll_seconds.unwrap_or(current.git_poll_seconds),
+            compact_sidebar: patch.compact_sidebar.unwrap_or(current.compact_sidebar),
+            worktree_setup: patch.worktree_setup.unwrap_or(current.worktree_setup),
+            worktree_shared: patch.worktree_shared.unwrap_or(current.worktree_shared),
             unknown: current.unknown,
         };
         validate_settings(&serde_json::to_value(&next)?)?;
@@ -452,6 +571,14 @@ impl Workspace {
     }
 
     // ---- activity ------------------------------------------------------
+
+    /// Empties the activity feed, as its Clear button does.
+    pub fn clear_activity(&mut self) -> Result<&State> {
+        self.update(|state| {
+            state.activity.clear();
+            Ok(())
+        })
+    }
 
     pub fn record(&mut self, kind: ActivityKind, session_id: &str, detail: &str) -> Result<&State> {
         let session = self.session(session_id)?;

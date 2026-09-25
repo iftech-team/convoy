@@ -13,7 +13,7 @@
 
 use crate::accounts::{account_environment, Account};
 use crate::provider::launch::LaunchSpec;
-use crate::provider::session_spec;
+use crate::provider::{permission_flags, session_spec_with};
 use crate::telemetry;
 use crate::workspace::model::{ActivityKind, Agent, Session, TaskStatus};
 use crate::workspace::Workspace;
@@ -107,22 +107,32 @@ pub fn plan_launch(
     }
 
     let account = prepare_account(workspace, storage, &session)?;
+    let settings = workspace.settings();
     let settings_file = match session.agent {
-        Agent::Claude => Some(telemetry::configuration(
-            &storage.telemetry(),
-            &session,
-            executable,
-            workspace.settings().claude_usage,
-        )?),
-        Agent::Codex => None,
+        Agent::Claude if settings.status_hooks || settings.claude_usage => {
+            Some(telemetry::configuration_with(
+                &storage.telemetry(),
+                &session,
+                executable,
+                settings.claude_usage,
+                settings.status_hooks,
+            )?)
+        }
+        _ => None,
     };
-    let spec = session_spec(
+    // Choosing the folder in Convoy is the consent; without this every new
+    // worktree would stop on the agent's "trust this folder?" prompt.
+    if settings.auto_trust {
+        crate::trust::approve(session.agent, &directory, &account.env);
+    }
+    let spec = session_spec_with(
         &session,
         settings_file
             .as_ref()
             .map(|file| file.to_string_lossy())
             .as_deref(),
         &account.env,
+        &permission_flags(session.agent, workspace.settings()),
     );
 
     Ok(LaunchPlan {

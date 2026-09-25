@@ -343,7 +343,12 @@ pub fn worktree_create(
 
     let directory = repositories.with(&plan.project_path, || {
         convoy_core::Git::default()
-            .create_worktree(&plan.project_path, &root, &plan.branch)
+            .create_worktree_from(
+                &plan.project_path,
+                &root,
+                &plan.branch,
+                plan.base_ref.as_deref(),
+            )
             .map_err(|error| error.to_string())
     })?;
     workspace
@@ -369,15 +374,9 @@ pub fn worktree_setup(id: String, workspace: State<'_, Workspace>) -> Result<(),
             .working_directory
             .clone()
             .ok_or_else(|| convoy_core::ConvoyError::message("This session has no worktree."))?;
-        let shared: Vec<String> = project
-            .shared_paths
-            .clone()
-            .unwrap_or_default()
-            .lines()
-            .map(|line| line.trim().to_string())
-            .filter(|line| !line.is_empty())
-            .collect();
-        Ok((project.path, directory, shared, project.setup_command))
+        // Settings' global setup first, then the project's own.
+        let (shared, command) = convoy_core::worktree::setup_parts(core, &project);
+        Ok((project.path, directory, shared, command))
     })?;
 
     convoy_core::worktree::setup(

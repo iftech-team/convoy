@@ -86,12 +86,37 @@ impl Git {
     /// `createWorktree()` — a new branch in its own directory, leaving the
     /// original checkout on its current branch.
     pub fn create_worktree(&self, repo: &Path, root: &Path, branch: &str) -> Result<PathBuf> {
+        self.create_worktree_from(repo, root, branch, None)
+    }
+
+    /// As [`Git::create_worktree`], starting from `base` (a branch, tag or
+    /// commit) instead of HEAD when one is given.
+    pub fn create_worktree_from(
+        &self,
+        repo: &Path,
+        root: &Path,
+        branch: &str,
+        base: Option<&str>,
+    ) -> Result<PathBuf> {
+        let base = base
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("HEAD");
+        ensure!(!base.starts_with('-'), "Invalid base ref.");
         ensure!(
             !branch.is_empty() && branch.len() <= 150 && !branch.starts_with('-'),
             "Enter a valid new branch name."
         );
         self.run(repo, &["check-ref-format", "--branch", branch])?;
-        self.run(repo, &["rev-parse", "--verify", "HEAD"])?;
+        self.run(
+            repo,
+            &["rev-parse", "--verify", &format!("{base}^{{commit}}")],
+        )
+        .map_err(|_| {
+            crate::ConvoyError::message(format!(
+                "The base ref {base} does not exist in this repository."
+            ))
+        })?;
         std::fs::create_dir_all(root)?;
         let directory = root.join(Uuid::new_v4().to_string());
         self.run(
@@ -103,7 +128,7 @@ impl Git {
                 "-b",
                 branch,
                 &directory.to_string_lossy(),
-                "HEAD",
+                base,
             ],
         )?;
         Ok(directory)

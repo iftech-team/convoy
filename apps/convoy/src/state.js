@@ -9,7 +9,7 @@ export const state = {
   settings: {
     theme: "system",
     default_agent: "claude",
-    font_size: 14,
+    font_size: 13,
     scrollback: 10000,
     claude_usage: false,
     notifications: false,
@@ -43,6 +43,11 @@ export const state = {
   agentState: new Map(),
   // Projects the user folded shut in the sidebar.
   collapsed: new Set(),
+  // Open terminal tabs, in the order shown, and what each one displays.
+  tabs: [],
+  tabInfo: {},
+  // Branch and changed files per project, for detailed sidebar rows.
+  projectGit: new Map(),
   // "settings" while the settings page replaces the window.
   page: null,
   settingsSection: "General",

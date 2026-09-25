@@ -4,8 +4,11 @@
 //! the web view shows state and passes input back, and the rules it obeys are
 //! the same ones the GTK and Electron builds obey, from the same crate.
 
+pub mod docs;
 pub mod files;
+pub mod icons;
 pub mod integrations;
+pub mod limits;
 pub mod planning;
 pub mod project;
 pub mod session;
@@ -119,6 +122,12 @@ pub struct ProjectView {
     pub path: String,
     pub group: Option<String>,
     pub icon: Option<String>,
+    pub color: Option<String>,
+    /// What new sessions and tasks here start with, when the project says.
+    pub default_agent: Option<String>,
+    pub branch_prefix: Option<String>,
+    pub task_mode: Option<String>,
+    pub auto_run_tasks: bool,
     pub sessions: usize,
     pub running: usize,
 }
@@ -200,6 +209,13 @@ pub fn workspace_read(
                     path: project.path.to_string_lossy().into_owned(),
                     group: project.group.clone(),
                     icon: project.icon.clone(),
+                    color: project.color.clone(),
+                    default_agent: project
+                        .default_agent
+                        .map(|agent| agent.as_str().to_string()),
+                    branch_prefix: project.branch_prefix.clone(),
+                    task_mode: project.task_mode.clone(),
+                    auto_run_tasks: project.auto_run_tasks == Some(true),
                     sessions: own.iter().filter(|session| !session.is_archived()).count(),
                     running: own
                         .iter()
@@ -228,6 +244,23 @@ pub struct SettingsView {
     pub keep_awake: String,
     pub hibernate_minutes: i64,
     pub shortcuts: std::collections::BTreeMap<String, String>,
+    pub worktree_by_default: bool,
+    pub branch_prefix: String,
+    pub sort_projects: bool,
+    pub yolo_claude: bool,
+    pub yolo_codex: bool,
+    pub review_template: String,
+    pub notify_waiting: bool,
+    pub notify_done: bool,
+    pub notify_when_focused: bool,
+    pub notification_sound: String,
+    pub auto_trust: bool,
+    pub status_hooks: bool,
+    pub git_status: bool,
+    pub git_poll_seconds: i64,
+    pub compact_sidebar: bool,
+    pub worktree_setup: String,
+    pub worktree_shared: String,
     pub storage: String,
 }
 
@@ -256,6 +289,23 @@ pub fn settings_read(workspace: State<'_, Workspace>) -> Result<SettingsView, St
             .to_string(),
             hibernate_minutes: settings.hibernate_minutes,
             shortcuts: settings.shortcuts.clone(),
+            worktree_by_default: settings.worktree_by_default,
+            branch_prefix: settings.branch_prefix.clone(),
+            sort_projects: settings.sort_projects,
+            yolo_claude: settings.yolo_claude,
+            yolo_codex: settings.yolo_codex,
+            review_template: settings.review_template.clone(),
+            notify_waiting: settings.notify_waiting,
+            notify_done: settings.notify_done,
+            notify_when_focused: settings.notify_when_focused,
+            notification_sound: settings.notification_sound.clone(),
+            auto_trust: settings.auto_trust,
+            status_hooks: settings.status_hooks,
+            git_status: settings.git_status,
+            git_poll_seconds: settings.git_poll_seconds,
+            compact_sidebar: settings.compact_sidebar,
+            worktree_setup: settings.worktree_setup.clone(),
+            worktree_shared: settings.worktree_shared.clone(),
             storage: storage.clone(),
         })
     })
@@ -272,6 +322,41 @@ pub struct SettingsInput {
     pub keep_awake: String,
     pub hibernate_minutes: i64,
     pub shortcuts: std::collections::BTreeMap<String, String>,
+    // Newer settings are optional, so a page that predates them still saves.
+    #[serde(default)]
+    pub worktree_by_default: Option<bool>,
+    #[serde(default)]
+    pub branch_prefix: Option<String>,
+    #[serde(default)]
+    pub sort_projects: Option<bool>,
+    #[serde(default)]
+    pub yolo_claude: Option<bool>,
+    #[serde(default)]
+    pub yolo_codex: Option<bool>,
+    #[serde(default)]
+    pub review_template: Option<String>,
+    #[serde(default)]
+    pub notify_waiting: Option<bool>,
+    #[serde(default)]
+    pub notify_done: Option<bool>,
+    #[serde(default)]
+    pub notify_when_focused: Option<bool>,
+    #[serde(default)]
+    pub notification_sound: Option<String>,
+    #[serde(default)]
+    pub auto_trust: Option<bool>,
+    #[serde(default)]
+    pub status_hooks: Option<bool>,
+    #[serde(default)]
+    pub git_status: Option<bool>,
+    #[serde(default)]
+    pub git_poll_seconds: Option<i64>,
+    #[serde(default)]
+    pub compact_sidebar: Option<bool>,
+    #[serde(default)]
+    pub worktree_setup: Option<String>,
+    #[serde(default)]
+    pub worktree_shared: Option<String>,
 }
 
 #[tauri::command]
@@ -302,6 +387,23 @@ pub fn settings_save(input: SettingsInput, workspace: State<'_, Workspace>) -> R
                 keep_awake: Some(keep_awake),
                 hibernate_minutes: Some(input.hibernate_minutes),
                 shortcuts: Some(input.shortcuts),
+                worktree_by_default: input.worktree_by_default,
+                branch_prefix: input.branch_prefix,
+                sort_projects: input.sort_projects,
+                yolo_claude: input.yolo_claude,
+                yolo_codex: input.yolo_codex,
+                review_template: input.review_template,
+                notify_waiting: input.notify_waiting,
+                notify_done: input.notify_done,
+                notify_when_focused: input.notify_when_focused,
+                notification_sound: input.notification_sound,
+                auto_trust: input.auto_trust,
+                status_hooks: input.status_hooks,
+                git_status: input.git_status,
+                git_poll_seconds: input.git_poll_seconds,
+                compact_sidebar: input.compact_sidebar,
+                worktree_setup: input.worktree_setup,
+                worktree_shared: input.worktree_shared,
             })
             .map(|_| ())
     })

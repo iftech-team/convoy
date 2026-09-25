@@ -58,6 +58,12 @@ pub struct ProjectInput {
     pub setup_command: Option<String>,
     pub shared_paths: Option<String>,
     pub review_template: Option<String>,
+    pub color: Option<String>,
+    pub default_agent: Option<String>,
+    pub base_ref: Option<String>,
+    pub branch_prefix: Option<String>,
+    pub task_mode: Option<String>,
+    pub auto_run_tasks: Option<bool>,
 }
 
 #[tauri::command]
@@ -77,6 +83,12 @@ pub fn project_edit(
                     setup_command: input.setup_command,
                     shared_paths: input.shared_paths,
                     review_template: input.review_template,
+                    color: input.color,
+                    default_agent: input.default_agent,
+                    base_ref: input.base_ref,
+                    branch_prefix: input.branch_prefix,
+                    task_mode: input.task_mode,
+                    auto_run_tasks: input.auto_run_tasks,
                     ..Default::default()
                 },
             )
@@ -123,6 +135,12 @@ pub struct ProjectDetail {
     pub setup_command: String,
     pub shared_paths: String,
     pub review_template: String,
+    pub color: String,
+    pub default_agent: String,
+    pub base_ref: String,
+    pub branch_prefix: String,
+    pub task_mode: String,
+    pub auto_run_tasks: bool,
 }
 
 #[tauri::command]
@@ -141,6 +159,15 @@ pub fn project_detail(
             setup_command: project.setup_command.clone().unwrap_or_default(),
             shared_paths: project.shared_paths.clone().unwrap_or_default(),
             review_template: project.review_template.clone().unwrap_or_default(),
+            color: project.color.clone().unwrap_or_default(),
+            default_agent: project
+                .default_agent
+                .map(|agent| agent.as_str().to_string())
+                .unwrap_or_default(),
+            base_ref: project.base_ref.clone().unwrap_or_default(),
+            branch_prefix: project.branch_prefix.clone().unwrap_or_default(),
+            task_mode: project.task_mode.clone().unwrap_or_default(),
+            auto_run_tasks: project.auto_run_tasks == Some(true),
         })
     })
 }

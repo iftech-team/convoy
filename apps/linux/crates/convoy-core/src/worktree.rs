@@ -166,6 +166,8 @@ pub struct CreatePlan {
     /// Shared files and the setup command the user will be asked about.
     pub shared_paths: Vec<String>,
     pub setup_command: Option<String>,
+    /// Where the new branch starts; `None` is HEAD.
+    pub base_ref: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -195,21 +197,46 @@ pub fn plan_create(
         "Create a worktree on a new, stopped coding session."
     );
     let project = workspace.project(&session.project_id)?.clone();
+    let (shared_paths, setup_command) = setup_parts(workspace, &project);
     Ok(CreatePlan {
         session_id: id.to_string(),
         project_path: project.path,
         branch: branch.to_string(),
-        shared_paths: project
-            .shared_paths
-            .unwrap_or_default()
-            .lines()
-            .map(|line| line.trim().to_string())
-            .filter(|line| !line.is_empty())
-            .collect(),
-        setup_command: project
-            .setup_command
-            .filter(|value| !value.trim().is_empty()),
+        shared_paths,
+        setup_command,
+        base_ref: project.base_ref.clone(),
     })
+}
+
+/// What a new worktree of `project` gets: the global shared paths and setup
+/// command from Settings first, then the project's own. Duplicated paths are
+/// copied once.
+pub fn setup_parts(
+    workspace: &Workspace,
+    project: &crate::model::Project,
+) -> (Vec<String>, Option<String>) {
+    let settings = workspace.settings();
+    let mut shared: Vec<String> = Vec::new();
+    for line in settings
+        .worktree_shared
+        .lines()
+        .chain(project.shared_paths.as_deref().unwrap_or_default().lines())
+    {
+        let line = line.trim();
+        if !line.is_empty() && !shared.iter().any(|seen| seen == line) {
+            shared.push(line.to_string());
+        }
+    }
+    let commands: Vec<&str> = [
+        settings.worktree_setup.as_str(),
+        project.setup_command.as_deref().unwrap_or(""),
+    ]
+    .into_iter()
+    .map(str::trim)
+    .filter(|command| !command.is_empty())
+    .collect();
+    let command = (!commands.is_empty()).then(|| commands.join("\n"));
+    (shared, command)
 }
 
 /// Binds a created worktree to its session. If this fails the worktree and its

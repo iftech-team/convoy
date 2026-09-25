@@ -34,12 +34,17 @@ import {
   sessionsView,
   sidebar,
   contextMenu,
+  tabBar,
+  tabInfo,
   status,
   workbench,
 } from "./views.js";
 import { filesView, remoteMenu } from "./views-files.js";
 import { settingsPage } from "./views-settings.js";
-import { activityView, specsView, tasksView } from "./views-planning.js";
+import { projectSettingsPage } from "./views-project.js";
+import { forgetIcon, onIconLoaded } from "./icons.js";
+import { specsView, tasksView } from "./views-planning.js";
+import { PROJECT_DOC, docsView } from "./views-docs.js";
 
 const app = document.querySelector("#app");
 const imports = installTasks({ state, escape, icons, call, callDone: done, toast, render,
@@ -78,6 +83,7 @@ function content() {
       <p class="empty__text">Open a folder to begin.</p>
     </div>`;
   }
+  if (state.page === "project" && state.projectDraft) return projectSettingsPage();
   if (state.sessionId) return workbench();
   switch (state.tab) {
     case "reviews":
@@ -86,8 +92,8 @@ function content() {
       return specsView();
     case "tasks":
       return tasksView();
-    case "activity":
-      return activityView();
+    case "docs":
+      return docsView();
     default:
       return sessionsView();
   }
@@ -95,7 +101,120 @@ function content() {
 
 let shown = null;
 
+// ------------------------------------------------------------------- tabs --
+
+const TABS_KEY = "convoy.tabs";
+
+try {
+  state.sidebarHidden = localStorage.getItem("convoy.sidebarHidden") === "1";
+} catch {
+  state.sidebarHidden = false;
+}
+
+try {
+  const saved = JSON.parse(localStorage.getItem(TABS_KEY) ?? "null");
+  if (saved?.tabs) {
+    state.tabs = saved.tabs;
+    state.tabInfo = saved.info ?? {};
+  }
+} catch {
+  /* no saved tabs */
+}
+
+function saveTabs() {
+  try {
+    localStorage.setItem(TABS_KEY, JSON.stringify({ tabs: state.tabs, info: state.tabInfo }));
+  } catch {
+    /* the tabs simply are not restored next launch */
+  }
+}
+
+/// The open session always has a tab, and a tab remembers what it shows so
+/// it can be drawn while another project is open. Archived sessions leave.
+function syncTabs() {
+  let touched = false;
+  if (state.sessionId && !state.tabs.includes(state.sessionId)) {
+    state.tabs.push(state.sessionId);
+    touched = true;
+  }
+  for (const item of state.sessions) {
+    if (!state.tabs.includes(item.id)) continue;
+    if (item.archived) {
+      state.tabs = state.tabs.filter((id) => id !== item.id);
+      touched = true;
+      continue;
+    }
+    const info = { title: item.title, agent: item.agent, project_id: item.project_id, started: item.started };
+    if (JSON.stringify(state.tabInfo[item.id]) !== JSON.stringify(info)) {
+      state.tabInfo[item.id] = info;
+      touched = true;
+    }
+  }
+  if (touched) saveTabs();
+}
+
+async function openTab(id) {
+  const info = tabInfo(id);
+  if (!info) return;
+  state.page = null;
+  if (info.project_id && info.project_id !== state.projectId) await selectProject(info.project_id);
+  if (!state.sessions.some((item) => item.id === id)) {
+    // The session is gone — removed or archived elsewhere.
+    state.tabs = state.tabs.filter((tab) => tab !== id);
+    saveTabs();
+    return render();
+  }
+  openSession(id);
+}
+
+/// Closes a tab; a running agent is stopped first, after asking, as on macOS.
+function closeTab(id) {
+  if (state.running.includes(id)) {
+    return openModal({
+      kind: "confirm",
+      title: "Stop this agent and close the tab?",
+      body: "Recent output stays saved and the session can be resumed later.",
+      confirmLabel: "Stop and close",
+      danger: true,
+      run: async () => {
+        await terminal.stop(id);
+        dropTab(id);
+      },
+    });
+  }
+  dropTab(id);
+}
+
+function dropTab(id) {
+  const at = state.tabs.indexOf(id);
+  state.tabs = state.tabs.filter((tab) => tab !== id);
+  delete state.tabInfo[id];
+  saveTabs();
+  if (!state.running.includes(id)) terminal.forget(id);
+  if (state.sessionId === id) {
+    const next = state.tabs[Math.min(at, state.tabs.length - 1)];
+    if (next) return openTab(next);
+    state.sessionId = null;
+  }
+  render();
+}
+
+function moveTab(id, target) {
+  const tabs = state.tabs.filter((tab) => tab !== id);
+  tabs.splice(Math.max(0, Math.min(target, tabs.length)), 0, id);
+  state.tabs = tabs;
+  saveTabs();
+  render();
+}
+
+function stepTabs(step) {
+  if (state.tabs.length < 2) return stepSession(step);
+  const at = state.tabs.indexOf(state.sessionId);
+  return openTab(state.tabs[(Math.max(at, 0) + step + state.tabs.length) % state.tabs.length]);
+}
+
 function render() {
+  syncTabs();
   const caret = document.activeElement?.id;
   const position = document.activeElement?.selectionStart;
   // Every change re-renders, and a scroller that jumps to the top each time
@@ -110,9 +229,9 @@ function render() {
   app.innerHTML =
     state.page === "settings"
       ? `<div class="shell shell--page">${settingsPage()}${status()}</div>`
-      : `<div class="shell">
-          ${sidebar()}
-          <main class="main">${state.files ? "" : header()}${content()}</main>
+      : `<div class="shell${state.sidebarHidden ? " shell--nosidebar" : ""}">
+          ${state.sidebarHidden ? "" : sidebar()}
+          <main class="main">${tabBar()}${state.files || state.page === "project" || state.sessionId ? "" : header()}${content()}</main>
           ${status()}
         </div>`;
 
@@ -134,6 +253,16 @@ function render() {
   for (const [key, top] of scrolled) {
     const node = document.querySelector(`[data-scroll="${key}"]`);
     if (node) node.scrollTop = top;
+  }
+
+  // A freshly opened editor starts with the caret at the end of the file.
+  if (state.docs?.focusEditor) {
+    state.docs.focusEditor = false;
+    const editor = document.querySelector("#doc-editor");
+    if (editor) {
+      editor.focus();
+      editor.setSelectionRange(editor.value.length, editor.value.length);
+    }
   }
 
   if (state.sessionId && !state.files && state.page !== "settings") {
@@ -160,10 +289,12 @@ function render() {
 }
 
 observe(render);
+onIconLoaded(() => render());
 
 // -------------------------------------------------------------- selection --
 
 async function selectProject(id) {
+  if (state.page === "project") closeProjectSettings();
   if (state.projectId === id) return;
   state.projectId = id;
   state.sessionId = null;
@@ -182,13 +313,16 @@ function openSession(id) {
 
 async function refreshGitStatus() {
   const current = session();
-  if (!current) return;
+  if (!current || state.settings.git_status === false) {
+    state.git = null;
+    return;
+  }
   const result = await attempt("git_status", { id: current.id });
-  state.gitStatus = result.ok
-    ? `${result.value.branch} · ${result.value.changed_files} changed`
-    : "";
-  const label = document.querySelector("#git-status");
-  if (label) label.textContent = state.gitStatus;
+  const next = result.ok ? { branch: result.value.branch, changed: result.value.changed_files } : null;
+  if (JSON.stringify(next) !== JSON.stringify(state.git)) {
+    state.git = next;
+    render();
+  }
 }
 
 // ------------------------------------------------------------- dialogs ----
@@ -245,6 +379,53 @@ const ACTIONS = {
   accounts: openAccounts,
   "import-history": openTranscripts,
   "project-settings": openProjectSettings,
+  "close-project-settings": closeProjectSettings,
+  "layout-one": () => {
+    state.split = null;
+    render();
+  },
+  "layout-two": () => (state.sessionId && !state.split ? ACTIONS["open-split"]() : undefined),
+  "awake-menu": () => {
+    state.menu = state.menu?.kind === "awake" ? null : { kind: "awake" };
+    render();
+  },
+  "stop-session": () => {
+    const current = session();
+    state.menu = null;
+    return openModal({
+      kind: "confirm",
+      title: "Stop this agent?",
+      body: "This interrupts current work. The saved conversation stays with the agent.",
+      confirmLabel: "Stop",
+      danger: true,
+      run: () => terminal.stop(current.id),
+    });
+  },
+  "start-session": () => {
+    state.menu = null;
+    return terminal.start(session().id);
+  },
+  "sleep-session": async () => {
+    state.menu = null;
+    render();
+    await done("session_hibernate", { id: session().id });
+  },
+  "toggle-sidebar": () => {
+    state.sidebarHidden = !state.sidebarHidden;
+    try {
+      localStorage.setItem("convoy.sidebarHidden", state.sidebarHidden ? "1" : "");
+    } catch {
+      /* not remembered */
+    }
+    render();
+    terminal.refit();
+  },
+  home: () => {
+    state.sessionId = null;
+    state.files = null;
+    state.page = null;
+    render();
+  },
   "remove-project": () =>
     openModal({ kind: "remove-project", id: state.projectId, path: project()?.path ?? "" }),
   "confirm-remove-project": async () => {
@@ -267,7 +448,7 @@ const ACTIONS = {
     openModal({
       kind: "session",
       title: project()?.title ?? "Session",
-      agent: state.settings.default_agent,
+      agent: project()?.default_agent || state.settings.default_agent,
       model: "",
       prompt: "",
     }),
@@ -355,6 +536,12 @@ const ACTIONS = {
 
   // settings
   "close-settings": closeSettings,
+  "run-diagnostics": runDiagnostics,
+  "reveal-worktrees": () => call("path_reveal", { path: state.worktrees }),
+  "reset-shortcuts": () => savePref({ shortcuts: {} }),
+  limits: () => (state.menu?.kind === "limits" ? closeDialog() : openLimits()),
+  "limits-refresh": () => refreshLimits(true),
+  "limits-settings": () => openSettings("AI Limits"),
   "page-add-profile": addPageProfile,
   "add-profile": addProfile,
   "scan-transcripts": scanTranscripts,
@@ -378,8 +565,8 @@ const ACTIONS = {
       title: "",
       details: "",
       findings: "",
-      agent: state.settings.default_agent,
-      mode: "none",
+      agent: project()?.default_agent || state.settings.default_agent,
+      mode: project()?.task_mode || "none",
       auto_review: false,
       spec_id: "",
     }),
@@ -470,11 +657,94 @@ const SHORTCUT_ACTIONS = {
   palette: () => openPalette(),
   newSession: () => ACTIONS["new-session"](),
   files: () => openFiles(),
-  next: () => stepSession(1),
-  previous: () => stepSession(-1),
-  settings: () => openSettings(),
+  sidebar: () => ACTIONS["toggle-sidebar"](),
+  next: () => stepTabs(1),
+  previous: () => stepTabs(-1),
+  closeTab: () => state.sessionId && closeTab(state.sessionId),
+  settings: () => (state.page === "settings" ? closeSettings() : openSettings()),
   search: () => document.querySelector("#project-search")?.focus(),
+
+  // sessions — each acts on the open session, and does nothing without one
+  resume: () => withSession((current) => !current.running && terminal.start(current.id)),
+  stop: () =>
+    withSession((current) =>
+      current.running &&
+      openModal({
+        kind: "confirm",
+        title: "Stop this agent?",
+        body: "This interrupts current work. The saved conversation stays with the agent.",
+        confirmLabel: "Stop",
+        danger: true,
+        run: () => terminal.stop(current.id),
+      }),
+    ),
+  sleep: () => withSession((current) => current.running && done("session_hibernate", { id: current.id })),
+  pin: () => withSession(() => ACTIONS["pin-session"]()),
+  edit: () => withSession(() => openEditSession()),
+  review: () => withSession(() => openReview()),
+  feedback: () => withSession((current) => current.review_of && ACTIONS["send-feedback"]()),
+  quick: () => withSession(() => ACTIONS["quick-menu"]()),
+  split: () => withSession(() => state.sessions.length > 1 && ACTIONS["open-split"]()),
+
+  // project
+  openFolder: () => openFolder(),
+  newTask: () => withProject(async () => {
+    await showTab("tasks");
+    ACTIONS["new-task"]();
+  }),
+  newSpec: () => withProject(async () => {
+    await showTab("specs");
+    ACTIONS["new-spec"]();
+  }),
+  importIssues: () => withProject(async () => {
+    await showTab("tasks");
+    await imports.loadTasks();
+    await imports.onClick({ dataset: { action: "import" } });
+  }),
+  sessionsTab: () => withProject(() => showTab("sessions")),
+  reviewsTab: () => withProject(() => showTab("reviews")),
+  specsTab: () => withProject(() => showTab("specs")),
+  tasksTab: () => withProject(() => showTab("tasks")),
+  docsTab: () => withProject(() => showTab("docs")),
+  activity: () => ACTIONS.activity(),
+  nextTab: () => withProject(() => stepTab(1)),
+  previousTab: () => withProject(() => stepTab(-1)),
+  reveal: () => withProject(() => ACTIONS["reveal-project"]()),
+  copyPath: () => withProject(() => ACTIONS["copy-path"]()),
+  gitRefresh: () => withSession(() => ACTIONS["git-status"]()),
+
+  // general
+  theme: () =>
+    savePref({ theme: { system: "light", light: "dark", dark: "system" }[state.settings.theme] ?? "system" }),
+  wake: () => {
+    const next = state.settings.keep_awake === "off" ? "always" : "off";
+    toast(next === "off" ? "Sleep allowed" : "Keeping the computer awake");
+    return savePref({ keep_awake: next });
+  },
+  limits: () => openLimits(),
+  limitsRefresh: () => refreshLimits(true),
 };
+
+const TAB_ORDER = ["sessions", "reviews", "specs", "tasks", "docs"];
+
+const withSession = (run) => (session() ? run(session()) : undefined);
+const withProject = (run) => (project() ? run(project()) : undefined);
+
+/// Shows a project tab, leaving a session, Files or the settings page.
+async function showTab(tab) {
+  state.page = null;
+  state.tab = tab;
+  state.sessionId = null;
+  state.files = null;
+  render();
+  if (tab === "specs" || tab === "tasks") await loadPlanning();
+  if (tab === "docs") await loadDocs();
+}
+
+function stepTab(step) {
+  const at = TAB_ORDER.indexOf(state.tab);
+  return showTab(TAB_ORDER[(Math.max(at, 0) + step + TAB_ORDER.length) % TAB_ORDER.length]);
+}
 
 /// The next or previous session of the selected project, wrapping round. Does
 /// nothing when the list is empty, and opens the first when none is chosen.
@@ -496,7 +766,9 @@ app.addEventListener("click", async (event) => {
       "[data-approve],[data-export],[data-prepare],[data-status],[data-remove-profile]," +
       "[data-remove-command],[data-import],[data-task-view],[data-palette],[data-split],"
       + "[data-capture],[data-expand],[data-project-more],[data-menu-act],[data-settings-section]," +
-      "[data-pref-set],[data-pref-toggle],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
+      "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
+      "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
+      "[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -507,6 +779,43 @@ app.addEventListener("click", async (event) => {
   }
   if (data.action === "import" || data.action === "integrations") await imports.loadTasks();
   if (data.menuAct) return runMenu(data.menuAct);
+  if (data.awake) {
+    state.menu = null;
+    return savePref({ keep_awake: data.awake });
+  }
+  if (data.tabClose) return closeTab(data.tabClose);
+  if (data.tabOpen) return openTab(data.tabOpen);
+  if (data.tabAct) {
+    const id = state.menu?.id;
+    state.menu = null;
+    const at = state.tabs.indexOf(id);
+    if (data.tabAct === "left") return moveTab(id, at - 1);
+    if (data.tabAct === "right") return moveTab(id, at + 1);
+    if (data.tabAct === "close") return closeTab(id);
+    if (data.tabAct === "others") {
+      for (const other of [...state.tabs]) if (other !== id && !state.running.includes(other)) dropTab(other);
+      return openTab(id);
+    }
+  }
+  if (data.doc) return openDoc(data.doc);
+  if (data.activityOpen) {
+    state.menu = null;
+    if (data.activityProject && data.activityProject !== state.projectId) await selectProject(data.activityProject);
+    await loadSessions();
+    if (state.sessions.some((item) => item.id === data.activityOpen)) return openSession(data.activityOpen);
+    return render();
+  }
+  if (state.page === "project" && !state.dialog) {
+    if (data.iconTab) {
+      state.iconTab = data.iconTab;
+      return render();
+    }
+    if (data.projColor !== undefined) return saveProjectField({ color: data.projColor });
+    if (data.projIcon !== undefined) return saveProjectField({ icon: data.projIcon });
+    if (data.projToggle) return saveProjectField({ [data.projToggle]: !state.projectDraft[data.projToggle] });
+    if (data.projClear) return saveProjectField({ [data.projClear]: "" });
+    if (data.iconSource) return setProjectImage(data.iconSource);
+  }
   if (data.projectMore) {
     const box = target.getBoundingClientRect();
     return openContextMenu("project", data.projectMore, box.left, box.bottom + 4);
@@ -524,7 +833,9 @@ app.addEventListener("click", async (event) => {
     if (data.settingsSection) {
       state.settingsSection = data.settingsSection;
       state.capturing = null;
-      return render();
+      render();
+      if (data.settingsSection === "Setup" && !state.diagnostics) await runDiagnostics();
+      return;
     }
     if (data.prefSet === "profile_agent") {
       state.profileAgent = data.value;
@@ -550,18 +861,22 @@ app.addEventListener("click", async (event) => {
     return closeDialog();
   }
   if (data.action) {
+    // Menus open under the control that asked for them.
+    const box = target.getBoundingClientRect();
+    state.anchor = { top: box.bottom + 4, right: Math.max(8, window.innerWidth - box.right) };
     const handler = ACTIONS[data.action];
     if (handler) return handler();
     return;
   }
   if (data.project) return selectProject(data.project);
   if (data.tab) {
+    if (state.page === "project") state.page = null;
     state.tab = data.tab;
     state.sessionId = null;
     state.files = null;
     render();
     if (data.tab === "specs" || data.tab === "tasks") await loadPlanning();
-    if (data.tab === "activity") await loadActivity();
+    if (data.tab === "docs") await loadDocs();
     return;
   }
   if (data.start) return terminal.start(data.start);
@@ -652,6 +967,17 @@ app.addEventListener("input", (event) => {
     state.filter = field.value;
     return render();
   }
+  if (field.id === "doc-editor") {
+    const first = !state.docs.dirty;
+    state.docs.text = field.value;
+    state.docs.dirty = true;
+    if (first) render();
+    return;
+  }
+  if (field.id === "activity-filter") {
+    state.activityFilter = field.value;
+    return render();
+  }
   if (field.id === "settings-search") {
     state.settingsQuery = field.value;
     return render();
@@ -673,6 +999,12 @@ app.addEventListener("input", (event) => {
 });
 
 app.addEventListener("change", async (event) => {
+  const projectKey = event.target.dataset?.projText ?? event.target.dataset?.projSelect;
+  if (projectKey) return saveProjectField({ [projectKey]: event.target.value });
+  const choiceKey = event.target.dataset?.prefSelect;
+  if (choiceKey) return savePref({ [choiceKey]: event.target.value });
+  const textKey = event.target.dataset?.prefText;
+  if (textKey) return savePref({ [textKey]: event.target.value });
   const key = event.target.dataset?.prefNumber;
   if (key) {
     const parsed = Number(event.target.value);
@@ -719,11 +1051,6 @@ addEventListener("keydown", async (event) => {
     }
     return;
   }
-  const bound = SHORTCUTS.find(([action]) => matches(event, binding(action)));
-  if (bound) {
-    event.preventDefault();
-    return SHORTCUT_ACTIONS[bound[0]]();
-  }
   if (event.key === "Enter" && state.dialog && event.target.tagName === "INPUT") {
     if (isImportDialog() && imports.onEnter(event.target)) { event.preventDefault(); return; }
     const confirmAction = document
@@ -735,6 +1062,31 @@ addEventListener("keydown", async (event) => {
     }
   }
 });
+
+// Bindings are matched while the event is still on its way down, before the
+// terminal sees it: xterm consumes keys like Tab and stops them there, so a
+// bubbling listener never learned of ⌃Tab or ⌘. pressed inside a session.
+// Keys nothing is bound to pass through untouched.
+addEventListener(
+  "keydown",
+  (event) => {
+    if (state.capturing || state.dialog?.kind === "palette") return;
+    // ⌘1–⌘9 (Ctrl elsewhere) select a tab, as in the macOS app.
+    const primary = /mac/i.test(navigator.platform) ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+    const digit = /^Digit([1-9])$/.exec(event.code ?? "");
+    if (primary && digit && !event.altKey && !event.shiftKey && state.tabs[Number(digit[1]) - 1]) {
+      event.preventDefault();
+      event.stopPropagation();
+      return openTab(state.tabs[Number(digit[1]) - 1]);
+    }
+    const bound = SHORTCUTS.find(([action]) => matches(event, binding(action)));
+    if (!bound) return;
+    event.preventDefault();
+    event.stopPropagation();
+    SHORTCUT_ACTIONS[bound[0]]();
+  },
+  true,
+);
 
 addEventListener("resize", terminal.refit);
 
@@ -761,31 +1113,68 @@ async function reconnectProject() {
   }
 }
 
+/// Project settings is a page in the main area, as on macOS.
 async function openProjectSettings() {
-  const detail = await call("project_detail", { id: state.projectId });
-  if (!detail) return;
-  openModal({ kind: "project", ...detail });
+  if (!(await reloadProjectDraft())) return;
+  const icon = state.projectDraft.icon ?? "";
+  state.iconTab = icon.startsWith("sf:") ? "symbol" : /^(gh|img):/.test(icon) ? "image" : "emoji";
+  state.page = "project";
+  state.sessionId = null;
+  state.files = null;
+  state.menu = null;
+  state.dialog = null;
+  render();
 }
 
-async function saveProject() {
-  captureDraft();
-  const dialog = state.dialog;
-  const saved = await done("project_edit", {
-    id: dialog.id,
-    input: {
-      title: dialog.title,
-      group: dialog.group,
-      icon: dialog.icon,
-      setup_command: dialog.setup_command,
-      shared_paths: dialog.shared_paths,
-      review_template: dialog.review_template,
-    },
-  });
-  if (!saved) return;
-  closeDialog();
-  await loadWorkspace();
+async function reloadProjectDraft() {
+  const detail = await call("project_detail", { id: state.projectId });
+  if (!detail) return false;
+  state.projectDraft = { ...project(), ...detail };
+  return true;
 }
-ACTIONS["save-project"] = saveProject;
+
+function closeProjectSettings() {
+  state.page = null;
+  state.projectDraft = null;
+  render();
+}
+
+/// Saves one change. The page then shows what was stored — a rejected value
+/// is reported and put back.
+async function saveProjectField(input) {
+  const id = state.projectDraft?.id;
+  if (!id) return;
+  const saved = await done("project_edit", { id, input });
+  await loadWorkspace();
+  await reloadProjectDraft();
+  render();
+  return saved;
+}
+
+async function setProjectImage(source) {
+  const id = state.projectDraft?.id;
+  let value = "";
+  if (source === "upload") {
+    const chosen = await openDialogNative({
+      multiple: false,
+      filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg"] }],
+    });
+    if (!chosen) return;
+    value = chosen;
+  }
+  if (source === "favicon") {
+    value = document.querySelector("#proj-favicon")?.value.trim() ?? "";
+    if (!value) return toast("Enter a domain such as example.com.");
+  }
+  state.iconBusy = true;
+  render();
+  const icon = await call("project_icon_set", { id, source, value });
+  state.iconBusy = false;
+  if (icon) forgetIcon(icon.replace(/^(gh|img):/, ""));
+  await loadWorkspace();
+  await reloadProjectDraft();
+  render();
+}
 
 async function createSession() {
   captureDraft();
@@ -803,6 +1192,27 @@ async function createSession() {
   // Selected but not started: launching an agent is always an explicit act,
   // and a first message is acted on the moment it runs.
   openSession(id);
+  if (state.settings.worktree_by_default) await worktreeByDefault(id, draft.title);
+}
+
+/// "Run new sessions in a git worktree by default". A folder that is not a
+/// repository simply keeps the session in the project folder.
+async function worktreeByDefault(id, title) {
+  const made = await attempt("worktree_create", { id, branch: suggestBranch(title || "session") });
+  if (!made.ok) return toast(`Started in the project folder: ${made.error}`);
+  await loadSessions();
+  const plan = made.value;
+  if (plan.shared_paths.length || plan.setup_command) {
+    openModal({
+      kind: "worktree-setup",
+      id,
+      shared: plan.shared_paths,
+      command: plan.setup_command ?? "",
+      directory: plan.directory,
+    });
+  } else {
+    toast(`Worktree created on ${plan.branch}`);
+  }
 }
 
 async function openEditSession() {
@@ -873,8 +1283,10 @@ async function openUsage() {
   render();
 }
 
+/// A branch name from a title, under the project's branch prefix, else the
+/// one set in Settings.
 const suggestBranch = (title) =>
-  `convoy/${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "work"}`;
+  `${project()?.branch_prefix || state.settings.branch_prefix || "convoy"}/${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "work"}`;
 
 async function confirmWorktree() {
   captureDraft();
@@ -918,7 +1330,18 @@ async function openSettings(section) {
     call("integrations_list").then((list) => {
       if (list) state.integrations = list;
     }),
+    call("worktrees_path").then((path) => {
+      if (path) state.worktrees = path;
+    }),
   ]);
+  render();
+  if (state.settingsSection === "Setup") runDiagnostics();
+}
+
+async function runDiagnostics() {
+  state.diagnostics = null;
+  render();
+  state.diagnostics = (await call("diagnostics_run")) ?? [];
   render();
 }
 
@@ -937,6 +1360,7 @@ async function savePref(patch) {
   if (saved) {
     terminal.applySettings();
     await applyKeepAwake();
+    if (["git_status", "git_poll_seconds", "compact_sidebar"].some((key) => key in patch)) scheduleGitPolling();
   }
   render();
 }
@@ -1109,10 +1533,158 @@ async function addQuickCommand() {
   render();
 }
 
+/// Reads the feed; re-renders only when something new arrived, since this
+/// runs every few seconds for the bell's badge.
 async function loadActivity() {
-  state.activity = (await call("activity_read")) ?? [];
+  const events = (await attempt("activity_read")).value ?? state.activity ?? [];
+  const changed = events.length !== (state.activity?.length ?? -1) || events[0]?.id !== state.activity?.[0]?.id;
+  state.activity = events;
+  if (changed) render();
+}
+
+// The last event seen in the feed, kept per machine like the macOS badge.
+try {
+  state.activitySeen = localStorage.getItem("convoy.activitySeen") ?? null;
+} catch {
+  state.activitySeen = null;
+}
+
+function markActivitySeen() {
+  state.activitySeen = state.activity?.[0]?.at ?? state.activitySeen;
+  try {
+    if (state.activitySeen) localStorage.setItem("convoy.activitySeen", state.activitySeen);
+  } catch {
+    /* private storage unavailable: the badge simply resets next launch */
+  }
+}
+
+async function openActivity() {
+  state.dialog = null;
+  state.menu = { kind: "activity" };
+  render();
+  await loadActivity();
+  markActivitySeen();
   render();
 }
+
+// ------------------------------------------------------------------ docs ---
+
+async function loadDocs() {
+  const id = state.projectId;
+  if (!id) return;
+  const files = (await call("docs_list", { projectId: id })) ?? [];
+  const previous = state.docs?.projectId === id ? state.docs : null;
+  state.docs = {
+    projectId: id,
+    files,
+    selected: previous?.selected && files.includes(previous.selected) ? previous.selected : null,
+    text: "",
+    editing: false,
+    dirty: false,
+  };
+  if (state.docs.selected) await openDoc(state.docs.selected);
+  else render();
+}
+
+async function openDoc(path) {
+  // As on macOS, opening another file leaves unsaved edits behind.
+  state.docs = { ...state.docs, selected: path, text: "", editing: false, dirty: false, loading: true };
+  render();
+  const text = await call("doc_read", { projectId: state.docs.projectId, path });
+  state.docs = { ...state.docs, text: text ?? "", loading: false };
+  render();
+}
+
+async function saveDoc() {
+  const docs = state.docs;
+  if (!(await done("doc_write", { projectId: docs.projectId, path: docs.selected, text: docs.text }))) return;
+  state.docs = { ...docs, editing: false, dirty: false };
+  render();
+  toast("Saved");
+}
+
+/// Starts Claude with one of the Docs prompts, as the macOS app does.
+async function startDocSession(title, prompt) {
+  const id = await call("session_create", {
+    projectId: state.projectId,
+    agent: "claude",
+    title,
+    prompt,
+    model: "",
+  });
+  if (!id) return;
+  await loadSessions();
+  await terminal.start(id);
+}
+
+const docTitle = () => {
+  const heading = (state.docs?.text ?? "").split("\n").find((line) => line.startsWith("# "));
+  return heading ? heading.slice(2).trim() : state.docs?.selected ?? "";
+};
+
+Object.assign(ACTIONS, {
+  activity: () => (state.menu?.kind === "activity" ? closeDialog() : openActivity()),
+  "activity-clear": async () => {
+    if (await done("activity_clear")) {
+      state.activity = [];
+      markActivitySeen();
+      render();
+    }
+  },
+  "doc-reload": () => loadDocs(),
+  "doc-edit": () => {
+    state.docs.editing = true;
+    state.docs.focusEditor = true;
+    render();
+  },
+  "doc-done": () => {
+    state.docs.editing = false;
+    render();
+  },
+  "doc-save": () => saveDoc(),
+  "doc-copy-path": async () => {
+    await navigator.clipboard.writeText(`${project()?.path ?? ""}/${state.docs.selected}`);
+    toast("Path copied");
+  },
+  "doc-new-spec": () => openModal({ kind: "doc-spec", title: "" }),
+  "doc-create-spec": async () => {
+    captureDraft();
+    const title = state.dialog.title?.trim();
+    if (!title) return toast("Give the spec a title.");
+    const path = await call("spec_create", { projectId: state.projectId, title });
+    if (!path) return;
+    closeDialog();
+    await loadDocs();
+    await openDoc(path);
+    state.docs.editing = true;
+    state.docs.focusEditor = true;
+    render();
+  },
+  "doc-write-project": async () => {
+    const prompts = await call("doc_prompts", { path: PROJECT_DOC, title: "" });
+    if (prompts) await startDocSession("Write project doc", prompts.project_doc);
+  },
+  "doc-draft-spec": async () => {
+    const title = docTitle();
+    const prompts = await call("doc_prompts", { path: state.docs.selected, title });
+    if (prompts) await startDocSession(`Spec: ${title}`, prompts.spec);
+  },
+  "doc-task": async () => {
+    const path = state.docs.selected;
+    const title = docTitle();
+    await showTab("tasks");
+    openModal({
+      kind: "task",
+      title,
+      details: `Implement the specification in ${path}. Read it first and treat its acceptance criteria as the definition of done.`,
+      findings: "",
+      agent: project()?.default_agent || state.settings.default_agent,
+      mode: project()?.task_mode || "none",
+      auto_review: false,
+      spec_id: "",
+    });
+  },
+});
 
 // ------------------------------------------------------------- planning ---
 
@@ -1375,12 +1947,8 @@ function paletteEntries() {
     ["Import provider history", "Action", openTranscripts],
     ["Accounts", "Action", openAccounts],
     ["Settings", "Action", openSettings],
-    ["Activity", "Action", async () => {
-      state.tab = "activity";
-      state.sessionId = null;
-      render();
-      await loadActivity();
-    }],
+    ["Activity", "Action", () => openActivity()],
+    ["Docs & specs", "Action", () => withProject(() => showTab("docs"))],
   ];
   for (const item of state.projects) {
     entries.push([item.title, "Project", () => selectProject(item.id)]);
@@ -1436,7 +2004,12 @@ async function monitorTick() {
 }
 
 async function notify(entry) {
-  if (!state.settings.notifications || document.hasFocus()) return;
+  const prefs = state.settings;
+  if (!prefs.notifications) return;
+  if (entry.state === "done" ? prefs.notify_done === false : prefs.notify_waiting === false) return;
+  // The session you are looking at never interrupts you; the rest only
+  // while Convoy is in the background, unless asked otherwise.
+  if (document.hasFocus() && (!prefs.notify_when_focused || state.sessionId === entry.id)) return;
   const { isPermissionGranted, requestPermission, sendNotification } = await import(
     "@tauri-apps/plugin-notification"
   );
@@ -1446,7 +2019,74 @@ async function notify(entry) {
   sendNotification({
     title: entry.state === "done" ? "Agent finished a turn" : "Agent needs your attention",
     body: entry.title,
+    ...(prefs.notification_sound === "none" ? {} : { sound: prefs.notification_sound || "default" }),
   });
+}
+
+// ------------------------------------------------------------ git polling --
+
+let gitTimer = null;
+
+/// Refreshes Git at the interval Settings asks for: the open session's branch
+/// line, and every project's branch and count when sidebar rows show them.
+function scheduleGitPolling() {
+  clearInterval(gitTimer);
+  gitTimer = null;
+  const seconds = Number(state.settings.git_poll_seconds ?? 10);
+  if (state.settings.git_status === false) {
+    state.projectGit = new Map();
+    return;
+  }
+  pollProjects();
+  if (seconds > 0) {
+    gitTimer = setInterval(() => {
+      refreshGitStatus();
+      pollProjects();
+    }, seconds * 1000);
+  }
+}
+
+async function pollProjects() {
+  if (state.settings.compact_sidebar !== false || state.settings.git_status === false) return;
+  const next = new Map();
+  await Promise.all(
+    state.projects.slice(0, 40).map(async (item) => {
+      const reading = await attempt("project_git", { id: item.id });
+      if (reading.ok && reading.value) next.set(item.id, reading.value);
+    }),
+  );
+  state.projectGit = next;
+  render();
+}
+
+// ------------------------------------------------------------- AI limits --
+
+/// Reads the limits. Codex starts its CLI to answer, so it is asked only when
+/// wanted; Claude's reading is a file its status line left behind.
+async function refreshLimits(codex = false) {
+  if (codex) {
+    state.limits = { ...(state.limits ?? {}), loading: true };
+    render();
+  }
+  const reading = await attempt("limits_read", { codex });
+  const previous = state.limits ?? {};
+  state.limits = reading.ok
+    ? {
+        claude: reading.value.claude,
+        codex: reading.value.codex ?? previous.codex ?? null,
+        codexAt: reading.value.codex ? Date.now() : previous.codexAt,
+        loading: false,
+      }
+    : { ...previous, loading: false, error: reading.error };
+  render();
+}
+
+function openLimits() {
+  state.dialog = null;
+  state.menu = { kind: "limits" };
+  render();
+  // A Codex reading older than five minutes is refreshed on opening.
+  if (!state.limits?.codexAt || Date.now() - state.limits.codexAt > 5 * 60 * 1000) refreshLimits(true);
 }
 
 async function applyKeepAwake() {
@@ -1461,6 +2101,8 @@ terminal.onExit(async (exit) => {
   await applyKeepAwake();
   const projectId =
     state.sessions.find((item) => item.id === exit.id)?.project_id ?? state.projectId;
+  // "Auto-run task queue": the queue carries on by itself in this project.
+  if (state.projects.find((item) => item.id === projectId)?.auto_run_tasks) state.queues.add(projectId);
   const queued = state.queues.has(projectId);
 
   // A failure or a stop pauses the queue, and nothing resumes it but the user
@@ -1508,12 +2150,52 @@ try {
   await applyKeepAwake();
   setInterval(monitorTick, 2000);
   setInterval(applyKeepAwake, 10000);
+  refreshLimits(false);
+  setInterval(() => refreshLimits(false), 60000);
+  scheduleGitPolling();
+  loadActivity();
+  setInterval(loadActivity, 5000);
 } catch (error) {
   fatal(error?.stack ?? String(error));
 }
 
+// Tabs are reordered by dragging one onto another.
+let draggedTab = null;
+app.addEventListener("dragstart", (event) => {
+  const tab = event.target.closest?.("[data-tab-open]");
+  if (!tab) return;
+  draggedTab = tab.dataset.tabOpen;
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", draggedTab);
+});
+app.addEventListener("dragover", (event) => {
+  const tab = event.target.closest?.("[data-tab-open]");
+  if (!tab || !draggedTab) return;
+  event.preventDefault();
+  for (const other of app.querySelectorAll(".tab-item--drop")) other.classList.remove("tab-item--drop");
+  if (tab.dataset.tabOpen !== draggedTab) tab.classList.add("tab-item--drop");
+});
+app.addEventListener("drop", (event) => {
+  const tab = event.target.closest?.("[data-tab-open]");
+  if (!tab || !draggedTab) return;
+  event.preventDefault();
+  const id = draggedTab;
+  draggedTab = null;
+  if (tab.dataset.tabOpen !== id) moveTab(id, state.tabs.indexOf(tab.dataset.tabOpen));
+});
+app.addEventListener("dragend", () => {
+  draggedTab = null;
+  for (const other of app.querySelectorAll(".tab-item--drop")) other.classList.remove("tab-item--drop");
+});
+
 // Right-click on a project or a session in the sidebar opens its menu.
 app.addEventListener("contextmenu", (event) => {
+  const tab = event.target.closest("[data-tab-open]");
+  if (tab) {
+    event.preventDefault();
+    state.menu = { kind: "tab", id: tab.dataset.tabOpen, x: event.clientX, y: event.clientY };
+    return render();
+  }
   const session = event.target.closest("[data-menu-session]");
   const owner = event.target.closest("[data-menu-project]");
   if (!session && !owner) return;

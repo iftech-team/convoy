@@ -18,10 +18,12 @@ pub const DEFAULT_TEMPLATE: &str =
 pub fn brief(workspace: &Workspace, id: &str, output: &str) -> Result<String> {
     let session = workspace.session(id)?;
     let project = workspace.project(&session.project_id)?;
+    let global = workspace.settings().review_template.as_str();
     let template = project
         .review_template
         .as_deref()
         .filter(|value| !value.trim().is_empty())
+        .or(Some(global).filter(|value| !value.trim().is_empty()))
         .unwrap_or(DEFAULT_TEMPLATE);
     let brief = review_brief(session, output);
     Ok(head(&format!("{template}\n\n{brief}"), 32_000).to_string())

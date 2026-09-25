@@ -510,7 +510,8 @@ fn percent_encode(value: &str) -> String {
         .collect()
 }
 
-fn base64(bytes: &[u8]) -> String {
+/// Standard base64, for the few places that need it without a dependency.
+pub fn base64(bytes: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::new();
     for chunk in bytes.chunks(3) {

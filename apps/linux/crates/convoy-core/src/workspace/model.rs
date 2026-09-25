@@ -174,6 +174,34 @@ pub struct Project {
         skip_serializing_if = "Option::is_none"
     )]
     pub review_template: Option<String>,
+    /// Preselected for this project's new sessions and tasks; `None` follows
+    /// the global default.
+    #[serde(
+        rename = "defaultAgent",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub default_agent: Option<Agent>,
+    /// What new worktrees start from; `None` is the current HEAD.
+    #[serde(rename = "baseRef", default, skip_serializing_if = "Option::is_none")]
+    pub base_ref: Option<String>,
+    /// Overrides the global branch prefix.
+    #[serde(
+        rename = "branchPrefix",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub branch_prefix: Option<String>,
+    /// How this project's new tasks finish: `pr`, `push` or `none`.
+    #[serde(rename = "taskMode", default, skip_serializing_if = "Option::is_none")]
+    pub task_mode: Option<String>,
+    /// Start the next queued task when one finishes.
+    #[serde(
+        rename = "autoRunTasks",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub auto_run_tasks: Option<bool>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }
@@ -393,12 +421,94 @@ pub struct Settings {
     pub shortcuts: BTreeMap<String, String>,
     #[serde(rename = "claudeUsage", default)]
     pub claude_usage: bool,
+    /// Start new sessions in their own git worktree.
+    #[serde(rename = "worktreeByDefault", default)]
+    pub worktree_by_default: bool,
+    /// Prepended to generated branch names, e.g. `feature` → `feature/fix-login`.
+    #[serde(rename = "branchPrefix", default)]
+    pub branch_prefix: String,
+    #[serde(rename = "sortProjects", default)]
+    pub sort_projects: bool,
+    /// `--dangerously-skip-permissions` for Claude Code.
+    #[serde(rename = "yoloClaude", default)]
+    pub yolo_claude: bool,
+    /// `--dangerously-bypass-approvals-and-sandbox` for Codex.
+    #[serde(rename = "yoloCodex", default)]
+    pub yolo_codex: bool,
+    /// The review brief's instructions unless a project sets its own.
+    #[serde(rename = "reviewTemplate", default)]
+    pub review_template: String,
+    #[serde(rename = "notifyWaiting", default = "yes")]
+    pub notify_waiting: bool,
+    #[serde(rename = "notifyDone", default = "yes")]
+    pub notify_done: bool,
+    /// Notify even while the window has focus.
+    #[serde(rename = "notifyWhenFocused", default)]
+    pub notify_when_focused: bool,
+    /// `default`, `none`, or a system sound name such as `Glass`.
+    #[serde(rename = "notificationSound", default = "default_sound")]
+    pub notification_sound: String,
+    /// Mark a session's folder trusted for its agent before launch.
+    #[serde(rename = "autoTrust", default = "yes")]
+    pub auto_trust: bool,
+    /// Claude's per-session status hooks (working / waiting / done).
+    #[serde(rename = "statusHooks", default = "yes")]
+    pub status_hooks: bool,
+    /// Show branch and changed-file counts.
+    #[serde(rename = "gitStatus", default = "yes")]
+    pub git_status: bool,
+    /// Seconds between Git refreshes; 0 refreshes only on demand.
+    #[serde(rename = "gitPollSeconds", default = "default_git_poll")]
+    pub git_poll_seconds: i64,
+    /// Sidebar rows without the second line of detail.
+    #[serde(rename = "compactSidebar", default = "yes")]
+    pub compact_sidebar: bool,
+    /// Run in every new worktree, before the project's own command.
+    #[serde(rename = "worktreeSetup", default)]
+    pub worktree_setup: String,
+    /// Paths copied into every new worktree, one per line, before the project's.
+    #[serde(rename = "worktreeShared", default)]
+    pub worktree_shared: String,
     #[serde(flatten)]
     pub unknown: Unknown,
 }
 
+fn yes() -> bool {
+    true
+}
+
+fn default_sound() -> String {
+    "default".into()
+}
+
+fn default_git_poll() -> i64 {
+    10
+}
+
+/// The sounds a notification may play. `default` is the system's own; the
+/// named ones are macOS system sounds and are offered only there.
+pub const NOTIFICATION_SOUNDS: &[&str] = &[
+    "default",
+    "none",
+    "Basso",
+    "Blow",
+    "Bottle",
+    "Frog",
+    "Funk",
+    "Glass",
+    "Hero",
+    "Morse",
+    "Ping",
+    "Pop",
+    "Purr",
+    "Sosumi",
+    "Submarine",
+    "Tink",
+];
+
+/// 13 points, the macOS app's terminal size.
 fn default_font_size() -> i64 {
-    14
+    13
 }
 fn default_scrollback() -> i64 {
     10_000
@@ -425,13 +535,31 @@ impl Default for Settings {
             hibernate_minutes: 0,
             shortcuts: BTreeMap::new(),
             claude_usage: false,
+            worktree_by_default: false,
+            branch_prefix: String::new(),
+            sort_projects: false,
+            yolo_claude: false,
+            yolo_codex: false,
+            review_template: String::new(),
+            notify_waiting: true,
+            notify_done: true,
+            notify_when_focused: false,
+            notification_sound: default_sound(),
+            auto_trust: true,
+            status_hooks: true,
+            git_status: true,
+            git_poll_seconds: default_git_poll(),
+            compact_sidebar: true,
+            worktree_setup: String::new(),
+            worktree_shared: String::new(),
             unknown: Map::new(),
         }
     }
 }
 
-/// The seven actions that may carry a user-defined accelerator.
-pub const SHORTCUT_ACTIONS: [&str; 7] = [
+/// The actions that may carry a user-defined accelerator. The first seven
+/// are the original set; the rest follow the macOS app's.
+pub const SHORTCUT_ACTIONS: &[&str] = &[
     "palette",
     "newSession",
     "files",
@@ -439,4 +567,34 @@ pub const SHORTCUT_ACTIONS: [&str; 7] = [
     "previous",
     "settings",
     "search",
+    "resume",
+    "stop",
+    "sleep",
+    "pin",
+    "edit",
+    "review",
+    "feedback",
+    "quick",
+    "split",
+    "openFolder",
+    "newTask",
+    "newSpec",
+    "importIssues",
+    "sessionsTab",
+    "reviewsTab",
+    "specsTab",
+    "tasksTab",
+    "docsTab",
+    "closeTab",
+    "sidebar",
+    "activity",
+    "nextTab",
+    "previousTab",
+    "reveal",
+    "copyPath",
+    "gitRefresh",
+    "theme",
+    "wake",
+    "limits",
+    "limitsRefresh",
 ];

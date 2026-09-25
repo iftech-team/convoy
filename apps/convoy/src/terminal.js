@@ -34,7 +34,8 @@ export function terminalFor(id) {
   const terminal = new Terminal({
     fontFamily: style.getPropertyValue("--font-mono").trim(),
     fontSize: state.settings.font_size,
-    lineHeight: 1.35,
+    // The font's own line height, as SwiftTerm draws it in the macOS app.
+    lineHeight: 1,
     cursorBlink: true,
     allowProposedApi: true,
     scrollback: state.settings.scrollback,

@@ -10,25 +10,87 @@ use crate::patterns::SHORTCUT;
 use std::collections::BTreeMap;
 
 /// What each action does, for the shortcut editor and the command palette.
-pub const DESCRIPTIONS: [(&str, &str); 7] = [
+pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ("palette", "Command palette"),
     ("newSession", "New session"),
     ("files", "Files & Changes"),
-    ("next", "Next session"),
-    ("previous", "Previous session"),
+    ("next", "Next tab"),
+    ("previous", "Previous tab"),
     ("settings", "Settings"),
     ("search", "Search projects and sessions"),
+    ("resume", "Resume session"),
+    ("stop", "Stop session"),
+    ("sleep", "Sleep session"),
+    ("pin", "Pin or unpin session"),
+    ("edit", "Edit name and notes"),
+    ("review", "Start review"),
+    ("feedback", "Send feedback to builder"),
+    ("quick", "Quick commands"),
+    ("split", "Open split terminal"),
+    ("openFolder", "Open folder"),
+    ("newTask", "New task"),
+    ("newSpec", "New specification"),
+    ("importIssues", "Import Linear or Jira issues"),
+    ("sessionsTab", "Sessions"),
+    ("reviewsTab", "Reviews"),
+    ("specsTab", "Specs"),
+    ("tasksTab", "Tasks"),
+    ("docsTab", "Docs & specs"),
+    ("closeTab", "Close tab"),
+    ("sidebar", "Toggle sidebar"),
+    ("activity", "Activity feed"),
+    ("nextTab", "Next section"),
+    ("previousTab", "Previous section"),
+    ("reveal", "Show project folder"),
+    ("copyPath", "Copy folder path"),
+    ("gitRefresh", "Refresh Git status"),
+    ("theme", "Cycle theme"),
+    ("wake", "Toggle keep awake"),
+    ("limits", "AI Limits"),
+    ("limitsRefresh", "Refresh AI limits"),
 ];
 
-/// Defaults used when the workspace has no shortcut for an action.
-pub const DEFAULTS: [(&str, &str); 7] = [
+/// Defaults used when the workspace has no shortcut for an action: the
+/// macOS app's bindings. Next and previous session moved to ⌃Tab / ⌃⇧Tab
+/// as there, which freed ⌘⌥P for pin and ⌘⌥N for a new specification.
+pub const DEFAULTS: &[(&str, &str)] = &[
     ("palette", "mod+k"),
     ("newSession", "mod+n"),
-    ("files", "mod+b"),
-    ("next", "mod+alt+n"),
-    ("previous", "mod+alt+p"),
+    ("files", "mod+shift+g"),
+    ("next", "ctrl+tab"),
+    ("previous", "ctrl+shift+tab"),
     ("settings", "mod+,"),
     ("search", "mod+f"),
+    ("resume", "mod+shift+r"),
+    ("stop", "mod+."),
+    ("sleep", "mod+alt+z"),
+    ("pin", "mod+alt+p"),
+    ("edit", "mod+i"),
+    ("review", "mod+alt+r"),
+    ("feedback", "mod+shift+b"),
+    ("quick", "mod+/"),
+    ("split", "mod+\\"),
+    ("openFolder", "mod+o"),
+    ("newTask", "mod+shift+n"),
+    ("newSpec", "mod+alt+n"),
+    ("importIssues", "mod+shift+i"),
+    ("sessionsTab", "mod+alt+1"),
+    ("reviewsTab", "mod+alt+2"),
+    ("specsTab", "mod+alt+3"),
+    ("tasksTab", "mod+alt+4"),
+    ("docsTab", "mod+alt+5"),
+    ("closeTab", "mod+w"),
+    ("sidebar", "mod+b"),
+    ("activity", "mod+shift+a"),
+    ("nextTab", "mod+shift+]"),
+    ("previousTab", "mod+shift+["),
+    ("reveal", "mod+alt+f"),
+    ("copyPath", "mod+alt+c"),
+    ("gitRefresh", "mod+alt+g"),
+    ("theme", "mod+alt+t"),
+    ("wake", "mod+alt+k"),
+    ("limits", "mod+shift+l"),
+    ("limitsRefresh", "mod+alt+l"),
 ];
 
 /// `mod+shift+p` → `<Primary><Shift>p`. Returns nothing for anything the
@@ -37,24 +99,19 @@ pub fn to_accelerator(value: &str) -> Option<String> {
     if !SHORTCUT.is_match(value) {
         return None;
     }
-    let mut parts = value.split('+').peekable();
-    // The pattern guarantees a leading `mod`.
-    parts.next()?;
-    let mut modifiers = String::from("<Primary>");
-    if parts.peek() == Some(&"alt") {
-        parts.next();
-        modifiers.push_str("<Alt>");
-    }
-    if parts.peek() == Some(&"shift") {
-        parts.next();
-        modifiers.push_str("<Shift>");
-    }
-    let key: Vec<&str> = parts.collect();
-    let key = key.join("+");
-    if key.is_empty() {
-        return None;
-    }
-    Some(format!("{modifiers}{}", key_name(&key)))
+    // The pattern guarantees modifiers first, in order, then one key.
+    let parts: Vec<&str> = value.split('+').collect();
+    let (key, modifiers) = parts.split_last()?;
+    let modifiers: String = modifiers
+        .iter()
+        .map(|modifier| match *modifier {
+            "mod" => "<Primary>",
+            "ctrl" => "<Control>",
+            "alt" => "<Alt>",
+            _ => "<Shift>",
+        })
+        .collect();
+    Some(format!("{modifiers}{}", key_name(key)))
 }
 
 /// `<Primary><Shift>p` → `mod+shift+p`, for the editor's key capture.
@@ -93,18 +150,36 @@ pub fn from_accelerator(value: &str) -> Option<String> {
 }
 
 /// GTK names punctuation keys; the stored format spells them out.
+const KEY_NAMES: [(&str, &str); 12] = [
+    ("tab", "Tab"),
+    (",", "comma"),
+    (".", "period"),
+    ("/", "slash"),
+    (";", "semicolon"),
+    ("[", "bracketleft"),
+    ("]", "bracketright"),
+    ("\\", "backslash"),
+    ("left", "Left"),
+    ("right", "Right"),
+    ("up", "Up"),
+    ("down", "Down"),
+];
+
 fn key_name(key: &str) -> String {
-    match key {
-        "," => "comma".to_string(),
-        other => other.to_string(),
-    }
+    KEY_NAMES
+        .iter()
+        .find(|(stored, _)| *stored == key)
+        .map(|(_, name)| name.to_string())
+        .unwrap_or_else(|| key.to_string())
 }
 
 fn stored_key(key: &str) -> String {
-    match key.to_lowercase().as_str() {
-        "comma" => ",".to_string(),
-        other => other.to_string(),
-    }
+    let lower = key.to_lowercase();
+    KEY_NAMES
+        .iter()
+        .find(|(_, name)| name.to_lowercase() == lower)
+        .map(|(stored, _)| stored.to_string())
+        .unwrap_or(lower)
 }
 
 /// The accelerator for every action, saved values first and defaults behind.

@@ -112,31 +112,16 @@ const usage = (dialog) =>
 
 // ---------------------------------------------------------------- projects --
 
-const projectSettings = (dialog) =>
+const docSpec = (dialog) =>
   modal({
-    title: "Project settings",
-    hint: dialog.path,
-    wide: true,
-    body: `
-      ${field("Name", textInput("draft-title", dialog.title))}
-      ${field("Group", textInput("draft-group", dialog.group), "Groups the project under a heading in the sidebar.")}
-      ${field("Icon", textInput("draft-icon", dialog.icon), "A single emoji, shown beside the name.")}
-      ${field(
-        "Shared files",
-        textArea("draft-shared", dialog.shared_paths, "One repository-relative path per line", 4),
-        "Copied into each new worktree. Existing files are never replaced.",
-      )}
-      ${field(
-        "Setup command",
-        textInput("draft-setup", dialog.setup_command),
-        "Shown and confirmed before it runs, with your permissions.",
-      )}
-      ${field(
-        "Review instructions",
-        textArea("draft-review", dialog.review_template, "", 4),
-        "Prefixed to every review brief for this project.",
-      )}`,
-    foot: foot("Save", "save-project"),
+    title: "New specification",
+    hint: `In ${project()?.title ?? ""}. Starts from a template; draft it with AI afterwards, or write it yourself.`,
+    body: field(
+      "Title",
+      textInput("draft-title", dialog.title, "Feature or problem, e.g. Checkout retries"),
+      "Saved as .specdesk/specs/<slug>.md in the repository.",
+    ),
+    foot: foot("Create spec", "doc-create-spec"),
   });
 
 const removeProject = (dialog) =>
@@ -477,6 +462,7 @@ const quitting = (dialog) =>
   });
 
 const VIEWS = {
+  "doc-spec": docSpec,
   split: splitPicker,
   quit: quitting,
   session: newSession,
@@ -485,7 +471,6 @@ const VIEWS = {
   feedback: sendFeedback,
   output: savedOutput,
   usage,
-  project: projectSettings,
   "remove-project": removeProject,
   worktree: createWorktree,
   "worktree-setup": worktreeSetup,

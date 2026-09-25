@@ -8,9 +8,23 @@ use std::sync::LazyLock;
 pub static UUID: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$").unwrap());
 
-/// `/^mod\+(alt\+)?(shift\+)?[a-z0-9,]+$/`
-pub static SHORTCUT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^mod\+(alt\+)?(shift\+)?[a-z0-9,]+$").unwrap());
+/// A binding, in the shapes the macOS app uses:
+///
+/// * `mod` (Command on macOS, Control elsewhere), optionally with `ctrl`,
+///   `alt` and `shift`, then a letter, digit, punctuation, arrow or Tab;
+/// * `ctrl` alone, like ⌃Tab or ⌃1 — but never with a letter, so ⌃C, ⌃D
+///   and the rest always reach the terminal.
+pub static SHORTCUT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(concat!(
+        r"^(mod\+(ctrl\+)?(alt\+)?(shift\+)?([a-z0-9,./;\[\]\\]|left|right|up|down|tab)",
+        r"|ctrl\+(alt\+)?(shift\+)?([0-9,./;\[\]\\]|left|right|up|down|tab))$",
+    ))
+    .unwrap()
+});
+
+/// A branch prefix: empty, or path-like segments Git accepts.
+pub static BRANCH_PREFIX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^([A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*)?$").unwrap());
 
 /// `/^[a-zA-Z0-9._:/-]*$/`
 pub static MODEL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9._:/-]*$").unwrap());

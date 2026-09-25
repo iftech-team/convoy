@@ -185,16 +185,34 @@ pub struct ActivityView {
     pub session_id: String,
     pub title: String,
     pub detail: String,
+    /// The session's project, for the feed that spans all projects.
+    pub project_id: Option<String>,
+    pub project: Option<String>,
 }
 
 #[tauri::command]
 pub fn activity_read(workspace: State<'_, Workspace>) -> Result<Vec<ActivityView>, String> {
     workspace.with(|workspace| {
-        Ok(workspace
-            .state()
+        let state = workspace.state();
+        let owner = |session_id: &str| {
+            let project_id = state
+                .sessions
+                .iter()
+                .find(|session| session.id == session_id)
+                .map(|session| session.project_id.clone())?;
+            let title = state
+                .projects
+                .iter()
+                .find(|project| project.id == project_id)
+                .map(|project| project.title.clone());
+            Some((project_id, title))
+        };
+        Ok(state
             .activity
             .iter()
             .map(|event| ActivityView {
+                project_id: owner(&event.session_id).map(|(id, _)| id),
+                project: owner(&event.session_id).and_then(|(_, title)| title),
                 id: event.id.clone(),
                 at: event.at.clone(),
                 kind: format!("{:?}", event.kind).to_lowercase(),
@@ -204,6 +222,12 @@ pub fn activity_read(workspace: State<'_, Workspace>) -> Result<Vec<ActivityView
             })
             .collect())
     })
+}
+
+/// Empties the activity feed.
+#[tauri::command]
+pub fn activity_clear(workspace: State<'_, Workspace>) -> Result<(), String> {
+    workspace.act(|core| core.clear_activity().map(|_| ()))
 }
 
 #[derive(Serialize)]

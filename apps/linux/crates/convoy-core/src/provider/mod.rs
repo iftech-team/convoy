@@ -74,12 +74,36 @@ pub fn session_spec(
     settings_file: Option<&str>,
     env: &BTreeMap<String, String>,
 ) -> LaunchSpec {
-    session_spec_for(session, settings_file, env, Platform::current())
-        .unwrap_or_else(|_| unix_spec(session.agent, &session_args(session, settings_file), env))
+    session_spec_with(session, settings_file, env, &[])
+}
+
+/// As [`session_spec`], with extra flags placed beside `--model` — the
+/// permission flags a user opted into.
+pub fn session_spec_with(
+    session: &Session,
+    settings_file: Option<&str>,
+    env: &BTreeMap<String, String>,
+    extra: &[String],
+) -> LaunchSpec {
+    let args = session_args(session, settings_file, extra);
+    provider_spec_for(session.agent, &args, env, Platform::current())
+        .unwrap_or_else(|_| unix_spec(session.agent, &args, env))
+}
+
+/// The flags that skip an agent's permission prompts, when the user chose
+/// that for this agent. Only ever added at launch, never stored.
+pub fn permission_flags(agent: Agent, settings: &crate::model::Settings) -> Vec<String> {
+    match agent {
+        Agent::Claude if settings.yolo_claude => vec!["--dangerously-skip-permissions".into()],
+        Agent::Codex if settings.yolo_codex => {
+            vec!["--dangerously-bypass-approvals-and-sandbox".into()]
+        }
+        _ => Vec::new(),
+    }
 }
 
 /// The arguments a session launches with, minus the agent name.
-fn session_args(session: &Session, settings_file: Option<&str>) -> Vec<String> {
+fn session_args(session: &Session, settings_file: Option<&str>, extra: &[String]) -> Vec<String> {
     let mut args: Vec<String> = agent_args(session, session.started)
         .into_iter()
         .skip(1)
@@ -93,6 +117,7 @@ fn session_args(session: &Session, settings_file: Option<&str>) -> Vec<String> {
         flags.push("--settings".into());
         flags.push(file.to_string());
     }
+    flags.extend(extra.iter().cloned());
     let separator = args
         .iter()
         .position(|arg| arg == "--")
@@ -109,7 +134,7 @@ pub fn session_spec_for(
     env: &BTreeMap<String, String>,
     platform: Platform,
 ) -> Result<LaunchSpec> {
-    let args = session_args(session, settings_file);
+    let args = session_args(session, settings_file, &[]);
     provider_spec_for(session.agent, &args, env, platform)
 }
 

@@ -124,6 +124,18 @@ pub fn configuration(
     executable: &Path,
     usage: bool,
 ) -> Result<PathBuf> {
+    configuration_with(root, session, executable, usage, true)
+}
+
+/// As [`configuration`], with the status hooks optional. The caller passes no
+/// settings file at all when neither hooks nor the usage line are wanted.
+pub fn configuration_with(
+    root: &Path,
+    session: &Session,
+    executable: &Path,
+    usage: bool,
+    hooks_on: bool,
+) -> Result<PathBuf> {
     fs::create_dir_all(root)?;
     let output = output_path(root, &session.id);
     let output_text = output.to_string_lossy().into_owned();
@@ -138,14 +150,16 @@ pub fn configuration(
         "timeout": 5,
     });
     let mut hooks = Map::new();
-    for event in EVENTS {
+    for event in EVENTS.iter().filter(|_| hooks_on) {
         hooks.insert(
             event.to_string(),
             json!([{ "matcher": "", "hooks": [command] }]),
         );
     }
     let mut document = Map::new();
-    document.insert("hooks".into(), Value::Object(hooks));
+    if hooks_on {
+        document.insert("hooks".into(), Value::Object(hooks));
+    }
     if usage {
         // The status line is a shell string rather than an argument vector, so
         // it has to be quoted for whichever shell will run it.

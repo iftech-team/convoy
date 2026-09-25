@@ -1,3 +1,4 @@
+import { anchorStyle } from "./views.js";
 // Files & Changes.
 //
 // Four views over one folder: the working tree, the files themselves, the
@@ -292,7 +293,7 @@ function commitBar(files) {
 export function remoteMenu() {
   return `
     <div class="scrim scrim--clear" data-dismiss="1">
-      <div class="menu" role="menu">
+      <div class="menu menu--anchored" role="menu" style="${anchorStyle()}">
         <button class="menu__item" data-action="fetch"><span>Fetch</span></button>
         <button class="menu__item" data-action="pull"><span>Pull (fast-forward only)</span></button>
         <button class="menu__item" data-action="push"><span>Push</span></button>

@@ -1,6 +1,6 @@
 // Every screen. Markup built from state; nothing here calls the backend.
 
-import { agentIcon, icons, projectIcon } from "./icons.js";
+import { agentIcon, appMark, icons, projectIcon, projectTint } from "./icons.js";
 import {
   button,
   choice,
@@ -9,7 +9,6 @@ import {
   group,
   segmented,
   setting,
-  shorten,
   toggle,
 } from "./ui.js";
 import { isRunning, project, session, state, visibleSessions } from "./state.js";
@@ -19,7 +18,7 @@ const TABS = [
   ["reviews", "Reviews"],
   ["specs", "Specs"],
   ["tasks", "Tasks"],
-  ["activity", "Activity"],
+  ["docs", "Docs"],
 ];
 
 // ---------------------------------------------------------------- sidebar --
@@ -62,13 +61,33 @@ function sidebarSession(item) {
             title="${escape(item.notes || item.title)}">
       ${stateDot(item)}
       ${item.pinned ? `<span class="side-session__pin">${icons.pin}</span>` : ""}
-      <span class="side-session__title">${escape(item.title)}</span>
+      <span class="side-session__text">
+        <span class="side-session__title">${escape(item.title)}</span>
+        ${
+          state.settings.compact_sidebar === false
+            ? `<span class="side-session__detail">${escape(
+                [
+                  item.running ? (state.agentState.get(item.id) ?? "Running") : item.started ? "Stopped" : "Saved",
+                  item.agent === "claude" ? "Claude Code" : "Codex",
+                ].join(" · "),
+              )}</span>`
+            : ""
+        }
+      </span>
       ${
         item.branch
           ? `<span class="chip chip--branch">${icons.branch}${escape(item.branch)}</span>`
           : `${agentIcon(item.agent, 11)}${item.review_of ? '<span class="side-session__tag">review</span>' : ""}`
       }
     </button>`;
+}
+
+/// The second line of a detailed project row: its branch and changes, or
+/// how many sessions it has when it is not a repository.
+function projectDetail(item) {
+  const git = state.settings.git_status === false ? null : state.projectGit.get(item.id);
+  if (git) return `⎇ ${git.branch}${git.changed_files ? ` · ${git.changed_files} changed` : " · clean"}`;
+  return `${item.sessions} session${item.sessions === 1 ? "" : "s"}`;
 }
 
 export function sidebar() {
@@ -85,6 +104,12 @@ export function sidebar() {
     } else {
       loose.push(item);
     }
+  }
+
+  if (state.settings.sort_projects) {
+    const byName = (a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base", numeric: true });
+    loose.sort(byName);
+    for (const items of groups.values()) items.sort(byName);
   }
 
   const row = (item) => {
@@ -104,7 +129,10 @@ export function sidebar() {
         </button>
         <button class="project-row__main" data-project="${escape(item.id)}" title="${escape(item.path)}">
           ${projectIcon(item)}
-          <span class="project-row__title">${escape(item.title)}</span>
+          <span class="project-row__text">
+            <span class="project-row__title">${escape(item.title)}</span>
+            ${state.settings.compact_sidebar === false ? `<span class="project-row__detail">${escape(projectDetail(item))}</span>` : ""}
+          </span>
         </button>
         ${
           waiting
@@ -135,7 +163,7 @@ export function sidebar() {
   return `
     <aside class="sidebar">
       <div class="sidebar__brand">
-        <span class="sidebar__mark">${icons.terminal}</span>
+        <span class="sidebar__mark">${appMark(22)}</span>
         <span class="sidebar__name">Convoy</span>
       </div>
       <div class="sidebar__search">
@@ -164,6 +192,10 @@ export function sidebar() {
 /// Right-click and "…" menus for a project or a sidebar session, opened at
 /// the pointer. Entries mirror the macOS app's.
 export function contextMenu(menu) {
+  if (menu.kind === "limits") return limitsPanel();
+  if (menu.kind === "awake") return awakeMenu();
+  if (menu.kind === "tab") return tabMenu(menu);
+  if (menu.kind === "activity") return activityPanel();
   const item = (label, act, { icon = "", enabled = true, danger = false, hint = "" } = {}) => `
     <button class="menu__item${danger ? " menu__item--danger" : ""}" data-menu-act="${act}"
             ${enabled ? "" : "disabled"}>
@@ -248,12 +280,9 @@ export function header() {
             ${escape(current.title)}
             ${current.group ? `<span class="badge">${escape(current.group)}</span>` : ""}
           </h1>
-          <div class="header__path">${escape(current.path)}</div>
+          <div class="header__path" title="${escape(current.path)}">${escape(current.path)}</div>
         </div>
         <div class="header__actions">
-          ${button({ icon: "git", action: "files", title: "Files & Changes", kind: "icon" })}
-          ${button({ icon: "gear", action: "settings", title: "Settings", kind: "icon" })}
-          ${button({ label: "New session", icon: "plus", action: "new-session", kind: "primary" })}
         </div>
       </div>
       <nav class="tabs">
@@ -389,37 +418,45 @@ export function workbench() {
         : "state--running"
     : "";
 
+  const git = state.settings.git_status === false ? null : state.git;
   return `
     <div class="workbench">
       <div class="workbench__bar">
-        <span class="crumb">
-          ${escape(project()?.title ?? "")}
-          <span class="crumb__sep">/</span>
-          <span class="crumb__muted">${escape(current.title)}</span>
-        </span>
-        ${current.branch ? `<span class="badge--muted badge">${escape(current.branch)}</span>` : ""}
+        <button class="crumb crumb--menu" data-project-more="${escape(current.project_id ?? state.projectId)}" title="Project actions">
+          ${escape(project()?.title ?? "")} ${icons.chevronDown}
+        </button>
+        <span class="crumb__sep">/</span>
+        <button class="crumb crumb--menu crumb--session" data-action="session-menu" title="Session actions">
+          <span>${escape(current.title)}</span> ${icons.chevronDown}
+        </button>
         <span class="section__spacer"></span>
-        <span class="state ${tone}"><span class="state__dot"></span>${escape(label)}</span>
-        <span class="git-status" id="git-status">${escape(state.gitStatus ?? "")}</span>
+        ${
+          git
+            ? `<span class="bar-git" id="git-status" title="Branch and changed files">${icons.branch} ${escape(git.branch)} · ${git.changed} changed</span>`
+            : ""
+        }
+        <span class="bar-agent">${current.agent === "claude" ? "Claude Code" : "Codex"}</span>
+        <span class="state ${tone}"><span class="state__dot"></span>${escape(label.replace(/^./, (c) => c.toUpperCase()))}</span>
         ${
           current.running
-            ? button({ label: "Stop", icon: "stop", kind: "danger", data: { stop: current.id } })
+            ? ""
             : button({
                 label: current.started ? "Resume" : "Start",
                 icon: "play",
                 data: { start: current.id },
+                disabled: current.archived || current.worktree_removed,
               })
         }
         ${button({ icon: "bolt", action: "quick-menu", kind: "quiet", title: "Quick commands" })}
+        ${button({ icon: "plus", action: "new-session", kind: "quiet", title: "New session" })}
         ${button({ icon: "more", action: "session-menu", kind: "quiet", title: "Session actions" })}
-        ${button({ icon: "back", action: "back", kind: "quiet", title: "Back to the list" })}
       </div>
       ${
         other
           ? `<div class="workbench__panes">
                <div class="pane">
                  <div class="pane__label">${escape(current.title)}</div>
-                 <div class="terminal" id="terminal-host"></div>
+                 <div class="term" id="terminal-host"></div>
                </div>
                <div class="pane">
                  <div class="pane__label">
@@ -436,10 +473,10 @@ export function workbench() {
                    }
                    ${button({ icon: "close", action: "close-split", kind: "quiet", title: "Close the split" })}
                  </div>
-                 <div class="terminal" id="terminal-host-split"></div>
+                 <div class="term" id="terminal-host-split"></div>
                </div>
              </div>`
-          : '<div class="terminal" id="terminal-host"></div>'
+          : '<div class="term" id="terminal-host"></div>'
       }
     </div>`;
 }
@@ -457,7 +494,10 @@ export function sessionMenu() {
 
   return `
     <div class="scrim scrim--clear" data-dismiss="1">
-      <div class="menu menu--session" role="menu">
+      <div class="menu menu--session menu--anchored" role="menu" style="${anchorStyle()}">
+        ${busy ? item("Stop session…", "stop-session") : item(current.started ? "Resume" : "Start", "start-session", !current.archived && !current.worktree_removed)}
+        ${busy ? item("Sleep", "sleep-session", true, "keeps the conversation") : ""}
+        <div class="menu__divider"></div>
         ${item("Edit session…", "edit-session")}
         ${item(current.pinned ? "Unpin" : "Pin", "pin-session")}
         ${item(current.archived ? "Restore" : "Archive", "archive-session", !busy, busy ? "stop it first" : "")}
@@ -487,7 +527,7 @@ export function quickMenu() {
   const commands = state.quickCommands;
   return `
     <div class="scrim scrim--clear" data-dismiss="1">
-      <div class="menu" role="menu">
+      <div class="menu menu--anchored" role="menu" style="${anchorStyle()}">
         ${
           commands.length
             ? commands
@@ -516,16 +556,18 @@ export function status() {
   const queues = state.queues.size;
   return `
     <footer class="status">
-      <span class="status__item">${icons.limits} <strong>AI Limits</strong></span>
-      <span class="status__sep"></span>
-      <span class="status__item" title="${escape(state.storage)}">
-        ${escape(shorten(state.storage, 52))}
-      </span>
+      <button class="status__item status__button" data-action="limits"
+              aria-pressed="${state.menu?.kind === "limits"}" title="AI Limits">
+        ${icons.limits} <strong>AI Limits</strong>
+        ${limitsSummary()}
+      </button>
       <span class="status__spacer"></span>
       ${queues ? `<span class="status__item">${icons.bolt} ${queues} queue${queues > 1 ? "s" : ""}</span><span class="status__sep"></span>` : ""}
       <span class="status__item">${icons.terminal} ${running} running</span>
       <span class="status__sep"></span>
-      <span class="status__item">${icons.awake} ${escape(awakeLabel())}</span>
+      <button class="status__item status__button" data-action="awake-menu" aria-pressed="${state.menu?.kind === "awake"}">
+        ${icons.awake} ${escape(awakeLabel())} ${icons.chevronDown}
+      </button>
     </footer>`;
 }
 
@@ -535,3 +577,272 @@ const awakeLabel = () =>
   ] ?? "Awake";
 
 export { escape, empty, group, setting, segmented, choice, toggle, button };
+
+// -------------------------------------------------------------- AI limits --
+
+/// The most used window, which is the one that stops you first.
+const peak = (reading) =>
+  reading?.windows?.length ? Math.max(...reading.windows.map((window) => window.percent)) : null;
+
+function limitsSummary() {
+  const limits = state.limits;
+  if (!limits) return "";
+  const parts = [
+    ["Codex", peak(limits.codex)],
+    ["Claude", peak(limits.claude)],
+  ]
+    .filter(([, percent]) => percent !== null)
+    .map(([name, percent]) => `<span class="status__limit${percent >= 90 ? " status__limit--high" : ""}">${name} ${Math.round(percent)}% used</span>`);
+  return parts.join("");
+}
+
+const windowName = (window) => {
+  if (window.minutes) {
+    if (window.minutes % 1440 === 0) return `${window.minutes / 1440}-day window`;
+    if (window.minutes % 60 === 0) return `${window.minutes / 60}-hour window`;
+  }
+  return window.name.replace(/_/g, " ");
+};
+
+const resetText = (window) => {
+  if (!window.resets_at) return "";
+  const date = new Date(window.resets_at * 1000);
+  const soon = date - Date.now() < 24 * 3600 * 1000;
+  return `resets ${soon ? date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : date.toLocaleDateString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}`;
+};
+
+function limitsBlock(name, icon, reading, loading) {
+  const rows = reading?.windows?.length
+    ? reading.windows
+        .map(
+          (window) => `
+      <div class="limit">
+        <div class="limit__head">
+          <span>${escape(windowName(window))}</span>
+          <strong>${Math.round(window.percent)}%</strong>
+        </div>
+        <div class="limit__bar"><span class="${window.percent >= 90 ? "limit__fill--high" : window.percent >= 70 ? "limit__fill--mid" : ""}" style="width:${Math.min(100, Math.max(2, window.percent))}%"></span></div>
+        ${resetText(window) ? `<div class="limit__note">${escape(resetText(window))}</div>` : ""}
+      </div>`,
+        )
+        .join("")
+    : `<div class="limit__empty">${escape(loading ? "Reading…" : reading?.note ?? "Not read yet.")}</div>`;
+  const updated = reading?.updated_at
+    ? new Date(reading.updated_at * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : "";
+  return `
+    <section class="limits__provider">
+      <div class="limits__title">${agentIcon(icon, 14)}<span>${name}</span>${updated ? `<span class="limits__updated">${escape(updated)}</span>` : ""}</div>
+      ${rows}
+    </section>`;
+}
+
+export function limitsPanel() {
+  const limits = state.limits ?? {};
+  return `
+    <div class="scrim scrim--clear" data-dismiss="1">
+      <div class="menu limits" role="dialog" aria-label="AI Limits">
+        <div class="limits__header">
+          <strong>AI Limits</strong>
+          <span class="section__spacer"></span>
+          ${button({ icon: "refresh", action: "limits-refresh", kind: "quiet", title: "Refresh", disabled: !!limits.loading })}
+        </div>
+        ${limitsBlock("Claude", "claude", limits.claude, false)}
+        ${limitsBlock("Codex", "codex", limits.codex, limits.loading && !limits.codex?.windows?.length)}
+        <div class="limits__foot">
+          <span>Read from your own logins. No tokens are copied and no model request is sent.</span>
+          <button class="sidebar__link" data-action="limits-settings">Settings…</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+// --------------------------------------------------------------- activity --
+
+/// Events newer than the last time the feed was opened.
+export const unreadActivity = () =>
+  (state.activity ?? []).filter((event) => !state.activitySeen || event.at > state.activitySeen).length;
+
+/// The bell, as in the macOS top bar: the feed spans every project, and the
+/// badge counts what arrived since it was last opened.
+export function bell() {
+  const unread = unreadActivity();
+  return `
+    <button class="button button--icon bell" data-action="activity" title="Activity"
+            aria-pressed="${state.menu?.kind === "activity"}">
+      ${icons.bell}
+      ${unread ? `<span class="bell__badge">${Math.min(99, unread)}</span>` : ""}
+    </button>`;
+}
+
+const ACTIVITY = {
+  waiting: ["needs you", "warn", "activity--waiting"],
+  done: ["finished", "check", "activity--done"],
+  started: ["started", "play", ""],
+  resumed: ["resumed", "refresh", ""],
+  hibernated: ["slept", "moon", ""],
+  exited: ["stopped", "stop", ""],
+  worktree: ["worktree", "branch", "activity--worktree"],
+};
+
+function activityPanel() {
+  const needle = (state.activityFilter ?? "").trim().toLowerCase();
+  const events = (state.activity ?? []).filter(
+    (event) =>
+      !needle || `${event.title} ${event.project ?? ""} ${event.detail}`.toLowerCase().includes(needle),
+  );
+  const days = new Map();
+  const today = new Date().toDateString();
+  const yesterday = new Date(Date.now() - 86400000).toDateString();
+  for (const event of events) {
+    const date = new Date(event.at);
+    const key = date.toDateString();
+    const name = key === today ? "Today" : key === yesterday ? "Yesterday" : date.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+    if (!days.has(name)) days.set(name, []);
+    days.get(name).push(event);
+  }
+  const row = (event) => {
+    const [label, glyph, tone] = ACTIVITY[event.kind] ?? [event.kind, "clock", ""];
+    const time = new Date(event.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return `
+      <button class="activity ${tone}" data-activity-open="${escape(event.session_id)}"
+              data-activity-project="${escape(event.project_id ?? "")}">
+        <span class="activity__icon">${icons[glyph] ?? ""}</span>
+        <span class="activity__body">
+          <span class="activity__title">${escape(event.title)} <em>${escape(label)}</em></span>
+          <span class="activity__meta">${escape([event.project, event.detail].filter(Boolean).join(" · "))}</span>
+        </span>
+        <span class="activity__time">${escape(time)}</span>
+      </button>`;
+  };
+  return `
+    <div class="scrim scrim--clear" data-dismiss="1">
+      <div class="menu activity-feed" role="dialog" aria-label="Activity">
+        <div class="activity-feed__head">
+          <strong>Activity</strong>
+          <span class="section__spacer"></span>
+          <button class="sidebar__link" data-action="activity-clear">Clear</button>
+        </div>
+        <div class="sidebar__search activity-feed__search">
+          ${icons.search}
+          <input id="activity-filter" type="search" placeholder="Filter by session or project"
+                 value="${escape(state.activityFilter ?? "")}" spellcheck="false" />
+        </div>
+        <div class="activity-feed__list" data-scroll="activity">
+          ${
+            events.length
+              ? [...days].map(([day, items]) => `<div class="activity-feed__day">${escape(day)}</div>${items.map(row).join("")}`).join("")
+              : `<p class="activity-feed__none">${needle ? "Nothing matches." : "Nothing yet. Completions, questions and worktree events show here."}</p>`
+          }
+        </div>
+      </div>
+    </div>`;
+}
+
+// -------------------------------------------------------------------- tabs --
+
+/// What a tab shows for a session, from the loaded list when its project is
+/// the open one, else from what was remembered when it was opened.
+export const tabInfo = (id) => state.sessions.find((item) => item.id === id) ?? state.tabInfo?.[id];
+
+/// A tab's state, drawn as macOS draws it: a check once the agent finished
+/// its turn, a warning when it needs you, a dot while it works.
+function tabGlyph(id, running, info) {
+  const reported = state.agentState.get(id);
+  if (running && reported === "done") return `<span class="tab-glyph tab-glyph--done" title="Finished its turn">${icons.checkCircle}</span>`;
+  if (running && reported === "waiting") return `<span class="tab-glyph tab-glyph--waiting" title="Needs you">${icons.warn}</span>`;
+  return stateDot({ ...info, running, started: info.started ?? running });
+}
+
+/// The bar across the top, as in the macOS app: Home, one tab per open
+/// session in any project, then Files & Changes, the bell and New session.
+export function tabBar() {
+  const tabs = state.tabs
+    .map((id, index) => {
+      const info = tabInfo(id);
+      if (!info) return "";
+      const owner = state.projects.find((item) => item.id === info.project_id);
+      const running = state.running.includes(id);
+      const selected = state.sessionId === id && !state.files && state.page !== "project";
+      return `
+        <div class="tab-item${selected ? " tab-item--selected" : ""}" data-tab-open="${escape(id)}"
+             draggable="true" title="${escape(`${owner?.title ?? ""} · ${info.agent === "claude" ? "Claude Code" : "Codex"}${running ? "" : " · not running"}`)}">
+          <span class="tab-item__bar" style="background:${owner ? projectTint(owner) : "var(--border-strong)"}"></span>
+          ${tabGlyph(id, running, info)}
+          ${agentIcon(info.agent, 12)}
+          <span class="tab-item__text">
+            <span class="tab-item__title">${escape(info.title)}</span>
+            <span class="tab-item__project">${escape(owner?.title ?? "")}</span>
+          </span>
+          ${index < 9 && !selected ? `<span class="tab-item__number">${/mac/i.test(navigator.platform) ? "⌘" : "Ctrl+"}${index + 1}</span>` : ""}
+          <button class="tab-item__close" data-tab-close="${escape(id)}"
+                  title="${running ? "Stop and close" : "Close tab"}">${icons.close}</button>
+        </div>`;
+    })
+    .join("");
+  const home = !state.sessionId || state.page === "project";
+  return `
+    <div class="tabbar">
+      <button class="tabbar__home${state.sidebarHidden ? "" : " tabbar__home--on"}" data-action="toggle-sidebar"
+              title="${state.sidebarHidden ? "Show sidebar" : "Hide sidebar"}">${icons.sidebar}</button>
+      <button class="tabbar__home${home ? " tabbar__home--on" : ""}" data-action="home" title="Home">${icons.home}</button>
+      <span class="tabbar__divider"></span>
+      <div class="tabbar__tabs" data-scroll="tabs">
+        ${tabs || '<span class="tabbar__none">No open terminals</span>'}
+      </div>
+      <span class="tabbar__actions">
+        <span class="layouts">
+          <button class="layouts__button" data-action="layout-one" aria-pressed="${!state.split}" title="One pane">${icons.paneOne}</button>
+          <button class="layouts__button" data-action="layout-two" aria-pressed="${!!state.split}" title="Two panes"
+                  ${state.sessionId ? "" : "disabled"}>${icons.split}</button>
+        </span>
+        <button class="button button--icon counted" data-action="files" title="Files & Changes">
+          ${icons.git}
+          ${state.settings.git_status !== false && state.git?.changed ? `<span class="counted__badge">${Math.min(99, state.git.changed)}</span>` : ""}
+        </button>
+        ${bell()}
+        ${state.projects.length ? button({ icon: "plus", action: "new-session", kind: "icon", title: "New session" }) : ""}
+      </span>
+    </div>`;
+}
+
+function tabMenu(menu) {
+  const at = state.tabs.indexOf(menu.id);
+  const item = (label, act, enabled = true) =>
+    `<button class="menu__item" data-tab-act="${act}" ${enabled ? "" : "disabled"}><span>${escape(label)}</span></button>`;
+  return `
+    <div class="scrim scrim--clear" data-dismiss="1">
+      <div class="menu menu--context" role="menu" style="left:${Math.max(8, Math.min(menu.x, window.innerWidth - 240))}px;top:${menu.y}px">
+        ${item("Move left", "left", at > 0)}
+        ${item("Move right", "right", at < state.tabs.length - 1)}
+        <div class="menu__divider"></div>
+        ${item("Close tab", "close")}
+        ${item("Close other tabs", "others", state.tabs.length > 1)}
+      </div>
+    </div>`;
+}
+
+/// "Awake ⌄": the keep-awake modes, from the status bar.
+function awakeMenu() {
+  const mode = state.settings.keep_awake;
+  const item = (value, name) => `
+    <button class="menu__item" data-awake="${value}">
+      <span class="menu__icon">${mode === value ? icons.check : ""}</span><span>${name}</span>
+    </button>`;
+  return `
+    <div class="scrim scrim--clear" data-dismiss="1">
+      <div class="menu menu--awake" role="menu">
+        ${item("always", "Always keep awake")}
+        ${item("sessions", "While a session runs")}
+        ${item("off", "Allow sleep")}
+      </div>
+    </div>`;
+}
+
+/// Places a menu under the control that opened it, kept on screen.
+export const anchorStyle = () => {
+  const at = state.anchor;
+  if (!at) return "";
+  const top = Math.min(at.top, Math.max(8, window.innerHeight - 420));
+  return `top:${top}px;right:${at.right}px`;
+};

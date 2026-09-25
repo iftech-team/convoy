@@ -8,6 +8,7 @@
 
 pub mod accounts;
 pub mod ansi;
+pub mod docs;
 pub mod error;
 pub mod files;
 pub mod fs;
@@ -30,6 +31,7 @@ pub mod shortcuts;
 pub mod storage;
 pub mod telemetry;
 pub mod time;
+pub mod trust;
 pub mod workspace;
 pub mod worktree;
 
