@@ -124,7 +124,7 @@ extension Store {
         guard let project = workspace.projects.first(where: { $0.id == task.projectID }) else { return }
         let blockers = blockers(of: task)
         guard blockers.isEmpty else { error = "“\(task.title)” is blocked by: " + blockers.map(\.title).joined(separator: ", ") + ". Mark them Done first."; return }
-        guard terminals.runningCount < 12 else { error = "Too many running sessions."; return }
+        guard terminals.runningCount < 32 else { error = "Too many running sessions (limit 32)."; return }
         let docExists = FileManager.default.fileExists(atPath: project.path + "/.specdesk/PROJECT.md")
         let base = project.baseRef?.isEmpty == false ? project.baseRef! : GitWorktree.defaultBase(project.path)
         let prompt = TaskPrompt.build(task: task, project: project, docExists: docExists, baseBranch: base)
