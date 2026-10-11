@@ -267,7 +267,7 @@ function side(cell, which) {
 
 /// Diff colouring only. Full syntax highlighting would mean shipping a
 /// grammar set for a preview pane; the useful signal here is what changed.
-function highlight(text, language) {
+export function highlight(text, language) {
   if (language !== "diff") return escape(text);
   return text
     .split("\n")
@@ -306,7 +306,8 @@ export function markdown(text) {
       continue;
     }
     if (inCode) {
-      out.push(escape(line));
+      // A code block keeps its lines; the rest of the output is joined bare.
+      out.push(`${escape(line)}\n`);
       continue;
     }
     const heading = /^(#{1,4})\s+(.*)$/.exec(line);

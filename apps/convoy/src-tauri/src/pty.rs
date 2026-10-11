@@ -7,12 +7,12 @@
 //! answer.
 
 use convoy_core::session::ExitCause;
-use convoy_pty::{Ended, Sink};
+use convoy_pty::Sink;
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
-pub use convoy_pty::{Launch, Terminals};
+pub use convoy_pty::{Ended, Launch, Terminals};
 
 #[derive(Clone, Serialize)]
 pub struct Output {
@@ -122,46 +122,50 @@ impl<R: Runtime> Sink for Window<R> {
     }
 
     fn ended(&self, id: &str, how: Ended) {
-        let cause = match how {
-            Ended::Exited(code) => ExitCause::Exited(code),
-            Ended::Stopped => ExitCause::Stopped,
-            Ended::Hibernated => ExitCause::Hibernated,
-        };
-
-        // A clean exit sends the task to review and a failure pauses the
-        // queue. Recorded before the event goes out, so a window reacting to
-        // the event reads a workspace that already agrees with it.
-        // A login terminal is not a session; there is nothing to record.
-        let session = !id.starts_with("login:");
-        if let Some(workspace) = self
-            .app
-            .try_state::<crate::commands::Workspace>()
-            .filter(|_| session)
-        {
-            if let Err(error) =
-                workspace.act(|core| convoy_core::session::finish_session(core, id, cause))
-            {
-                let _ = self.app.emit("terminal:trouble", error);
-            }
-        }
-
-        let _ = self.app.emit(
-            "terminal:exit",
-            Exit {
-                id: id.to_string(),
-                code: match how {
-                    Ended::Exited(code) => code,
-                    _ => 0,
-                },
-                cause: match how {
-                    Ended::Exited(_) => "exited",
-                    Ended::Stopped => "stopped",
-                    Ended::Hibernated => "hibernated",
-                },
-                clean: convoy_core::session::completed_cleanly(cause),
-            },
-        );
+        report_exit(&self.app, id, how);
     }
+}
+
+/// How any agent process ending is told — a terminal's or a chat's. The
+/// workspace is updated first and the window told second, so a window
+/// reacting to `terminal:exit` reads a workspace that already agrees with it.
+pub fn report_exit<R: Runtime>(app: &AppHandle<R>, id: &str, how: Ended) {
+    let cause = match how {
+        Ended::Exited(code) => ExitCause::Exited(code),
+        Ended::Stopped => ExitCause::Stopped,
+        Ended::Hibernated => ExitCause::Hibernated,
+    };
+
+    // A clean exit sends the task to review and a failure pauses the
+    // queue. A login terminal is not a session; there is nothing to record.
+    let session = !id.starts_with("login:");
+    if let Some(workspace) = app
+        .try_state::<crate::commands::Workspace>()
+        .filter(|_| session)
+    {
+        if let Err(error) =
+            workspace.act(|core| convoy_core::session::finish_session(core, id, cause))
+        {
+            let _ = app.emit("terminal:trouble", error);
+        }
+    }
+
+    let _ = app.emit(
+        "terminal:exit",
+        Exit {
+            id: id.to_string(),
+            code: match how {
+                Ended::Exited(code) => code,
+                _ => 0,
+            },
+            cause: match how {
+                Ended::Exited(_) => "exited",
+                Ended::Stopped => "stopped",
+                Ended::Hibernated => "hibernated",
+            },
+            clean: convoy_core::session::completed_cleanly(cause),
+        },
+    );
 }
 
 #[cfg(all(test, unix))]

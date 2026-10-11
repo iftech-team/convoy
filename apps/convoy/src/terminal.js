@@ -10,7 +10,8 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
-import { call, done, state, changed, loadWorkspace, toast } from "./state.js";
+import { anySession, call, done, state, changed, loadWorkspace, toast } from "./state.js";
+import { viewOf } from "./views-chat.js";
 import { t } from "./i18n.js";
 
 const terminals = new Map();
@@ -267,6 +268,8 @@ export const missingConversation = (id) => !!terminals.get(id)?.missing;
 export async function snapshot(id) {
   const entry = terminals.get(id);
   if (!entry || !entry.opened) return;
+  // A chat keeps its own saved output; an old terminal must not replace it.
+  if (viewOf(anySession(id)) === "chat") return;
   const text = buffer(id, 1500);
   if (!text || text === entry.saved) return;
   entry.saved = text;

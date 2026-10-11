@@ -446,6 +446,7 @@ impl Workspace {
                 provider_id: provider_id_for(task.agent),
                 started: false,
                 model: task.model.clone(),
+                effort: None,
                 notes: None,
                 branch: None,
                 archived: None,
@@ -460,6 +461,7 @@ impl Workspace {
                     .clone()
                     .filter(|id| !id.is_empty())
                     .or_else(|| task.profile_id.clone()),
+                view: None,
                 unknown: Default::default(),
             };
             let session_id = session.id.clone();

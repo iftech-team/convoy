@@ -5,6 +5,7 @@
 //! replaced without touching them. This crate is the thin layer between that
 //! core and a web view — commands in, events out.
 
+mod chat;
 mod commands;
 mod monitor;
 mod power;
@@ -17,9 +18,16 @@ use tauri::{Emitter, Manager};
 /// Quitting once the user has said yes. The agents go with the process; this
 /// asks them to stop first so an exit code is recorded for each.
 #[tauri::command]
-fn quit_now(app: tauri::AppHandle, terminals: tauri::State<'_, Arc<pty::Terminals>>) {
+fn quit_now(
+    app: tauri::AppHandle,
+    terminals: tauri::State<'_, Arc<pty::Terminals>>,
+    chats: tauri::State<'_, Arc<chat::Chats>>,
+) {
     for id in terminals.ids() {
         terminals.stop(&id);
+    }
+    for id in chats.ids() {
+        chats.stop(&id);
     }
     // Long enough for the stops to be sent, short enough not to feel stuck.
     std::thread::spawn(move || {
@@ -69,6 +77,7 @@ pub fn run() {
             }
         })
         .manage(Arc::new(pty::Terminals::new()))
+        .manage(Arc::new(chat::Chats::new()))
         .manage(commands::Workspace::new())
         .manage(tasks::Trackers::default())
         .manage(commands::Repositories::default())
@@ -109,6 +118,12 @@ pub fn run() {
             commands::session::session_stop,
             commands::session::session_hibernate,
             commands::session::session_output,
+            commands::session::session_view,
+            chat::chat_start,
+            chat::chat_history,
+            chat::chat_send,
+            chat::chat_answer,
+            chat::chat_interrupt,
             commands::session::session_snapshot,
             commands::session::terminal_write,
             commands::session::terminal_resize,
@@ -213,9 +228,11 @@ pub fn run() {
 
 /// Agents running now. A login terminal is not an agent.
 fn agents_running<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> usize {
-    app.state::<Arc<pty::Terminals>>()
-        .ids()
-        .iter()
-        .filter(|id| !id.starts_with("login:"))
-        .count()
+    chat::running_ids(
+        &app.state::<Arc<pty::Terminals>>(),
+        &app.state::<Arc<chat::Chats>>(),
+    )
+    .iter()
+    .filter(|id| !id.starts_with("login:"))
+    .count()
 }

@@ -31,6 +31,7 @@ import { setLanguage, t } from "./i18n.js";
 import { SHORTCUTS, binding, capture, label, matches } from "./shortcuts.js";
 import { dialogView, sweepChoices, sweepGroups, sweepProject } from "./dialogs.js";
 import * as terminal from "./terminal.js";
+import { chatEvent, chatExited, chatSnapshot, chatText, insertDraft, mountChat, sendText, viewOf, waitingFor } from "./views-chat.js";
 import {
   header,
   quickMenu,
@@ -56,7 +57,7 @@ import { PROJECT_DOC, docsView } from "./views-docs.js";
 const app = document.querySelector("#app");
 const imports = installTasks({ state, escape, icons, call, callDone: done, toast, render,
   loadWorkspace: async () => { await loadWorkspace(); await loadPlanning(); },
-  start: terminal.start, launch: (id) => terminal.start(id, { background: true }) });
+  start: (id) => startSession(id), launch: (id) => startSession(id, { background: true }) });
 const isImportDialog = () => ["import", "integrations", "connection", "task-model"].includes(state.dialog?.kind);
 
 // A thrown error used to leave a black window and no clue about it. Painting
@@ -376,10 +377,13 @@ function render() {
   }
 
   if (state.sessionId && !state.files && state.page !== "settings" && state.page !== "project") {
+    // A pane shows its session as a chat or as a terminal.
+    const place = (id, suffix) =>
+      viewOf(anySession(id)) === "chat" ? mountChat(id, `#chat-host${suffix}`) : terminal.mount(id, `#terminal-host${suffix}`);
     if (state.layout > 1) {
-      state.panes.forEach((id, index) => id && index < state.layout && terminal.mount(id, `#terminal-host-${index}`));
+      state.panes.forEach((id, index) => id && index < state.layout && place(id, `-${index}`));
     } else {
-      terminal.mount(state.sessionId);
+      place(state.sessionId, "");
     }
   }
 
@@ -628,7 +632,21 @@ const ACTIONS = {
   },
   "start-session": () => {
     state.menu = null;
-    return terminal.start(session().id);
+    return startSession(session().id);
+  },
+  "session-view": () => {
+    const current = session();
+    const view = state.actionData?.view;
+    if (!current || !["chat", "terminal"].includes(view) || viewOf(current) === view) return;
+    if (!current.running) return switchView(current.id, view, false);
+    return openModal({
+      kind: "confirm",
+      title: t("Switch to {view}?", { view: t(view === "chat" ? "Chat" : "Terminal") }),
+      body: t("The agent stops and resumes in {view}. The conversation carries over.", { view: t(view === "chat" ? "Chat" : "Terminal") }),
+      confirmLabel: t("Switch"),
+      danger: false,
+      run: () => switchView(current.id, view, true),
+    });
   },
   "sleep-session": async () => {
     state.menu = null;
@@ -720,16 +738,17 @@ const ACTIONS = {
   "send-feedback": () =>
     openModal({
       kind: "feedback",
-      feedback: `Please address the review findings below, verify the changes, and report what you fixed.\n\n${terminal
-        .buffer(state.sessionId)
-        .slice(-18000)}`,
+      feedback: `Please address the review findings below, verify the changes, and report what you fixed.\n\n${(viewOf(session()) === "chat"
+        ? chatText(state.sessionId)
+        : terminal.buffer(state.sessionId)
+      ).slice(-18000)}`,
     }),
   "start-fresh": async () => {
     const id = await call("session_recover", { id: session().id });
     if (!id) return;
     await loadSessions();
     openSession(id);
-    await terminal.start(id);
+    await startSession(id);
   },
   "insert-feedback": insertFeedback,
   "saved-output": openSavedOutput,
@@ -996,7 +1015,7 @@ const SHORTCUT_ACTIONS = {
   reopenTab: () => reopenTab(),
 
   // sessions — each acts on the open session, and does nothing without one
-  resume: () => withSession((current) => !current.running && terminal.start(current.id)),
+  resume: () => withSession((current) => !current.running && startSession(current.id)),
   stop: () =>
     withSession((current) =>
       current.running &&
@@ -1215,6 +1234,7 @@ app.addEventListener("click", async (event) => {
     // Menus open under the control that asked for them.
     const box = target.getBoundingClientRect();
     state.anchor = { top: box.bottom + 4, right: Math.max(8, window.innerWidth - box.right), left: box.left };
+    if (target.closest(".chat__composer")) state.anchor.bottom = window.innerHeight - box.top + 6;
     const handler = ACTIONS[data.action];
     // What else the clicked control says, for actions that need it.
     state.actionData = { ...data };
@@ -1253,7 +1273,7 @@ app.addEventListener("click", async (event) => {
   if (data.start) {
     // From Home or the Dashboard it may be another project's session.
     if (!state.sessions.some((item) => item.id === data.start)) await openAnywhere(data.start);
-    return terminal.start(data.start);
+    return startSession(data.start);
   }
   if (data.stop) return terminal.stop(data.stop);
   // ⌘-click (Ctrl-click elsewhere) picks sessions in the sidebar.
@@ -1295,6 +1315,7 @@ app.addEventListener("click", async (event) => {
   if (data.quick) {
     state.menu = null;
     render();
+    if (viewOf(session()) === "chat") return quickInChat(state.sessionId, data.quick);
     return done("quick_command_send", {
       sessionId: state.sessionId,
       commandId: data.quick,
@@ -1770,7 +1791,7 @@ async function resumeHistory(providerId) {
     await loadHistory();
   }
   await openAnywhere(id);
-  if (!isRunning(id)) await terminal.start(id);
+  if (!isRunning(id)) await startSession(id);
 }
 
 /// Every Claude Code and Codex conversation on this computer that is not in
@@ -1823,11 +1844,13 @@ async function openClaudeUsage() {
     model: "",
     profileId: activeAccount("claude") || null,
     notes: null,
+    // /usage is the agent's own screen; only the terminal shows it.
+    view: "terminal",
   });
   if (!id) return;
   await loadWorkspace();
   openSession(id);
-  await terminal.start(id);
+  await startSession(id);
 }
 
 async function copyCommit(what) {
@@ -1949,6 +1972,7 @@ async function openNewSession(projectId) {
     setup: "run",
     keepOpen: false,
     advanced: false,
+    view: viewOf(null),
   };
   openModal(draft);
   await sessionProject(draft, projectId);
@@ -1998,6 +2022,7 @@ async function createSession() {
     model: draft.model,
     profileId: draft.account || null,
     notes: draft.notes,
+    view: draft.view === "chat" ? "chat" : "terminal",
   });
   draft.busy = false;
   if (!id) return render();
@@ -2030,7 +2055,7 @@ async function createSession() {
     }
   }
   // Creating is starting, as on macOS; the first message goes with it.
-  await terminal.start(id, { background: draft.keepOpen });
+  await startSession(id, { background: draft.keepOpen });
 }
 
 async function openEditSession() {
@@ -2081,6 +2106,11 @@ async function insertFeedback() {
   const text = value("draft-feedback") || state.dialog.feedback || "";
   const builder = await call("review_builder", { id: state.sessionId });
   if (!builder) return;
+  if (viewOf(anySession(builder)) === "chat") {
+    closeDialog();
+    insertDraft(builder, text, { replace: true });
+    return toast(t("Feedback is in the builder's message box; send it from there"));
+  }
   if (await terminal.paste(builder, text, false)) {
     closeDialog();
     toast(t("Feedback inserted; press Enter in the builder to send it"));
@@ -2323,7 +2353,7 @@ async function runMenu(act) {
       if (await done("session_pin", { id: target.id, pinned: !target.pinned })) await loadSessions();
       return render();
     case "start":
-      return terminal.start(target.id);
+      return startSession(target.id);
     case "sleep":
       await done("session_hibernate", { id: target.id });
       return render();
@@ -2515,7 +2545,7 @@ async function startDocSession(title, prompt) {
   });
   if (!id) return;
   await loadSessions();
-  await terminal.start(id);
+  await startSession(id);
 }
 
 const docTitle = () => {
@@ -2713,7 +2743,7 @@ async function runTask(id) {
   await loadWorkspace();
   await reloadTasks();
   await openAnywhere(sessionId);
-  await terminal.start(sessionId);
+  await startSession(sessionId);
   await reloadTasks();
 }
 
@@ -2788,7 +2818,7 @@ async function advanceQueue(projectId) {
     return render();
   }
   await loadSessions();
-  await terminal.start(sessionId);
+  await startSession(sessionId);
 }
 
 // ---------------------------------------------------------------- files ---
@@ -2934,7 +2964,8 @@ async function createPullRequest() {
 
 /// Whether a session's terminal is what the window shows.
 const terminalShown = () =>
-  !!state.sessionId && !state.files && state.page !== "settings" && state.page !== "project" && !state.dialog;
+  !!state.sessionId && !state.files && state.page !== "settings" && state.page !== "project" && !state.dialog &&
+  viewOf(session()) === "terminal";
 
 function openFind() {
   if (!state.find) state.find = { term: "", caseSensitive: false, index: -1, count: 0 };
@@ -3117,7 +3148,7 @@ function quickEntries() {
     title: command.title,
     subtitle: command.text.slice(0, 90).replace(/\n/g, " "),
     shortcut: command.submit ? t("↩ sends") : command.project_id ? "" : t("global"),
-    run: () => done("quick_command_send", { sessionId: id, commandId: command.id }),
+    run: () => (viewOf(anySession(id)) === "chat" ? quickInChat(id, command.id) : done("quick_command_send", { sessionId: id, commandId: command.id })),
   }));
 }
 
@@ -3177,6 +3208,78 @@ function runPalette(index) {
   entry?.run();
 }
 
+// ------------------------------------------------------------ starting ---
+
+/// Every start goes through here: a session shown as a chat starts its agent
+/// in chat mode, any other in a terminal.
+async function startSession(id, { background = false } = {}) {
+  if (viewOf(anySession(id)) !== "chat") return terminal.start(id, { background });
+  if (!background) {
+    state.sessionId = id;
+    render();
+  }
+  const started = await done("chat_start", { id });
+  await loadWorkspace();
+  return started;
+}
+
+/// Waits for a stopped agent's process to be gone, so the other mode can
+/// start it again.
+async function waitStopped(id) {
+  await loadWorkspace();
+  for (let tries = 0; tries < 40 && isRunning(id); tries += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await loadWorkspace();
+  }
+  return !isRunning(id);
+}
+
+/// Chat ⇄ Terminal. A running agent is stopped and resumed in the other one.
+async function switchView(id, view, restart) {
+  if (restart) {
+    if (!(await done("session_stop", { id }))) return;
+    if (!(await waitStopped(id))) return toast(t("The agent did not stop. Try again in a moment."), "error");
+  }
+  if (!(await done("session_view", { id, view }))) return;
+  for (const list of [state.sessions, state.allSessions]) {
+    const item = list.find((entry) => entry.id === id);
+    if (item) item.view = view;
+  }
+  render();
+  if (restart) await startSession(id, { background: state.sessionId !== id });
+  else await loadSessions();
+}
+
+/// A quick command in a chat: sent when it submits, typed in otherwise.
+function quickInChat(id, commandId) {
+  const command = state.quickCommands.find((item) => item.id === commandId);
+  if (!command) return;
+  if (command.submit) return sendText(id, command.text);
+  insertDraft(id, command.text);
+}
+
+/// A chat event feeds the conversation and, for the tabs, badge and
+/// notifications, the agent's state — as the hook monitor does for terminals.
+function onChatEvent(payload) {
+  const chat = chatEvent(payload);
+  const { id, event } = payload;
+  const before = state.agentState.get(id);
+  let next = before;
+  if (event.type === "turn_started") next = waitingFor(id) ? "waiting" : "working";
+  else if (event.type === "approval") next = "waiting";
+  else if (event.type === "approval_resolved") next = waitingFor(id) ? "waiting" : chat.turn ? "working" : before;
+  else if (event.type === "turn_ended") next = "done";
+  if (event.type === "turn_ended") chatSnapshot(id);
+  if (event.type === "session") loadSessions();
+  // A new approval asks even when the state already says waiting.
+  const asks = event.type === "approval" || next !== before;
+  if (!asks || !next) return;
+  state.agentState.set(id, next);
+  if (next === "waiting" || next === "done") notify({ id, state: next, title: anySession(id)?.title ?? "" });
+  render();
+  updateBadge();
+}
+
 // -------------------------------------------------------------- monitor ---
 
 /// The two-second check of what each running agent reports through its hooks.
@@ -3187,6 +3290,8 @@ async function monitorTick() {
   if (!report) return;
   let touched = false;
   for (const entry of report.states) {
+    // A chat session's state comes from its own events.
+    if (viewOf(anySession(entry.id)) === "chat") continue;
     if (state.agentState.get(entry.id) !== entry.state) {
       state.agentState.set(entry.id, entry.state);
       touched = true;
@@ -3324,6 +3429,7 @@ async function applyKeepAwake() {
 }
 
 terminal.onExit(async (exit) => {
+  chatExited(exit.id, exit);
   updateBadge();
   if (exit.id.startsWith("login:")) {
     if (state.dialog?.id === exit.id) {
@@ -3364,7 +3470,7 @@ terminal.onExit(async (exit) => {
   }
   if (step.kind === "review") {
     await loadSessions();
-    await terminal.start(step.session);
+    await startSession(step.session);
   }
   if (queued && step.kind !== "nothing") await advanceQueue(projectId);
 });
@@ -3390,6 +3496,12 @@ function terminalAt(x, y) {
 /// Files dropped onto a terminal are typed into it as quoted paths, as the
 /// macOS app does, without pressing Enter.
 function dropPaths(paths, x, y) {
+  // Onto a chat: the paths go into its message box, for the agent to read.
+  const chat = document.elementFromPoint(x, y)?.closest("[data-chat]");
+  if (chat && paths?.length) {
+    insertDraft(chat.dataset.chat, `${paths.map(shellQuote).join(" ")} `);
+    return true;
+  }
   const id = terminalAt(x, y);
   if (!id || !paths?.length) return false;
   if (!isRunning(id)) {
@@ -3440,7 +3552,11 @@ try {
   loadActivity();
   setInterval(loadActivity, 5000);
   // What each running terminal shows is kept every few seconds.
-  setInterval(terminal.snapshotRunning, 4000);
+  setInterval(() => {
+    terminal.snapshotRunning();
+    for (const id of state.running) if (viewOf(anySession(id)) === "chat") chatSnapshot(id);
+  }, 4000);
+  await listen("chat:event", ({ payload }) => onChatEvent(payload));
   // The backend found a Codex id or a pull request in an agent's output.
   await listen("session:changed", async () => {
     await loadSessions();

@@ -17,6 +17,7 @@ import { language, t } from "./i18n.js";
 import { activeAccount, anySession, isRunning, project, session, state, visibleSessions } from "./state.js";
 import { TASK_STATUSES, runnable } from "./views-planning.js";
 import { missingConversation } from "./terminal.js";
+import { viewOf } from "./views-chat.js";
 
 const TABS = [
   ["sessions", "Sessions"],
@@ -528,6 +529,7 @@ export function workbench() {
     : "";
 
   const git = state.settings.git_status === false ? null : state.git;
+  const view = viewOf(current);
   return `
     <div class="workbench">
       <div class="workbench__bar">
@@ -544,6 +546,7 @@ export function workbench() {
             ? `<span class="bar-git" id="git-status" title="${escape(t("Branch and changed files"))}">${icons.branch} ${escape(git.branch)} · ${escape(t("{count} changed", { count: git.changed }))}</span>`
             : ""
         }
+        ${viewToggle(view)}
         <span class="bar-agent">${current.agent === "claude" ? "Claude Code" : "Codex"}</span>
         <span class="state ${tone}"><span class="state__dot"></span>${escape(label.replace(/^./, (c) => c.toUpperCase()))}</span>
         ${
@@ -569,12 +572,28 @@ export function workbench() {
                </div>
                ${button({ label: t("Start fresh"), action: "start-fresh", kind: "primary" })}
              </div>`
-          : !current.running && current.started
+          : !current.running && current.started && view === "terminal"
             ? `<div class="session-banner">${icons.history} ${escape(t("Saved output · read-only. Resume to reconnect to the agent."))}</div>`
             : ""
       }
       ${state.find ? findBar() : ""}
-      ${state.layout > 1 ? panesView() : '<div class="term" id="terminal-host"></div>'}
+      ${state.layout > 1 ? panesView() : view === "chat" ? '<div class="chat-slot" id="chat-host"></div>' : '<div class="term" id="terminal-host"></div>'}
+    </div>`;
+}
+
+/// Chat | Terminal: two ways to show the same conversation.
+function viewToggle(view) {
+  return `
+    <div class="segmented segmented--bar" role="group" aria-label="${escape(t("Show the session as"))}">
+      ${[
+        ["chat", t("Chat")],
+        ["terminal", t("Terminal")],
+      ]
+        .map(
+          ([value, text]) =>
+            `<button data-action="session-view" data-view="${value}" aria-pressed="${value === view}">${escape(text)}</button>`,
+        )
+        .join("")}
     </div>`;
 }
 
@@ -653,7 +672,11 @@ function panesView() {
           ${button({ icon: "paneOne", kind: "quiet", title: t("Maximize (one pane)"), data: { "pane-max": index } })}
           ${button({ icon: "close", kind: "quiet", title: t("Close pane"), data: { "pane-close": index } })}
         </div>
-        <div class="term" id="terminal-host-${index}"></div>
+        ${
+          viewOf(anySession(id) ?? info) === "chat"
+            ? `<div class="chat-slot" id="chat-host-${index}"></div>`
+            : `<div class="term" id="terminal-host-${index}"></div>`
+        }
       </div>`;
   }).join("");
   return `<div class="workbench__panes workbench__panes--${state.layout}">${cells}</div>`;
@@ -1120,6 +1143,8 @@ function awakeMenu() {
 export const anchorStyle = () => {
   const at = state.anchor;
   if (!at) return "";
+  // A control at the bottom of the window (a chat's composer) opens upwards.
+  if (at.bottom != null) return `bottom:${at.bottom}px;left:${Math.max(8, at.left)}px;top:auto`;
   const top = Math.min(at.top, Math.max(8, window.innerHeight - 420));
   // A control in the left half (the sidebar) opens its menu rightwards, so
   // a wide menu never runs past the window's left edge.

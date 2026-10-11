@@ -25,6 +25,7 @@ try {
     const sessions = [{ id: "builder", project_id: "project", title: "Fix login", agent: "claude", provider_id: "id", started: true, running: true, review_of: null }];
     const calls = [];
     window.checkCalls = calls;
+    window.mockSessions = sessions;
     // Events the backend would send, delivered to what the page listens for.
     const callbacks = new Map();
     const listeners = {};
@@ -33,10 +34,11 @@ try {
     const elsewhere = [{ id: "notes", project_id: "other", title: "Release notes", agent: "codex", provider_id: "", started: false, running: false, pinned: true, review_of: null }];
     window.__TAURI_INTERNALS__ = { metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } }, transformCallback: (callback) => { const id = callbacks.size + 1; callbacks.set(id, callback); return id; }, invoke: async (cmd, args) => {
       calls.push({ cmd, args });
-      window.savedSettings ??= { theme: "light", default_agent: "claude", font_size: 13, scrollback: 10000, claude_usage: false, notifications: false, keep_awake: "off", hibernate_minutes: 0, shortcuts: {} };
+      window.savedSettings ??= { theme: "light", default_view: "terminal", default_agent: "claude", font_size: 13, scrollback: 10000, claude_usage: false, notifications: false, keep_awake: "off", hibernate_minutes: 0, shortcuts: {} };
       if (cmd === "settings_read") return { ...window.savedSettings, storage: "/fixture" };
       if (cmd === "settings_save") { window.savedSettings = { ...args.input }; return null; }
-      if (cmd === "workspace_read") return { projects, sessions, running: ["builder"], storage: "/fixture/workspace.json" };
+      // Sessions with a view of their own (the chat flow's) run and stop for real.
+      if (cmd === "workspace_read") return { projects, sessions, running: ["builder", ...sessions.filter((item) => item.view && item.running).map((item) => item.id)], storage: "/fixture/workspace.json" };
       if (cmd === "sessions_for") return sessions.filter((item) => item.project_id === args.projectId);
       if (cmd === "planning_read") return {
         tasks, queued: tasks.length,
@@ -169,7 +171,11 @@ try {
         return "notes-fresh";
       }
       if (cmd === "account_login") return `login:${args.profileId}`;
-      if (cmd === "session_stop") return null;
+      if (cmd === "session_stop") { const item = sessions.find((entry) => entry.id === args.id); if (item?.view) item.running = false; return null; }
+      if (cmd === "chat_history") return window.chatHistory?.[args.id] ?? [];
+      if (cmd === "chat_start") { sessions.find((item) => item.id === args.id).running = true; return null; }
+      if (["chat_send", "chat_answer", "chat_interrupt"].includes(cmd)) return null;
+      if (cmd === "session_view") { sessions.find((item) => item.id === args.id).view = args.view; return null; }
       if (cmd === "session_start") { sessions.find((item) => item.id === args.id).running = true; return null; }
       if (["keep_awake", "terminal_resize", "terminal_write", "terminal_paste"].includes(cmd)) return null;
       throw new Error(`Unmocked IPC: ${cmd}`);
@@ -543,6 +549,7 @@ try {
   assert.deepEqual(made.map((c) => c.cmd), ["session_create", "worktree_create", "session_start"]);
   assert.equal(made[0].profileId, "work");
   assert.equal(made[0].agent, "codex");
+  assert.equal(made[0].view, "terminal", "the sheet starts from Settings' default view");
   assert.deepEqual([made[1].branch, made[1].base], ["convoy/fix-flaky-checkout", "origin/main"]);
 
   // Project settings: a page, as on macOS, saving each choice.
@@ -610,6 +617,13 @@ try {
   await page.locator('[data-settings-section="Appearance"]').click();
   await page.locator('[data-pref-set="theme"][data-value="dark"]').click();
   await page.waitForFunction(() => window.savedSettings.theme === "dark");
+  // Agents: where new sessions open.
+  await page.locator('[data-settings-section="Agents"]').click();
+  await page.locator('[data-pref-set="default_view"][data-value="terminal"][aria-pressed="true"]').waitFor();
+  await page.locator('[data-pref-set="default_view"][data-value="chat"]').click();
+  await page.waitForFunction(() => window.savedSettings.default_view === "chat");
+  await page.locator('[data-pref-set="default_view"][data-value="terminal"]').click();
+  await page.waitForFunction(() => window.savedSettings.default_view === "terminal");
   await page.locator('[data-settings-section="Setup"]').click();
   await page.locator(".pref-row", { has: page.locator(".pref-row__title", { hasText: /^gh$/ }) }).locator(".pref-missing").waitFor();
   // Past the tools: logins and Convoy's own pieces, as on macOS.
@@ -745,10 +759,127 @@ try {
   await removeAll.getByRole("button", { name: "Cancel" }).click();
   await removeAll.waitFor({ state: "detached" });
   assert(!(await page.evaluate(() => window.checkCalls.some((c) => c.cmd === "projects_remove_all"))));
+
+  // ------------------------------------------------------------- chat --
+  // A session shown as a chat: history once, Resume starts chat mode, the
+  // agent's events draw messages and cards, an approval is answered, the
+  // composer sends, and switching to the terminal restarts it there.
+  await page.evaluate(() => {
+    window.chatHistory = { chatty: [
+      { type: "user", id: "h1", text: "What does the login page do?" },
+      { type: "text_done", id: "h2", text: "It signs you in with **email** and a one-time code." },
+    ] };
+    window.mockSessions.push({ id: "chatty", project_id: "project", title: "Tidy the login page", agent: "claude", provider_id: "p2", started: true, running: false, pinned: false, review_of: null, view: "chat" });
+  });
+  await page.locator('[data-action="home"]').first().click();
+  await page.locator('[data-open="chatty"]').first().click();
+  const chat = page.locator('.chat[data-chat="chatty"]');
+  await chat.locator(".msg--user", { hasText: "What does the login page do?" }).waitFor();
+  await chat.locator(".msg--assistant strong", { hasText: "email" }).waitFor();
+  assert.equal(await page.locator('[data-action="session-view"][data-view="chat"]').getAttribute("aria-pressed"), "true");
+  assert.equal(await page.locator("#terminal-host").count(), 0, "a chat session has no terminal");
+  await page.locator('.workbench__bar [data-start="chatty"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "chat_start" && c.args.id === "chatty"));
+  await page.locator('.workbench__bar [data-start="chatty"]').waitFor({ state: "detached" });
+  assert(!(await page.evaluate(() => window.checkCalls.some((c) => c.cmd === "session_start" && c.args.id === "chatty"))), "a chat session starts in chat mode");
+  const emitChat = (events) => page.evaluate((list) => list.forEach((event) => window.emitTauri("chat:event", { id: "chatty", event })), events);
+  await emitChat([
+    { type: "user", id: "u1", text: "Add a test for the code step" },
+    { type: "turn_started" },
+    { type: "thinking", id: "k1", delta: "The code step lives in login.js; a unit test is enough." },
+    { type: "text", id: "a1", delta: "I'll add a test " },
+    { type: "text", id: "a1", delta: "and run the suite." },
+    { type: "tool", id: "t1", kind: "command", name: "Bash", title: "Run `npm test`", detail: "npm test -- login" },
+    { type: "tool_result", id: "t1", ok: true, output: "PASS login.test.js\n  ✓ signs in with a code (12 ms)\n\nTests: 1 passed" },
+    { type: "file_change", id: "f1", path: "src/login.test.js", diff: "--- a/src/login.test.js\n+++ b/src/login.test.js\n@@ -1,3 +1,6 @@\n import { login } from './login.js';\n-test.todo('code');\n+test('signs in with a code', async () => {\n+  expect(await login('a@b.c', '123456')).toBe(true);\n+});" },
+    { type: "approval", request: "r1", kind: "command", title: "Run `git commit -m \"Test the code step\"`", detail: "git commit -m \"Test the code step\"", always: true },
+  ]);
+  await chat.locator(".msg--assistant", { hasText: "I'll add a test and run the suite." }).waitFor();
+  await page.locator(".workbench__bar .state--waiting").waitFor();
+  await chat.locator(".chat-working--waiting").waitFor();
+  const tool = chat.locator(".tool--command");
+  assert.equal(await tool.getAttribute("open"), null, "tool cards start folded");
+  await tool.locator(".tool__title code", { hasText: "npm test" }).click();
+  await tool.locator(".tool__output", { hasText: "Tests: 1 passed" }).waitFor();
+  await tool.locator(".tool__detail", { hasText: "npm test -- login" }).waitFor();
+  await chat.locator(".tool--file .diff-line--add", { hasText: "signs in with a code" }).waitFor();
+  assert.equal(await chat.locator(".tool--file .tool__added").textContent(), "+3");
+  const approval = chat.locator(".approval", { hasText: "git commit" });
+  assert.equal(await approval.locator("[data-chat-answer]").count(), 3, "Allow, Allow for session, Deny");
+  // A redraw from elsewhere keeps an opened card open.
+  await page.evaluate(() => window.emitTauri("session:changed", "chatty"));
+  await page.waitForTimeout(100);
+  assert.notEqual(await tool.getAttribute("open"), null);
+  if (shots) {
+    await page.setViewportSize({ width: 1280, height: 1360 });
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate((value) => document.documentElement.setAttribute("data-theme", value), theme);
+      await page.waitForTimeout(150);
+      await page.screenshot({ path: `${shots}/chat-${theme}.png` });
+    }
+    await page.setViewportSize({ width: 1280, height: 840 });
+  }
+  await approval.locator('[data-chat-answer="always"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "chat_answer"));
+  assert.deepEqual(await page.evaluate(() => window.checkCalls.find((c) => c.cmd === "chat_answer").args), { id: "chatty", request: "r1", decision: "always" });
+  await emitChat([{ type: "approval_resolved", request: "r1" }]);
+  await approval.locator(".approval__answer", { hasText: "Allowed for this session" }).waitFor();
+  await page.locator(".workbench__bar .state--running").waitFor();
+  await emitChat([
+    { type: "text", id: "a2", delta: "Committed. The suite passes." },
+    { type: "turn_ended", usage: { input: 1200, output: 340, cache_read: 0, cache_write: 0 }, error: null },
+  ]);
+  await page.locator(".workbench__bar .state--done").waitFor();
+  await chat.locator(".chat-working").waitFor({ state: "detached" });
+  await chat.locator(".composer__send").waitFor();
+  // The composer keeps what is typed through a redraw, and Enter sends.
+  const composer = chat.locator("#chat-input-chatty");
+  await composer.fill("Now tidy the error messages");
+  await page.evaluate(() => window.emitTauri("session:changed", "chatty"));
+  await page.waitForTimeout(100);
+  assert.equal(await composer.inputValue(), "Now tidy the error messages");
+  await composer.press("Enter");
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "chat_send"));
+  assert.deepEqual(await page.evaluate(() => window.checkCalls.find((c) => c.cmd === "chat_send").args), { id: "chatty", text: "Now tidy the error messages", images: [] });
+  assert.equal(await composer.inputValue(), "");
+  await chat.locator(".msg--user", { hasText: "Now tidy the error messages" }).waitFor();
+  // The echo takes the place of the message put up while sending.
+  await emitChat([{ type: "user", id: "u2", text: "Now tidy the error messages" }, { type: "turn_started" }]);
+  await chat.locator(".composer__stop").click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "chat_interrupt" && c.args.id === "chatty"));
+  await emitChat([{ type: "turn_ended", usage: null, error: "Interrupted by the user" }]);
+  await chat.locator(".chat-error", { hasText: "Interrupted by the user" }).waitFor();
+  assert.equal(await chat.locator(".msg--user", { hasText: "Now tidy the error messages" }).count(), 1);
+  if (shots) {
+    await page.setViewportSize({ width: 1280, height: 1360 });
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate((value) => document.documentElement.setAttribute("data-theme", value), theme);
+      await page.waitForTimeout(150);
+      await page.screenshot({ path: `${shots}/chat-after-${theme}.png` });
+    }
+    await page.setViewportSize({ width: 1280, height: 840 });
+  }
+  // A quick command that submits is sent as a message, not typed into a PTY.
+  await chat.locator('.composer__bar [data-action="quick-menu"]').click();
+  const quickBox = await page.locator(".menu--anchored").boundingBox();
+  assert(quickBox.y + quickBox.height <= 840, "the composer's menu opens upwards, inside the window");
+  await page.locator('[data-quick="q1"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "chat_send" && c.args.text === "npm test"));
+  assert.equal(await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "quick_command_send" && c.args.sessionId === "chatty").length), 0);
+  // Switching a running chat to the terminal asks, stops, saves the view and
+  // starts it again in the terminal.
+  await page.locator('[data-action="session-view"][data-view="terminal"]').click();
+  await page.locator(".modal", { hasText: "The agent stops and resumes in Terminal" }).getByRole("button", { name: "Switch" }).click();
+  await page.locator("#terminal-host").waitFor();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "session_start" && c.args.id === "chatty"));
+  const switched = await page.evaluate(() => window.checkCalls.filter((c) => ["session_stop", "session_view", "session_start"].includes(c.cmd) && c.args.id === "chatty").map((c) => [c.cmd, c.args.view]));
+  assert.deepEqual(switched, [["session_stop", undefined], ["session_view", "terminal"], ["session_start", undefined]]);
+  assert.equal(await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "chat_history").length), 1, "history is read once");
+  assert.equal(await page.locator(".toast--error").count(), 0);
   assert.deepEqual(errors, []);
   assert.equal(await page.locator(".toast--error").count(), 0);
   if (process.env.CONVOY_TEST_SCREENSHOT) await page.screenshot({ path: process.env.CONVOY_TEST_SCREENSHOT });
-  console.log("PASS: folder → builder → review → feedback; Linear MCP import → per-task model; sidebar menus; settled dialogs; settings page saves; no browser errors. IPC mocked.");
+  console.log("PASS: folder → builder → review → feedback; Linear MCP import → per-task model; sidebar menus; settled dialogs; settings page saves; chat session events, approval, composer and view switch; no browser errors. IPC mocked.");
 } finally {
   await browser?.close();
   await server.close();

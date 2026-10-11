@@ -102,13 +102,14 @@ pub fn project_remove(id: String, workspace: State<'_, Workspace>) -> Result<(),
 pub fn projects_remove_all(
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<crate::chat::Chats>>,
 ) -> Result<(), String> {
     let running = workspace.act(|workspace| {
         Ok(workspace
             .state()
             .sessions
             .iter()
-            .filter(|session| terminals.running(&session.id))
+            .filter(|session| crate::chat::is_running(&terminals, &chats, &session.id))
             .count())
     })?;
     if running > 0 {

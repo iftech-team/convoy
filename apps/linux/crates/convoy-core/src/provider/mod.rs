@@ -103,6 +103,23 @@ pub fn permission_flags(agent: Agent, settings: &crate::model::Settings) -> Vec<
     }
 }
 
+/// Every effort level either agent takes; what a model offers is a subset
+/// (see [`models`]).
+pub const EFFORTS: &[&str] = &["minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
+
+/// The flags that set how hard the agent thinks: `--effort` for Claude Code,
+/// the `model_reasoning_effort` setting for Codex. Nothing for an empty or
+/// unknown level, so the agent keeps its own default.
+pub fn effort_flags(agent: Agent, effort: Option<&str>) -> Vec<String> {
+    let Some(effort) = effort.filter(|effort| EFFORTS.contains(effort)) else {
+        return Vec::new();
+    };
+    match agent {
+        Agent::Claude => vec!["--effort".into(), effort.into()],
+        Agent::Codex => vec!["-c".into(), format!("model_reasoning_effort={effort}")],
+    }
+}
+
 /// The arguments a session launches with, minus the agent name.
 fn session_args(session: &Session, settings_file: Option<&str>, extra: &[String]) -> Vec<String> {
     let mut args: Vec<String> = agent_args(session, session.started)
@@ -114,6 +131,7 @@ fn session_args(session: &Session, settings_file: Option<&str>, extra: &[String]
         flags.push("--model".into());
         flags.push(model.to_string());
     }
+    flags.extend(effort_flags(session.agent, session.effort.as_deref()));
     if let (Agent::Claude, Some(file)) = (session.agent, settings_file.filter(|f| !f.is_empty())) {
         flags.push("--settings".into());
         flags.push(file.to_string());

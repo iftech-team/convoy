@@ -40,6 +40,10 @@ convoy-pty = { path = "crates/pty" }
 # cannot run it on.
 trash = "5.2"
 
+# A chat's agent runs in its own process group, and a stop signals the group.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 # The macOS app keeps its settings in a property list; importing them reads it.
 [target.'cfg(target_os = "macos")'.dependencies]
 plist = "1"
@@ -48,6 +52,7 @@ plist = "1"
 # The `test` feature gives a real AppHandle, so the exit rules are checked
 # through the same event channel the window uses.
 tauri = { version = "2", features = ["test"] }
+tempfile = "3"
 
 [profile.release]
 lto = "thin"

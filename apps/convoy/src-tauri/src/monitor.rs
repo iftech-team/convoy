@@ -51,10 +51,13 @@ pub fn monitor_tick(
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
     reports: State<'_, Reports>,
+    chats: State<'_, Arc<crate::chat::Chats>>,
 ) -> Result<Tick, String> {
     let now = now_ms();
     let root = workspace.storage.telemetry();
-    let running = terminals.ids();
+    // Claude reports through its hooks in a chat too, so chats are watched
+    // and hibernated the same way.
+    let running = crate::chat::running_ids(&terminals, &chats);
 
     let mut states = Vec::new();
     let mut changed = false;

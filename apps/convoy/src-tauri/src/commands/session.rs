@@ -8,6 +8,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 use tauri::{AppHandle, State};
 
+use crate::chat::{is_running, running_ids, Chats};
 use crate::pty::{Launch, Terminals};
 
 #[tauri::command]
@@ -16,17 +17,18 @@ pub fn sessions_for(
     archived: bool,
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<Chats>>,
 ) -> Result<Vec<SessionView>, String> {
-    let running = terminals.ids();
+    let running = running_ids(&terminals, &chats);
     workspace.with(|workspace| {
-        let mut sessions: Vec<SessionView> = workspace
-            .state()
+        let state = workspace.state();
+        let mut sessions: Vec<SessionView> = state
             .sessions
             .iter()
             .filter(|session| {
                 session.project_id == project_id && (archived || !session.is_archived())
             })
-            .map(|session| view_of(session, running.contains(&session.id)))
+            .map(|session| view_of(session, running.contains(&session.id), &state.settings))
             .collect();
         sessions.sort_by_key(|session| !session.pinned);
         Ok(sessions)
@@ -38,9 +40,16 @@ pub fn session_detail(
     id: String,
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<Chats>>,
 ) -> Result<SessionView, String> {
-    let running = terminals.running(&id);
-    workspace.act(|workspace| Ok(view_of(workspace.session(&id)?, running)))
+    let running = is_running(&terminals, &chats, &id);
+    workspace.act(|workspace| {
+        Ok(view_of(
+            workspace.session(&id)?,
+            running,
+            workspace.settings(),
+        ))
+    })
 }
 
 /// Creates a session. Its title, model name and review relationship are all
@@ -55,6 +64,7 @@ pub fn session_create(
     model: String,
     profile_id: Option<String>,
     notes: Option<String>,
+    view: Option<String>,
     workspace: State<'_, Workspace>,
 ) -> Result<String, String> {
     let agent = Agent::parse(&agent).ok_or("Unknown agent.")?;
@@ -80,6 +90,10 @@ pub fn session_create(
                 false,
             )?;
         }
+        // Chosen in the sheet; none follows the settings default.
+        if let Some(view) = view.filter(|view| !view.is_empty()) {
+            workspace.set_session_view(&id, &view)?;
+        }
         Ok(id)
     })
 }
@@ -99,8 +113,9 @@ pub fn session_edit(
     input: SessionInput,
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<Chats>>,
 ) -> Result<(), String> {
-    let running = terminals.running(&id);
+    let running = is_running(&terminals, &chats, &id);
     workspace.act(|workspace| {
         workspace
             .edit_session(
@@ -123,8 +138,9 @@ pub fn session_archive(
     archived: bool,
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<Chats>>,
 ) -> Result<(), String> {
-    let running = terminals.running(&id);
+    let running = is_running(&terminals, &chats, &id);
     workspace.act(|workspace| {
         workspace
             .edit_session(
@@ -145,8 +161,9 @@ pub fn session_pin(
     pinned: bool,
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<Chats>>,
 ) -> Result<(), String> {
-    let running = terminals.running(&id);
+    let running = is_running(&terminals, &chats, &id);
     workspace.act(|workspace| {
         workspace
             .edit_session(
@@ -185,7 +202,12 @@ pub fn session_start(
     rows: u16,
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<Chats>>,
 ) -> Result<(), String> {
+    // One process per session: the chat's goes before the terminal's starts.
+    if chats.running(&id) {
+        return Err("This session is running in the chat. Stop it first.".into());
+    }
     let executable = std::env::current_exe().map_err(|error| error.to_string())?;
     let storage = workspace.storage.clone();
     let plan = workspace.act(|workspace| plan_launch(workspace, &storage, &id, &executable))?;
@@ -216,15 +238,36 @@ pub fn session_start(
 }
 
 #[tauri::command]
-pub fn session_stop(id: String, terminals: State<'_, Arc<Terminals>>) {
+pub fn session_stop(
+    id: String,
+    terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<Chats>>,
+) {
     terminals.stop(&id);
+    chats.stop(&id);
 }
 
 /// Stopping an agent that has been idle since it said it was finished. The
 /// task behind it goes to review, not to failed: nothing went wrong.
 #[tauri::command]
-pub fn session_hibernate(id: String, terminals: State<'_, Arc<Terminals>>) {
+pub fn session_hibernate(
+    id: String,
+    terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<Chats>>,
+) {
     terminals.hibernate(&id);
+    chats.hibernate(&id);
+}
+
+/// Shows the session as `chat` or `terminal` from now on. A running agent is
+/// left alone: the window stops it and starts it in the other mode itself.
+#[tauri::command]
+pub fn session_view(
+    id: String,
+    view: String,
+    workspace: State<'_, Workspace>,
+) -> Result<(), String> {
+    workspace.act(|workspace| workspace.set_session_view(&id, &view).map(|_| ()))
 }
 
 #[tauri::command]
@@ -378,9 +421,10 @@ pub fn worktree_create(
     base: Option<String>,
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<Chats>>,
     repositories: State<'_, Repositories>,
 ) -> Result<WorktreePlanView, String> {
-    let running: Vec<String> = terminals.ids();
+    let running: Vec<String> = running_ids(&terminals, &chats);
     let root = workspace.storage.worktrees();
     let mut plan = workspace.act(|core| {
         let busy = |id: &str| running.iter().any(|other| other == id);
@@ -456,8 +500,9 @@ pub fn worktree_plan_remove(
     id: String,
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<Chats>>,
 ) -> Result<WorktreeRemovalView, String> {
-    let running: Vec<String> = terminals.ids();
+    let running: Vec<String> = running_ids(&terminals, &chats);
     let root = workspace.storage.worktrees();
     let plan = workspace.act(|core| {
         let busy = |id: &str| running.iter().any(|other| other == id);
@@ -477,9 +522,10 @@ pub fn worktree_remove(
     id: String,
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<Chats>>,
     repositories: State<'_, Repositories>,
 ) -> Result<(), String> {
-    let running: Vec<String> = terminals.ids();
+    let running: Vec<String> = running_ids(&terminals, &chats);
     let root = workspace.storage.worktrees();
     let plan = workspace.act(|core| {
         let busy = |id: &str| running.iter().any(|other| other == id);
@@ -567,9 +613,18 @@ pub fn quick_command_send(
     command_id: String,
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<Chats>>,
 ) -> Result<(), String> {
     let (text, submit) =
         workspace.act(|core| convoy_core::review::quick_command(core, &session_id, &command_id))?;
+    // A chat has no half-typed line: a command that should not submit can
+    // only go to a terminal.
+    if chats.running(&session_id) {
+        if !submit {
+            return Err("Open the terminal view to insert text without sending it.".into());
+        }
+        return chats.send(&session_id, &text, &[]);
+    }
     if !terminals.running(&session_id) {
         return Err("Start or resume the target session first.".into());
     }

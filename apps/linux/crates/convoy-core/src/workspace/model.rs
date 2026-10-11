@@ -230,6 +230,10 @@ pub struct Session {
     pub started: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// How hard the agent thinks: `--effort` for Claude, the reasoning
+    /// effort for Codex. `None` keeps the agent's own default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -264,9 +268,18 @@ pub struct Session {
     pub task_id: Option<String>,
     #[serde(rename = "profileID", default, skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,
+    /// How the session is shown: `chat` or `terminal`. `None` follows
+    /// [`Settings::default_view`], so a session never switched keeps tracking
+    /// the setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<String>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }
+
+/// The two ways a session can be shown. Anything else on disk — a value a
+/// newer build wrote — reads as the default rather than failing the file.
+pub const VIEWS: &[&str] = &["chat", "terminal"];
 
 impl Session {
     /// A minimal session record. `Workspace::add_session` is the normal way to
@@ -282,6 +295,7 @@ impl Session {
             provider_id: String::new(),
             started: false,
             model: None,
+            effort: None,
             notes: None,
             branch: None,
             archived: None,
@@ -293,8 +307,18 @@ impl Session {
             review_of: None,
             task_id: None,
             profile_id: None,
+            view: None,
             unknown: Map::new(),
         }
+    }
+
+    /// `chat` or `terminal`: the session's own choice when it made a valid
+    /// one, otherwise the settings default.
+    pub fn shown_as<'a>(&'a self, settings: &'a Settings) -> &'a str {
+        self.view
+            .as_deref()
+            .filter(|view| VIEWS.contains(view))
+            .unwrap_or_else(|| settings.view())
     }
 
     pub fn is_archived(&self) -> bool {
@@ -490,12 +514,32 @@ pub struct Settings {
     /// Paths copied into every new worktree, one per line, before the project's.
     #[serde(rename = "worktreeShared", default)]
     pub worktree_shared: String,
+    /// How new sessions are shown: `chat` or `terminal`.
+    #[serde(rename = "defaultView", default = "default_view")]
+    pub default_view: String,
     #[serde(flatten)]
     pub unknown: Unknown,
 }
 
 fn yes() -> bool {
     true
+}
+
+/// The terminal: the agents' own interface, which every feature of theirs
+/// works in. Chat is a choice in Settings.
+fn default_view() -> String {
+    "terminal".into()
+}
+
+impl Settings {
+    /// [`Settings::default_view`] when it is one of [`VIEWS`], else `terminal`.
+    pub fn view(&self) -> &str {
+        if VIEWS.contains(&self.default_view.as_str()) {
+            &self.default_view
+        } else {
+            "terminal"
+        }
+    }
 }
 
 fn default_sound() -> String {
@@ -573,6 +617,7 @@ impl Default for Settings {
             compact_sidebar: true,
             worktree_setup: String::new(),
             worktree_shared: String::new(),
+            default_view: default_view(),
             unknown: Map::new(),
         }
     }

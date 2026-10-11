@@ -366,7 +366,7 @@ fn modified(file: &Path) -> f64 {
         .unwrap_or(0.0)
 }
 
-fn rollouts(folder: &Path, depth: u32, files: &mut Vec<PathBuf>) {
+pub(crate) fn rollouts(folder: &Path, depth: u32, files: &mut Vec<PathBuf>) {
     if depth > 8 {
         return;
     }

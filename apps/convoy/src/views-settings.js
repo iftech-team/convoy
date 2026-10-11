@@ -14,7 +14,7 @@ export const SECTIONS = [
   ["General", "sliders", ["keep awake", "sleep", "sidebar", "sort", "worktree default", "branch prefix", "new sessions"]],
   ["Appearance", "paint", ["theme", "dark", "light", "system", "language", "russian", "english", "язык", "русский"]],
   ["Terminal", "terminal", ["font", "size", "scrollback", "lines"]],
-  ["Agents", "sparkles", ["claude", "codex", "default agent", "yolo", "permissions", "skip", "review", "template", "brief", "hibernate", "idle", "sleep"]],
+  ["Agents", "sparkles", ["claude", "codex", "default agent", "chat", "terminal", "view", "yolo", "permissions", "skip", "review", "template", "brief", "hibernate", "idle", "sleep"]],
   ["Accounts", "person", ["account", "profile", "login", "sign in", "claude", "codex"]],
   ["Linear & Jira", "link", ["linear", "jira", "atlassian", "issues", "import", "api key", "token", "mcp", "integrations"]],
   ["Quick Commands", "bolt", ["prompt", "command", "snippet", "quick"]],
@@ -238,7 +238,19 @@ function agents(settings) {
           AGENTS.map(([value, name]) => [value, name, agentIcon(value, 13)]),
           settings.default_agent,
         ),
-      ),
+      ) +
+        row(
+          t("New sessions open in"),
+          t("Chat shows replies, tool calls, file changes and approvals as cards. Terminal runs the agent's own screen. Each session can switch later."),
+          segmented(
+            "default_view",
+            [
+              ["chat", t("Chat")],
+              ["terminal", t("Terminal")],
+            ],
+            settings.default_view === "chat" ? "chat" : "terminal",
+          ),
+        ),
     )}
     ${groupBox(
       t("Permissions"),

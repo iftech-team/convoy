@@ -523,6 +523,7 @@ version = "0.1.0"
 dependencies = [
  "convoy-core",
  "convoy-pty",
+ "libc",
  "plist",
  "serde",
  "serde_json",
@@ -532,6 +533,7 @@ dependencies = [
  "tauri-plugin-fs",
  "tauri-plugin-notification",
  "tauri-plugin-opener",
+ "tempfile",
  "trash",
  "ureq",
 ]

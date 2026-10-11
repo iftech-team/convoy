@@ -156,6 +156,8 @@ pub struct SessionView {
     pub worktree_removed: bool,
     pub review_of: Option<String>,
     pub task_id: Option<String>,
+    /// `chat` or `terminal`: the session's choice, or the settings default.
+    pub view: String,
 }
 
 #[derive(Serialize)]
@@ -168,7 +170,11 @@ pub struct WorkspaceView {
     pub storage: String,
 }
 
-pub fn view_of(session: &Session, running: bool) -> SessionView {
+pub fn view_of(
+    session: &Session,
+    running: bool,
+    settings: &convoy_core::model::Settings,
+) -> SessionView {
     SessionView {
         id: session.id.clone(),
         project_id: session.project_id.clone(),
@@ -190,6 +196,7 @@ pub fn view_of(session: &Session, running: bool) -> SessionView {
         worktree_removed: session.worktree_removed(),
         review_of: session.review_of.clone(),
         task_id: session.task_id.clone(),
+        view: session.shown_as(settings).to_string(),
     }
 }
 
@@ -197,10 +204,10 @@ pub fn view_of(session: &Session, running: bool) -> SessionView {
 pub fn workspace_read(
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<crate::chat::Chats>>,
 ) -> Result<WorkspaceView, String> {
     // Login terminals are not sessions.
-    let running: Vec<String> = terminals
-        .ids()
+    let running: Vec<String> = crate::chat::running_ids(&terminals, &chats)
         .into_iter()
         .filter(|id| !id.starts_with("login:"))
         .collect();
@@ -243,7 +250,7 @@ pub fn workspace_read(
             .sessions
             .iter()
             .filter(|session| !session.is_archived())
-            .map(|session| view_of(session, running.contains(&session.id)))
+            .map(|session| view_of(session, running.contains(&session.id), &state.settings))
             .collect();
         Ok(WorkspaceView {
             projects,
@@ -283,6 +290,8 @@ pub struct SettingsView {
     pub compact_sidebar: bool,
     pub worktree_setup: String,
     pub worktree_shared: String,
+    /// `chat` or `terminal`, for sessions that have not chosen.
+    pub default_view: String,
     pub storage: String,
 }
 
@@ -328,6 +337,7 @@ pub fn settings_read(workspace: State<'_, Workspace>) -> Result<SettingsView, St
             compact_sidebar: settings.compact_sidebar,
             worktree_setup: settings.worktree_setup.clone(),
             worktree_shared: settings.worktree_shared.clone(),
+            default_view: settings.view().to_string(),
             storage: storage.clone(),
         })
     })
@@ -379,6 +389,8 @@ pub struct SettingsInput {
     pub worktree_setup: Option<String>,
     #[serde(default)]
     pub worktree_shared: Option<String>,
+    #[serde(default)]
+    pub default_view: Option<String>,
 }
 
 #[tauri::command]
@@ -426,6 +438,7 @@ pub fn settings_save(input: SettingsInput, workspace: State<'_, Workspace>) -> R
                 compact_sidebar: input.compact_sidebar,
                 worktree_setup: input.worktree_setup,
                 worktree_shared: input.worktree_shared,
+                default_view: input.default_view,
             })
             .map(|_| ())
     })
@@ -515,6 +528,7 @@ mod migration_tests {
             "sonnet".into(),
             None,
             Some("Where I left off".into()),
+            None,
             app.state(),
         )
         .unwrap();

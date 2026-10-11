@@ -4335,3 +4335,719 @@ select:disabled {
 .preview__more {
   padding: 10px 16px 16px;
 }
+
+/* ----------------------------------------------------------------- chat -- */
+
+/* Chat | Terminal in the session bar: the bar is 34px, so the control is
+   smaller than the settings one. */
+.segmented--bar {
+  padding: 2px;
+  gap: 1px;
+}
+
+.segmented--bar button {
+  padding: 1px 9px;
+  font-size: 11.5px;
+  line-height: 18px;
+}
+
+.chat-slot {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.chat__log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* One readable column, as in a conversation; panes narrow it themselves. */
+.chat__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 24px 24px 20px;
+  user-select: text;
+}
+
+.pane .chat__inner {
+  padding: 16px 14px 14px;
+}
+
+.msg--user {
+  align-self: flex-end;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: min(84%, 620px);
+  margin-top: 6px;
+}
+
+.msg__bubble {
+  padding: 8px 13px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.msg--pending .msg__bubble {
+  opacity: 0.6;
+}
+
+.msg__images {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.msg__images img {
+  max-width: 180px;
+  max-height: 140px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  object-fit: cover;
+}
+
+.msg--assistant {
+  font-size: 13.5px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.msg--assistant .md p {
+  margin: 0 0 8px;
+}
+
+.msg--assistant .md > :last-child {
+  margin-bottom: 0;
+}
+
+/* Paragraph margins space the reply; the blank lines between add nothing. */
+.msg--assistant .md br {
+  display: none;
+}
+
+.msg--assistant .md h1,
+.msg--assistant .md h2,
+.msg--assistant .md h3,
+.msg--assistant .md h4 {
+  margin: 14px 0 6px;
+  font-size: 14.5px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.msg--assistant .md h1 {
+  font-size: 16px;
+}
+
+.msg--assistant .md li {
+  margin: 0 0 3px 20px;
+}
+
+.msg--assistant .md code,
+.approval__title code,
+.tool__title code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+.msg--assistant .md-code {
+  margin: 4px 0 10px;
+  white-space: pre;
+  line-height: 1.5;
+}
+
+.msg--assistant .md-code code {
+  padding: 0;
+  background: none;
+}
+
+/* The caret that says the reply is still coming. */
+.msg--streaming .md > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 3px;
+  vertical-align: -2px;
+  border-radius: 1px;
+  background: var(--accent);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+/* -------------------------------------------------------- tool cards --- */
+
+.tool,
+.thinking {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  font-size: 12.5px;
+}
+
+.tool summary,
+.thinking summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tool summary::-webkit-details-marker,
+.thinking summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 5px 10px 5px 8px;
+  color: var(--text);
+}
+
+.tool__head:hover {
+  background: var(--bg-hover);
+  border-radius: var(--radius);
+}
+
+.tool[open] .tool__head:hover {
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.tool__chevron,
+.thinking summary > svg:first-child {
+  flex: none;
+  display: grid;
+  color: var(--text-faint);
+  transition: transform 0.12s ease;
+}
+
+.tool[open] .tool__chevron,
+.thinking[open] summary > svg:first-child {
+  transform: rotate(90deg);
+}
+
+.tool__icon {
+  flex: none;
+  display: grid;
+  color: var(--text-muted);
+}
+
+.tool__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.tool__path {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.tool__dir {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.tool__counts {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.tool__added {
+  color: color-mix(in srgb, var(--state-done) 75%, var(--text));
+}
+
+.tool__removed {
+  color: var(--state-failed);
+}
+
+.tool__status {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+}
+
+.tool__status--ok {
+  color: color-mix(in srgb, var(--state-done) 75%, var(--text));
+}
+
+.tool__status--fail,
+.tool--failed .tool__icon {
+  color: var(--state-failed);
+}
+
+.tool__body {
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: 0 0 var(--radius) var(--radius);
+  overflow: hidden;
+}
+
+.tool__detail,
+.tool__output,
+.tool__diff,
+.approval__detail {
+  margin: 0;
+  padding: 9px 12px;
+  max-height: 320px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.tool__detail + .tool__output {
+  border-top: 1px dashed var(--border);
+}
+
+.tool__output {
+  color: var(--text-muted);
+}
+
+.tool__detail--command {
+  color: var(--text);
+}
+
+.tool__prompt {
+  color: var(--accent-text);
+  user-select: none;
+}
+
+.tool__empty {
+  padding: 7px 12px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.tool__diff {
+  max-height: 420px;
+  padding: 6px 0;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.tool__diff .diff-line {
+  margin: 0;
+  padding: 0 12px;
+  min-width: max-content;
+  min-height: 1.55em;
+}
+
+.thinking summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 4px 10px 4px 8px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.thinking summary > svg:nth-child(2) {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.thinking {
+  background: none;
+  border-style: dashed;
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.thinking[open] {
+  align-self: stretch;
+}
+
+.thinking__text {
+  padding: 2px 12px 10px 30px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+/* ---------------------------------------------------------- approvals -- */
+
+.approval {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--state-review) 45%, var(--border));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--state-review) 7%, var(--bg));
+}
+
+.approval__ask {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--state-review) 80%, var(--text));
+}
+
+.approval__title {
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.approval__detail {
+  max-height: 220px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.approval__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.approval__actions .button--primary {
+  height: 30px;
+}
+
+.approval__deny:hover {
+  color: var(--state-failed);
+}
+
+.approval--resolved {
+  border-color: var(--border);
+  background: var(--bg-subtle);
+}
+
+.approval--resolved .approval__ask {
+  color: var(--text-muted);
+}
+
+.approval__answer {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.approval__answer--allow,
+.approval__answer--always {
+  color: color-mix(in srgb, var(--state-done) 70%, var(--text));
+}
+
+.approval__answer--deny {
+  color: var(--state-failed);
+}
+
+/* ------------------------------------------------- inline lines, empty -- */
+
+.chat-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--state-failed) 35%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--state-failed) 7%, var(--bg));
+  color: color-mix(in srgb, var(--state-failed) 75%, var(--text));
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-error svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.chat-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.chat-note::before,
+.chat-note::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+
+.chat-working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.chat-working--waiting {
+  color: color-mix(in srgb, var(--state-review) 80%, var(--text));
+}
+
+.chat-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.chat-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: chat-dot 1.2s ease-in-out infinite;
+}
+
+.chat-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.chat-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes chat-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+.chat-spinner {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.chat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 12vh auto 0;
+  max-width: 44ch;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.chat-empty .chat-spinner {
+  margin-bottom: 4px;
+}
+
+.chat-empty__title {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-dots i,
+  .msg--streaming .md > :last-child::after {
+    animation: none;
+    opacity: 0.8;
+  }
+}
+
+/* ----------------------------------------------------------- composer -- */
+
+.chat__composer {
+  flex: none;
+  padding: 0 24px 16px;
+  background: var(--bg);
+}
+
+.pane .chat__composer {
+  padding: 0 12px 10px;
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  max-width: 780px;
+  margin: 0 auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--bg);
+  box-shadow: var(--shadow);
+}
+
+.composer:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border-strong));
+  box-shadow: 0 0 0 3px var(--accent-ring), var(--shadow);
+}
+
+.composer__input {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  max-height: 220px;
+  padding: 12px 14px 4px;
+  border: none;
+  outline: none;
+  resize: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.composer__input::placeholder {
+  color: var(--text-faint);
+}
+
+.composer__input:disabled {
+  cursor: not-allowed;
+}
+
+.composer__tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px 0;
+}
+
+.composer__tray[hidden] {
+  display: none;
+}
+
+.composer__image {
+  position: relative;
+  display: block;
+}
+
+.composer__image img {
+  display: block;
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  object-fit: cover;
+}
+
+.composer__image button {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--bg);
+}
+
+.composer__image button svg {
+  width: 10px;
+  height: 10px;
+}
+
+.composer__bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px 8px;
+}
+
+.composer__tool {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+}
+
+.composer__tool:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.composer__tool:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.composer__hint {
+  margin-left: 6px;
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.composer__spacer {
+  flex: 1;
+}
+
+.composer__send,
+.composer__stop {
+  height: 28px;
+  padding: 0 11px 0 9px;
+  border-radius: var(--radius);
+  font-size: 12.5px;
+}
+
+.composer__stop {
+  color: var(--state-failed);
+}
+
+.composer__stop:hover {
+  border-color: var(--state-failed);
+}
+
+.pane .composer__hint {
+  display: none;
+}

@@ -87,6 +87,8 @@ pub struct NewSession {
     pub review_of: Option<String>,
     pub profile_id: Option<String>,
     pub model: String,
+    /// One of [`crate::provider::EFFORTS`], or empty for the agent's default.
+    pub effort: String,
 }
 
 impl NewSession {
@@ -99,6 +101,7 @@ impl NewSession {
             review_of: None,
             profile_id: None,
             model: String::new(),
+            effort: String::new(),
         }
     }
 }
@@ -133,6 +136,8 @@ pub struct SettingsPatch {
     pub compact_sidebar: Option<bool>,
     pub worktree_setup: Option<String>,
     pub worktree_shared: Option<String>,
+    /// `chat` or `terminal`.
+    pub default_view: Option<String>,
 }
 
 pub struct Workspace {
@@ -505,6 +510,10 @@ impl Workspace {
             utf16_len(&input.model) <= 100 && MODEL.is_match(&input.model),
             "Invalid model name."
         );
+        ensure!(
+            input.effort.is_empty() || crate::provider::EFFORTS.contains(&input.effort.as_str()),
+            "Invalid effort."
+        );
         self.update(move |state| {
             let source = match &input.review_of {
                 Some(id) => Some(find_session(state, id)?.clone()),
@@ -521,6 +530,7 @@ impl Workspace {
                 project_id: input.project_id,
                 agent: input.agent,
                 model: Some(input.model),
+                effort: Some(input.effort).filter(|effort| !effort.is_empty()),
                 title: input.title.trim().to_string(),
                 prompt: input.prompt,
                 provider_id: provider_id_for(input.agent),
@@ -538,6 +548,7 @@ impl Workspace {
                 review_of: source.as_ref().map(|_| input.review_of.clone().unwrap()),
                 task_id: None,
                 profile_id: input.profile_id,
+                view: None,
                 unknown: Default::default(),
             });
             Ok(())
@@ -577,6 +588,19 @@ impl Workspace {
             if let Some(value) = patch.pinned {
                 session.pinned = Some(value);
             }
+            Ok(())
+        })
+    }
+
+    /// Shows the session as `chat` or `terminal` from now on. Either view
+    /// drives the same conversation, so this is allowed while it runs; the
+    /// window restarts the agent in the other mode itself.
+    pub fn set_session_view(&mut self, id: &str, view: &str) -> Result<&State> {
+        ensure!(model::VIEWS.contains(&view), "Unknown session view.");
+        self.session(id)?;
+        let (id, view) = (id.to_string(), view.to_string());
+        self.update(move |state| {
+            find_session_mut(state, &id)?.view = Some(view);
             Ok(())
         })
     }
@@ -642,8 +666,13 @@ impl Workspace {
             compact_sidebar: patch.compact_sidebar.unwrap_or(current.compact_sidebar),
             worktree_setup: patch.worktree_setup.unwrap_or(current.worktree_setup),
             worktree_shared: patch.worktree_shared.unwrap_or(current.worktree_shared),
+            default_view: patch.default_view.unwrap_or(current.default_view),
             unknown: current.unknown,
         };
+        ensure!(
+            model::VIEWS.contains(&next.default_view.as_str()),
+            "Invalid settings."
+        );
         validate_settings(&serde_json::to_value(&next)?)?;
         self.update(move |state| {
             state.settings = next;

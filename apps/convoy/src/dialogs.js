@@ -120,6 +120,7 @@ function newSession(dialog) {
       ${field(t("Name (optional)"), textInput("draft-title", dialog.title, t("Leave empty to name it after the first message")))}
       ${worktree}
       ${field(t("Agent"), choice("agent", AGENTS, dialog.agent))}
+      ${field(t("Open in"), choice("view", [["chat", t("Chat")], ["terminal", t("Terminal")]], dialog.view ?? "terminal"))}
       <div class="field-row">
         ${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
         ${field(t("Model"), modelSelect("draft-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}

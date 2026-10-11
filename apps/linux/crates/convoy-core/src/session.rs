@@ -146,6 +146,86 @@ pub fn plan_launch(
     })
 }
 
+/// A chat launch: the terminal launch's checks and preparation, with the
+/// agent on JSON pipes instead of a screen.
+#[derive(Debug)]
+pub struct ChatPlan {
+    /// As [`plan_launch`] made it, with `spec` replaced by the chat command.
+    pub launch: LaunchPlan,
+    /// The protocol for this agent, set up to start or resume the
+    /// conversation the session records.
+    pub driver: crate::chat::Driver,
+    /// A first launch's prompt, sent as the first user turn. A terminal passes
+    /// it on the command line; a chat has no such argument.
+    pub first_prompt: Option<String>,
+}
+
+/// Everything [`plan_launch`] checks and prepares — account, hook settings,
+/// trusted folder, resume — for a chat. Claude gets the stream-json flags and
+/// the same conversation, model, settings and permission flags; Codex its
+/// app server, with the model and permission choice sent when the thread
+/// opens. Wrapped in the login shell, or resolved on Windows, exactly as a
+/// terminal launch is.
+pub fn plan_chat_launch(
+    workspace: &Workspace,
+    storage: &Storage,
+    id: &str,
+    executable: &Path,
+) -> Result<ChatPlan> {
+    use crate::chat::{claude, codex, Driver};
+
+    let mut launch = plan_launch(workspace, storage, id, executable)?;
+    let session = workspace.session(id)?;
+    let settings = workspace.settings();
+    let model = session.model.as_deref().filter(|model| !model.is_empty());
+    let (args, driver) = match session.agent {
+        Agent::Claude => (
+            claude::args(
+                &session.provider_id,
+                launch.resume,
+                model,
+                launch
+                    .settings_file
+                    .as_ref()
+                    .map(|file| file.to_string_lossy())
+                    .as_deref(),
+                &[
+                    permission_flags(Agent::Claude, settings),
+                    crate::provider::effort_flags(Agent::Claude, session.effort.as_deref()),
+                ]
+                .concat(),
+            ),
+            Driver::Claude(claude::ClaudeStream::new(session.provider_id.clone())),
+        ),
+        Agent::Codex => (
+            codex::args(),
+            Driver::Codex(codex::CodexClient::new(codex::Options {
+                cwd: launch.directory.to_string_lossy().into_owned(),
+                model: model.map(str::to_string),
+                effort: session.effort.clone(),
+                // A Codex session that never printed its thread id cannot be
+                // resumed exactly, so it starts a new thread.
+                resume: (launch.resume && !session.provider_id.is_empty())
+                    .then(|| session.provider_id.clone()),
+                yolo: settings.yolo_codex,
+            })),
+        ),
+    };
+    launch.spec = crate::provider::provider_spec_for(
+        session.agent,
+        &args,
+        &launch.env,
+        crate::Platform::current(),
+    )?;
+    let first_prompt =
+        (!launch.resume && !session.prompt.is_empty()).then(|| session.prompt.clone());
+    Ok(ChatPlan {
+        launch,
+        driver,
+        first_prompt,
+    })
+}
+
 const OUTDATED_BRIEF: &str =
     "This task brief is outdated or unapproved. Approve the spec and prepare a new task brief.";
 
