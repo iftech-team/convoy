@@ -19,6 +19,7 @@ import { TASK_STATUSES, runnable } from "./views-planning.js";
 import { missingConversation } from "./terminal.js";
 import { viewOf } from "./views-chat.js";
 import { approvalsButton, approvalsPanel, inboxItems } from "./views-inbox.js";
+import { helperActivity, helpersButton, helpersMenu, helpersSummary } from "./views-helpers.js";
 
 const TABS = [
   ["sessions", "Sessions"],
@@ -60,13 +61,16 @@ function stateDot(item) {
   return `<span class="dot dot--${tone}" title="${escape(label)}"></span>`;
 }
 
-function sidebarSession(item, { showProject = false } = {}) {
+function sidebarSession(item, { showProject = false, helper = false } = {}) {
   const owner = showProject ? state.projects.find((entry) => entry.id === item.project_id) : null;
+  // A manager says how many helpers it has, even in the compact sidebar.
+  const helpers = showProject ? "" : helpersSummary(item.id);
   return `
-    <button class="side-session${state.selected?.has(item.id) ? " side-session--selected" : ""}" data-open="${escape(item.id)}"
+    <button class="side-session${helper ? " side-session--helper" : ""}${state.selected?.has(item.id) ? " side-session--selected" : ""}" data-open="${escape(item.id)}"
             data-menu-session="${escape(item.id)}"
             aria-current="${item.id === state.sessionId}"
             title="${escape(item.notes || item.title)}">
+      ${helper ? `<span class="side-session__branch" aria-label="${escape(t("Helper"))}">↳</span>` : ""}
       ${stateDot(item)}
       ${item.pinned && !showProject ? `<span class="side-session__pin">${icons.pin}</span>` : ""}
       <span class="side-session__text">
@@ -74,6 +78,8 @@ function sidebarSession(item, { showProject = false } = {}) {
         ${
           owner
             ? `<span class="side-session__detail">${escape(owner.title)}</span>`
+            : helpers
+              ? `<span class="side-session__detail side-session__helpers">${escape(helpers)}</span>`
             : state.settings.compact_sidebar === false
               ? `<span class="side-session__detail">${escape(
                   [
@@ -85,7 +91,9 @@ function sidebarSession(item, { showProject = false } = {}) {
         }
       </span>
       ${
-        item.branch
+        // A helper's row is indented and narrow: its agent says more than
+        // its generated branch name.
+        item.branch && !helper
           ? `<span class="chip chip--branch">${icons.branch}${escape(item.branch)}</span>`
           : `${agentIcon(item.agent, 11)}${item.review_of ? `<span class="side-session__tag">${escape(t("review"))}</span>` : ""}`
       }
@@ -105,6 +113,24 @@ function projectDetail(item) {
   const git = state.settings.git_status === false ? null : state.projectGit.get(item.id);
   if (git) return `⎇ ${git.branch} · ${git.changed_files ? t("{count} changed", { count: git.changed_files }) : t("clean")}`;
   return plural(item.sessions, "session");
+}
+
+/// A project's sessions with each manager's helpers under it. A helper whose
+/// manager is not listed — archived, removed — is an ordinary row.
+function nestedSessions(sessions) {
+  const listed = new Set(sessions.map((entry) => entry.id));
+  const nested = (entry) => entry.parent_id && entry.parent_id !== entry.id && listed.has(entry.parent_id);
+  return sessions
+    .filter((entry) => !nested(entry))
+    .map(
+      (entry) =>
+        sidebarSession(entry) +
+        sessions
+          .filter((child) => nested(child) && child.parent_id === entry.id)
+          .map((child) => sidebarSession(child, { helper: true }))
+          .join(""),
+    )
+    .join("");
 }
 
 export function sidebar() {
@@ -179,7 +205,7 @@ export function sidebar() {
       </div>
       ${
         expanded && sessions.length
-          ? `<div class="project-row__sessions">${sessions.map(sidebarSession).join("")}</div>`
+          ? `<div class="project-row__sessions">${nestedSessions(sessions)}</div>`
           : ""
       }${
         expanded && kids.length
@@ -257,6 +283,7 @@ export function sidebar() {
 /// the pointer. Entries mirror the macOS app's.
 export function contextMenu(menu) {
   if (menu.kind === "workspace") return workspaceMenu();
+  if (menu.kind === "helpers") return helpersMenu(menu.id, anchorStyle());
   if (menu.kind === "account") return accountMenu(menu.agent);
   if (menu.kind === "limits") return limitsPanel();
   if (menu.kind === "awake") return awakeMenu();
@@ -600,6 +627,7 @@ export function workbench() {
             ? `<span class="bar-git" id="git-status" title="${escape(t("Branch and changed files"))}">${icons.branch} ${escape(git.branch)} · ${escape(t("{count} changed", { count: git.changed }))}</span>`
             : ""
         }
+        ${view === "terminal" ? helpersButton(current.id) : ""}
         ${viewToggle(view)}
         <span class="bar-agent">${current.agent === "claude" ? "Claude Code" : "Codex"}</span>
         <span class="state ${tone}"><span class="state__dot"></span>${escape(label.replace(/^./, (c) => c.toUpperCase()))}</span>
@@ -959,7 +987,11 @@ function activityPanel() {
     days.get(name).push(event);
   }
   const row = (event) => {
-    const [label, glyph, tone] = ACTIVITY[event.kind] ?? [event.kind, "clock", ""];
+    const helper = helperActivity(event.detail);
+    const [label, glyph, tone] = helper
+      ? [helper[0], "helpers", event.kind === "done" ? "activity--done" : ""]
+      : (ACTIVITY[event.kind] ?? [event.kind, "clock", ""]);
+    if (helper) event = { ...event, detail: helper[1] };
     const time = new Date(event.at).toLocaleTimeString(language(), { hour: "numeric", minute: "2-digit" });
     return `
       <button class="activity ${tone}" data-activity-open="${escape(event.session_id)}"

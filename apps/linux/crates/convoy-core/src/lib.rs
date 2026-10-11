@@ -15,6 +15,7 @@ pub mod files;
 pub mod fs;
 pub mod git;
 pub mod hash;
+pub mod helpers;
 pub mod history;
 pub mod integrations;
 pub mod json;

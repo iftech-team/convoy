@@ -150,6 +150,11 @@ pub fn report_exit<R: Runtime>(app: &AppHandle<R>, id: &str, how: Ended) {
         }
     }
 
+    // A manager's secret ends with it; a helper's end is its manager's news.
+    if session {
+        crate::helpers::process_ended(app, id, how);
+    }
+
     let _ = app.emit(
         "terminal:exit",
         Exit {

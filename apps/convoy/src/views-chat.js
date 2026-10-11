@@ -15,6 +15,7 @@ import { escape } from "./ui.js";
 import { t } from "./i18n.js";
 import { icon, icons } from "./icons.js";
 import { highlight, markdown } from "./views-files.js";
+import { helperCards, helperOf } from "./views-helpers.js";
 
 // ------------------------------------------------------------------ views --
 
@@ -612,6 +613,7 @@ function hostFor(id) {
   root.dataset.chat = id;
   root.innerHTML = `
     <div class="chat__log"><div class="chat__inner" role="log" aria-live="polite"></div></div>
+    <div class="chat__helpers" hidden></div>
     <div class="chat__composer">
       <div class="composer">
         <div class="composer__tray"></div>
@@ -628,6 +630,8 @@ function hostFor(id) {
     input: root.querySelector(".composer__input"),
     tray: root.querySelector(".composer__tray"),
     bar: root.querySelector(".composer__bar"),
+    helpers: root.querySelector(".chat__helpers"),
+    helpersHtml: "",
     file: root.querySelector(".composer__file"),
     rendered: new Map(),
     toggled: new Map(),
@@ -834,6 +838,13 @@ function sync(host) {
     }
   }
 
+  // A manager's helpers, live; a helper's manager, one click away.
+  const helpers = helperCards(id) || helperOf(id);
+  if (helpers !== host.helpersHtml) {
+    host.helpersHtml = helpers;
+    host.helpers.innerHTML = helpers;
+    host.helpers.hidden = !helpers;
+  }
   const bar = composerBar(id);
   if (bar !== host.barHtml) {
     host.barHtml = bar;

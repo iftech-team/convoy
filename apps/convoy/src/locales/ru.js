@@ -13,6 +13,19 @@ export default {
     "Remove all": "Убрать все",
     "The projects inside it stay, one level up.": "Проекты внутри останутся — на уровень выше.",
     "Removed {count}": "Убрано: {count}",
+    // Manager sessions and their helpers
+    "Helper": "Помощник",
+    "Helpers": "Помощники",
+    "Helper of": "Помощник сессии",
+    "Finished": "Готово",
+    "Starting": "Запускается",
+    "Manager": "Менеджер",
+    "Manager — can start helper sessions": "Менеджер — может запускать сессии-помощники",
+    "The agent can hand work to other agents in this project from its shell, wait for them and read their answers. At most 4 run at once.": "Агент может из своей оболочки поручать работу другим агентам в этом проекте, ждать их и читать их ответы. Одновременно — не больше 4.",
+    "started helper": "запустил помощника",
+    "helper finished": "помощник закончил",
+    "helper failed": "помощник не справился",
+    "helper stopped": "помощник остановлен",
     // Approvals inbox
     "Approvals": "Подтверждения",
     "Approvals…": "Подтверждения…",
@@ -1048,5 +1061,6 @@ export default {
     "activity event": ["событие активности","события активности","событий активности"],
     "conversation": ["диалог","диалога","диалогов"],
     "file reference": ["ссылка на файл","ссылки на файлы","ссылок на файлы"],
+    "helper": ["помощник","помощника","помощников"],
   },
 };

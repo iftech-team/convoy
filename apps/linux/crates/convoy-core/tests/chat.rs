@@ -116,6 +116,86 @@ fn a_codex_chat_launch_runs_the_app_server_and_opens_the_thread_with_the_choices
     assert_eq!(turn["params"]["threadId"], "t-1");
 }
 
+/// A manager is launched with its variables and instructions, in a terminal
+/// and in a chat, for either agent; any other session gets neither, and a
+/// helper is never a manager however it is asked.
+#[cfg(unix)]
+#[test]
+fn a_manager_launch_carries_its_secret_and_its_instructions() {
+    use convoy_core::helpers::{ManagerLaunch, ENV_BIN, ENV_SESSION, ENV_TOKEN};
+    use convoy_core::session::{plan_chat_launch_with, plan_launch_with};
+
+    let launch = ManagerLaunch {
+        token: "secret-token".into(),
+        bin: "/opt/convoy/convoy".into(),
+        requests: "/tmp/requests".into(),
+    };
+    for agent in [Agent::Claude, Agent::Codex] {
+        let (fixture, mut workspace, id) = prepared(agent, false);
+        let storage = Storage::new(fixture.path().join("state"));
+        let exe = std::path::Path::new("/bin/convoy");
+
+        // Not a manager: the launch is told nothing, even when offered.
+        let plain = plan_launch_with(&workspace, &storage, &id, exe, Some(&launch)).unwrap();
+        assert!(!plain.env.contains_key(ENV_TOKEN));
+        assert!(plain.instructions.is_none());
+        assert!(!plain.spec.args[1].contains("--session spawn"));
+
+        workspace.set_session_manager(&id, true).unwrap();
+        let terminal = plan_launch_with(&workspace, &storage, &id, exe, Some(&launch)).unwrap();
+        assert_eq!(terminal.env[ENV_SESSION], id);
+        assert_eq!(terminal.env[ENV_TOKEN], "secret-token");
+        assert_eq!(terminal.env[ENV_BIN], "/opt/convoy/convoy");
+        let command = &terminal.spec.args[1];
+        match agent {
+            Agent::Claude => assert!(
+                command.contains("'--append-system-prompt' 'You are a manager session"),
+                "{command}"
+            ),
+            Agent::Codex => assert!(
+                command.contains("'-c' 'developer_instructions=\"You are a manager session"),
+                "{command}"
+            ),
+        }
+        assert!(command.contains("--session spawn"));
+        // The flags come before the prompt, which stays the last argument.
+        assert!(
+            command
+                .trim_end()
+                .ends_with("'--' 'Fix the login redirect'"),
+            "{command}"
+        );
+        // The secret travels in the environment, never on the command line.
+        assert!(!command.contains("secret-token"));
+
+        // Without a launch, a manager's plan carries nothing of it.
+        let bare = plan_launch_with(&workspace, &storage, &id, exe, None).unwrap();
+        assert!(!bare.env.contains_key(ENV_SESSION));
+
+        let mut chat =
+            plan_chat_launch_with(&workspace, &storage, &id, exe, Some(&launch)).unwrap();
+        assert_eq!(chat.launch.env[ENV_TOKEN], "secret-token");
+        match agent {
+            Agent::Claude => assert!(chat.launch.spec.args[1].contains("'--append-system-prompt'")),
+            Agent::Codex => {
+                chat.driver.start();
+                chat.driver.feed(r#"{"id":1,"result":{}}"#);
+                let sent: Vec<Value> = chat
+                    .driver
+                    .take_outgoing()
+                    .iter()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect();
+                assert_eq!(sent[1]["method"], "thread/start");
+                assert!(sent[1]["params"]["developerInstructions"]
+                    .as_str()
+                    .unwrap()
+                    .contains("--session wait"));
+            }
+        }
+    }
+}
+
 #[test]
 fn the_view_defaults_to_terminal_and_each_session_can_choose() {
     let fixture = fixture();

@@ -67,6 +67,8 @@ export const icons = {
   // A tray with a check falling in: what the agents are waiting on you for.
   approvals: icon('<path d="M2.5 9.5h3l.9 1.7h3.2l.9-1.7h3"/><path d="M4.2 5.5 2.5 9.5v3.2a.8.8 0 0 0 .8.8h9.4a.8.8 0 0 0 .8-.8V9.5l-1.7-4"/><path d="m6.2 4.6 1.5 1.5 2.9-3.1"/>', 14),
   warn: icon('<path d="M8 2.8 14 13H2z"/><path d="M8 6.8v2.6M8 11.3v.1"/>', 14),
+  // One session handing work to two: a manager and its helpers.
+  helpers: icon('<rect x="5.5" y="1.8" width="5" height="3.6" rx="1"/><rect x="1.8" y="10.6" width="5" height="3.6" rx="1"/><rect x="9.2" y="10.6" width="5" height="3.6" rx="1"/><path d="M8 5.4v2.6M4.3 10.6V8h7.4v2.6"/>', 14),
 };
 
 // The agents' own marks — the same artwork the macOS app uses. Claude keeps

@@ -116,12 +116,12 @@ pub fn validate(state: &Value) -> Result<()> {
                 "Missing Claude session ID."
             );
         }
-        for key in ["notes", "branch"] {
+        for key in ["notes", "branch", "parentID"] {
             if let Some(value) = field(session, key) {
                 ensure!(value.is_string(), "Invalid session metadata.");
             }
         }
-        for key in ["archived", "pinned"] {
+        for key in ["archived", "pinned", "manager"] {
             if let Some(value) = field(session, key) {
                 ensure!(value.is_boolean(), "Invalid session flag.");
             }

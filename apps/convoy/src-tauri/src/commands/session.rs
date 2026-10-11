@@ -2,7 +2,7 @@
 
 use super::{directory_or_project, view_of, Repositories, SessionView, Workspace};
 use convoy_core::model::Agent;
-use convoy_core::session::{mark_started, plan_launch};
+use convoy_core::session::{mark_started, plan_launch_with};
 use convoy_core::workspace::{NewSession, SessionPatch};
 use serde::Deserialize;
 use std::sync::Arc;
@@ -79,6 +79,7 @@ pub async fn session_create(
     notes: Option<String>,
     view: Option<String>,
     knowledge: Option<Vec<KnowledgeItem>>,
+    manager: Option<bool>,
     workspace: State<'_, Workspace>,
 ) -> Result<String, String> {
     let agent = Agent::parse(&agent).ok_or("Unknown agent.")?;
@@ -179,6 +180,10 @@ pub async fn session_create(
         // Chosen in the sheet; none follows the settings default.
         if let Some(view) = view.filter(|view| !view.is_empty()) {
             workspace.set_session_view(&id, &view)?;
+        }
+        // A manager can start helper sessions from its shell.
+        if manager == Some(true) {
+            workspace.set_session_manager(&id, true)?;
         }
         Ok(id)
     })
@@ -281,6 +286,7 @@ pub fn session_recover(id: String, workspace: State<'_, Workspace>) -> Result<St
 /// Starts or resumes a session. The folder, the account, the hook settings and
 /// the argument vector all come from `convoy-core`.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn session_start(
     app: AppHandle,
     id: String,
@@ -289,6 +295,7 @@ pub fn session_start(
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
     chats: State<'_, Arc<Chats>>,
+    helpers: State<'_, crate::helpers::Helpers>,
 ) -> Result<(), String> {
     // One process per session: the chat's goes before the terminal's starts.
     if chats.running(&id) {
@@ -296,7 +303,10 @@ pub fn session_start(
     }
     let executable = std::env::current_exe().map_err(|error| error.to_string())?;
     let storage = workspace.storage.clone();
-    let plan = workspace.act(|workspace| plan_launch(workspace, &storage, &id, &executable))?;
+    let manager = helpers.launch_for(&workspace, &id);
+    let plan = workspace
+        .act(|workspace| plan_launch_with(workspace, &storage, &id, &executable, manager.as_ref()))
+        .inspect_err(|_| helpers.revoke(&id))?;
 
     let env: Vec<(String, String)> = plan.env.clone().into_iter().collect();
     crate::pty::start(
@@ -311,7 +321,8 @@ pub fn session_start(
             cols,
             rows,
         },
-    )?;
+    )
+    .inspect_err(|_| helpers.revoke(&id))?;
 
     // Recorded only once the process exists, and stopped if recording fails:
     // an agent the workspace does not know about would be invisible and

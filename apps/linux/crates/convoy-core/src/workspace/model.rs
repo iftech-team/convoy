@@ -273,6 +273,15 @@ pub struct Session {
     /// the setting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub view: Option<String>,
+    /// The manager session that started this one as a helper. A helper
+    /// belongs to its manager's project; one whose manager is gone is an
+    /// ordinary session.
+    #[serde(rename = "parentID", default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+    /// A manager can start helper sessions from its own shell. Helpers are
+    /// never managers themselves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manager: Option<bool>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }
@@ -308,6 +317,8 @@ impl Session {
             task_id: None,
             profile_id: None,
             view: None,
+            parent_id: None,
+            manager: None,
             unknown: Map::new(),
         }
     }
@@ -335,6 +346,10 @@ impl Session {
 
     pub fn worktree_removed(&self) -> bool {
         self.worktree_removed.unwrap_or(false)
+    }
+
+    pub fn is_manager(&self) -> bool {
+        self.manager.unwrap_or(false)
     }
 }
 
