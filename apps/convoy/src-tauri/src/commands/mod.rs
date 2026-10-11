@@ -532,7 +532,7 @@ mod migration_tests {
             .state::<Workspace>()
             .with(|w| Ok(w.state().projects[0].id.clone()))
             .unwrap();
-        let builder = session::session_create(
+        let builder = tauri::async_runtime::block_on(session::session_create(
             project,
             "claude".into(),
             "Fix login".into(),
@@ -543,8 +543,9 @@ mod migration_tests {
             Some("Where I left off".into()),
             None,
             None,
+            None,
             app.state(),
-        )
+        ))
         .unwrap();
         let notes = app
             .state::<Workspace>()
