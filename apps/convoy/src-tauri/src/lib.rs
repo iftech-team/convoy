@@ -113,6 +113,7 @@ pub fn run() {
             commands::session::session_edit,
             commands::session::session_archive,
             commands::session::sessions_delete,
+            commands::session::sessions_remove,
             commands::session::session_pin,
             commands::session::session_recover,
             commands::session::session_start,

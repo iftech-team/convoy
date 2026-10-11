@@ -127,6 +127,7 @@ try {
           { agent: "claude", provider_id: "0199aaaa-0000-4000-8000-000000000013", title: "Look around", at: Date.now() - 172800000, place: "~", project_id: null, reason: "none", votes: 0, suggestions: ["alpha"] },
         ];
       }
+      if (cmd === "sessions_remove") return [args.ids.length, 0];
       if (cmd === "sessions_delete") return { deleted: args.items.length, running: 0, failed: 0 };
       if (cmd === "history_sweep_import") return { imported: args.choices.length, failed: 0 };
       if (cmd === "plugin:event|listen") { (listeners[args.event] ??= []).push(args.handler); return args.handler; }
@@ -445,18 +446,22 @@ try {
   await page.locator('[data-sweep-pick="0199aaaa-0000-4000-8000-000000000013"]').selectOption("alpha");
   await page.locator('[data-sweep-check="0199aaaa-0000-4000-8000-000000000012"]').uncheck();
   await page.locator('[data-sweep-group="other"]', { hasText: "Select all" }).click();
-  // The search narrows the list, and Select all / Deselect all act on what
-  // it shows. The field keeps focus while typing.
+  // The search narrows the list and keeps focus while typing. Checked rows
+  // it hides are named, since they import too. Deselect all clears every
+  // row, hidden ones included, so searching, deselecting and ticking one
+  // imports that one; Select all picks only what the search shows.
   await page.locator("#sweep-filter").pressSequentially("release");
   assert.deepEqual(await page.locator(".sweep__row .import__title > div:first-child").allTextContents(), ["Tidy release notes"]);
   assert.equal(await page.evaluate(() => document.activeElement?.id), "sweep-filter");
+  await page.locator(".sweep__hidden", { hasText: "2 selected outside this search" }).waitFor();
   await page.locator('[data-sweep-all="none"]').click();
-  await page.locator('[data-action="history-sweep-run"]', { hasText: "Import 2" }).waitFor();
+  await page.locator('[data-action="history-sweep-run"]', { hasText: "Import 0" }).waitFor();
+  await page.locator('[data-sweep-check="0199aaaa-0000-4000-8000-000000000012"]').check();
+  await page.locator('[data-action="history-sweep-run"]', { hasText: "Import 1" }).waitFor();
+  assert.equal(await page.locator(".sweep__hidden").count(), 0);
   await page.locator("#sweep-filter").fill("nothing like this");
   await page.locator(".sweep__empty").waitFor();
   await page.locator("#sweep-filter").fill("");
-  await page.locator('[data-sweep-all="none"]').click();
-  await page.locator('[data-action="history-sweep-run"]', { hasText: "Import 0" }).waitFor();
   await page.locator('[data-sweep-all="all"]').click();
   if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/import-history.png` });
   await page.locator('[data-action="history-sweep-run"]', { hasText: "Import 3" }).click();
@@ -491,6 +496,16 @@ try {
   await page.locator('[data-history-delete="c:claude:0199aaaa-0000-4000-8000-000000000001"]').click();
   await page.locator('.modal [data-action="confirm-generic"]').click();
   await page.waitForFunction(() => window.checkCalls.filter((c) => c.cmd === "sessions_delete").length === 2);
+  // Remove from Convoy takes only sessions and leaves their conversations.
+  await page.locator('[data-action="pick-start"]').click();
+  assert.equal(await page.locator('[data-action="pick-remove"]').isDisabled(), true);
+  await page.locator('[data-pick-row="s:review"] .row__title').click();
+  await page.locator('[data-action="pick-remove"]').click();
+  await page.locator(".modal", { hasText: "Only Convoy forgets them" }).waitFor();
+  await page.locator('.modal [data-action="confirm-generic"]').click();
+  await page.locator(".toast", { hasText: "Removed 1 session from Convoy" }).waitFor();
+  assert.deepEqual(await page.evaluate(() => window.checkCalls.findLast((c) => c.cmd === "sessions_remove").args.ids), ["review"]);
+  await page.locator('[data-action="pick-done"]').click();
   await page.locator('[data-tab="tasks"]').click();
   // Files & Changes: ahead and behind its upstream, a conflict marked
   // resolved, everything unstaged, and Commit & Push in one go.

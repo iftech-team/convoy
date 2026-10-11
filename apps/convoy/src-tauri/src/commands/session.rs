@@ -881,6 +881,37 @@ pub async fn sessions_delete(
     })
 }
 
+/// Takes sessions out of Convoy and nothing else: their conversations stay
+/// where the agent saved them and show again under "Not in Convoy yet". A
+/// running session is skipped. Returns how many were removed and how many
+/// were running.
+#[tauri::command]
+pub fn sessions_remove(
+    ids: Vec<String>,
+    workspace: State<'_, Workspace>,
+    terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<Chats>>,
+) -> Result<(usize, usize), String> {
+    let (idle, running): (Vec<String>, Vec<String>) = ids
+        .into_iter()
+        .partition(|id| !is_running(&terminals, &chats, id));
+    let removed = workspace.act(|core| {
+        let known: Vec<String> = idle
+            .into_iter()
+            .filter(|id| core.session(id).is_ok())
+            .collect();
+        if !known.is_empty() {
+            core.remove_sessions(&known)?;
+        }
+        Ok(known)
+    })?;
+    let history = convoy_core::history::History::new(workspace.storage.history());
+    for id in &removed {
+        history.remove(id);
+    }
+    Ok((removed.len(), running.len()))
+}
+
 /// To the Trash, recoverable. On macOS through the file manager rather than
 /// Finder, which would ask to let Convoy control it.
 fn trash_all(files: &[std::path::PathBuf]) -> Result<(), trash::Error> {

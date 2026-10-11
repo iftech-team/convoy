@@ -337,6 +337,11 @@ export function contextMenu(menu) {
         enabled: !running,
         hint: running ? "stop it first" : "",
       }),
+      item(t("Remove from Convoy…"), "remove", {
+        icon: "close",
+        enabled: !running,
+        hint: running ? "stop it first" : "",
+      }),
       item(t("Delete…"), "delete", {
         icon: "trash",
         danger: true,
@@ -465,6 +470,7 @@ function pickBar() {
       <span class="pick__count">${escape(t("{count} selected", { count }))}</span>
       ${button({ label: t("Select all"), kind: "quiet", action: "pick-all", disabled: !keys.length || keys.every((key) => state.picked.has(key)) })}
       ${button({ label: t("Deselect all"), kind: "quiet", action: "pick-none", disabled: !count })}
+      ${button({ label: t("Remove from Convoy…"), kind: "quiet", action: "pick-remove", title: t("Keeps the conversations; only Convoy forgets the sessions"), disabled: ![...state.picked].some((key) => key.startsWith("s:")) })}
       ${button({ label: t("Delete…"), icon: "trash", kind: "danger", action: "pick-delete", disabled: !count })}
       ${button({ label: t("Done"), action: "pick-done" })}`;
 }

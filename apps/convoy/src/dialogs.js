@@ -880,15 +880,18 @@ function historySweep(dialog) {
     const groups = sweepGroups(dialog);
     const visible = sweepVisible(dialog);
     const allChecked = visible.length && visible.every((row) => dialog.checked[row.provider_id]);
-    const noneChecked = visible.every((row) => !dialog.checked[row.provider_id]);
+    // Checked rows the search hides still import, so they are named.
+    const shown = new Set(visible.map((row) => row.provider_id));
+    const hidden = sweepChoices(dialog).filter((choice) => !shown.has(choice.provider_id)).length;
     const toolbar = `
       <div class="sweep__toolbar">
         <input id="sweep-filter" class="section__filter sweep__filter" type="search"
                placeholder="${escape(t("Search conversations"))}" aria-label="${escape(t("Search conversations"))}"
                value="${escape(dialog.query ?? "")}" spellcheck="false" />
         ${button({ label: t("Select all"), kind: "quiet", disabled: !visible.length || allChecked, data: { "sweep-all": "all" } })}
-        ${button({ label: t("Deselect all"), kind: "quiet", disabled: noneChecked, data: { "sweep-all": "none" } })}
-      </div>`;
+        ${button({ label: t("Deselect all"), kind: "quiet", disabled: !count, data: { "sweep-all": "none" } })}
+      </div>
+      ${hidden ? `<p class="sweep__hidden">${escape(t("{count} selected outside this search will be imported too.", { count: hidden }))}</p>` : ""}`;
     const list = groups.length
       ? groups
       .map((item) => {

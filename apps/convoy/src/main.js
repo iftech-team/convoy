@@ -779,6 +779,8 @@ const ACTIONS = {
     render();
   },
   "pick-delete": () => confirmDelete([...state.picked]),
+  "pick-remove": () =>
+    confirmRemove([...state.picked].filter((key) => key.startsWith("s:")).map((key) => key.slice(2))),
   "history-fold": () => {
     toggleHistoryCollapsed();
     render();
@@ -1461,9 +1463,11 @@ app.addEventListener("click", async (event) => {
     for (const row of group?.rows ?? []) if (sweepProject(dialog, row)) dialog.checked[row.provider_id] = data.value === "all";
     return render();
   }
-  // Select or deselect every conversation the search shows.
+  // Select all picks what the search shows; Deselect all clears every row,
+  // shown or not, so nothing hidden is imported by surprise.
   if (data.sweepAll && state.dialog?.kind === "history-sweep") {
-    for (const row of sweepVisible(state.dialog)) state.dialog.checked[row.provider_id] = data.sweepAll === "all";
+    if (data.sweepAll === "all") for (const row of sweepVisible(state.dialog)) state.dialog.checked[row.provider_id] = true;
+    else state.dialog.checked = {};
     return render();
   }
   if (data.taskScope) {
@@ -1853,6 +1857,34 @@ function confirmDelete(keys) {
     confirmLabel: t("Delete"),
     danger: true,
     run: () => deleteConversations(items),
+  });
+}
+
+/// Takes sessions out of Convoy, leaving their conversations on disk; they
+/// show again under "Not in Convoy yet".
+function confirmRemove(ids) {
+  if (!ids.length) return;
+  const name = ids.length === 1 ? state.sessions.find((item) => item.id === ids[0])?.title : null;
+  openModal({
+    kind: "confirm",
+    title: name
+      ? t('Remove "{name}" from Convoy?', { name })
+      : t("Remove {count} from Convoy?", { count: plural(ids.length, "session") }),
+    body: t("Only Convoy forgets them. The conversations stay with Claude Code or Codex and show under “Not in Convoy yet”."),
+    confirmLabel: t("Remove"),
+    run: async () => {
+      const report = await call("sessions_remove", { ids });
+      if (!report) return render();
+      const [removed, running] = report;
+      for (const id of ids) if (state.tabs.includes(id) && !isRunning(id)) closeTab(id);
+      if (ids.includes(state.sessionId) && !isRunning(state.sessionId)) state.sessionId = null;
+      if (state.picked) state.picked = new Set();
+      await loadWorkspace();
+      await loadSessions();
+      await loadHistory();
+      const kept = running ? t("{count} running — stop first", { count: plural(running, "session") }) : "";
+      toast([t("Removed {count} from Convoy", { count: plural(removed, "session") }), kept].filter(Boolean).join(" · "));
+    },
   });
 }
 
@@ -2490,6 +2522,8 @@ async function runMenu(act) {
       return render();
     case "delete":
       return confirmDelete([`s:${target.id}`]);
+    case "remove":
+      return confirmRemove([target.id]);
     case "reveal-worktree":
       render();
       return call("path_reveal", { path: target.working_directory });

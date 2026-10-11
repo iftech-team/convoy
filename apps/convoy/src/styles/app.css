@@ -3948,6 +3948,12 @@ select:disabled {
   min-width: 0;
 }
 
+.sweep__hidden {
+  margin: -2px 0 8px;
+  font-size: 12px;
+  color: var(--state-review);
+}
+
 .sweep__empty {
   margin: 0;
   padding: 28px 12px;
