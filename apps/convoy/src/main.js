@@ -19,6 +19,8 @@ import {
   saveCollapsed,
   activeAccount,
   rememberAccount,
+  lastChoice,
+  rememberChoice,
   observe,
   project,
   session,
@@ -29,7 +31,7 @@ import {
 import { escape, plural, value } from "./ui.js";
 import { setLanguage, t } from "./i18n.js";
 import { SHORTCUTS, binding, capture, label, matches } from "./shortcuts.js";
-import { dialogView, sweepChoices, sweepGroups, sweepProject } from "./dialogs.js";
+import { dialogView, effortLevels, sweepChoices, sweepGroups, sweepProject } from "./dialogs.js";
 import * as terminal from "./terminal.js";
 import { chatEvent, chatExited, chatSnapshot, chatText, insertDraft, mountChat, sendText, viewOf, waitingFor } from "./views-chat.js";
 import {
@@ -535,6 +537,7 @@ const openModal = (dialog) => {
 const DRAFT_FIELDS = {
   "draft-title": "title",
   "draft-model": "model",
+  "draft-effort": "effort",
   "draft-prompt": "prompt",
   "draft-notes": "notes",
   "draft-provider": "provider_id",
@@ -553,7 +556,7 @@ const DRAFT_FIELDS = {
   "task-spec": "spec_id",
   "task-account": "profile_id",
   ...Object.fromEntries(["title", "problem", "requirements", "acceptance", "constraints", "plan"].map((key) => [`spec-${key}`, key])),
-  ...Object.fromEntries(["title", "details", "findings", "model"].map((key) => [`task-${key}`, key])),
+  ...Object.fromEntries(["title", "details", "findings", "model", "effort"].map((key) => [`task-${key}`, key])),
 };
 
 function captureDraft() {
@@ -847,7 +850,7 @@ const ACTIONS = {
       findings: "",
       agent: project()?.default_agent || state.settings.default_agent,
       mode: project()?.task_mode || "pr",
-      model: "",
+      ...lastChoice(project()?.default_agent || state.settings.default_agent),
       profile_id: activeAccount(project()?.default_agent || state.settings.default_agent),
       auto_review: false,
       spec_id: "",
@@ -862,7 +865,7 @@ const ACTIONS = {
       findings: "",
       agent: project()?.default_agent || state.settings.default_agent,
       mode: project()?.task_mode || "pr",
-      model: "",
+      ...lastChoice(project()?.default_agent || state.settings.default_agent),
       auto_review: true,
       spec_id: spec.id,
     });
@@ -1326,13 +1329,13 @@ app.addEventListener("click", async (event) => {
     state.dialog[fieldFor(data.set)] = data.value;
     if (["session", "review"].includes(state.dialog.kind) && data.set === "agent") {
       state.dialog.account = activeAccount(data.value);
-      state.dialog.model = "";
+      Object.assign(state.dialog, lastChoice(data.value));
     }
     // An account and a model belong to one agent; switching lets them go.
     if (state.dialog.kind === "task" && data.set === "agent") {
       const own = (state.profiles ?? []).some((item) => item.id === state.dialog.profile_id && item.agent === data.value);
       if (!own) state.dialog.profile_id = "";
-      state.dialog.model = "";
+      Object.assign(state.dialog, lastChoice(data.value));
     }
     return render();
   }
@@ -1583,6 +1586,11 @@ app.addEventListener("change", async (event) => {
   }
   if (["session", "review"].includes(state.dialog?.kind) && event.target.id === "draft-account") {
     state.dialog.account = event.target.value;
+    return render();
+  }
+  // The effort levels follow the model picked.
+  if (["session", "review"].includes(state.dialog?.kind) && event.target.id === "draft-model") {
+    captureDraft();
     return render();
   }
   if (state.dialog?.kind === "task" && ["task-account", "task-spec", "task-model"].includes(event.target.id)) {
@@ -1985,6 +1993,7 @@ async function sessionProject(draft, projectId) {
   draft.projectId = projectId;
   draft.agent = target?.default_agent || state.settings.default_agent;
   draft.account = activeAccount(draft.agent);
+  Object.assign(draft, lastChoice(draft.agent));
   draft.worktree = !!state.settings.worktree_by_default;
   draft.branchEdited = false;
   draft.branch = suggestBranch(draft.title || "session", projectId);
@@ -2020,6 +2029,7 @@ async function createSession() {
     title,
     prompt: draft.prompt,
     model: draft.model,
+    effort: effortLevels(draft.agent, draft.account ?? "", draft.model ?? "").includes(draft.effort) ? draft.effort : null,
     profileId: draft.account || null,
     notes: draft.notes,
     view: draft.view === "chat" ? "chat" : "terminal",
@@ -2027,6 +2037,7 @@ async function createSession() {
   draft.busy = false;
   if (!id) return render();
   rememberAccount(draft.agent, draft.account);
+  rememberChoice(draft.agent, draft.model, draft.effort);
   const wantsWorktree = draft.repo && draft.worktree;
   const branch = (draft.branch ?? "").trim() || suggestBranch(title, target);
   const base = (draft.base ?? "").trim();
@@ -2082,7 +2093,7 @@ async function openReview() {
   if (brief === undefined) return;
   // The other agent by default: a second opinion from a different model.
   const agent = current.agent === "claude" ? "codex" : "claude";
-  openModal({ kind: "review", id: current.id, brief, agent, model: "", account: activeAccount(agent) });
+  openModal({ kind: "review", id: current.id, brief, agent, ...lastChoice(agent), account: activeAccount(agent) });
 }
 
 async function createReview() {
@@ -2093,9 +2104,11 @@ async function createReview() {
     prompt: dialog.brief,
     agent: dialog.agent,
     model: dialog.model === "__loading" ? "" : dialog.model ?? "",
+    effort: effortLevels(dialog.agent, dialog.account ?? "", dialog.model ?? "").includes(dialog.effort) ? dialog.effort : null,
     profileId: dialog.account || null,
   });
   if (!id) return;
+  rememberChoice(dialog.agent, dialog.model, dialog.effort);
   closeDialog();
   await loadSessions();
   openSession(id);
@@ -2611,6 +2624,7 @@ Object.assign(ACTIONS, {
       findings: "",
       agent: project()?.default_agent || state.settings.default_agent,
       mode: project()?.task_mode || "none",
+      ...lastChoice(project()?.default_agent || state.settings.default_agent),
       auto_review: false,
       spec_id: "",
     });
@@ -2702,10 +2716,16 @@ async function saveTask(run = false) {
     if (!(await done("task_dependencies", { id, dependsOn: wanted }))) return;
   }
   const model = (dialog.model ?? "").trim();
+  const effort = effortLevels(dialog.agent, dialog.profile_id ?? "", model).includes(dialog.effort) ? dialog.effort : "";
   const before = findTask(id);
-  if (model !== (before?.model ?? "") || (before && before.agent !== dialog.agent)) {
-    if (!(await done("task_agent", { id, agent: dialog.agent, model }))) return;
+  if (
+    model !== (before?.model ?? "") ||
+    effort !== (before?.effort ?? "") ||
+    (before && before.agent !== dialog.agent)
+  ) {
+    if (!(await done("task_agent", { id, agent: dialog.agent, model, effort: effort || null }))) return;
   }
+  rememberChoice(dialog.agent, model, effort);
   const account = dialog.profile_id || null;
   if ((account ?? "") !== (before?.profile_id ?? "")) {
     if (!(await done("task_account", { id, profileId: account }))) return;

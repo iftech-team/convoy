@@ -62,6 +62,7 @@ pub fn session_create(
     title: String,
     prompt: String,
     model: String,
+    effort: Option<String>,
     profile_id: Option<String>,
     notes: Option<String>,
     view: Option<String>,
@@ -72,6 +73,7 @@ pub fn session_create(
         let mut input = NewSession::new(project_id, agent, title);
         input.prompt = prompt;
         input.model = model;
+        input.effort = effort.unwrap_or_default();
         // The account it signs in with; none means the system login.
         input.profile_id = profile_id.filter(|id| !id.is_empty());
         let state = workspace.add_session(input)?;
@@ -352,6 +354,7 @@ pub fn review_create(
     prompt: String,
     agent: Option<String>,
     model: Option<String>,
+    effort: Option<String>,
     profile_id: Option<String>,
     workspace: State<'_, Workspace>,
 ) -> Result<String, String> {
@@ -365,6 +368,7 @@ pub fn review_create(
             input.agent = agent;
         }
         input.model = model.unwrap_or_default();
+        input.effort = effort.unwrap_or_default();
         input.profile_id = profile_id.filter(|id| !id.is_empty());
         let state = workspace.add_session(input)?;
         Ok(state

@@ -145,6 +145,10 @@ pub struct SessionView {
     pub agent: String,
     pub provider_id: String,
     pub model: String,
+    /// The effort level chosen; empty is the agent's default.
+    pub effort: String,
+    /// The account it signs in with; none is the system login.
+    pub profile_id: Option<String>,
     pub notes: String,
     pub started: bool,
     pub running: bool,
@@ -182,6 +186,8 @@ pub fn view_of(
         agent: session.agent.as_str().to_string(),
         provider_id: session.provider_id.clone(),
         model: session.model.clone().unwrap_or_default(),
+        effort: session.effort.clone().unwrap_or_default(),
+        profile_id: session.profile_id.clone(),
         notes: session.notes.clone().unwrap_or_default(),
         started: session.started,
         running,
@@ -526,6 +532,7 @@ mod migration_tests {
             "Fix login".into(),
             "Handle expired tokens".into(),
             "sonnet".into(),
+            Some("high".into()),
             None,
             Some("Where I left off".into()),
             None,
@@ -546,12 +553,16 @@ mod migration_tests {
             .unwrap();
         let brief = session::review_brief(builder.clone(), app.state()).unwrap();
         let review =
-            session::review_create(builder.clone(), brief, None, None, None, app.state()).unwrap();
+            session::review_create(builder.clone(), brief, None, None, None, None, app.state()).unwrap();
         let reloaded = CoreWorkspace::load(storage.workspace_file()).unwrap();
         assert_eq!(reloaded.state().projects.len(), 1);
         assert_eq!(
             reloaded.session(&builder).unwrap().model.as_deref(),
             Some("sonnet")
+        );
+        assert_eq!(
+            reloaded.session(&builder).unwrap().effort.as_deref(),
+            Some("high")
         );
         assert_eq!(
             reloaded.session(&review).unwrap().agent,

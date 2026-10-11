@@ -417,10 +417,29 @@ pub fn history_scan(
     Ok(entries)
 }
 
+/// The effort levels the installed `claude` lists in its `--help`, read once
+/// in the user's login shell. `None` when it could not be read, and the
+/// built-in levels are offered instead.
+fn claude_efforts() -> Option<Vec<String>> {
+    static READ: std::sync::OnceLock<Option<Vec<String>>> = std::sync::OnceLock::new();
+    READ.get_or_init(|| {
+        let (shell, args) = convoy_core::provider::launch::shell_command("claude --help");
+        let output = std::process::Command::new(shell)
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .ok()?;
+        convoy_core::provider::models::claude_efforts_from_help(&String::from_utf8_lossy(&output.stdout))
+    })
+    .clone()
+}
+
 /// The models an agent offers, for the account given (none is the system
-/// login): Codex's own list, or Claude Code's aliases and configured model.
+/// login): Codex's own list, or Claude Code's aliases, the extra models its
+/// server sent the account, and the configured model. Each with the effort
+/// levels it takes.
 #[tauri::command]
-pub fn models_list(
+pub async fn models_list(
     agent: String,
     profile_id: Option<String>,
     workspace: State<'_, Workspace>,
@@ -443,5 +462,13 @@ pub fn models_list(
         )?
         .home)
     })?;
-    Ok(convoy_core::provider::models::list(agent, &home))
+    // Reading `--help` starts a login shell: kept off the main thread.
+    let efforts = match agent {
+        Agent::Claude => tauri::async_runtime::spawn_blocking(claude_efforts)
+            .await
+            .ok()
+            .flatten(),
+        Agent::Codex => None,
+    };
+    Ok(convoy_core::provider::models::list(agent, &home, efforts.as_deref()))
 }

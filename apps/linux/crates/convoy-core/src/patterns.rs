@@ -26,8 +26,9 @@ pub static SHORTCUT: LazyLock<Regex> = LazyLock::new(|| {
 pub static BRANCH_PREFIX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^([A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*)?$").unwrap());
 
-/// `/^[a-zA-Z0-9._:/-]*$/`
-pub static MODEL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9._:/-]*$").unwrap());
+/// `/^[a-zA-Z0-9._:/[\]-]*$/`, brackets included for ids such as
+/// `claude-fable-5-1[1m]`; launch arguments are always shell-quoted.
+pub static MODEL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9._:/\[\]-]*$").unwrap());
 
 /// `/^[0-9a-f]{40,64}$/`
 pub static REVISION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9a-f]{40,64}$").unwrap());

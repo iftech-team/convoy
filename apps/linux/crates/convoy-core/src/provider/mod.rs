@@ -211,3 +211,29 @@ pub fn now_seconds() -> f64 {
         .map(|value| value.as_secs_f64())
         .unwrap_or(0.0)
 }
+
+#[cfg(test)]
+mod effort_tests {
+    use super::*;
+
+    /// Effort goes beside `--model`, in each agent's own form; an unknown
+    /// level is never passed on.
+    #[test]
+    fn effort_reaches_the_command_line() {
+        let mut session = Session::new("p", Agent::Claude, "t");
+        session.started = true;
+        session.model = Some("fable".into());
+        session.effort = Some("xhigh".into());
+        let args = session_args(&session, None, &[]);
+        let at = args.iter().position(|arg| arg == "--effort").expect("--effort");
+        assert_eq!(args[at + 1], "xhigh");
+
+        session.agent = Agent::Codex;
+        session.effort = Some("high".into());
+        let args = session_args(&session, None, &[]);
+        assert!(args.windows(2).any(|pair| pair == ["-c", "model_reasoning_effort=high"]));
+
+        session.effort = Some("rm -rf".into());
+        assert!(effort_flags(Agent::Claude, session.effort.as_deref()).is_empty());
+    }
+}

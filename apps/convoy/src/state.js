@@ -183,6 +183,33 @@ export function rememberAccount(agent, id) {
   }
 }
 
+/// The model and effort last picked per agent, as Claude Code and Codex keep
+/// the last /model: every new session and task starts with them, and what is
+/// picked in one dialog belongs to that session or task alone. Per machine.
+const CHOICE_KEY = "convoy.lastModel";
+
+export function lastChoice(agent) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CHOICE_KEY) ?? "{}")?.[agent] ?? {};
+    return {
+      model: typeof saved.model === "string" && saved.model !== "__loading" ? saved.model : "",
+      effort: typeof saved.effort === "string" ? saved.effort : "",
+    };
+  } catch {
+    return { model: "", effort: "" };
+  }
+}
+
+export function rememberChoice(agent, model, effort) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CHOICE_KEY) ?? "{}") ?? {};
+    saved[agent] = { model: model && model !== "__loading" ? model : "", effort: effort || "" };
+    localStorage.setItem(CHOICE_KEY, JSON.stringify(saved));
+  } catch {
+    /* not remembered */
+  }
+}
+
 // -------------------------------------------------------------- loading ---
 
 export async function loadSettings() {

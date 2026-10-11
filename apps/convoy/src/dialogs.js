@@ -58,6 +58,34 @@ export function modelSelect(id, agent, profileId, value) {
   return select(id, options, value);
 }
 
+/// How hard the agent thinks, from the levels the chosen model takes as the
+/// agent itself lists them; with the default model, every level any of its
+/// models takes. A level the model does not take falls back to the default.
+const EFFORT_NAMES = {
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Max",
+  ultra: "Ultra",
+};
+
+export function effortLevels(agent, profileId, modelId) {
+  const models = state.models?.[`${agent}:${profileId}`] ?? [];
+  const chosen = models.find((model) => model.id === modelId);
+  const levels = chosen ? chosen.efforts ?? [] : models.flatMap((model) => model.efforts ?? []);
+  return Object.keys(EFFORT_NAMES).filter((level) => levels.includes(level))
+    .concat(levels.filter((level) => !(level in EFFORT_NAMES)))
+    .filter((level, index, all) => all.indexOf(level) === index);
+}
+
+function effortSelect(id, agent, profileId, modelId, value) {
+  const levels = effortLevels(agent, profileId, modelId);
+  const options = [["", t("Default")], ...levels.map((level) => [level, EFFORT_NAMES[level] ? t(EFFORT_NAMES[level]) : level])];
+  return select(id, options, levels.includes(value) ? value : "", levels.length === 0);
+}
+
 /// As the macOS app's sheet: any project, an optional name, an isolated
 /// worktree from a chosen ref, the agent and its account, and a first
 /// message. Creating it starts it.
@@ -121,9 +149,10 @@ function newSession(dialog) {
       ${worktree}
       ${field(t("Agent"), choice("agent", AGENTS, dialog.agent))}
       ${field(t("Open in"), choice("view", [["chat", t("Chat")], ["terminal", t("Terminal")]], dialog.view ?? "terminal"))}
+      ${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
       <div class="field-row">
-        ${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
         ${field(t("Model"), modelSelect("draft-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}
+        ${field(t("Effort"), effortSelect("draft-effort", dialog.agent, dialog.account ?? "", dialog.model ?? "", dialog.effort ?? ""))}
       </div>
       ${field(
         t("First message (optional)"),
@@ -167,9 +196,10 @@ const startReview = (dialog) =>
     wide: true,
     body: `
       ${field(t("Reviewer"), choice("agent", AGENTS, dialog.agent))}
+      ${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
       <div class="field-row">
-        ${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
         ${field(t("Model"), modelSelect("draft-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}
+        ${field(t("Effort"), effortSelect("draft-effort", dialog.agent, dialog.account ?? "", dialog.model ?? "", dialog.effort ?? ""))}
       </div>
       ${field(t("Brief"), textArea("draft-brief", dialog.brief, "", 14))}`,
     foot: foot(t("Create review"), "create-review"),
@@ -538,8 +568,10 @@ const taskForm = (dialog) => {
         dialog.advanced
           ? `<div class="sheet-box"><div class="field-row">
                ${field(t("Model"), modelSelect("task-model", dialog.agent, dialog.profile_id ?? "", dialog.model ?? ""))}
-               ${field(t("Account"), select("task-account", accountOptions(dialog.agent), dialog.profile_id ?? ""))}
-             </div></div>`
+               ${field(t("Effort"), effortSelect("task-effort", dialog.agent, dialog.profile_id ?? "", dialog.model ?? "", dialog.effort ?? ""))}
+             </div>
+             ${field(t("Account"), select("task-account", accountOptions(dialog.agent), dialog.profile_id ?? ""))}
+             </div>`
           : ""
       }`,
     foot: `

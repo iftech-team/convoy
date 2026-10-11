@@ -9,7 +9,7 @@ import { t } from "./i18n.js";
 import { plural } from "./ui.js";
 
 const MODELS = {
-  claude: [["opus", "Opus · most capable"], ["sonnet", "Sonnet · balanced"], ["haiku", "Haiku · fastest"]],
+  claude: [["fable", "Fable · most capable"], ["opus", "Opus"], ["sonnet", "Sonnet · balanced"], ["haiku", "Haiku · fastest"]],
   codex: [["gpt-5-codex", "GPT-5 Codex"], ["gpt-5", "GPT-5"], ["o3", "o3"]],
 };
 const AGENTS = [["claude", "Claude Code"], ["codex", "Codex"]];
@@ -564,7 +564,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
     }
     if (data.taskEdit) {
       const task = state.tasks.find((item) => item.id === data.taskEdit);
-      state.dialog = { kind: "task-model", id: task.id, title: task.title, agent: task.agent, model: task.model || "" };
+      state.dialog = { kind: "task-model", id: task.id, title: task.title, agent: task.agent, model: task.model || "", effort: task.effort || "" };
       return render(), true;
     }
     if (data.issue) {
@@ -630,7 +630,9 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         const draft = state.dialog;
         const agent = document.querySelector("#task-agent")?.value ?? draft.agent;
         const model = document.querySelector("#task-model")?.value ?? draft.model;
-        if (!(await callDone("task_agent", { id: draft.id, agent, model }))) return true;
+        // Effort is set in the task's own dialog; kept here unless the agent changes.
+        const effort = agent === draft.agent ? draft.effort || null : null;
+        if (!(await callDone("task_agent", { id: draft.id, agent, model, effort }))) return true;
         state.dialog = null;
         await loadTasks();
         await loadWorkspace();
@@ -714,7 +716,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
   const editModel = (id) => {
     const task = state.tasks.find((item) => item.id === id);
     if (!task) return;
-    state.dialog = { kind: "task-model", id: task.id, title: task.title, agent: task.agent, model: task.model || "" };
+    state.dialog = { kind: "task-model", id: task.id, title: task.title, agent: task.agent, model: task.model || "", effort: task.effort || "" };
     render();
   };
   return { taskList, dialog, loadTasks, onClick, onInput, onChange, onEnter, editModel };

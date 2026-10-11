@@ -200,6 +200,7 @@ impl Workspace {
                     task.findings = input.findings;
                     if task.agent != input.agent {
                         task.model = None;
+                        task.effort = None;
                     }
                     task.agent = input.agent;
                     task.mode = input.mode;
@@ -225,6 +226,7 @@ impl Workspace {
                     spec_revision: None,
                     last_error: None,
                     model: None,
+                    effort: None,
                     source: None,
                     pr_url: None,
                     depends_on: Vec::new(),
@@ -446,7 +448,7 @@ impl Workspace {
                 provider_id: provider_id_for(task.agent),
                 started: false,
                 model: task.model.clone(),
-                effort: None,
+                effort: task.effort.clone(),
                 notes: None,
                 branch: None,
                 archived: None,
@@ -542,6 +544,7 @@ impl Workspace {
                     spec_revision: None,
                     last_error: None,
                     model,
+                    effort: None,
                     source: Some(IssueSource {
                         tracker: connection.kind,
                         key: issue.key.clone(),
@@ -566,10 +569,22 @@ impl Workspace {
         Ok((count, issues.len() - count))
     }
 
-    /// Changes who builds a task and with which model. A prepared session keeps
-    /// the old choice, so it is detached and the next run prepares a new one.
-    pub fn set_task_agent(&mut self, id: &str, agent: Agent, model: &str) -> Result<&State> {
+    /// Changes who builds a task, with which model and effort. A prepared
+    /// session keeps the old choice, so it is detached and the next run
+    /// prepares a new one.
+    pub fn set_task_agent(
+        &mut self,
+        id: &str,
+        agent: Agent,
+        model: &str,
+        effort: &str,
+    ) -> Result<&State> {
         let model = model_name(model)?;
+        ensure!(
+            effort.is_empty() || crate::provider::EFFORTS.contains(&effort),
+            "Invalid effort."
+        );
+        let effort = (!effort.is_empty()).then(|| effort.to_string());
         let id = id.to_string();
         self.update(move |state| {
             let Some(index) = find_task_index(state, &id) else {
@@ -593,9 +608,10 @@ impl Workspace {
             if !keeps_account {
                 task.profile_id = None;
             }
-            if task.agent != agent || task.model != model {
+            if task.agent != agent || task.model != model || task.effort != effort {
                 task.agent = agent;
                 task.model = model;
+                task.effort = effort;
                 task.session_id = None;
             }
             Ok(())

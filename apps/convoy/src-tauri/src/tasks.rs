@@ -353,12 +353,13 @@ pub fn task_agent(
     id: String,
     agent: String,
     model: String,
+    effort: Option<String>,
     workspace: State<'_, Workspace>,
 ) -> Result<(), String> {
     let agent = Agent::parse(&agent).ok_or("Unknown agent.")?;
     workspace.with(|workspace| {
         workspace
-            .set_task_agent(&id, agent, &model)
+            .set_task_agent(&id, agent, &model, effort.as_deref().unwrap_or_default())
             .map(|_| ())
             .map_err(|error| error.to_string())
     })
