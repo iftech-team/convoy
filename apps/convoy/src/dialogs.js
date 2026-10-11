@@ -228,6 +228,7 @@ const removeProject = (dialog) =>
   modal({
     title: t("Remove project and its saved sessions?"),
     body: `<p class="modal__hint">${escape(t("Files, worktrees and provider conversations remain on disk."))}</p>
+           ${dialog.children ? `<p class="modal__hint">${escape(t("The projects inside it stay, one level up."))}</p>` : ""}
            <p class="modal__hint"><code>${escape(dialog.path)}</code></p>`,
     foot: foot(t("Remove"), "confirm-remove-project", "danger-solid"),
   });

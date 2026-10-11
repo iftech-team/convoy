@@ -161,7 +161,9 @@ export function projectIcon(project, size = 15) {
   } else {
     inner = icon(SYMBOLS.folder, size);
   }
-  return `<span class="project-icon" style="color:${tint};width:${size + 2}px">${inner}${dot}</span>`;
+  // A group's plain folder is drawn filled, as the macOS sidebar draws it.
+  const filled = project.is_group && !value ? " project-icon--group" : "";
+  return `<span class="project-icon${filled}" style="color:${tint};width:${size + 2}px">${inner}${dot}</span>`;
 }
 
 /// The app icon — the same artwork as the macOS app's AppIcon.svg: three

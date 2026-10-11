@@ -155,6 +155,14 @@ pub struct Project {
     pub path: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
+    /// The folder project this one was found inside, as on macOS: the
+    /// sidebar nests it under that row.
+    #[serde(rename = "parentID", default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+    /// A folder of projects, whose row folds its children away. It is still
+    /// a project, so agents can work from it.
+    #[serde(rename = "isGroup", default, skip_serializing_if = "Option::is_none")]
+    pub is_group: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

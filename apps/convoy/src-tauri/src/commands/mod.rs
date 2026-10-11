@@ -123,6 +123,9 @@ pub struct ProjectView {
     pub title: String,
     pub path: String,
     pub group: Option<String>,
+    /// The group row this project sits under, as on macOS.
+    pub parent_id: Option<String>,
+    pub is_group: bool,
     pub icon: Option<String>,
     pub color: Option<String>,
     /// What new sessions and tasks here start with, when the project says.
@@ -218,6 +221,8 @@ pub fn workspace_read(
                     title: project.title.clone(),
                     path: project.path.to_string_lossy().into_owned(),
                     group: project.group.clone(),
+                    parent_id: project.parent_id.clone(),
+                    is_group: project.is_group == Some(true),
                     icon: project.icon.clone(),
                     color: project.color.clone(),
                     default_agent: project

@@ -650,7 +650,12 @@ const ACTIONS = {
   home: () => openHome(),
   dashboard: () => openHome("dashboard"),
   "remove-project": () =>
-    openModal({ kind: "remove-project", id: state.projectId, path: project()?.path ?? "" }),
+    openModal({
+      kind: "remove-project",
+      id: state.projectId,
+      path: project()?.path ?? "",
+      children: state.projects.some((item) => item.parent_id === state.projectId),
+    }),
   "confirm-remove-project": async () => {
     const id = state.dialog.id;
     if (await done("project_remove", { id })) {

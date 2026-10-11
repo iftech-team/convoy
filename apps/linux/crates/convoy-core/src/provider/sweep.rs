@@ -1041,6 +1041,8 @@ mod tests {
             title: "App".into(),
             path: "/p/app".into(),
             group: None,
+            parent_id: None,
+            is_group: None,
             color: None,
             icon: None,
             setup_command: None,

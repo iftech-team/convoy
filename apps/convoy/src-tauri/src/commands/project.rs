@@ -4,52 +4,22 @@ use super::Workspace;
 use crate::pty::Terminals;
 use convoy_core::workspace::ProjectPatch;
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
 
-/// Adds every project inside a folder, or the folder itself when it contains
-/// none. Projects found inside a folder are grouped under its name, so opening
-/// a directory of repositories gives a tree rather than a flat list.
+/// Adds a folder as the macOS app does: every project inside it, nested under
+/// the folders between, which become groups. Opening `~/Projects` gives a
+/// `Projects` group holding `peshbar` and its repositories; a folder with no
+/// project inside is added as one project.
 #[tauri::command]
 pub fn project_open(path: String, workspace: State<'_, Workspace>) -> Result<usize, String> {
-    let root = PathBuf::from(&path);
-    let found = convoy_core::files::discover(&root);
-    let grouped = found.len() > 1;
-
-    let mut added = 0usize;
-    let mut failure: Option<String> = None;
-    for directory in &found {
-        match workspace.act(|workspace| workspace.add_project(directory).map(|_| ())) {
-            Ok(()) => added += 1,
-            Err(error) => failure = Some(error),
-        }
+    let found = convoy_core::files::discover_tree(Path::new(&path), false);
+    if found.is_empty() {
+        return Err("Nothing was added.".into());
     }
-    if added == 0 {
-        return Err(failure.unwrap_or_else(|| "Nothing was added.".into()));
-    }
-
-    if grouped {
-        if let Some(name) = root
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-        {
-            let root = std::fs::canonicalize(&root).unwrap_or(root);
-            workspace.act(|workspace| {
-                workspace
-                    .update(move |state| {
-                        for project in state.projects.iter_mut() {
-                            if project.path != root && project.path.starts_with(&root) {
-                                project.group = Some(name.clone());
-                            }
-                        }
-                        Ok(())
-                    })
-                    .map(|_| ())
-            })?;
-        }
-    }
-    Ok(added)
+    workspace.act(|workspace| workspace.import_tree(&found))?;
+    Ok(found.iter().filter(|item| !item.group).count().max(1))
 }
 
 #[derive(Deserialize, Default)]
@@ -244,65 +214,14 @@ pub fn project_move(
     workspace.act(|workspace| workspace.move_project(&id, index).map(|_| ()))
 }
 
-/// "Refresh projects" / "Import projects from this folder": adds the
-/// repositories inside a project's folder that are not projects yet, grouped
-/// under the project's name as opening a folder of repositories would.
-/// Returns how many were added.
+/// "Refresh projects" / "Import projects from this folder": looks through the
+/// project's folder again, even when it is a project itself, and nests what
+/// is new under it, as the macOS app does. Returns how many were added.
 #[tauri::command]
 pub fn project_refresh(id: String, workspace: State<'_, Workspace>) -> Result<usize, String> {
-    let (root, name, known) = workspace.act(|core| {
-        let project = core.project(&id)?.clone();
-        let known: Vec<PathBuf> = core
-            .state()
-            .projects
-            .iter()
-            .map(|item| item.path.clone())
-            .collect();
-        // A project in a group was found in the group's folder: that folder
-        // is the one to look through again.
-        let parent = project.path.parent().map(Path::to_path_buf);
-        let folder = match (&project.group, &parent) {
-            (Some(group), Some(parent))
-                if parent
-                    .file_name()
-                    .is_some_and(|name| name.to_string_lossy() == *group) =>
-            {
-                parent.clone()
-            }
-            _ => project.path.clone(),
-        };
-        Ok((folder, project.group.unwrap_or(project.title), known))
-    })?;
-    let found: Vec<PathBuf> = convoy_core::files::discover_within(&root)
-        .into_iter()
-        .filter(|directory| {
-            let resolved = std::fs::canonicalize(directory).unwrap_or_else(|_| directory.clone());
-            resolved != root && !known.contains(&resolved)
-        })
-        .collect();
-    let mut added = 0;
-    for directory in &found {
-        workspace.act(|core| core.add_project(directory).map(|_| ()))?;
-        added += 1;
-    }
-    if added > 0 {
-        let fresh: Vec<PathBuf> = found
-            .iter()
-            .map(|directory| std::fs::canonicalize(directory).unwrap_or_else(|_| directory.clone()))
-            .collect();
-        workspace.act(|core| {
-            core.update(move |state| {
-                for project in state.projects.iter_mut() {
-                    if fresh.contains(&project.path) {
-                        project.group = Some(name.clone());
-                    }
-                }
-                Ok(())
-            })
-            .map(|_| ())
-        })?;
-    }
-    Ok(added)
+    let root = workspace.act(|core| Ok(core.project(&id)?.path.clone()))?;
+    let found = convoy_core::files::discover_tree(&root, true);
+    workspace.act(|core| core.import_tree(&found))
 }
 
 #[cfg(test)]
@@ -311,39 +230,60 @@ mod tests {
     use convoy_core::{Storage, Workspace as CoreWorkspace};
     use tauri::Manager;
 
-    /// Refreshing a project in a group adds the repositories that appeared in
-    /// the group's folder, under the same group, and nothing twice.
+    /// Opening a folder of repositories nests them under it, as on macOS;
+    /// refreshing that group adds only the repositories that appeared since,
+    /// under the same group.
     #[test]
-    fn refreshing_a_group_adds_only_what_is_new() {
+    fn opening_and_refreshing_a_folder_builds_the_tree() {
         let root = std::env::temp_dir().join(format!("convoy-refresh-{}", std::process::id()));
         let group = root.join("clients");
         for name in ["alpha", "beta"] {
             std::fs::create_dir_all(group.join(name).join(".git")).unwrap();
         }
+        std::fs::create_dir_all(group.join("nested").join("gamma").join(".git")).unwrap();
+        std::fs::create_dir_all(group.join("empty")).unwrap();
         let storage = Storage::new(root.join("state"));
         let app = tauri::test::mock_app();
         app.manage(Workspace::at(storage.clone()));
 
         assert_eq!(
             project_open(group.to_string_lossy().into_owned(), app.state()).unwrap(),
-            2
+            3
         );
-        let alpha = app
-            .state::<Workspace>()
-            .act(|core| Ok(core.state().projects[0].id.clone()))
-            .unwrap();
-        assert_eq!(project_refresh(alpha.clone(), app.state()).unwrap(), 0);
-
-        std::fs::create_dir_all(group.join("gamma").join(".git")).unwrap();
-        assert_eq!(project_refresh(alpha, app.state()).unwrap(), 1);
         let core = CoreWorkspace::load(storage.workspace_file()).unwrap();
-        let gamma = core
-            .state()
-            .projects
-            .iter()
-            .find(|project| project.title == "gamma")
-            .expect("gamma was added");
-        assert_eq!(gamma.group.as_deref(), Some("clients"));
+        let find = |core: &CoreWorkspace, title: &str| {
+            core.state()
+                .projects
+                .iter()
+                .find(|project| project.title == title)
+                .cloned()
+                .unwrap_or_else(|| panic!("{title} is a project"))
+        };
+        let clients = find(&core, "clients");
+        let nested = find(&core, "nested");
+        assert_eq!(clients.is_group, Some(true));
+        assert_eq!(clients.parent_id, None);
+        assert_eq!(find(&core, "alpha").parent_id.as_ref(), Some(&clients.id));
+        assert_eq!(nested.parent_id.as_ref(), Some(&clients.id));
+        assert_eq!(find(&core, "gamma").parent_id.as_ref(), Some(&nested.id));
+        assert_eq!(
+            core.state().projects.len(),
+            5,
+            "a folder without projects is left out"
+        );
+
+        assert_eq!(project_refresh(clients.id.clone(), app.state()).unwrap(), 0);
+        std::fs::create_dir_all(group.join("delta").join(".git")).unwrap();
+        assert_eq!(project_refresh(clients.id.clone(), app.state()).unwrap(), 1);
+        let core = CoreWorkspace::load(storage.workspace_file()).unwrap();
+        assert_eq!(find(&core, "delta").parent_id.as_ref(), Some(&clients.id));
+
+        // Removing the group keeps its children, moved up a level.
+        project_remove(clients.id.clone(), app.state()).unwrap();
+        let core = CoreWorkspace::load(storage.workspace_file()).unwrap();
+        assert_eq!(core.state().projects.len(), 5);
+        assert_eq!(find(&core, "alpha").parent_id, None);
+        assert_eq!(find(&core, "gamma").parent_id.as_ref(), Some(&nested.id));
         std::fs::remove_dir_all(&root).ok();
     }
 }

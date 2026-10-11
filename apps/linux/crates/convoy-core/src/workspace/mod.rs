@@ -227,6 +227,8 @@ impl Workspace {
                     title,
                     path: resolved,
                     group: None,
+                    parent_id: None,
+                    is_group: None,
                     color: None,
                     icon: None,
                     setup_command: None,
@@ -389,9 +391,83 @@ impl Workspace {
         })
     }
 
+    /// Adds what [`crate::files::discover_tree`] found, as the macOS app does:
+    /// a folder already here keeps its id, sessions and specs, and takes its
+    /// place in the tree; opening a child on its own never detaches it from
+    /// its parent. Gives how many projects are new.
+    pub fn import_tree(&mut self, found: &[crate::files::Found]) -> Result<usize> {
+        let resolved: Vec<PathBuf> = found
+            .iter()
+            .map(|item| fs::canonicalize(&item.path).unwrap_or_else(|_| item.path.clone()))
+            .collect();
+        let found = found.to_vec();
+        let mut added = 0;
+        self.update(|state| {
+            let mut ids: Vec<String> = Vec::with_capacity(found.len());
+            for (item, path) in found.iter().zip(&resolved) {
+                let parent = item.parent.and_then(|index| ids.get(index).cloned());
+                if let Some(project) = state
+                    .projects
+                    .iter_mut()
+                    .find(|project| &project.path == path)
+                {
+                    if parent.is_some() && parent.as_deref() != Some(project.id.as_str()) {
+                        project.parent_id = parent;
+                    }
+                    if item.group {
+                        project.is_group = Some(true);
+                    }
+                    ids.push(project.id.clone());
+                    continue;
+                }
+                let title = path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or_else(|| path.to_string_lossy().into_owned());
+                let id = new_id();
+                state.projects.push(Project {
+                    id: id.clone(),
+                    title,
+                    path: path.clone(),
+                    group: None,
+                    parent_id: parent,
+                    is_group: item.group.then_some(true),
+                    color: None,
+                    icon: None,
+                    setup_command: None,
+                    shared_paths: None,
+                    review_template: None,
+                    default_agent: None,
+                    base_ref: None,
+                    branch_prefix: None,
+                    task_mode: None,
+                    auto_run_tasks: None,
+                    unknown: Default::default(),
+                });
+                ids.push(id);
+                added += 1;
+            }
+            Ok(())
+        })?;
+        Ok(added)
+    }
+
+    /// Forgets a project. As on macOS, removing a group keeps its children:
+    /// they move up to the group's own parent.
     pub fn remove_project(&mut self, id: &str) -> Result<&State> {
         let id = id.to_string();
         self.update(move |state| {
+            let parent = state
+                .projects
+                .iter()
+                .find(|project| project.id == id)
+                .and_then(|project| project.parent_id.clone());
+            for project in state.projects.iter_mut() {
+                if project.parent_id.as_deref() == Some(id.as_str()) {
+                    project.parent_id = parent.clone();
+                }
+            }
             let removed: Vec<String> = state
                 .sessions
                 .iter()

@@ -214,15 +214,28 @@ impl Merge<'_> {
     fn projects(&mut self, state: &mut State, swift: &[Value]) -> HashMap<String, String> {
         // Swift id → id here, for every project, new or matched.
         let mut ids = HashMap::new();
-        let names: HashMap<String, String> = swift
+        let parents: HashMap<String, String> = swift
             .iter()
-            .filter_map(|project| Some((text(project, "id")?, text(project, "name")?)))
+            .filter_map(|project| Some((text(project, "id")?, text(project, "parentID")?)))
             .collect();
-        // Parents first, each in the Swift order.
+        // How many parents up to a root; bounded, so a loop cannot hang it.
+        let depth = |project: &Value| {
+            let mut at = text(project, "id");
+            let mut depth = 0;
+            while let Some(parent) = at.as_ref().and_then(|id| parents.get(id)) {
+                depth += 1;
+                if depth > 64 {
+                    break;
+                }
+                at = Some(parent.clone());
+            }
+            depth
+        };
+        // Parents before their children, each level in the Swift order.
         let mut ordered: Vec<&Value> = swift.iter().collect();
         ordered.sort_by_key(|project| {
             (
-                project.get("parentID").is_some(),
+                depth(project),
                 project
                     .get("order")
                     .and_then(Value::as_i64)
@@ -246,9 +259,8 @@ impl Merge<'_> {
                 self.report.projects_existing += 1;
                 continue;
             }
-            // Swift groups are a tree; here a group is a heading, so a child
-            // is filed under its parent's name.
-            let group = text(project, "parentID").and_then(|parent| names.get(&parent).cloned());
+            // Parents come first, so a child's parent already has its id here.
+            let parent_id = text(project, "parentID").and_then(|parent| ids.get(&parent).cloned());
             let shared: Vec<String> = project
                 .get("sharedPaths")
                 .and_then(Value::as_array)
@@ -264,7 +276,9 @@ impl Merge<'_> {
                 id: id.clone(),
                 title: text(project, "name").unwrap_or_else(|| path.clone()),
                 path: PathBuf::from(&path),
-                group,
+                group: None,
+                parent_id,
+                is_group: flag(project, "group").filter(|group| *group),
                 color: text(project, "color"),
                 icon: self.icon(text(project, "icon")),
                 setup_command: text(project, "setupCommands"),

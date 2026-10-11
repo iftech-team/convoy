@@ -11,6 +11,7 @@ export default {
     "Files, git repositories, worktrees and the agents' own conversations stay on disk. Add the folders again at any time.": "Файлы, git-репозитории, рабочие деревья и собственные диалоги агентов останутся на диске. Папки можно добавить снова в любой момент.",
     "Stop the running sessions first ({count} running).": "Сначала остановите работающие сессии (работает: {count}).",
     "Remove all": "Убрать все",
+    "The projects inside it stay, one level up.": "Проекты внутри останутся — на уровень выше.",
     "Removed {count}": "Убрано: {count}",
     // The window: toasts, confirmations, the command palette
     "The workspace file is at {path}.": "Файл рабочей области: {path}.",

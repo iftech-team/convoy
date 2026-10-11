@@ -173,10 +173,11 @@ fn everything_the_macos_app_saved_comes_across() {
     assert!(Path::new(&icon[3..]).is_file(), "the image is copied");
     let api = state.projects.iter().find(|p| p.title == "api").unwrap();
     assert_eq!(
-        api.group.as_deref(),
-        Some("acme"),
-        "a child is filed under its parent"
+        api.parent_id.as_ref(),
+        Some(&acme.id),
+        "a child keeps its place under its parent"
     );
+    assert_eq!(acme.is_group, Some(true), "a group stays a group");
 
     let builder = state
         .sessions

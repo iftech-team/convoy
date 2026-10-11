@@ -109,10 +109,21 @@ export function sidebar() {
   const needle = state.search.toLowerCase();
   const groups = new Map();
   const loose = [];
+  // As on macOS, a project found inside a folder sits under that folder's
+  // row; a search lists every match on its own.
+  const known = new Set(state.projects.map((item) => item.id));
+  const nested = (item) => !needle && item.parent_id && known.has(item.parent_id) && item.parent_id !== item.id;
+  const children = new Map();
+  for (const item of state.projects) {
+    if (!nested(item)) continue;
+    if (!children.has(item.parent_id)) children.set(item.parent_id, []);
+    children.get(item.parent_id).push(item);
+  }
   for (const item of state.projects) {
     if (needle && !`${item.title} ${item.path}`.toLowerCase().includes(needle)) {
       continue;
     }
+    if (nested(item)) continue;
     if (item.group) {
       if (!groups.has(item.group)) groups.set(item.group, []);
       groups.get(item.group).push(item);
@@ -125,13 +136,17 @@ export function sidebar() {
     const byName = (a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base", numeric: true });
     loose.sort(byName);
     for (const items of groups.values()) items.sort(byName);
+    for (const items of children.values()) items.sort(byName);
   }
 
-  const row = (item) => {
+  const row = (item, depth = 0) => {
     const current = item.id === state.projectId;
-    // Every project lists its sessions, as on macOS, unless folded shut.
+    // Every project lists its sessions, as on macOS, unless folded shut; a
+    // group also folds away the projects inside it.
     const sessions = sessionsOf(item.id);
-    const expanded = sessions.length > 0 && !state.collapsed.has(item.id) && !needle;
+    const kids = depth < 12 ? (children.get(item.id) ?? []) : [];
+    const foldable = sessions.length > 0 || kids.length > 0;
+    const expanded = foldable && !state.collapsed.has(item.id) && !needle;
     const waiting = sessions.some((entry) => entry.running && state.agentState.get(entry.id) === "waiting");
     return `
       <div class="project-row${current ? " project-row--current" : ""}"
@@ -139,7 +154,7 @@ export function sidebar() {
            ${state.settings.sort_projects ? "" : `draggable="true" data-project-drag="${escape(item.id)}"`}>
         <button class="project-row__chevron" data-expand="${escape(item.id)}"
                 title="${escape(expanded ? t("Collapse") : t("Expand"))}"
-                ${sessions.length ? "" : 'style="visibility:hidden"'}>
+                ${foldable ? "" : 'style="visibility:hidden"'}>
           ${expanded ? icons.chevronDown : icons.chevronRight}
         </button>
         <button class="project-row__main" data-project="${escape(item.id)}" title="${escape(item.path)}">
@@ -164,6 +179,10 @@ export function sidebar() {
         expanded && sessions.length
           ? `<div class="project-row__sessions">${sessions.map(sidebarSession).join("")}</div>`
           : ""
+      }${
+        expanded && kids.length
+          ? `<div class="sidebar__children sidebar__children--nested">${kids.map((kid) => row(kid, depth + 1)).join("")}</div>`
+          : ""
       }`;
   };
 
@@ -178,7 +197,7 @@ export function sidebar() {
     // With the hierarchy on, a group is a row that folds its projects away,
     // as on macOS; off, its projects sit in the list like any other.
     ...(state.groupHierarchy === false
-      ? [...groups.values()].flat().map(row)
+      ? [...groups.values()].flat().map((item) => row(item))
       : [...groups].map(([name, items]) => {
           const folded = state.collapsed.has(`group:${name}`) && !needle;
           return `
@@ -186,9 +205,9 @@ export function sidebar() {
               ${folded ? icons.chevronRight : icons.chevronDown}<span>${escape(name)}</span>
               <span class="project-row__count">${items.length}</span>
             </button>
-            ${folded ? "" : `<div class="sidebar__children">${items.map(row).join("")}</div>`}`;
+            ${folded ? "" : `<div class="sidebar__children">${items.map((item) => row(item)).join("")}</div>`}`;
         })),
-    ...loose.map(row),
+    ...loose.map((item) => row(item)),
   ].join("");
   const selected = state.selected?.size ?? 0;
 
@@ -256,7 +275,7 @@ export function contextMenu(menu) {
       item(t("New session…"), "new-session", { icon: "plus" }),
       item(t("Import provider history…"), "import-history", { icon: "history" }),
       item(
-        state.projects.find((entry) => entry.id === menu.id)?.group ? t("Refresh projects") : t("Import projects from this folder"),
+        state.projects.find((entry) => entry.id === menu.id)?.is_group ? t("Refresh projects") : t("Import projects from this folder"),
         "refresh",
         { icon: "refresh" },
       ),
@@ -1102,5 +1121,8 @@ export const anchorStyle = () => {
   const at = state.anchor;
   if (!at) return "";
   const top = Math.min(at.top, Math.max(8, window.innerHeight - 420));
+  // A control in the left half (the sidebar) opens its menu rightwards, so
+  // a wide menu never runs past the window's left edge.
+  if (at.left < window.innerWidth / 2) return `top:${top}px;left:${Math.max(8, at.left)}px`;
   return `top:${top}px;right:${at.right}px`;
 };

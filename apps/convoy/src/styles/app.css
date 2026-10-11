@@ -3475,8 +3475,19 @@ select:disabled {
    run past the bottom of the window. */
 .menu.menu--anchored {
   position: fixed;
+  max-width: calc(100vw - 16px);
   max-height: calc(100vh - 60px);
   overflow-y: auto;
+}
+
+/* Icon, then label, read from the left; any hint goes to the far edge. */
+.menu--anchored .menu__item {
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.menu--anchored .menu__hint {
+  margin-left: auto;
 }
 
 /* ----------------------------------------------------------- 2 or 4 panes -- */
@@ -4203,6 +4214,16 @@ select:disabled {
 
 .sidebar__children {
   padding-left: 8px;
+}
+
+/* Projects inside a group row, indented under it as on macOS. */
+.sidebar__children--nested {
+  padding-left: 14px;
+}
+
+.project-icon--group svg path {
+  fill: currentColor;
+  fill-opacity: 0.85;
 }
 
 .side-session--selected {

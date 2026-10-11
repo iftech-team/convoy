@@ -54,6 +54,87 @@ fn is_excluded(name: &str) -> bool {
     EXCLUDED.contains(&name)
 }
 
+/// A folder found by [`discover_tree`]: `parent` is the index of the folder
+/// it was found in, and `group` marks a folder that holds projects.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Found {
+    pub path: PathBuf,
+    pub parent: Option<usize>,
+    pub group: bool,
+}
+
+/// `ProjectDiscovery.scan()` from the macOS app: the chosen folder and every
+/// folder between it and the projects inside, as a tree. A folder that holds
+/// projects is a group; a project's own subfolders are not looked into.
+/// `force_group` looks inside the chosen folder even when it is a project
+/// itself, as "Import projects from this folder" does.
+pub fn discover_tree(root: &Path, force_group: bool) -> Vec<Found> {
+    fn visit(
+        directory: &Path,
+        parent: Option<usize>,
+        depth: u32,
+        root: bool,
+        force_group: bool,
+        count: &mut usize,
+        found: &mut Vec<Found>,
+    ) -> bool {
+        *count += 1;
+        if *count > 3000 || depth > 10 {
+            return false;
+        }
+        let Ok(entries) = std::fs::read_dir(directory) else {
+            return root;
+        };
+        let mut entries: Vec<_> = entries.flatten().collect();
+        entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_lowercase());
+        let marked = entries.iter().any(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            MARKERS.contains(&name.as_ref()) || PROJECT_FILE.is_match(&name)
+        });
+        let at = found.len();
+        found.push(Found {
+            path: directory.to_path_buf(),
+            parent,
+            group: false,
+        });
+        if marked && !(root && force_group) {
+            return true;
+        }
+        let mut any = false;
+        for entry in entries {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            // `file_type` does not follow symlinks, so a linked directory is
+            // skipped rather than walked into another tree.
+            let is_directory = entry.file_type().is_ok_and(|kind| kind.is_dir());
+            if is_directory && !name.starts_with('.') && !is_excluded(&name) {
+                any |= visit(
+                    &entry.path(),
+                    Some(at),
+                    depth + 1,
+                    false,
+                    force_group,
+                    count,
+                    found,
+                );
+            }
+        }
+        if any {
+            found[at].group = true;
+            return true;
+        }
+        if !root {
+            // A folder with no project in it is not shown.
+            found.truncate(at);
+        }
+        root
+    }
+    let mut found = Vec::new();
+    let mut count = 0usize;
+    visit(root, None, 0, true, force_group, &mut count, &mut found);
+    found
+}
+
 /// `discover()` — the projects inside a chosen folder, or the folder itself
 /// when it contains none.
 pub fn discover(root: &Path) -> Vec<PathBuf> {
