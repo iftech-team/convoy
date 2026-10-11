@@ -794,6 +794,8 @@ const login = (dialog) =>
 
 // ------------------------------------------------------ import all history --
 
+const AGENT_NAMES = { claude: "Claude Code", codex: "Codex" };
+
 /// The project a row will be imported into: the one picked, else the match.
 export const sweepProject = (dialog, row) => dialog.picks[row.provider_id] || row.project_id || "";
 
@@ -803,12 +805,27 @@ export const sweepChoices = (dialog) =>
     .filter((row) => dialog.checked[row.provider_id] && sweepProject(dialog, row))
     .map((row) => ({ provider_id: row.provider_id, project_id: sweepProject(dialog, row) }));
 
+/// Whether a row matches the search: its title, folder, agent or project.
+function sweepMatches(dialog, row, names) {
+  const query = (dialog.query ?? "").trim().toLowerCase();
+  if (!query) return true;
+  const project = names.get(sweepProject(dialog, row)) ?? "";
+  return [row.title, row.place, AGENT_NAMES[row.agent] ?? row.agent, project]
+    .some((text) => (text ?? "").toLowerCase().includes(query));
+}
+
+/// The rows the search shows that can be checked, i.e. have a project.
+export const sweepVisible = (dialog) =>
+  sweepGroups(dialog).flatMap((item) => item.rows).filter((row) => sweepProject(dialog, row));
+
 /// Rows under the project they were matched to, by name, with the
 /// unassigned ones last. A row keeps its place when a project is picked.
+/// Only the rows the search matches are listed.
 export function sweepGroups(dialog) {
   const names = new Map(state.projects.map((item) => [item.id, item.title]));
   const groups = new Map();
   for (const row of dialog.rows ?? []) {
+    if (!sweepMatches(dialog, row, names)) continue;
     const key = row.project_id && names.has(row.project_id) ? row.project_id : "";
     if (!groups.has(key)) groups.set(key, { key, name: key ? names.get(key) : t("Unassigned"), rows: [] });
     groups.get(key).rows.push(row);
@@ -816,8 +833,6 @@ export function sweepGroups(dialog) {
   const named = [...groups.values()].filter((item) => item.key).sort((a, b) => a.name.localeCompare(b.name));
   return groups.has("") ? [...named, groups.get("")] : named;
 }
-
-const AGENT_NAMES = { claude: "Claude Code", codex: "Codex" };
 
 function sweepPicker(dialog, row) {
   const projects = [...state.projects].sort((a, b) => a.title.localeCompare(b.title));
@@ -862,7 +877,20 @@ function historySweep(dialog) {
   } else if (!rows.length) {
     body = `<p class="modal__hint">${escape(t("Nothing to import — every conversation on this computer is already in Convoy."))}</p>`;
   } else {
-    body = `<div class="import__list sweep__list">${sweepGroups(dialog)
+    const groups = sweepGroups(dialog);
+    const visible = sweepVisible(dialog);
+    const allChecked = visible.length && visible.every((row) => dialog.checked[row.provider_id]);
+    const noneChecked = visible.every((row) => !dialog.checked[row.provider_id]);
+    const toolbar = `
+      <div class="sweep__toolbar">
+        <input id="sweep-filter" class="section__filter sweep__filter" type="search"
+               placeholder="${escape(t("Search conversations"))}" aria-label="${escape(t("Search conversations"))}"
+               value="${escape(dialog.query ?? "")}" spellcheck="false" />
+        ${button({ label: t("Select all"), kind: "quiet", disabled: !visible.length || allChecked, data: { "sweep-all": "all" } })}
+        ${button({ label: t("Deselect all"), kind: "quiet", disabled: noneChecked, data: { "sweep-all": "none" } })}
+      </div>`;
+    const list = groups.length
+      ? groups
       .map((item) => {
         const pickable = item.rows.filter((row) => sweepProject(dialog, row));
         const all = pickable.length && pickable.every((row) => dialog.checked[row.provider_id]);
@@ -878,7 +906,9 @@ function historySweep(dialog) {
         </div>
         ${item.rows.map((row) => sweepRow(dialog, row)).join("")}`;
       })
-      .join("")}</div>`;
+      .join("")
+      : `<p class="sweep__empty">${escape(t("No conversations match “{query}”", { query: dialog.query.trim() }))}</p>`;
+    body = `${toolbar}<div class="import__list sweep__list">${list}</div>`;
   }
   return modal({
     title: t("Import all history"),

@@ -32,7 +32,7 @@ import {
 import { escape, plural, value } from "./ui.js";
 import { setLanguage, t } from "./i18n.js";
 import { SHORTCUTS, binding, capture, label, matches } from "./shortcuts.js";
-import { dialogView, effortLevels, sweepChoices, sweepGroups, sweepProject } from "./dialogs.js";
+import { dialogView, effortLevels, sweepChoices, sweepGroups, sweepProject, sweepVisible } from "./dialogs.js";
 import * as terminal from "./terminal.js";
 import { chatEvent, chatExited, chatSnapshot, chatText, insertDraft, mountChat, sendText, viewOf, waitingFor } from "./views-chat.js";
 import {
@@ -1117,7 +1117,7 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-sweep-group],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
+      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -1417,6 +1417,11 @@ app.addEventListener("click", async (event) => {
     for (const row of group?.rows ?? []) if (sweepProject(dialog, row)) dialog.checked[row.provider_id] = data.value === "all";
     return render();
   }
+  // Select or deselect every conversation the search shows.
+  if (data.sweepAll && state.dialog?.kind === "history-sweep") {
+    for (const row of sweepVisible(state.dialog)) state.dialog.checked[row.provider_id] = data.sweepAll === "all";
+    return render();
+  }
   if (data.taskScope) {
     state.taskScope = data.taskScope;
     if (data.taskScope === "all") await loadAllTasks();
@@ -1519,6 +1524,10 @@ app.addEventListener("input", (event) => {
     state.specFilter = field.value;
     return render();
   }
+  if (field.id === "sweep-filter" && state.dialog?.kind === "history-sweep") {
+    state.dialog.query = field.value;
+    return render();
+  }
   if (field.id === "dashboard-filter") {
     state.dashboardFilter = field.value;
     return render();
@@ -1551,7 +1560,7 @@ app.addEventListener("change", async (event) => {
     state.dialog.depends_on = picked;
     return;
   }
-  if (event.target.id === "spec-filter") return;
+  if (event.target.id === "spec-filter" || event.target.id === "sweep-filter") return;
   if (state.dialog?.kind === "history-sweep") {
     const { sweepCheck, sweepPick } = event.target.dataset ?? {};
     if (sweepCheck) state.dialog.checked[sweepCheck] = event.target.checked;
@@ -1793,7 +1802,7 @@ async function resumeHistory(providerId) {
 /// Convoy yet, matched to a project for review. Scanning reads the disk off
 /// the main thread; the dialog shows a spinner until it is done.
 async function openHistorySweep() {
-  const dialog = { kind: "history-sweep", rows: null, checked: {}, picks: {}, busy: false };
+  const dialog = { kind: "history-sweep", rows: null, checked: {}, picks: {}, query: "", busy: false };
   openModal(dialog);
   const rows = await call("history_sweep_scan");
   if (state.dialog !== dialog) return;

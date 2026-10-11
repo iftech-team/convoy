@@ -3600,6 +3600,26 @@ select:disabled {
   max-height: min(56vh, 520px);
 }
 
+.sweep__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.sweep__filter {
+  flex: 1;
+  min-width: 0;
+}
+
+.sweep__empty {
+  margin: 0;
+  padding: 28px 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
 .sweep__group {
   position: sticky;
   top: 0;

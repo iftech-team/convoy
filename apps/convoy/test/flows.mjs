@@ -430,6 +430,19 @@ try {
   await page.locator('[data-sweep-pick="0199aaaa-0000-4000-8000-000000000013"]').selectOption("alpha");
   await page.locator('[data-sweep-check="0199aaaa-0000-4000-8000-000000000012"]').uncheck();
   await page.locator('[data-sweep-group="other"]', { hasText: "Select all" }).click();
+  // The search narrows the list, and Select all / Deselect all act on what
+  // it shows. The field keeps focus while typing.
+  await page.locator("#sweep-filter").pressSequentially("release");
+  assert.deepEqual(await page.locator(".sweep__row .import__title > div:first-child").allTextContents(), ["Tidy release notes"]);
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "sweep-filter");
+  await page.locator('[data-sweep-all="none"]').click();
+  await page.locator('[data-action="history-sweep-run"]', { hasText: "Import 2" }).waitFor();
+  await page.locator("#sweep-filter").fill("nothing like this");
+  await page.locator(".sweep__empty").waitFor();
+  await page.locator("#sweep-filter").fill("");
+  await page.locator('[data-sweep-all="none"]').click();
+  await page.locator('[data-action="history-sweep-run"]', { hasText: "Import 0" }).waitFor();
+  await page.locator('[data-sweep-all="all"]').click();
   if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/import-history.png` });
   await page.locator('[data-action="history-sweep-run"]', { hasText: "Import 3" }).click();
   await page.locator(".toast", { hasText: "Imported 3 conversations" }).waitFor();
