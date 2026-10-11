@@ -22,7 +22,8 @@ pub struct Transcript {
     pub at: f64,
 }
 
-fn head(file: &Path) -> Vec<Value> {
+/// The records in the head of a `.jsonl`; lines cut off or unreadable are skipped.
+pub(crate) fn head(file: &Path) -> Vec<Value> {
     let Ok(handle) = fs::File::open(file) else {
         return Vec::new();
     };
@@ -125,39 +126,7 @@ pub fn scan(agent: Agent, home: &Path, directory: &Path) -> Vec<Transcript> {
                 continue;
             }
         }
-        let content = match agent {
-            Agent::Claude => records
-                .iter()
-                .find(|record| record.get("type").and_then(Value::as_str) == Some("user"))
-                .and_then(|record| record.get("message"))
-                .and_then(|message| message.get("message").or_else(|| message.get("content")))
-                .cloned(),
-            Agent::Codex => records
-                .iter()
-                .filter_map(|record| record.get("payload"))
-                .find(|payload| {
-                    payload.get("type").and_then(Value::as_str) == Some("user_message")
-                        || payload.get("role").and_then(Value::as_str) == Some("user")
-                })
-                .and_then(|payload| {
-                    payload
-                        .get("message")
-                        .or_else(|| payload.get("content"))
-                        .cloned()
-                }),
-        };
-        let raw = match content {
-            Some(Value::String(text)) => text,
-            Some(Value::Array(parts)) => parts
-                .iter()
-                .map(|part| part.get("text").and_then(Value::as_str).unwrap_or_default())
-                .collect::<Vec<_>>()
-                .join(" "),
-            _ => format!("{} {}", agent.as_str(), &id[..8]),
-        };
-        let title: String =
-            crate::json::head(&raw.split_whitespace().collect::<Vec<_>>().join(" "), 100)
-                .to_string();
+        let title = title(agent, &records, &id);
         let at = fs::metadata(&file)
             .and_then(|metadata| metadata.modified())
             .ok()
@@ -174,4 +143,125 @@ pub fn scan(agent: Agent, home: &Path, directory: &Path) -> Vec<Transcript> {
     result.sort_by(|a, b| b.at.total_cmp(&a.at));
     result.truncate(100);
     result
+}
+
+/// The conversation's first user message, collapsed to one line, or the agent
+/// and the start of the id when there is none.
+pub(crate) fn title(agent: Agent, records: &[Value], id: &str) -> String {
+    let contents = records.iter().filter_map(|record| match agent {
+        Agent::Claude => (record.get("type").and_then(Value::as_str) == Some("user"))
+            .then(|| record.get("message"))
+            .flatten()
+            .and_then(|message| message.get("message").or_else(|| message.get("content"))),
+        Agent::Codex => record
+            .get("payload")
+            .filter(|payload| {
+                payload.get("type").and_then(Value::as_str) == Some("user_message")
+                    || payload.get("role").and_then(Value::as_str) == Some("user")
+            })
+            .and_then(|payload| payload.get("message").or_else(|| payload.get("content"))),
+    });
+    // The first message a person wrote. The agents also file their own
+    // wrappers as user messages — `<local-command-caveat>`, `<command-name>`,
+    // `<environment_context>` — and those make a title nobody recognises.
+    let first = contents
+        .map(|content| match content {
+            Value::String(text) => text.clone(),
+            Value::Array(parts) => parts
+                .iter()
+                .map(|part| part.get("text").and_then(Value::as_str).unwrap_or_default())
+                .collect::<Vec<_>>()
+                .join(" "),
+            _ => String::new(),
+        })
+        .map(|raw| without_markup(&raw))
+        .find(|text| !text.is_empty());
+    let raw = first.unwrap_or_else(|| format!("{} {}", agent.as_str(), &id[..8]));
+    crate::json::head(&raw, 100).to_string()
+}
+
+/// A message with the agents' `<tag>…</tag>` blocks removed and its
+/// whitespace folded; empty when nothing a person wrote is left, or when what
+/// is left still starts with markup.
+fn without_markup(raw: &str) -> String {
+    let mut text = raw.to_string();
+    while let Some(open) = text.find('<') {
+        let Some(close) = text[open..].find('>').map(|at| open + at) else {
+            break;
+        };
+        let tag = &text[open + 1..close];
+        if tag.is_empty()
+            || !tag
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            break;
+        }
+        let end = format!("</{tag}>");
+        let Some(after) = text[close..].find(&end).map(|at| close + at + end.len()) else {
+            break;
+        };
+        text.replace_range(open..after, " ");
+    }
+    let folded = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if folded.starts_with('<') {
+        String::new()
+    } else {
+        folded
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    const ID: &str = "0199aaaa-0000-4000-8000-000000000001";
+
+    fn claude(texts: &[&str]) -> Vec<Value> {
+        texts
+            .iter()
+            .map(|text| json!({ "type": "user", "message": { "role": "user", "content": text } }))
+            .collect()
+    }
+
+    #[test]
+    fn a_title_skips_the_agents_own_wrappers() {
+        let records = claude(&[
+            "<local-command-caveat>Caveat: The messages below were generated by the user while running local commands.</local-command-caveat>",
+            "<command-name>/clear</command-name>\n<command-message>clear</command-message>",
+            "Fix the   login\nredirect",
+        ]);
+        assert_eq!(title(Agent::Claude, &records, ID), "Fix the login redirect");
+    }
+
+    #[test]
+    fn markup_around_what_a_person_wrote_is_removed() {
+        let records =
+            claude(&["<system-reminder>be brief</system-reminder> Add a filter for deposits"]);
+        assert_eq!(
+            title(Agent::Claude, &records, ID),
+            "Add a filter for deposits"
+        );
+        // A comparison in prose is not markup.
+        let records = claude(&["Make a < b hold"]);
+        assert_eq!(title(Agent::Claude, &records, ID), "Make a < b hold");
+    }
+
+    #[test]
+    fn codex_context_is_not_a_title_and_nothing_left_falls_back_to_the_id() {
+        let records = vec![
+            json!({ "type": "response_item", "payload": { "type": "message", "role": "user", "content": [{ "type": "input_text", "text": "<environment_context>\n<cwd>/home</cwd>\n</environment_context>" }] } }),
+            json!({ "type": "event_msg", "payload": { "type": "user_message", "message": "Write the release notes" } }),
+        ];
+        assert_eq!(title(Agent::Codex, &records, ID), "Write the release notes");
+        assert_eq!(
+            title(
+                Agent::Claude,
+                &claude(&["<command-name>/usage</command-name>"]),
+                ID
+            ),
+            "claude 0199aaaa"
+        );
+    }
 }

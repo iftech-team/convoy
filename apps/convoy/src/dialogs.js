@@ -14,6 +14,7 @@ import {
   toggle,
 } from "./ui.js";
 import { markdown } from "./views-files.js";
+import { when } from "./views-history.js";
 import { state, project, session } from "./state.js";
 import { agentIcon } from "./icons.js";
 import { t } from "./i18n.js";
@@ -160,10 +161,16 @@ const startReview = (dialog) =>
   modal({
     title: t("Start review"),
     hint: t("A {agent} session will review this work in the same folder. It is told not to edit files.", {
-      agent: dialog.reviewer === "claude" ? "Claude Code" : "Codex",
+      agent: dialog.agent === "claude" ? "Claude Code" : "Codex",
     }),
     wide: true,
-    body: field(t("Brief"), textArea("draft-brief", dialog.brief, "", 14)),
+    body: `
+      ${field(t("Reviewer"), choice("agent", AGENTS, dialog.agent))}
+      <div class="field-row">
+        ${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
+        ${field(t("Model"), modelSelect("draft-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}
+      </div>
+      ${field(t("Brief"), textArea("draft-brief", dialog.brief, "", 14))}`,
     foot: foot(t("Create review"), "create-review"),
   });
 
@@ -444,18 +451,23 @@ function blockedBy(dialog) {
   );
   if (!others.length) return "";
   const chosen = new Set(dialog.depends_on ?? []);
-  return field(
-    t("Blocked by"),
-    `<div class="check-list">${others
-      .map(
-        (task) => `
-      <label class="check">
-        <input type="checkbox" data-depends-on="${escape(task.id)}" ${chosen.has(task.id) ? "checked" : ""} />
-        ${escape(task.title)}${task.status === "done" ? ` · ${escape(t("done"))}` : ""}
-      </label>`,
-      )
-      .join("")}</div>`,
-  );
+  // A div, not field()'s label: each task is a label of its own, and labels
+  // do not nest.
+  return `
+    <div class="field">
+      <span class="field__label">${escape(t("Blocked by"))}</span>
+      <div class="check-list">${others
+        .map(
+          (task) => `
+        <label class="check">
+          <input type="checkbox" data-depends-on="${escape(task.id)}" ${chosen.has(task.id) ? "checked" : ""} />
+          <span class="check__text">${escape(task.title)}</span>
+          ${task.status === "done" ? `<span class="badge badge--muted">${escape(t("done"))}</span>` : ""}
+        </label>`,
+        )
+        .join("")}</div>
+      <span class="field__note">${escape(t("The queue starts this task only after these are done."))}</span>
+    </div>`;
 }
 
 const taskForm = (dialog) => {
@@ -723,6 +735,112 @@ const login = (dialog) =>
     foot: button({ label: dialog.finished ? t("Done") : t("Close"), kind: dialog.finished ? "primary" : "", data: { dismiss: "1" } }),
   });
 
+// ------------------------------------------------------ import all history --
+
+/// The project a row will be imported into: the one picked, else the match.
+export const sweepProject = (dialog, row) => dialog.picks[row.provider_id] || row.project_id || "";
+
+/// What "Import" sends: every checked row that has a project.
+export const sweepChoices = (dialog) =>
+  (dialog.rows ?? [])
+    .filter((row) => dialog.checked[row.provider_id] && sweepProject(dialog, row))
+    .map((row) => ({ provider_id: row.provider_id, project_id: sweepProject(dialog, row) }));
+
+/// Rows under the project they were matched to, by name, with the
+/// unassigned ones last. A row keeps its place when a project is picked.
+export function sweepGroups(dialog) {
+  const names = new Map(state.projects.map((item) => [item.id, item.title]));
+  const groups = new Map();
+  for (const row of dialog.rows ?? []) {
+    const key = row.project_id && names.has(row.project_id) ? row.project_id : "";
+    if (!groups.has(key)) groups.set(key, { key, name: key ? names.get(key) : t("Unassigned"), rows: [] });
+    groups.get(key).rows.push(row);
+  }
+  const named = [...groups.values()].filter((item) => item.key).sort((a, b) => a.name.localeCompare(b.name));
+  return groups.has("") ? [...named, groups.get("")] : named;
+}
+
+const AGENT_NAMES = { claude: "Claude Code", codex: "Codex" };
+
+function sweepPicker(dialog, row) {
+  const projects = [...state.projects].sort((a, b) => a.title.localeCompare(b.title));
+  const suggested = row.suggestions.map((id) => projects.find((item) => item.id === id)).filter(Boolean);
+  const picked = dialog.picks[row.provider_id] ?? "";
+  const option = (item) =>
+    `<option value="${escape(item.id)}"${item.id === picked ? " selected" : ""}>${escape(item.title)}</option>`;
+  return `<div class="import__pick sweep__pick${picked ? " import__pick--custom" : ""}">
+    <select data-sweep-pick="${escape(row.provider_id)}" aria-label="${escape(t("Choose a project…"))}">
+      <option value="">${escape(t("Choose a project…"))}</option>
+      ${suggested.length ? `<optgroup label="${escape(t("Suggested"))}">${suggested.map(option).join("")}</optgroup>` : ""}
+      <optgroup label="${escape(t("All projects"))}">${projects.map(option).join("")}</optgroup>
+    </select>
+  </div>`;
+}
+
+function sweepRow(dialog, row) {
+  const project = sweepProject(dialog, row);
+  const why =
+    row.reason === "folder" ? t("started in this project") : row.reason === "paths" ? plural(row.votes, "file reference") : "";
+  const title = row.title || t("Untitled conversation");
+  return `
+    <div class="import__row sweep__row">
+      <input type="checkbox" data-sweep-check="${escape(row.provider_id)}" aria-label="${escape(title)}"
+             ${dialog.checked[row.provider_id] && project ? " checked" : ""}${project ? "" : " disabled"} />
+      <span class="sweep__agent" title="${escape(AGENT_NAMES[row.agent] ?? row.agent)}">${agentIcon(row.agent, 15)}</span>
+      <div class="import__title">
+        <div>${escape(title)}</div>
+        <div class="import__meta">${escape([row.place || t("unknown folder"), why].filter(Boolean).join(" · "))}</div>
+      </div>
+      ${row.project_id ? "" : sweepPicker(dialog, row)}
+      <span class="sweep__when">${escape(when(row.at))}</span>
+    </div>`;
+}
+
+function historySweep(dialog) {
+  const rows = dialog.rows;
+  const count = rows ? sweepChoices(dialog).length : 0;
+  let body;
+  if (!rows) {
+    body = `<div class="sweep__scanning" role="status"><span class="spinner" aria-hidden="true"></span>${escape(t("Scanning conversations…"))}</div>`;
+  } else if (!rows.length) {
+    body = `<p class="modal__hint">${escape(t("Nothing to import — every conversation on this computer is already in Convoy."))}</p>`;
+  } else {
+    body = `<div class="import__list sweep__list">${sweepGroups(dialog)
+      .map((item) => {
+        const pickable = item.rows.filter((row) => sweepProject(dialog, row));
+        const all = pickable.length && pickable.every((row) => dialog.checked[row.provider_id]);
+        return `
+        <div class="sweep__group">
+          <span>${escape(item.name)}</span>
+          <span class="section__count">${item.rows.length}</span>
+          ${
+            pickable.length
+              ? button({ label: all ? t("Select none") : t("Select all"), kind: "quiet", data: { "sweep-group": item.key || "-", value: all ? "none" : "all" } })
+              : ""
+          }
+        </div>
+        ${item.rows.map((row) => sweepRow(dialog, row)).join("")}`;
+      })
+      .join("")}</div>`;
+  }
+  return modal({
+    title: t("Import all history"),
+    hint: rows?.length
+      ? t("{conversations} found, {selected} selected", { conversations: plural(rows.length, "conversation"), selected: count })
+      : t("Claude Code and Codex conversations that are not in Convoy yet, matched to your projects."),
+    wide: true,
+    body,
+    foot: `
+      ${button({ label: t("Cancel"), data: { dismiss: "1" } })}
+      ${button({
+        label: dialog.busy ? t("Importing…") : t("Import {count}", { count }),
+        action: "history-sweep-run",
+        kind: "primary",
+        disabled: dialog.busy || !count,
+      })}`,
+  });
+}
+
 const VIEWS = {
   login,
   "macos-import": macosImport,
@@ -742,6 +860,7 @@ const VIEWS = {
   "remove-worktree": removeWorktree,
   accounts,
   transcripts,
+  "history-sweep": historySweep,
   commands: quickCommands,
   spec: specForm,
   task: taskForm,

@@ -117,6 +117,15 @@ try {
         sessions.push({ id: "imported", project_id: args.projectId, title: args.title, agent: args.agent, provider_id: args.providerId, started: true, running: false, pinned: false, review_of: null });
         return "imported";
       }
+      if (cmd === "history_sweep_scan") {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        return [
+          { agent: "claude", provider_id: "0199aaaa-0000-4000-8000-000000000011", title: "Refactor auth", at: Date.now(), place: "~/fixture/Example/api", project_id: "project", reason: "folder", votes: 0, suggestions: [] },
+          { agent: "codex", provider_id: "0199aaaa-0000-4000-8000-000000000012", title: "Tidy release notes", at: Date.now() - 86400000, place: "~", project_id: "other", reason: "paths", votes: 4, suggestions: [] },
+          { agent: "claude", provider_id: "0199aaaa-0000-4000-8000-000000000013", title: "Look around", at: Date.now() - 172800000, place: "~", project_id: null, reason: "none", votes: 0, suggestions: ["alpha"] },
+        ];
+      }
+      if (cmd === "history_sweep_import") return { imported: args.choices.length, failed: 0 };
       if (cmd === "plugin:event|listen") { (listeners[args.event] ??= []).push(args.handler); return args.handler; }
       if (cmd === "limits_read") {
         const now = Date.now() / 1000;
@@ -179,7 +188,16 @@ try {
   await page.locator('[data-open="builder"]').first().click();
   await page.locator('[data-action="session-menu"]').last().click();
   await page.locator('[data-action="start-review"]').click();
+  // The reviewer defaults to the other agent; Claude and a model can be picked instead.
+  const reviewSheet = page.locator(".modal", { hasText: "Start review" });
+  assert.equal(await reviewSheet.locator('[data-set="agent"][data-value="codex"]').getAttribute("aria-pressed"), "true");
+  await reviewSheet.locator('[data-set="agent"][data-value="claude"]').click();
+  await reviewSheet.locator('#draft-model option[value="sonnet"]').waitFor({ state: "attached" });
+  await reviewSheet.locator("#draft-model").selectOption("sonnet");
   await page.locator('[data-action="create-review"]').click();
+  const reviewCall = await page.evaluate(() => window.checkCalls.filter((call) => call.cmd === "review_create").at(-1).args);
+  assert.equal(reviewCall.agent, "claude");
+  assert.equal(reviewCall.model, "sonnet");
   await page.locator('[data-action="session-menu"]').last().click();
   await page.locator('[data-action="send-feedback"]').click();
   await page.locator("#draft-feedback").waitFor();
@@ -369,9 +387,12 @@ try {
   await page.locator('[data-task-card="task"] .card__project', { hasText: "Example" }).waitFor();
   await page.locator('[data-task-scope="project"]').click();
   await page.locator('[data-task-view="list"]').click();
-  // History lists what the agents saved here and in worktrees; Resume records
-  // it as a session in its own folder and starts it.
-  await page.locator('[data-tab="history"]').click();
+  // Under the sessions, what the agents saved here and in worktrees that no
+  // session holds yet; Resume records it as a session in its own folder and
+  // starts it. There is no separate History tab.
+  assert.equal(await page.locator('[data-tab="history"]').count(), 0);
+  await page.locator('[data-tab="sessions"]').click();
+  await page.getByRole("heading", { name: /Not in Convoy yet/ }).waitFor();
   const saved = page.locator(".row", { hasText: "Fix flaky login" });
   await saved.getByText("worktree fix-login").waitFor();
   await saved.locator("[data-history-resume]").click();
@@ -380,6 +401,31 @@ try {
   assert.equal(imported.directory, "/fixture/worktrees/fix-login");
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "session_start" && c.args.id === "imported"));
   await page.locator('.project-row [data-project="project"]').click();
+  // Import all history: a spinner while it scans, then the conversations
+  // under their projects by name, unassigned last. Matched ones start
+  // checked; picking a project for an unassigned one checks it too.
+  await page.locator('[data-tab="sessions"]').click();
+  await page.locator('[data-action="import-all-history"]').first().click();
+  await page.locator(".sweep__scanning .spinner").waitFor();
+  await page.locator(".sweep__group", { hasText: "Unassigned" }).waitFor();
+  assert.deepEqual(await page.locator(".sweep__group > span:first-child").allTextContents(), ["Example", "Other", "Unassigned"]);
+  await page.locator(".sweep__row", { hasText: "~/fixture/Example/api · started in this project" }).waitFor();
+  await page.locator(".sweep__row", { hasText: "4 file references" }).waitFor();
+  await page.locator('[data-action="history-sweep-run"]', { hasText: "Import 2" }).waitFor();
+  assert.equal(await page.locator('[data-sweep-check="0199aaaa-0000-4000-8000-000000000013"]').isDisabled(), true);
+  assert.deepEqual(await page.locator('[data-sweep-pick="0199aaaa-0000-4000-8000-000000000013"] optgroup').first().locator("option").allTextContents(), ["Alpha"]);
+  await page.locator('[data-sweep-pick="0199aaaa-0000-4000-8000-000000000013"]').selectOption("alpha");
+  await page.locator('[data-sweep-check="0199aaaa-0000-4000-8000-000000000012"]').uncheck();
+  await page.locator('[data-sweep-group="other"]', { hasText: "Select all" }).click();
+  if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/import-history.png` });
+  await page.locator('[data-action="history-sweep-run"]', { hasText: "Import 3" }).click();
+  await page.locator(".toast", { hasText: "Imported 3 conversations" }).waitFor();
+  assert.deepEqual(await page.evaluate(() => window.checkCalls.find((c) => c.cmd === "history_sweep_import").args.choices), [
+    { provider_id: "0199aaaa-0000-4000-8000-000000000011", project_id: "project" },
+    { provider_id: "0199aaaa-0000-4000-8000-000000000012", project_id: "other" },
+    { provider_id: "0199aaaa-0000-4000-8000-000000000013", project_id: "alpha" },
+  ]);
+  assert.equal(await page.locator(".scrim").count(), 0);
   await page.locator('[data-tab="tasks"]').click();
   // Files & Changes: ahead and behind its upstream, a conflict marked
   // resolved, everything unstaged, and Commit & Push in one go.

@@ -13,6 +13,7 @@ pub mod macos;
 pub mod planning;
 pub mod project;
 pub mod session;
+pub mod sweep;
 
 use convoy_core::model::Session;
 use convoy_core::{Storage, Workspace as CoreWorkspace};
@@ -525,7 +526,8 @@ mod migration_tests {
             .save(&builder, "Tests pass")
             .unwrap();
         let brief = session::review_brief(builder.clone(), app.state()).unwrap();
-        let review = session::review_create(builder.clone(), brief, app.state()).unwrap();
+        let review =
+            session::review_create(builder.clone(), brief, None, None, None, app.state()).unwrap();
         let reloaded = CoreWorkspace::load(storage.workspace_file()).unwrap();
         assert_eq!(reloaded.state().projects.len(), 1);
         assert_eq!(

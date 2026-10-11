@@ -29,7 +29,7 @@ import {
 import { escape, plural, value } from "./ui.js";
 import { setLanguage, t } from "./i18n.js";
 import { SHORTCUTS, binding, capture, label, matches } from "./shortcuts.js";
-import { dialogView } from "./dialogs.js";
+import { dialogView, sweepChoices, sweepGroups, sweepProject } from "./dialogs.js";
 import * as terminal from "./terminal.js";
 import {
   header,
@@ -50,7 +50,7 @@ import { projectSettingsPage } from "./views-project.js";
 import { forgetIcon, onIconLoaded } from "./icons.js";
 import { runnable, specsView, tasksView } from "./views-planning.js";
 import { dashboardView, homeView } from "./views-home.js";
-import { historyView } from "./views-history.js";
+import { toggleHistoryCollapsed } from "./views-history.js";
 import { PROJECT_DOC, docsView } from "./views-docs.js";
 
 const app = document.querySelector("#app");
@@ -103,8 +103,6 @@ function content() {
       return tasksView();
     case "docs":
       return docsView();
-    case "history":
-      return historyView();
     default:
       return sessionsView();
   }
@@ -317,9 +315,11 @@ function ensureModels(agent, profileId = "") {
 
 function render() {
   syncTabs();
+  // The sessions list ends with the conversations no session holds yet.
+  if (state.tab === "sessions") ensureHistory();
   // A sheet choosing a model asks for the agent's list the first time.
   if (state.dialog?.kind === "task") ensureModels(state.dialog.agent, state.dialog.profile_id ?? "");
-  if (state.dialog?.kind === "session" && state.dialog.agent) ensureModels(state.dialog.agent, state.dialog.account ?? "");
+  if (["session", "review"].includes(state.dialog?.kind) && state.dialog.agent) ensureModels(state.dialog.agent, state.dialog.account ?? "");
   if (state.dialog && isImportDialog()) {
     ensureModels("claude");
     ensureModels("codex");
@@ -569,6 +569,8 @@ const ACTIONS = {
   settings: () => (state.page === "settings" ? closeSettings() : openSettings()),
   accounts: openAccounts,
   "import-history": openTranscripts,
+  "import-all-history": openHistorySweep,
+  "history-sweep-run": runHistorySweep,
   "project-settings": openProjectSettings,
   "close-project-settings": closeProjectSettings,
   "layout-1": () => setLayout(1),
@@ -723,7 +725,10 @@ const ACTIONS = {
   },
   refresh: () => loadWorkspace(),
   "macos-import": () => offerMacImport(false),
-  "history-refresh": () => loadHistory(),
+  "history-fold": () => {
+    toggleHistoryCollapsed();
+    render();
+  },
   "find-next": () => findStep(),
   "find-previous": () => findStep({ previous: true }),
   "find-case": () => {
@@ -1083,7 +1088,7 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
+      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-sweep-group],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -1223,7 +1228,6 @@ app.addEventListener("click", async (event) => {
     render();
     if (data.tab === "specs" || data.tab === "tasks") await loadPlanning();
     if (data.tab === "docs") await loadDocs();
-    if (data.tab === "history") await loadHistory();
     return;
   }
   if (data.start) {
@@ -1279,7 +1283,7 @@ app.addEventListener("click", async (event) => {
   if (data.set) {
     captureDraft();
     state.dialog[fieldFor(data.set)] = data.value;
-    if (state.dialog.kind === "session" && data.set === "agent") {
+    if (["session", "review"].includes(state.dialog.kind) && data.set === "agent") {
       state.dialog.account = activeAccount(data.value);
       state.dialog.model = "";
     }
@@ -1375,6 +1379,13 @@ app.addEventListener("click", async (event) => {
     return toast(t("Conversation ID copied"));
   }
   if (data.historyResume) return resumeHistory(data.historyResume);
+  if (data.sweepGroup && state.dialog?.kind === "history-sweep") {
+    const dialog = state.dialog;
+    const key = data.sweepGroup === "-" ? "" : data.sweepGroup;
+    const group = sweepGroups(dialog).find((item) => item.key === key);
+    for (const row of group?.rows ?? []) if (sweepProject(dialog, row)) dialog.checked[row.provider_id] = data.value === "all";
+    return render();
+  }
   if (data.taskScope) {
     state.taskScope = data.taskScope;
     if (data.taskScope === "all") await loadAllTasks();
@@ -1477,10 +1488,6 @@ app.addEventListener("input", (event) => {
     state.specFilter = field.value;
     return render();
   }
-  if (field.id === "history-filter") {
-    state.historyFilter = field.value;
-    return render();
-  }
   if (field.id === "dashboard-filter") {
     state.dashboardFilter = field.value;
     return render();
@@ -1514,6 +1521,16 @@ app.addEventListener("change", async (event) => {
     return;
   }
   if (event.target.id === "spec-filter") return;
+  if (state.dialog?.kind === "history-sweep") {
+    const { sweepCheck, sweepPick } = event.target.dataset ?? {};
+    if (sweepCheck) state.dialog.checked[sweepCheck] = event.target.checked;
+    // Picking a project for an unassigned conversation selects it.
+    if (sweepPick) {
+      state.dialog.picks[sweepPick] = event.target.value;
+      state.dialog.checked[sweepPick] = !!event.target.value;
+    }
+    if (sweepCheck || sweepPick) return render();
+  }
   if (event.target.id === "files-repo" && state.files) {
     state.files = { ...state.files, id: event.target.value, snapshot: null, selection: null, preview: null, branch: null };
     render();
@@ -1523,7 +1540,7 @@ app.addEventListener("change", async (event) => {
     captureDraft();
     return sessionProject(state.dialog, event.target.value);
   }
-  if (state.dialog?.kind === "session" && event.target.id === "draft-account") {
+  if (["session", "review"].includes(state.dialog?.kind) && event.target.id === "draft-account") {
     state.dialog.account = event.target.value;
     return render();
   }
@@ -1691,10 +1708,26 @@ async function refreshProjects(id) {
 async function loadHistory() {
   const projectId = state.projectId;
   if (!projectId) return;
+  const sessions = state.sessions.length;
   const entries = await call("history_scan", { projectId });
-  if (entries === undefined || state.projectId !== projectId) return;
-  state.history = { projectId, entries };
+  if (state.projectId !== projectId) return;
+  // A failed read is kept as empty, so the next render does not retry it.
+  state.history = { projectId, sessions, entries: entries ?? [] };
   render();
+}
+
+/// Reads the project's saved conversations when the list shows a project it
+/// has not read, or the project's sessions changed — a resume or an import
+/// moves a conversation out of the list.
+let historyLoading = null;
+function ensureHistory() {
+  const key = `${state.projectId}:${state.sessions.length}`;
+  const read = state.history && `${state.history.projectId}:${state.history.sessions}`;
+  if (!state.projectId || key === read || historyLoading === key) return;
+  historyLoading = key;
+  loadHistory().finally(() => {
+    if (historyLoading === key) historyLoading = null;
+  });
 }
 
 /// Opens the conversation's session, recording one first when there is none,
@@ -1718,6 +1751,40 @@ async function resumeHistory(providerId) {
   }
   await openAnywhere(id);
   if (!isRunning(id)) await terminal.start(id);
+}
+
+/// Every Claude Code and Codex conversation on this computer that is not in
+/// Convoy yet, matched to a project for review. Scanning reads the disk off
+/// the main thread; the dialog shows a spinner until it is done.
+async function openHistorySweep() {
+  const dialog = { kind: "history-sweep", rows: null, checked: {}, picks: {}, busy: false };
+  openModal(dialog);
+  const rows = await call("history_sweep_scan");
+  if (state.dialog !== dialog) return;
+  if (rows === undefined) return closeDialog();
+  dialog.rows = rows;
+  for (const row of rows) if (row.project_id) dialog.checked[row.provider_id] = true;
+  render();
+}
+
+/// Records the checked conversations as resumable sessions. Nothing starts.
+async function runHistorySweep() {
+  const dialog = state.dialog;
+  if (dialog?.kind !== "history-sweep" || dialog.busy) return;
+  const choices = sweepChoices(dialog);
+  if (!choices.length) return;
+  dialog.busy = true;
+  render();
+  const report = await call("history_sweep_import", { choices });
+  if (!report) {
+    dialog.busy = false;
+    return render();
+  }
+  if (state.dialog === dialog) closeDialog();
+  await loadWorkspace();
+  if (state.tab === "sessions") await loadHistory();
+  const failed = report.failed ? t("{count} could not be copied", { count: plural(report.failed, "conversation") }) : "";
+  toast([t("Imported {count}", { count: plural(report.imported, "conversation") }), failed].filter(Boolean).join(" · "));
 }
 
 /// ⌥⌘U as on macOS: a Claude session in this project that runs /usage, or
@@ -1968,18 +2035,21 @@ async function openReview() {
   state.menu = null;
   const brief = await call("review_brief", { id: current.id });
   if (brief === undefined) return;
-  openModal({
-    kind: "review",
-    id: current.id,
-    brief,
-    reviewer: current.agent === "claude" ? "codex" : "claude",
-  });
+  // The other agent by default: a second opinion from a different model.
+  const agent = current.agent === "claude" ? "codex" : "claude";
+  openModal({ kind: "review", id: current.id, brief, agent, model: "", account: activeAccount(agent) });
 }
 
 async function createReview() {
   captureDraft();
   const dialog = state.dialog;
-  const id = await call("review_create", { id: dialog.id, prompt: dialog.brief });
+  const id = await call("review_create", {
+    id: dialog.id,
+    prompt: dialog.brief,
+    agent: dialog.agent,
+    model: dialog.model === "__loading" ? "" : dialog.model ?? "",
+    profileId: dialog.account || null,
+  });
   if (!id) return;
   closeDialog();
   await loadSessions();
@@ -2958,6 +3028,7 @@ function paletteEntries() {
     ["Accounts", "Sign-ins for Claude Code and Codex", openAccounts],
     ["Project settings", "", openProjectSettings],
     ["Import provider history", "Conversations the agent already has for this folder", openTranscripts],
+    ["Import all history…", "Every Claude Code and Codex conversation on this computer", openHistorySweep],
     ["Git: Commit…", "The commit composer in Files & Changes", inFiles(() => showFilesView("changes"))],
     ["Git: Push", "", inFiles(() => ACTIONS.push())],
     ["Git: Pull (fast-forward)", "", inFiles(() => ACTIONS.pull())],

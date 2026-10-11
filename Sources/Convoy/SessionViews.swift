@@ -151,7 +151,7 @@ struct SessionPanel: View {
                     }
                 }.frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
             } else if !reviewsOnly {
-                HistoryPanel(project: project, onNewSession: { newSession = true })
+                SessionList(project: project, sessions: sessions, search: $search, showArchived: $showArchived, newSession: $newSession, manager: manager)
             } else {
                 VStack(spacing: 18) {
                     Image(systemName: reviewsOnly ? "checkmark.bubble" : "terminal")
@@ -223,6 +223,177 @@ struct SessionPanel: View {
     }
 }
 
+/// Sessions area with nothing open: the project's sessions, then conversations saved on disk that are not sessions yet.
+struct SessionList: View {
+    @EnvironmentObject var store: Store
+    let project: Project
+    let sessions: [LinkedSession]
+    @Binding var search: String
+    @Binding var showArchived: Bool
+    @Binding var newSession: Bool
+    @ObservedObject var manager: TerminalManager
+    @State private var entries: [TranscriptEntry] = []
+    @State private var loading = false
+    @State private var scan = UUID()
+    @AppStorage("notInConvoyCollapsed") private var collapsed = false
+
+    /// Scanned conversations minus the ones already linked to a session.
+    private var unlinked: [TranscriptEntry] {
+        let known = Set(project.linkedSessions.map { $0.sessionID.lowercased() })
+        return entries.filter { !known.contains($0.sessionID.lowercased()) }
+    }
+    private var shownUnlinked: [TranscriptEntry] {
+        let q = search.lowercased().trimmingCharacters(in: .whitespaces)
+        return q.isEmpty ? unlinked : unlinked.filter { $0.title.lowercased().contains(q) || $0.sessionID.lowercased().hasPrefix(q) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Text("Sessions").font(.system(size: 15, weight: .semibold))
+                Text("\(sessions.count)").font(.system(size: 12, weight: .medium)).foregroundStyle(.tertiary)
+                if loading { ProgressView().controlSize(.small) }
+                Spacer()
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.tertiary)
+                    TextField("Filter sessions and conversations", text: $search).textFieldStyle(.plain).font(.system(size: 12))
+                    if !search.isEmpty {
+                        Button { search = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(.tertiary) }.buttonStyle(.plain)
+                    }
+                }.padding(.horizontal, 9).frame(width: 280, height: 28)
+                    .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(AppTheme.stroke))
+                Button { showArchived.toggle() } label: { Image(systemName: showArchived ? "archivebox.fill" : "archivebox").font(.system(size: 11)) }
+                    .buttonStyle(.plain).foregroundStyle(showArchived ? AppTheme.accent : .secondary).help(showArchived ? "Hide archived sessions" : "Show archived sessions")
+                Button { load() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 11)) }.buttonStyle(.plain).foregroundStyle(.secondary).help("Rescan saved conversations")
+                Button("Import all history…") { store.showHistoryImport = true }.help("Find conversations started in other folders and add them to your projects")
+                Button { newSession = true } label: { Label("New session", systemImage: "plus") }.buttonStyle(.borderedProminent)
+            }.padding(.horizontal, 20).padding(.vertical, 14)
+            Divider()
+            if sessions.isEmpty && shownUnlinked.isEmpty && !loading {
+                VStack(spacing: 8) {
+                    Image(systemName: "terminal").font(.system(size: 24)).foregroundStyle(.tertiary)
+                    Text(search.isEmpty ? "No sessions yet" : "No matches").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+                    if search.isEmpty { Button { newSession = true } label: { Label("Start your first session", systemImage: "plus") }.buttonStyle(.borderedProminent).controlSize(.large).padding(.top, 6) }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            if sessions.isEmpty {
+                                Text(!search.isEmpty ? "No sessions match." : shownUnlinked.isEmpty ? "No sessions yet." : "Resume a conversation below or start a new session.")
+                                    .font(.system(size: 12)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.vertical, 14)
+                            }
+                            ForEach(sessions) { session in SessionListRow(session: session, project: project, manager: manager) }
+                            if !shownUnlinked.isEmpty {
+                                Button { withAnimation(.easeOut(duration: 0.15)) { collapsed.toggle() } } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: collapsed ? "chevron.right" : "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary).frame(width: 12)
+                                        Text("Not in Convoy yet").font(.system(size: 12, weight: .semibold))
+                                        Text("\(shownUnlinked.count)").font(.system(size: 11, weight: .medium)).foregroundStyle(.tertiary)
+                                        Spacer()
+                                        if !collapsed { Text("Saved by Claude Code or Codex in \(project.isGroup ? "this group" : "this folder and its worktrees")").font(.system(size: 10.5)).foregroundStyle(.tertiary).lineLimit(1) }
+                                    }.padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 8).contentShape(Rectangle())
+                                }.buttonStyle(.plain).id("notInConvoy").accessibilityLabel("\(collapsed ? "Expand" : "Collapse") conversations not in Convoy yet")
+                                if !collapsed { ForEach(shownUnlinked) { entry in TranscriptRow(entry: entry, project: project) } }
+                            }
+                        }
+                    }
+                    .onChange(of: store.revealConversations) { _, on in if on { reveal(proxy) } }
+                    .onChange(of: loading) { _, busy in if !busy && store.revealConversations { reveal(proxy) } }
+                    .onAppear { if store.revealConversations && !loading { reveal(proxy) } }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear(perform: load)
+        .onChange(of: project.id) { _, _ in entries = []; load() }
+        .onChange(of: project.linkedSessions.count) { _, _ in load() }
+    }
+
+    /// Old History entry points land here: expand the section and scroll to it.
+    private func reveal(_ proxy: ScrollViewProxy) {
+        store.revealConversations = false; collapsed = false; search = ""
+        DispatchQueue.main.async { withAnimation { proxy.scrollTo("notInConvoy", anchor: .top) } }
+    }
+
+    private func load() {
+        loading = true
+        let dirs = store.transcriptDirectories(for: project), token = UUID()
+        scan = token
+        Task.detached(priority: .userInitiated) {
+            let found = TranscriptScanner.scan(directories: dirs)
+            await MainActor.run {
+                guard scan == token else { return } // a newer scan (project switch) wins
+                entries = found; loading = false
+                if unlinked.isEmpty { store.revealConversations = false } // nothing to reveal
+            }
+        }
+    }
+}
+
+/// One Convoy session in the Sessions list; click opens it.
+private struct SessionListRow: View {
+    @EnvironmentObject var store: Store
+    let session: LinkedSession
+    let project: Project
+    @ObservedObject var manager: TerminalManager
+    @State private var hovered = false
+
+    var body: some View {
+        let running = manager.handles[session.id]?.running == true
+        let directory = store.directory(for: session, in: project)
+        HStack(spacing: 12) {
+            AgentIcon(agent: session.agent, size: 16).frame(width: 26, height: 26)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+                .overlay(alignment: .bottomTrailing) { AgentStateGlyph(state: store.agentState(session), running: running, size: 6).offset(x: 2, y: 2) }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    if session.pinned == true { Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(.secondary) }
+                    Text(session.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                    if session.reviewOf != nil { Text("review").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary) }
+                    if session.archived == true { Text("archived").font(.system(size: 10, weight: .medium)).foregroundStyle(.tertiary) }
+                }
+                HStack(spacing: 6) {
+                    Text(running ? AgentStateGlyph(state: store.agentState(session), running: true).label : (store.isHibernated(session.id) ? "Sleeping" : (manager.handles[session.id] == nil ? "Saved" : "Stopped")))
+                    Text("·").foregroundStyle(.quaternary)
+                    Text(session.agent.rawValue)
+                    Text("·").foregroundStyle(.quaternary)
+                    Text(session.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    if !session.sessionID.isEmpty {
+                        Text("·").foregroundStyle(.quaternary)
+                        Text(String(session.sessionID.prefix(8))).font(.system(size: 10.5, design: .monospaced))
+                    }
+                    if let branch = session.branch {
+                        Text("·").foregroundStyle(.quaternary)
+                        Label(branch, systemImage: "arrow.triangle.branch").lineLimit(1)
+                    }
+                }.font(.system(size: 10.5)).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 12)
+            Button { store.openSession(session.id, in: project.id) } label: { Label("Open", systemImage: "arrow.up.forward.square").font(.system(size: 11, weight: .medium)) }
+                .buttonStyle(.bordered).tint(hovered ? AppTheme.accent : nil).controlSize(.small)
+            Button { store.copy(session.sessionID) } label: { Image(systemName: "doc.on.doc").font(.system(size: 11)) }
+                .buttonStyle(.plain).foregroundStyle(.secondary).help("Copy session ID").opacity(hovered ? 1 : 0.4).disabled(session.sessionID.isEmpty)
+        }
+        .padding(.horizontal, 20).padding(.vertical, 9)
+        .background(hovered ? Color.primary.opacity(0.04) : .clear)
+        .overlay(alignment: .bottom) { Divider().padding(.leading, 58).opacity(0.6) }
+        .contentShape(Rectangle())
+        .onHover { hovered = $0 }
+        .onTapGesture { store.openSession(session.id, in: project.id) }
+        .help(session.notes.isEmpty ? session.title : session.notes)
+        .contextMenu {
+            Button("Open") { store.openSession(session.id, in: project.id) }
+            if !running { Button("Resume") { store.startSession(session, in: project, resume: true) } }
+            Button("Edit name & notes…") { store.editRequest = session.id }
+            Divider()
+            Button("Copy session ID") { store.copy(session.sessionID) }.disabled(session.sessionID.isEmpty)
+            Button("Show folder in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: directory) }
+        }
+    }
+}
+
 struct TerminalPane: View {
     @EnvironmentObject var store: Store
     @ObservedObject var handle: TerminalHandle
@@ -252,6 +423,8 @@ struct NewSessionSheet: View {
     /// Header / ⌘N: the sheet opens on the current project but any project can be chosen.
     let pickProject: Bool
     @State private var agent: Agent
+    /// `--model` for the session; empty means the agent's default.
+    @State private var model = ""
     @State private var title: String
     @State private var prompt: String
 
@@ -327,7 +500,7 @@ struct NewSessionSheet: View {
         let selected = agent == candidate
         let account = store.accounts.active(for: candidate)?.label
         let yolo = candidate == .claude ? yoloClaude : yoloCodex
-        return Button { agent = candidate } label: {
+        return Button { if agent != candidate { agent = candidate; model = "" } } label: {
             HStack(spacing: 12) {
                 AgentIcon(agent: candidate, size: 22).frame(width: 40, height: 40)
                     .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
@@ -362,6 +535,26 @@ struct NewSessionSheet: View {
     }
 
     /// Editable ref with a picker inside, styled like the Branch field.
+    /// A preset or any model name the agent accepts, passed as `--model`.
+    private var modelField: some View {
+        HStack(spacing: 8) {
+            Text("Model").font(.system(size: 12)).foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                TextField("Agent default", text: $model).textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
+                Menu {
+                    Button("Agent default") { model = "" }
+                    Divider()
+                    ForEach(ModelPresets.for(agent), id: \.0) { id, name in Button(name) { model = id } }
+                } label: { Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            }.padding(.horizontal, 8).frame(width: 220, height: 26)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(AppTheme.stroke))
+                .help(agent == .claude ? "Passed as claude --model" : "Passed as codex --model")
+            Spacer()
+        }
+    }
+
     private var baseRefPicker: some View {
         let locals = refs.filter { !$0.hasPrefix("origin/") && !$0.hasPrefix("tag:") }
         let remotes = refs.filter { $0.hasPrefix("origin/") }
@@ -434,6 +627,7 @@ struct NewSessionSheet: View {
                 label("Agent")
                 HStack(spacing: 10) { agentCard(.claude); agentCard(.codex) }
                 AgentAvailabilityNote(agent: agent)
+                modelField
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -479,6 +673,8 @@ struct NewSessionSheet: View {
                     let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
                     let finalTitle = trimmedTitle.isEmpty ? SessionNaming.autoTitle(agent: agent, prompt: prompt) : trimmedTitle
                     var session = LinkedSession(agent: agent, sessionID: agent == .claude ? UUID().uuidString.lowercased() : "", title: finalTitle, notes: note, initialPrompt: prompt, reviewOf: source?.id)
+                    let pickedModel = model.trimmingCharacters(in: .whitespaces)
+                    session.model = pickedModel.isEmpty ? nil : pickedModel
                     if let source, let builder = project.linkedSessions.first(where: { $0.id == source.id }) { session.workingDirectory = builder.workingDirectory; session.branch = builder.branch; session.baseRef = builder.baseRef }
                     var branchName = branch.trimmingCharacters(in: .whitespaces)
                     if useWorktree && source == nil && branchName.isEmpty { branchName = GitWorktree.slug(finalTitle, prefix: project.branchPrefix ?? branchPrefix) }

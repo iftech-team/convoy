@@ -1,5 +1,6 @@
 // Every screen. Markup built from state; nothing here calls the backend.
 
+import { historySection, lastActive, when } from "./views-history.js";
 import { agentIcon, appMark, icons, projectIcon, projectTint } from "./icons.js";
 import {
   button,
@@ -23,7 +24,6 @@ const TABS = [
   ["specs", "Specs"],
   ["tasks", "Tasks"],
   ["docs", "Docs"],
-  ["history", "History"],
 ];
 
 // ---------------------------------------------------------------- sidebar --
@@ -376,24 +376,30 @@ const agentName = (agent) => (agent === "claude" ? "Claude Code" : "Codex");
 
 function sessionRow(item) {
   const reported = state.agentState.get(item.id);
+  // What a person needs at a glance: is it running, which agent, where, and
+  // when it was last used. The provider ID is in the tooltip.
+  const status = item.running
+    ? `<span class="row__state row__state--${reported === "waiting" ? "waiting" : "running"}">${escape(t(reported ?? "running"))}</span>`
+    : "";
+  const at = lastActive(item);
   const meta = [
     agentName(item.agent),
-    escape(t(item.running ? (reported ?? "running") : item.started ? "stopped" : "never started")),
+    !item.running && !item.started ? escape(t("never started")) : null,
     item.archived ? escape(t("archived")) : null,
     item.branch ? escape(t("on {branch}", { branch: item.branch })) : null,
-    item.provider_id ? `<code>${escape(item.provider_id.slice(0, 8))}</code>` : null,
+    at ? escape(when(at)) : null,
   ]
     .filter(Boolean)
     .join(" · ");
 
   return `
-    <div class="row" data-open="${escape(item.id)}">
+    <div class="row" data-open="${escape(item.id)}" title="${escape(item.provider_id)}">
       <span class="row__mark">${agentIcon(item.agent, 16)}</span>
       <div class="row__body">
         <div class="row__title">
           ${item.pinned ? '<span class="row__pin">★</span>' : ""}${escape(item.title)}
         </div>
-        <div class="row__meta">${meta}</div>
+        <div class="row__meta">${status}${meta}</div>
       </div>
       <div class="row__actions">
         ${
@@ -402,28 +408,42 @@ function sessionRow(item) {
             : button({
                 label: item.started ? t("Resume") : t("Start"),
                 icon: "play",
+                kind: "quiet",
                 data: { start: item.id },
                 disabled: item.archived || item.worktree_removed,
               })
         }
-        ${button({ icon: "open", kind: "quiet", data: { open: item.id }, title: t("Open the terminal") })}
       </div>
     </div>`;
 }
 
 export function sessionsView() {
+  const saved = historySection();
   if (!state.sessions.length && !state.showArchived) {
-    return empty(
-      "review",
-      t("No sessions yet"),
-      t("Start one to run Claude Code or Codex in this folder."),
-    );
+    if (!saved) {
+      return empty(
+        "review",
+        t("No sessions yet"),
+        t("Start one to run Claude Code or Codex in this folder."),
+      );
+    }
+    return `
+      <div class="section">
+        <h2 class="section__title">${escape(t("No sessions yet"))}</h2>
+        <span class="section__spacer"></span>
+        ${button({ label: t("Import all history…"), icon: "history", action: "import-all-history" })}
+        ${button({ label: t("New session"), icon: "plus", action: "new-session", kind: "primary" })}
+      </div>
+      <p class="section__hint">${escape(t("Resume a conversation below or start a new session."))}</p>
+      <div class="stack" data-scroll="sessions">${saved}</div>`;
   }
-  const rows = visibleSessions().map(sessionRow).join("");
+  // Running ones first: they are what someone comes back to.
+  const shown = visibleSessions();
+  const rows = [...shown.filter((item) => item.running), ...shown.filter((item) => !item.running)].map(sessionRow).join("");
   return `
     <div class="section">
-      <h2 class="section__title">${escape(t("Saved conversations"))}
-        <span class="section__count">${visibleSessions().length}</span>
+      <h2 class="section__title">${escape(t("Sessions"))}
+        <span class="section__count">${shown.length}</span>
       </h2>
       <span class="section__spacer"></span>
       <div class="filter">
@@ -437,13 +457,14 @@ export function sessionsView() {
                ${state.showArchived ? "checked" : ""} />
         ${escape(t("Archived"))}
       </label>
+      ${button({ label: t("Import all history…"), icon: "history", action: "import-all-history", title: t("Every Claude Code and Codex conversation on this computer") })}
       ${button({ label: t("New session"), icon: "plus", action: "new-session", kind: "primary" })}
     </div>
-    <p class="section__hint">
-      ${escape(t("Pick a session, start a new one, or import a conversation Claude Code or Codex already saved for this folder."))}
-    </p>
-    <div class="list">
-      ${rows || `<div class="list__none">${escape(t("Nothing matches “{filter}”.", { filter: state.filter }))}</div>`}
+    <div class="stack" data-scroll="sessions">
+      <div class="list">
+        ${rows || `<div class="list__none">${escape(t("Nothing matches “{filter}”.", { filter: state.filter }))}</div>`}
+      </div>
+      ${saved}
     </div>`;
 }
 

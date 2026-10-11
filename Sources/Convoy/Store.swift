@@ -10,6 +10,7 @@ final class Store: ObservableObject {
     @Published var sessionCreationProject: Project?
     @Published var sessionFocusRequest = UUID()
     @Published var showPalette = false
+    @Published var showHistoryImport = false
     enum PaletteMode { case all, terminals, quick }
     @Published var paletteMode: PaletteMode = .all
     /// Session ids by most recent use, for the ⌘E terminal switcher.
@@ -36,6 +37,13 @@ final class Store: ObservableObject {
         let next = list[((current + offset) % list.count + list.count) % list.count]
         if !showProjectPage { selectProject(project.id) }
         areaRequest = next
+    }
+    /// Set by the old History entry points; the Sessions list consumes it to expand and scroll to "Not in Convoy yet".
+    @Published var revealConversations = false
+    func showConversationsNotInConvoy() {
+        guard let project else { return }
+        if !showProjectPage || workspace.selectedSessionID != nil { selectProject(project.id) }
+        areaRequest = "Sessions"; revealConversations = true
     }
     func requestNewTask() {
         guard let project else { return }

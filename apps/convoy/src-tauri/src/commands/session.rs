@@ -300,15 +300,29 @@ pub fn review_brief(id: String, workspace: State<'_, Workspace>) -> Result<Strin
     })
 }
 
-/// Hands the work to the other agent, in the same folder, told not to edit.
+/// Hands the work to a reviewer in the same folder, told not to edit. The
+/// other agent unless one is picked; the model and account are the
+/// reviewer's own.
 #[tauri::command]
 pub fn review_create(
     id: String,
     prompt: String,
+    agent: Option<String>,
+    model: Option<String>,
+    profile_id: Option<String>,
     workspace: State<'_, Workspace>,
 ) -> Result<String, String> {
+    let agent = match agent.as_deref() {
+        Some(name) => Some(Agent::parse(name).ok_or("Unknown agent.")?),
+        None => None,
+    };
     workspace.act(|workspace| {
-        let input = convoy_core::review::handoff(workspace, &id, prompt)?;
+        let mut input = convoy_core::review::handoff(workspace, &id, prompt)?;
+        if let Some(agent) = agent {
+            input.agent = agent;
+        }
+        input.model = model.unwrap_or_default();
+        input.profile_id = profile_id.filter(|id| !id.is_empty());
         let state = workspace.add_session(input)?;
         Ok(state
             .sessions

@@ -74,6 +74,7 @@ pub fn run() {
         .manage(commands::Repositories::default())
         .manage(power::KeepAwake::default())
         .manage(monitor::Reports::default())
+        .manage(commands::sweep::Sweep::default())
         .invoke_handler(tauri::generate_handler![
             tasks::integrations_list,
             tasks::integration_save,
@@ -153,6 +154,8 @@ pub fn run() {
             commands::integrations::transcripts_scan,
             commands::integrations::transcripts_import,
             commands::integrations::history_scan,
+            commands::sweep::history_sweep_scan,
+            commands::sweep::history_sweep_import,
             commands::integrations::models_list,
             commands::integrations::activity_read,
             commands::integrations::activity_clear,

@@ -127,6 +127,7 @@ struct WorkspaceView: View {
         .sheet(item: $store.sessionCreationProject) { project in
             NewSessionSheet(project: project, pickProject: true)
         }
+        .sheet(isPresented: $store.showHistoryImport) { HistoryImportSheet() }
         .alert("Remove from Convoy?", isPresented: Binding(get: { projectToRemove != nil }, set: { if !$0 { projectToRemove = nil } }), presenting: projectToRemove) { project in
             Button("Cancel", role: .cancel) { projectToRemove = nil }
             Button("Remove", role: .destructive) { store.removeProject(project.id); projectToRemove = nil }
@@ -627,7 +628,8 @@ struct ProjectWorkbench: View {
         }
         .onChange(of: store.areaRequest) { _, value in
             guard let value else { return }
-            store.areaRequest = nil; area = value
+            store.areaRequest = nil
+            if value == "History" { area = "Sessions"; store.revealConversations = true } else { area = value } // History is a section of Sessions now
         }
         .onChange(of: store.newSpecRequest) { _, _ in area = "Specs"; title = ""; newSpec = true }
         .onChange(of: store.workspace.selectedSessionID) { _, id in
@@ -974,6 +976,7 @@ struct AppCommands: Commands {
             Button("New Session…") { store.newSessionInCurrentProject() }.bound("session.new", keys).disabled(store.workspace.projects.isEmpty)
             Button("New Specification…") { store.newSpecRequest = UUID() }.bound("project.newSpec", keys).disabled(store.project == nil)
             Button("Open Folder…") { store.addProject() }.bound("project.open", keys)
+            Button("Import All History…") { store.showHistoryImport = true }
             Divider()
             Button("Close Tab") { store.closeCurrentTab() }.bound("tab.close", keys)
             Button("Reopen Closed Tab") { store.reopenClosedTab() }.bound("tab.reopen", keys)
@@ -1009,6 +1012,7 @@ struct AppCommands: Commands {
         }
         CommandMenu("Project") {
             Button("Sessions") { store.areaRequest = "Sessions" }.bound("project.sessions", keys)
+            Button("Saved Conversations") { store.showConversationsNotInConvoy() }.disabled(store.project == nil)
             Button("Reviews") { store.areaRequest = "Reviews" }.bound("project.reviews", keys)
             Button("Specs") { store.areaRequest = "Specs" }.bound("project.specs", keys)
             Button("Tasks") { store.areaRequest = "Tasks"; if !store.showProjectPage, let p = store.project { store.selectProject(p.id); store.areaRequest = "Tasks" } }.bound("project.tasks", keys)

@@ -50,7 +50,7 @@ enum TranscriptScanner {
         return String(data: (try? handle.read(upToCount: bytes)) ?? Data(), encoding: .utf8)
     }
 
-    private nonisolated static func claudeTitle(_ file: URL) -> String? {
+    nonisolated static func claudeTitle(_ file: URL) -> String? {
         guard let text = head(file) else { return nil }
         for line in text.split(separator: "\n") {
             guard let data = line.data(using: .utf8), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -65,7 +65,7 @@ enum TranscriptScanner {
         return nil
     }
 
-    private nonisolated static func codexMeta(_ file: URL) -> (id: String, cwd: String, title: String?, isSubagent: Bool)? {
+    nonisolated static func codexMeta(_ file: URL) -> (id: String, cwd: String, title: String?, isSubagent: Bool)? {
         guard let text = head(file, bytes: 32_000) else { return nil }
         var id = "", cwd = "", title: String?, sub = false
         for line in text.split(separator: "\n") {
@@ -89,87 +89,31 @@ enum TranscriptScanner {
     }
 }
 
-/// History area: every saved conversation for this project and its worktrees, resumable in one click.
-struct HistoryPanel: View {
-    @EnvironmentObject var store: Store
-    let project: Project
-    var onNewSession: (() -> Void)? = nil
-    @State private var entries: [TranscriptEntry] = []
-    @State private var loading = false
-    @State private var filter = ""
-
-    private var known: Set<String> { Set(project.linkedSessions.map { $0.sessionID.lowercased() }) }
-    private var shown: [TranscriptEntry] {
-        let q = filter.lowercased().trimmingCharacters(in: .whitespaces)
-        return q.isEmpty ? entries : entries.filter { $0.title.lowercased().contains(q) || $0.sessionID.hasPrefix(q) }
+extension Store {
+    /// Folders whose saved conversations belong to the project: its own, its worktrees, and a group's children.
+    func transcriptDirectories(for project: Project) -> [String] {
+        var dirs = [project.path] + project.linkedSessions.compactMap(\.workingDirectory)
+        if project.isGroup { dirs += workspace.children(of: project.id).map(\.path) }
+        return Array(Set(dirs))
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Text("Saved conversations").font(.system(size: 15, weight: .semibold))
-                Text("\(shown.count)").font(.system(size: 12, weight: .medium)).foregroundStyle(.tertiary)
-                if loading { ProgressView().controlSize(.small) }
-                Spacer()
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.tertiary)
-                    TextField("Filter by first message or ID", text: $filter).textFieldStyle(.plain).font(.system(size: 12))
-                    if !filter.isEmpty {
-                        Button { filter = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(.tertiary) }.buttonStyle(.plain)
-                    }
-                }.padding(.horizontal, 9).frame(width: 300, height: 28)
-                    .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
-                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(AppTheme.stroke))
-                Button { load() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 11)) }.buttonStyle(.plain).foregroundStyle(.secondary).help("Rescan")
-                if let onNewSession { Button { onNewSession() } label: { Label("New session", systemImage: "plus") }.buttonStyle(.borderedProminent) }
-            }.padding(.horizontal, 20).padding(.vertical, 14)
-            Text("Pick a session in the sidebar, start a new one, or resume any conversation Claude Code or Codex saved for \(project.name)\(project.isGroup ? "" : " and its worktrees"), even ones started in a plain terminal.")
-                .font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 20).padding(.bottom, 10)
-            Divider()
-            if shown.isEmpty && !loading {
-                VStack(spacing: 8) {
-                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 24)).foregroundStyle(.tertiary)
-                    Text(filter.isEmpty ? "No saved conversations for this folder" : "No matches").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
-                    if filter.isEmpty, let onNewSession { Button { onNewSession() } label: { Label("Start your first session", systemImage: "plus") }.buttonStyle(.borderedProminent).controlSize(.large).padding(.top, 6) }
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) { ForEach(shown) { entry in HistoryRow(entry: entry, project: project, linked: known.contains(entry.sessionID.lowercased())) { resume(entry, linked: $0) } } }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear(perform: load)
-    }
-
-    private func resume(_ entry: TranscriptEntry, linked: Bool) {
-        if linked, let existing = project.linkedSessions.first(where: { $0.sessionID.lowercased() == entry.sessionID.lowercased() }) {
-            if store.terminals.handles[existing.id]?.running == true { store.openSession(existing.id, in: project.id) } else { store.startSession(existing, in: project, resume: true) }
+    /// Resume a conversation found on disk: link it as a session (or reuse the one already linked) and start it.
+    func resumeTranscript(_ entry: TranscriptEntry, in project: Project) {
+        if let existing = project.linkedSessions.first(where: { $0.sessionID.lowercased() == entry.sessionID.lowercased() }) {
+            if terminals.handles[existing.id]?.running == true { openSession(existing.id, in: project.id) } else { startSession(existing, in: project, resume: true) }
             return
         }
         var session = LinkedSession(agent: entry.agent, sessionID: entry.sessionID, title: String(entry.title.prefix(60)))
-        if entry.directory != project.path { session.workingDirectory = entry.directory; session.branch = store.git.info[entry.directory]?.branch }
-        store.startSession(session, in: project, resume: true)
-    }
-
-    private func load() {
-        loading = true
-        var dirs = [project.path] + project.linkedSessions.compactMap(\.workingDirectory)
-        if project.isGroup { dirs += store.workspace.children(of: project.id).map(\.path) }
-        let unique = Array(Set(dirs))
-        Task.detached(priority: .userInitiated) {
-            let found = TranscriptScanner.scan(directories: unique)
-            await MainActor.run { entries = found; loading = false }
-        }
+        if entry.directory != project.path { session.workingDirectory = entry.directory; session.branch = git.info[entry.directory]?.branch }
+        startSession(session, in: project, resume: true)
     }
 }
 
-private struct HistoryRow: View {
+/// A conversation saved on disk that is not a Convoy session yet; resumes on double-click.
+struct TranscriptRow: View {
     @EnvironmentObject var store: Store
     let entry: TranscriptEntry
     let project: Project
-    let linked: Bool
-    let resume: (Bool) -> Void
     @State private var hovered = false
 
     var body: some View {
@@ -193,11 +137,7 @@ private struct HistoryRow: View {
                 }.font(.system(size: 10.5)).foregroundStyle(.secondary)
             }
             Spacer(minLength: 12)
-            if linked {
-                Text("In sidebar").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
-                    .padding(.horizontal, 7).padding(.vertical, 2).background(Color.primary.opacity(0.06), in: Capsule())
-            }
-            Button { resume(linked) } label: { Label(linked ? "Open" : "Resume", systemImage: linked ? "arrow.up.forward.square" : "play.fill").font(.system(size: 11, weight: .medium)) }
+            Button { store.resumeTranscript(entry, in: project) } label: { Label("Resume", systemImage: "play.fill").font(.system(size: 11, weight: .medium)) }
                 .buttonStyle(.bordered).tint(hovered ? AppTheme.accent : nil).controlSize(.small)
             Button { store.copy(entry.sessionID) } label: { Image(systemName: "doc.on.doc").font(.system(size: 11)) }
                 .buttonStyle(.plain).foregroundStyle(.secondary).help("Copy session ID").opacity(hovered ? 1 : 0.4)
@@ -207,9 +147,9 @@ private struct HistoryRow: View {
         .overlay(alignment: .bottom) { Divider().padding(.leading, 58).opacity(0.6) }
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
-        .onTapGesture(count: 2) { resume(linked) }
+        .onTapGesture(count: 2) { store.resumeTranscript(entry, in: project) }
         .contextMenu {
-            Button(linked ? "Open" : "Resume") { resume(linked) }
+            Button("Resume") { store.resumeTranscript(entry, in: project) }
             Button("Copy session ID") { store.copy(entry.sessionID) }
             Button("Show folder in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: entry.directory) }
         }

@@ -41,6 +41,7 @@ struct CommandPalette: View {
         let actions: [(String, String, String, String?, () -> Void)] = [
             ("New session in current project", "Creates a Claude Code or Codex session", "plus.rectangle", "⌘N", { store.newSessionInCurrentProject() }),
             ("Open folder…", "Add a repository or a folder of projects", "folder.badge.plus", "⌘O", { store.addProject() }),
+            ("Import all history…", "Add Claude Code and Codex conversations saved on this Mac", "clock.arrow.circlepath", nil, { store.showHistoryImport = true }),
             ("Resume current session", "Reconnect to the selected agent", "play", "⇧⌘R", { store.resumeCurrentSession() }),
             ("Stop current session", "Interrupts the running agent", "stop", "⌘.", { store.stopCurrentSession() }),
             ("Close tab", "Closes the selected terminal tab", "xmark.rectangle", "⌘W", { store.closeCurrentTab() }),
@@ -58,6 +59,7 @@ struct CommandPalette: View {
             ("Send feedback to builder", "From a review session", "arrowshape.turn.up.left", "⇧⌘B", { store.feedbackRequest = store.workspace.selectedSessionID }),
             ("Switch terminal", "Open terminals, most recent first", "rectangle.on.rectangle", "⌘E", { store.openPalette(.terminals) }),
             ("Go to Sessions", "", "terminal", "⌥⌘1", { store.areaRequest = "Sessions" }),
+            ("Saved conversations not in Convoy", "Resume a Claude Code or Codex conversation from this project's folder", "clock.arrow.circlepath", nil, { store.showConversationsNotInConvoy() }),
             ("Go to Reviews", "", "checkmark.bubble", "⌥⌘2", { store.areaRequest = "Reviews" }),
             ("Go to Specs", "", "doc.text", "⌥⌘3", { store.areaRequest = "Specs" }),
             ("New specification", "", "doc.badge.plus", "⌥⌘N", { store.newSpecRequest = UUID() }),
