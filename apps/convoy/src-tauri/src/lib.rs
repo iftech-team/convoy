@@ -7,6 +7,7 @@
 
 mod chat;
 mod commands;
+mod helpers;
 mod monitor;
 mod power;
 mod pty;
@@ -52,6 +53,17 @@ pub fn run() {
         }
         return;
     }
+    // A manager's agent starts, waits for and reads its helpers this way.
+    // It needs the running app, but never a window of its own.
+    if arguments.first().is_some_and(|value| value == "--session") {
+        let code = convoy_core::helpers::cli::run(
+            &arguments[1..],
+            &|key| std::env::var(key).ok(),
+            &mut std::io::stdout().lock(),
+            &mut std::io::stderr().lock(),
+        );
+        std::process::exit(code);
+    }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -84,6 +96,11 @@ pub fn run() {
         .manage(power::KeepAwake::default())
         .manage(monitor::Reports::default())
         .manage(commands::sweep::Sweep::default())
+        .manage(helpers::Helpers::default())
+        .setup(|app| {
+            helpers::start_poller(app.handle().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             tasks::integrations_list,
             tasks::integration_save,

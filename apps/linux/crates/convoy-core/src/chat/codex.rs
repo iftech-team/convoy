@@ -97,6 +97,9 @@ pub struct Options {
     /// The user chose to skip approvals and the sandbox for Codex, as
     /// `--dangerously-bypass-approvals-and-sandbox` does in a terminal.
     pub yolo: bool,
+    /// Instructions on top of Codex's own, sent as `developerInstructions`
+    /// when the thread opens: a manager session's, for one.
+    pub developer_instructions: Option<String>,
 }
 
 /// A question waiting for the user, with what answering it needs.
@@ -217,6 +220,14 @@ impl CodexClient {
             params["sandbox"] = json!("danger-full-access");
         } else {
             params["approvalPolicy"] = json!("on-request");
+        }
+        if let Some(text) = self
+            .options
+            .developer_instructions
+            .as_deref()
+            .filter(|text| !text.is_empty())
+        {
+            params["developerInstructions"] = json!(text);
         }
     }
 
@@ -1051,6 +1062,7 @@ mod tests {
             model: Some("gpt-5".into()),
             effort: Some("high".into()),
             yolo: true,
+            developer_instructions: None,
         });
         codex.start();
         codex.feed(r#"{"id":1,"result":{}}"#);

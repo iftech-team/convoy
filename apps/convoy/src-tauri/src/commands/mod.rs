@@ -162,6 +162,10 @@ pub struct SessionView {
     pub task_id: Option<String>,
     /// `chat` or `terminal`: the session's choice, or the settings default.
     pub view: String,
+    /// The manager that started it, for a helper.
+    pub parent_id: Option<String>,
+    /// Whether it can start helpers.
+    pub manager: bool,
 }
 
 #[derive(Serialize)]
@@ -203,6 +207,8 @@ pub fn view_of(
         review_of: session.review_of.clone(),
         task_id: session.task_id.clone(),
         view: session.shown_as(settings).to_string(),
+        parent_id: session.parent_id.clone(),
+        manager: session.is_manager(),
     }
 }
 
@@ -535,6 +541,7 @@ mod migration_tests {
             Some("high".into()),
             None,
             Some("Where I left off".into()),
+            None,
             None,
             app.state(),
         )

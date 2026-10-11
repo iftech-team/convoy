@@ -550,6 +550,8 @@ impl Workspace {
                 task_id: None,
                 profile_id: input.profile_id,
                 view: None,
+                parent_id: None,
+                manager: None,
                 unknown: Default::default(),
             });
             Ok(())
@@ -602,6 +604,21 @@ impl Workspace {
         let (id, view) = (id.to_string(), view.to_string());
         self.update(move |state| {
             find_session_mut(state, &id)?.view = Some(view);
+            Ok(())
+        })
+    }
+
+    /// Marks a session as a manager, which may start helper sessions, or not.
+    /// A helper cannot be one: helpers are one level deep.
+    pub fn set_session_manager(&mut self, id: &str, manager: bool) -> Result<&State> {
+        let session = self.session(id)?;
+        ensure!(
+            !manager || session.parent_id.is_none(),
+            "A helper session cannot be a manager."
+        );
+        let id = id.to_string();
+        self.update(move |state| {
+            find_session_mut(state, &id)?.manager = manager.then_some(true);
             Ok(())
         })
     }
@@ -670,6 +687,16 @@ impl Workspace {
         let ids = ids.to_vec();
         self.update(move |state| {
             state.sessions.retain(|session| !ids.contains(&session.id));
+            // A helper outlives its manager as an ordinary session.
+            for session in state.sessions.iter_mut() {
+                if session
+                    .parent_id
+                    .as_ref()
+                    .is_some_and(|id| ids.contains(id))
+                {
+                    session.parent_id = None;
+                }
+            }
             for task in state.tasks.iter_mut() {
                 if task.session_id.as_ref().is_some_and(|id| ids.contains(id)) {
                     task.session_id = None;

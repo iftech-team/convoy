@@ -464,6 +464,8 @@ impl Workspace {
                     .filter(|id| !id.is_empty())
                     .or_else(|| task.profile_id.clone()),
                 view: None,
+                parent_id: None,
+                manager: None,
                 unknown: Default::default(),
             };
             let session_id = session.id.clone();

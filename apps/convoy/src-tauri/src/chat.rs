@@ -8,7 +8,7 @@
 //! the queue, review and exit rules cannot tell the two apart.
 
 use convoy_core::chat::{ChatEvent, Decision, Driver, Image, PendingApprovals};
-use convoy_core::session::{mark_started, plan_chat_launch, ChatPlan};
+use convoy_core::session::{mark_started, plan_chat_launch_with, ChatPlan};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -609,6 +609,7 @@ impl<R: Runtime> ChatSink for Window<R> {
     fn event(&self, id: &str, event: &ChatEvent) {
         let _ = self.app.emit("chat:event", Payload { id, event });
         self.record(id, event);
+        crate::helpers::chat_event(&self.app, id, event);
     }
 
     fn ended(&self, id: &str, how: Ended) {
@@ -633,24 +634,52 @@ pub fn start_chat<R: Runtime>(
     }
     let executable = std::env::current_exe().map_err(|error| error.to_string())?;
     let storage = workspace.storage.clone();
+    // A manager is told how to start helpers, with a secret of its own.
+    let helpers = app.try_state::<crate::helpers::Helpers>();
+    let manager = helpers
+        .as_ref()
+        .and_then(|helpers| helpers.launch_for(workspace, id));
+    let planned = workspace
+        .act(|core| plan_chat_launch_with(core, &storage, id, &executable, manager.as_ref()));
     let ChatPlan {
         launch,
         driver,
         first_prompt,
-    } = workspace.act(|core| plan_chat_launch(core, &storage, id, &executable))?;
+    } = match planned {
+        Ok(plan) => plan,
+        Err(error) => {
+            if let Some(helpers) = &helpers {
+                helpers.revoke(id);
+            }
+            return Err(error);
+        }
+    };
 
     let env: Vec<(String, String)> = launch.env.clone().into_iter().collect();
-    chats.start(
+    #[allow(unused_mut)]
+    let (mut program, mut args) = (launch.spec.file.clone(), launch.spec.args.clone());
+    #[cfg(test)]
+    if let Some(fake) = app.try_state::<FakeAgent>() {
+        if let Ok(fake) = fake.0.lock() {
+            (program, args) = fake.clone();
+        }
+    }
+    if let Err(error) = chats.start(
         Arc::new(Window::new(app)),
         ChatLaunch {
             id,
-            program: &launch.spec.file,
-            args: &launch.spec.args,
+            program: &program,
+            args: &args,
             cwd: &launch.directory,
             env: &env,
             driver,
         },
-    )?;
+    ) {
+        if let Some(helpers) = &helpers {
+            helpers.revoke(id);
+        }
+        return Err(error);
+    }
 
     // Recorded only once the process exists, and stopped if recording fails:
     // an agent the workspace does not know about would be invisible.
@@ -663,6 +692,12 @@ pub fn start_chat<R: Runtime>(
     }
     Ok(())
 }
+
+/// A stand-in for the agent a chat launch would run, for tests that go
+/// through [`start_chat`] itself.
+#[cfg(test)]
+#[derive(Default)]
+pub struct FakeAgent(pub Mutex<(String, Vec<String>)>);
 
 #[tauri::command]
 pub fn chat_start(

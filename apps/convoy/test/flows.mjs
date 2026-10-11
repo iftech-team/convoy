@@ -160,8 +160,10 @@ try {
       if (cmd === "git_refs") return args.projectId === "project" ? ["main", "feature/x", "origin/main", "tag:v1.0"] : [];
       if (cmd === "profiles_read") return [{ id: "work", label: "Work", agent: "codex", sessions: 0 }];
       if (cmd === "session_create") {
-        sessions.push({ id: "fresh", project_id: args.projectId, title: args.title, agent: args.agent, provider_id: "", started: false, running: false, pinned: false, review_of: null });
-        return "fresh";
+        // A manager gets an id of its own, and keeps its view so it runs as one.
+        const id = args.manager ? "lead" : "fresh";
+        sessions.push({ id, project_id: args.projectId, title: args.title, agent: args.agent, provider_id: "", started: false, running: false, pinned: false, review_of: null, manager: !!args.manager, ...(args.manager ? { view: args.view } : {}) });
+        return id;
       }
       if (cmd === "worktree_create") return { branch: args.branch, shared_paths: [], setup_command: null, directory: "/fixture/worktrees/x" };
       if (cmd === "plugin:window|set_badge_count") { window.badge = args.value; return null; }
@@ -1066,11 +1068,117 @@ try {
   keys.push("Approvals…", "What the agents are waiting on you for, in every project");
   assert(keys.length > 15, "the inbox's strings were found");
   assert.deepEqual(keys.filter((key) => !(key in ru)), [], "untranslated inbox strings");
+
+  // ------------------------------------------------------------ helpers --
+  // A manager is chosen in the New session sheet; the helpers it starts from
+  // its shell nest under it in the sidebar, show as live cards in its chat,
+  // and as a menu in its terminal's header.
+  await page.locator('[data-project="project"]').first().click();
+  await page.locator('.tabbar [data-action="new-session"]').click();
+  const managerToggle = page.locator('.modal [data-toggle="manager"]');
+  await managerToggle.waitFor();
+  assert.equal(await managerToggle.getAttribute("aria-pressed"), "false", "not a manager unless asked");
+  await page.locator('.modal .setting', { hasText: "Manager — can start helper sessions" }).waitFor();
+  await managerToggle.click();
+  assert.equal(await page.locator('.modal [data-toggle="manager"]').getAttribute("aria-pressed"), "true");
+  if (shots) await page.screenshot({ path: `${shots}/new-session-manager.png` });
+  await page.locator('.choice [data-value="claude"]').click();
+  await page.locator('.modal [data-set="view"][data-value="chat"]').click();
+  await page.locator("#draft-title").fill("Lead the refactor");
+  await page.locator('[data-action="create-session"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "session_create" && c.args.manager === true && c.args.title === "Lead the refactor"));
+  await page.locator('.tab-item--selected[data-tab-open="lead"]').waitFor();
+  // Two helpers appear, as the backend says after a spawn.
+  await page.evaluate(() => {
+    window.mockSessions.push(
+      { id: "helper-1", project_id: "project", parent_id: "lead", title: "Write parser tests", agent: "codex", provider_id: "", started: true, running: true, pinned: false, review_of: null, view: "chat", branch: "convoy/parser-tests-1a2b3c" },
+      { id: "helper-2", project_id: "project", parent_id: "lead", title: "Update the changelog", agent: "claude", provider_id: "p9", started: true, running: true, pinned: false, review_of: null, view: "chat" },
+    );
+    window.emitTauri("session:spawned", { id: "helper-2", parent: "lead" });
+  });
+  const leadRow = page.locator('.project-row__sessions .side-session[data-open="lead"]');
+  await page.locator('.side-session--helper[data-open="helper-1"]').waitFor();
+  await leadRow.locator(".side-session__helpers", { hasText: "2 helpers · 2 running" }).waitFor();
+  assert.deepEqual(
+    await page.evaluate(() => {
+      const lead = document.querySelector('.project-row__sessions .side-session[data-open="lead"]');
+      return [lead.nextElementSibling?.dataset.open, lead.nextElementSibling?.nextElementSibling?.dataset.open];
+    }),
+    ["helper-1", "helper-2"],
+    "helpers sit right under their manager",
+  );
+  assert.equal(await page.locator('.side-session--helper[data-open="helper-1"] .side-session__branch').textContent(), "↳");
+  // The manager's chat: one card per helper, updated by the helpers' events.
+  const leadChat = page.locator('.chat[data-chat="lead"]');
+  await leadChat.locator(".helper-card").nth(1).waitFor();
+  assert.equal(await leadChat.locator(".helper-card").count(), 2);
+  const cardOne = leadChat.locator('.helper-card[data-helper="helper-1"]');
+  assert.equal(await cardOne.locator(".helper-card__title").textContent(), "Write parser tests");
+  await cardOne.locator(".helper-card__status", { hasText: "Working" }).waitFor();
+  const emitHelper = (events) => page.evaluate((list) => list.forEach((event) => window.emitTauri("chat:event", { id: "helper-1", event })), events);
+  await emitHelper([{ type: "turn_started" }, { type: "approval", request: "h1", kind: "command", title: "Run `cargo test`", detail: "cargo test", always: true }]);
+  await leadChat.locator('.helper-card--waiting[data-helper="helper-1"] .helper-card__status', { hasText: "Needs you" }).waitFor();
+  await emitHelper([{ type: "approval_resolved", request: "h1" }, { type: "text_done", id: "m1", text: "Added 6 tests; all pass." }, { type: "turn_ended", usage: { input: 1, output: 1, cache_read: 0, cache_write: 0 }, error: null }]);
+  await cardOne.locator(".helper-card__status", { hasText: "Finished" }).waitFor();
+  await leadRow.locator(".side-session__helpers", { hasText: "2 helpers · 1 running" }).waitFor();
+  await leadChat.locator(".helpers__count", { hasText: "2 · 1 running" }).waitFor();
+  if (shots) {
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate((value) => document.documentElement.setAttribute("data-theme", value), theme);
+      await page.waitForTimeout(150);
+      await page.screenshot({ path: `${shots}/helpers-${theme}.png` });
+    }
+    await page.evaluate(() => document.documentElement.setAttribute("data-theme", "light"));
+  }
+  // Open goes to the helper, whose chat leads back to its manager.
+  await cardOne.locator(".helper-card__open").click();
+  const helperChat = page.locator('.chat[data-chat="helper-1"]');
+  await helperChat.locator(".helpers--of .helpers__parent", { hasText: "Lead the refactor" }).waitFor();
+  await helperChat.locator(".helpers__parent").click();
+  await page.locator('.tab-item--selected[data-tab-open="lead"]').waitFor();
+  // Shown as a terminal, the manager's header has the helpers and a menu.
+  await page.evaluate(() => {
+    Object.assign(window.mockSessions.find((item) => item.id === "lead"), { view: "terminal", running: false, started: true });
+    window.emitTauri("session:spawned", { id: "helper-2", parent: "lead" });
+  });
+  const helpersButton = page.locator(".workbench__bar .bar-helpers");
+  await helpersButton.filter({ hasText: "2 helpers" }).waitFor();
+  assert.equal(await helpersButton.getAttribute("title"), "2 helpers · 1 running");
+  assert.equal(await helpersButton.locator(".dot--running").count(), 1, "one is still working");
+  await helpersButton.click();
+  const helpersMenu = page.locator(".helpers-menu");
+  await helpersMenu.locator(".helpers-menu__item").nth(1).waitFor();
+  assert.equal(await helpersMenu.locator(".helpers-menu__item").count(), 2);
+  if (shots) await page.waitForTimeout(200), await page.screenshot({ path: `${shots}/helpers-menu.png` });
+  await helpersMenu.locator('.helpers-menu__item[data-open="helper-2"]', { hasText: "Working" }).click();
+  await helpersMenu.waitFor({ state: "detached" });
+  await page.locator('.tab-item--selected[data-tab-open="helper-2"]').waitFor();
+  // The manager's activity names its helpers.
+  await page.evaluate(() => window.activity.unshift(
+    { id: "h2", at: new Date().toISOString(), kind: "done", session_id: "lead", title: "Lead the refactor", detail: "Helper finished: Write parser tests", project_id: "project", project: "Example" },
+    { id: "h1", at: new Date(Date.now() - 1000).toISOString(), kind: "started", session_id: "lead", title: "Lead the refactor", detail: "Started helper: Write parser tests", project_id: "project", project: "Example" },
+  ));
+  await page.locator('[data-action="activity"]').first().click();
+  const feed = page.locator(".activity-feed");
+  await feed.locator(".activity__title", { hasText: "helper finished" }).waitFor();
+  await feed.locator(".activity__title", { hasText: "started helper" }).waitFor();
+  assert.equal(await feed.locator(".activity", { hasText: "started helper" }).locator(".activity__meta").textContent(), "Example · Write parser tests");
+  await page.keyboard.press("Escape");
+  await feed.waitFor({ state: "detached" });
+  // Every string the helpers show has its Russian.
+  const helpersSource = await readFile(new URL("../src/views-helpers.js", import.meta.url), "utf8");
+  const helperKeys = [...helpersSource.matchAll(/\bt\("((?:[^"\\]|\\.)*)"/g)].map((match) => match[1]);
+  helperKeys.push("Working", "Needs you", "Finished", "Stopped", "Starting", "Helper", "Manager", "Manager — can start helper sessions",
+    "The agent can hand work to other agents in this project from its shell, wait for them and read their answers. At most 4 run at once.",
+    "started helper", "helper finished", "helper failed", "helper stopped");
+  assert.deepEqual(helperKeys.filter((key) => !(key in ru)), [], "untranslated helper strings");
+  assert("helper" in (await import("../src/locales/ru.js")).default.plurals, "helper has its Russian plural");
+
   assert.equal(await page.locator(".toast--error").count(), 0);
   assert.deepEqual(errors, []);
   assert.equal(await page.locator(".toast--error").count(), 0);
   if (process.env.CONVOY_TEST_SCREENSHOT) await page.screenshot({ path: process.env.CONVOY_TEST_SCREENSHOT });
-  console.log("PASS: folder → builder → review → feedback; Linear MCP import → per-task model; sidebar menus; settled dialogs; settings page saves; chat session events, approval, composer and view switch; approvals inbox across sessions; no browser errors. IPC mocked.");
+  console.log("PASS: folder → builder → review → feedback; Linear MCP import → per-task model; sidebar menus; settled dialogs; settings page saves; chat session events, approval, composer and view switch; approvals inbox across sessions; manager sessions with nested helpers, live helper cards and the helpers menu; no browser errors. IPC mocked.");
 } finally {
   await browser?.close();
   await server.close();

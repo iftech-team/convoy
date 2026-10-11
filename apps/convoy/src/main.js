@@ -806,6 +806,10 @@ const ACTIONS = {
     state.menu = "quick";
     render();
   },
+  "helpers-menu": () => {
+    state.menu = state.menu?.kind === "helpers" ? null : { kind: "helpers", id: state.sessionId };
+    render();
+  },
   "manage-commands": () =>
     openModal({ kind: "commands", title: "", text: "", submit: false, scoped: true }),
   "add-command": addQuickCommand,
@@ -1310,7 +1314,11 @@ app.addEventListener("click", async (event) => {
     else state.selected.add(data.open);
     return render();
   }
-  if (data.open) return openAnywhere(data.open);
+  if (data.open) {
+    // Opened from the helpers menu: the menu has done its job.
+    if (state.menu?.kind === "helpers") state.menu = null;
+    return openAnywhere(data.open);
+  }
   if (data.split || data.splitInto) {
     const [pane, id] = data.splitInto
       ? [Number(data.splitInto.split(":")[0]), data.splitInto.slice(data.splitInto.indexOf(":") + 1)]
@@ -2130,6 +2138,7 @@ async function createSession() {
     profileId: draft.account || null,
     notes: draft.notes,
     view: draft.view === "chat" ? "chat" : "terminal",
+    manager: !!draft.manager,
   });
   draft.busy = false;
   if (!id) return render();
@@ -3715,6 +3724,8 @@ try {
   // How long each has waited, kept current while the inbox is open.
   setInterval(() => state.menu?.kind === "approvals" && render(), 30000);
   // The backend found a Codex id or a pull request in an agent's output.
+  // A manager started a helper from its shell: a new session, already running.
+  await listen("session:spawned", () => loadWorkspace());
   await listen("session:changed", async () => {
     await loadSessions();
     if (state.tab === "tasks") await loadPlanning();

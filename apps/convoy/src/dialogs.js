@@ -149,6 +149,13 @@ function newSession(dialog) {
       ${worktree}
       ${field(t("Agent"), choice("agent", AGENTS, dialog.agent))}
       ${field(t("Open in"), choice("view", [["chat", t("Chat")], ["terminal", t("Terminal")]], dialog.view ?? "terminal"))}
+      <div class="sheet-box sheet-box--manager">
+        ${setting(
+          t("Manager — can start helper sessions"),
+          t("The agent can hand work to other agents in this project from its shell, wait for them and read their answers. At most 4 run at once."),
+          toggle("manager", dialog.manager, t("Manager")),
+        )}
+      </div>
       ${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
       <div class="field-row">
         ${field(t("Model"), modelSelect("draft-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}

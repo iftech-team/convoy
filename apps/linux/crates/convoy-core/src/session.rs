@@ -12,6 +12,7 @@
 //! against a workspace that does not know about it.
 
 use crate::accounts::{account_environment, Account};
+use crate::helpers::{self, ManagerLaunch};
 use crate::provider::launch::LaunchSpec;
 use crate::provider::{permission_flags, session_spec_with};
 use crate::telemetry;
@@ -34,6 +35,9 @@ pub struct LaunchPlan {
     /// starting one. Decides the activity record and whether the first prompt
     /// is passed at all.
     pub resume: bool,
+    /// A manager's instructions about its helpers, when it is one. Already
+    /// in `spec` for a terminal; a chat passes them its own way.
+    pub instructions: Option<String>,
 }
 
 /// Why a session's process is no longer running.
@@ -73,6 +77,19 @@ pub fn plan_launch(
     id: &str,
     executable: &Path,
 ) -> Result<LaunchPlan> {
+    plan_launch_with(workspace, storage, id, executable, None)
+}
+
+/// As [`plan_launch`]. A manager session launched with `manager` gets the
+/// variables and instructions its helpers need; every other launch has those
+/// variables removed, so nothing inherits a manager's secret.
+pub fn plan_launch_with(
+    workspace: &Workspace,
+    storage: &Storage,
+    id: &str,
+    executable: &Path,
+    manager: Option<&ManagerLaunch>,
+) -> Result<LaunchPlan> {
     let session = workspace.session(id)?.clone();
     ensure!(
         !session.is_archived() && !session.worktree_removed(),
@@ -106,7 +123,15 @@ pub fn plan_launch(
         ensure!(!stale, "{OUTDATED_BRIEF}");
     }
 
-    let account = prepare_account(workspace, storage, &session)?;
+    let mut account = prepare_account(workspace, storage, &session)?;
+    for key in helpers::ENV_KEYS {
+        account.env.remove(key);
+    }
+    let manager = manager.filter(|_| session.is_manager() && session.parent_id.is_none());
+    let instructions = manager.map(|launch| {
+        account.env.extend(launch.env(&session.id));
+        helpers::instructions(crate::Platform::current())
+    });
     let settings = workspace.settings();
     let settings_file = match session.agent {
         Agent::Claude if settings.status_hooks || settings.claude_usage => {
@@ -132,7 +157,14 @@ pub fn plan_launch(
             .map(|file| file.to_string_lossy())
             .as_deref(),
         &account.env,
-        &permission_flags(session.agent, workspace.settings()),
+        &[
+            permission_flags(session.agent, workspace.settings()),
+            instructions
+                .as_deref()
+                .map(|text| helpers::terminal_flags(session.agent, text))
+                .unwrap_or_default(),
+        ]
+        .concat(),
     );
 
     Ok(LaunchPlan {
@@ -143,6 +175,7 @@ pub fn plan_launch(
         account_home: account.home,
         settings_file,
         resume: session.started,
+        instructions,
     })
 }
 
@@ -172,9 +205,22 @@ pub fn plan_chat_launch(
     id: &str,
     executable: &Path,
 ) -> Result<ChatPlan> {
+    plan_chat_launch_with(workspace, storage, id, executable, None)
+}
+
+/// As [`plan_chat_launch`], with a manager's launch as [`plan_launch_with`]
+/// takes it: Claude gets the instructions as an appended system prompt, Codex
+/// as the thread's developer instructions.
+pub fn plan_chat_launch_with(
+    workspace: &Workspace,
+    storage: &Storage,
+    id: &str,
+    executable: &Path,
+    manager: Option<&ManagerLaunch>,
+) -> Result<ChatPlan> {
     use crate::chat::{claude, codex, Driver};
 
-    let mut launch = plan_launch(workspace, storage, id, executable)?;
+    let mut launch = plan_launch_with(workspace, storage, id, executable, manager)?;
     let session = workspace.session(id)?;
     let settings = workspace.settings();
     let model = session.model.as_deref().filter(|model| !model.is_empty());
@@ -196,6 +242,11 @@ pub fn plan_chat_launch(
                 &[
                     permission_flags(Agent::Claude, settings),
                     crate::provider::effort_flags(Agent::Claude, session.effort.as_deref()),
+                    launch
+                        .instructions
+                        .as_deref()
+                        .map(|text| helpers::terminal_flags(Agent::Claude, text))
+                        .unwrap_or_default(),
                 ]
                 .concat(),
             ),
@@ -214,6 +265,7 @@ pub fn plan_chat_launch(
                 resume: (launch.resume && !session.provider_id.is_empty())
                     .then(|| session.provider_id.clone()),
                 yolo: settings.yolo_codex,
+                developer_instructions: launch.instructions.clone(),
             })),
         ),
     };
