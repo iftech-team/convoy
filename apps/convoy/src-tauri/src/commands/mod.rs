@@ -553,7 +553,8 @@ mod migration_tests {
             .unwrap();
         let brief = session::review_brief(builder.clone(), app.state()).unwrap();
         let review =
-            session::review_create(builder.clone(), brief, None, None, None, None, app.state()).unwrap();
+            session::review_create(builder.clone(), brief, None, None, None, None, app.state())
+                .unwrap();
         let reloaded = CoreWorkspace::load(storage.workspace_file()).unwrap();
         assert_eq!(reloaded.state().projects.len(), 1);
         assert_eq!(

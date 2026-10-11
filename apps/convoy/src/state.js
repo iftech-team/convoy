@@ -96,6 +96,21 @@ export const observe = (handler) => {
 };
 export const changed = () => onChange();
 
+/// The models of an agent for an account, read once and kept: the sheets'
+/// pickers, and a chat's before its agent has listed its own.
+const modelsLoading = new Set();
+export function ensureModels(agent, profileId = "") {
+  const key = `${agent}:${profileId ?? ""}`;
+  state.models ??= {};
+  if (state.models[key] || modelsLoading.has(key)) return;
+  modelsLoading.add(key);
+  call("models_list", { agent, profileId: profileId || null }).then((models) => {
+    modelsLoading.delete(key);
+    state.models[key] = models ?? [];
+    changed();
+  });
+}
+
 // ------------------------------------------------------------------ toast --
 
 const toastHost = () => document.querySelector("#toasts");

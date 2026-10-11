@@ -185,6 +185,88 @@ fn a_file_without_views_loads_and_unknown_keys_survive() {
     assert_eq!(raw["sessions"][0]["view"], "chat");
 }
 
+/// Model and effort are the session's, changed while it runs, kept in the
+/// shared file, and passed to both the chat and the terminal launch.
+#[cfg(unix)]
+#[test]
+fn model_and_effort_are_kept_and_reach_both_launches() {
+    let (fixture, mut workspace, id) = prepared(Agent::Claude, false);
+    let storage = Storage::new(fixture.path().join("state"));
+    workspace.set_session_model(&id, Some("opus")).unwrap();
+    workspace.set_session_effort(&id, Some("xhigh")).unwrap();
+    assert!(
+        workspace.set_session_effort(&id, Some("ultra")).is_err(),
+        "Claude has no ultra"
+    );
+    assert!(workspace.set_session_effort(&id, Some("x; rm")).is_err());
+    assert!(workspace.set_session_model(&id, Some("bad model")).is_err());
+
+    let raw: Value =
+        serde_json::from_str(&std::fs::read_to_string(&fixture.file).unwrap()).unwrap();
+    assert_eq!(raw["sessions"][0]["model"], "opus");
+    assert_eq!(raw["sessions"][0]["effort"], "xhigh");
+
+    let plan = plan_chat_launch(
+        &workspace,
+        &storage,
+        &id,
+        std::path::Path::new("/bin/convoy"),
+    )
+    .unwrap();
+    let command = &plan.launch.spec.args[1];
+    assert!(command.contains("'--model' 'opus'"), "{command}");
+    assert!(command.contains("'--effort' 'xhigh'"), "{command}");
+    let terminal = convoy_core::session::plan_launch(
+        &workspace,
+        &storage,
+        &id,
+        std::path::Path::new("/bin/convoy"),
+    )
+    .unwrap();
+    let command = terminal.spec.args.join(" ");
+    assert!(command.contains("'--effort' 'xhigh'"), "{command}");
+
+    // None goes back to the agent's default, and the key leaves the file.
+    workspace.set_session_effort(&id, None).unwrap();
+    workspace.set_session_model(&id, Some("")).unwrap();
+    let raw: Value =
+        serde_json::from_str(&std::fs::read_to_string(&fixture.file).unwrap()).unwrap();
+    assert!(raw["sessions"][0].get("effort").is_none());
+    assert!(raw["sessions"][0].get("model").is_none());
+
+    // Codex takes its own levels, in its own form, and each turn asks.
+    let (fixture, mut workspace, id) = prepared(Agent::Codex, false);
+    let storage = Storage::new(fixture.path().join("state"));
+    workspace.set_session_effort(&id, Some("ultra")).unwrap();
+    let terminal = convoy_core::session::plan_launch(
+        &workspace,
+        &storage,
+        &id,
+        std::path::Path::new("/bin/convoy"),
+    )
+    .unwrap();
+    assert!(terminal
+        .spec
+        .args
+        .join(" ")
+        .contains("'-c' 'model_reasoning_effort=ultra'"));
+    let mut plan = plan_chat_launch(
+        &workspace,
+        &storage,
+        &id,
+        std::path::Path::new("/bin/convoy"),
+    )
+    .unwrap();
+    plan.driver.start();
+    plan.driver.feed(r#"{"id":1,"result":{}}"#);
+    plan.driver
+        .feed(r#"{"id":11,"result":{"thread":{"id":"t"}}}"#);
+    plan.driver.take_outgoing();
+    let (lines, _) = plan.driver.send("go", &[]);
+    let turn: Value = serde_json::from_str(&lines[0]).unwrap();
+    assert_eq!(turn["params"]["effort"], "ultra");
+}
+
 /// Talks to the real agents through the real launch: the login shell, the
 /// chat flags, the protocol driver. Not run by default — it needs `claude`
 /// and `codex` installed and signed in, and it spends a little of each.
@@ -258,6 +340,7 @@ fn real_agents_chat_approve_and_finish_a_turn() {
         write(out);
         let started = Instant::now();
         let (mut text, mut approvals, mut ended) = (String::new(), 0, None);
+        let mut listed: Option<Vec<convoy_core::chat::ChatModel>> = None;
         while ended.is_none() && started.elapsed() < Duration::from_secs(180) {
             let Ok(line) = received.recv_timeout(Duration::from_secs(5)) else {
                 continue;
@@ -274,6 +357,7 @@ fn real_agents_chat_approve_and_finish_a_turn() {
                         write(vec![line]);
                     }
                     ChatEvent::TurnEnded { error, usage } => ended = Some((error, usage)),
+                    ChatEvent::Models { models, .. } => listed = Some(models),
                     _ => {}
                 }
             }
@@ -281,6 +365,22 @@ fn real_agents_chat_approve_and_finish_a_turn() {
         let _ = child.kill();
         let _ = child.wait();
         let (error, usage) = ended.unwrap_or_else(|| panic!("{agent:?}: the turn never ended"));
+        let models = listed.unwrap_or_else(|| panic!("{agent:?}: no models were listed"));
+        for model in &models {
+            println!(
+                "{agent:?} model {:?} ({:?}){} efforts {:?} default {:?}",
+                model.id,
+                model.name,
+                if model.is_default { " [default]" } else { "" },
+                model.efforts,
+                model.default_effort
+            );
+        }
+        assert!(!models.is_empty(), "{agent:?}");
+        assert!(
+            models.iter().any(|model| !model.efforts.is_empty()),
+            "{agent:?}: no model takes an effort level"
+        );
         println!("{agent:?}: approvals {approvals}, usage {usage:?}, reply {text:?}");
         assert_eq!(error, None, "{agent:?}");
         assert!(

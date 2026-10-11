@@ -107,11 +107,30 @@ pub fn permission_flags(agent: Agent, settings: &crate::model::Settings) -> Vec<
 /// (see [`models`]).
 pub const EFFORTS: &[&str] = &["minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
 
+/// What `claude --effort` and its `effortLevel` setting take.
+pub const CLAUDE_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
+
+/// Whether `agent` can be asked for `effort`. Claude Code takes a fixed set;
+/// Codex lists its own per model and adds new ones, so any lowercase word is
+/// passed on — it only ever travels as one argument or one JSON string.
+pub fn valid_effort(agent: Agent, effort: &str) -> bool {
+    match agent {
+        Agent::Claude => CLAUDE_EFFORTS.contains(&effort),
+        Agent::Codex => {
+            !effort.is_empty()
+                && effort.len() <= 32
+                && effort
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+        }
+    }
+}
+
 /// The flags that set how hard the agent thinks: `--effort` for Claude Code,
 /// the `model_reasoning_effort` setting for Codex. Nothing for an empty or
 /// unknown level, so the agent keeps its own default.
 pub fn effort_flags(agent: Agent, effort: Option<&str>) -> Vec<String> {
-    let Some(effort) = effort.filter(|effort| EFFORTS.contains(effort)) else {
+    let Some(effort) = effort.filter(|effort| valid_effort(agent, effort)) else {
         return Vec::new();
     };
     match agent {
@@ -225,15 +244,29 @@ mod effort_tests {
         session.model = Some("fable".into());
         session.effort = Some("xhigh".into());
         let args = session_args(&session, None, &[]);
-        let at = args.iter().position(|arg| arg == "--effort").expect("--effort");
+        let at = args
+            .iter()
+            .position(|arg| arg == "--effort")
+            .expect("--effort");
         assert_eq!(args[at + 1], "xhigh");
 
         session.agent = Agent::Codex;
         session.effort = Some("high".into());
         let args = session_args(&session, None, &[]);
-        assert!(args.windows(2).any(|pair| pair == ["-c", "model_reasoning_effort=high"]));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["-c", "model_reasoning_effort=high"]));
 
         session.effort = Some("rm -rf".into());
         assert!(effort_flags(Agent::Claude, session.effort.as_deref()).is_empty());
+        assert!(effort_flags(Agent::Codex, session.effort.as_deref()).is_empty());
+        assert!(effort_flags(Agent::Claude, Some("ultra")).is_empty());
+        assert_eq!(
+            effort_flags(Agent::Codex, Some("ultra")),
+            ["-c", "model_reasoning_effort=ultra"]
+        );
+        assert!(!valid_effort(Agent::Codex, ""));
+        assert!(!valid_effort(Agent::Codex, "High"));
+        assert!(valid_effort(Agent::Codex, "extra_high"));
     }
 }

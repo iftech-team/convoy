@@ -5032,6 +5032,57 @@ select:disabled {
   flex: 1;
 }
 
+/* Model and effort: quiet chips that read as text until hovered. */
+.composer__chips {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin-left: 4px;
+}
+
+.composer__chip {
+  max-width: 180px;
+  height: 26px;
+  padding: 0 22px 0 8px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M1 1l3 3 3-3' fill='none' stroke='%23888' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    no-repeat right 8px center;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.composer__chip:hover,
+.composer__chip:focus-visible {
+  background-color: var(--bg-hover);
+  color: var(--text);
+}
+
+.composer__chip:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.composer__chip:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Narrow composers keep the chips and drop the hint first. */
+.composer__chips + .composer__hint {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .composer__send,
 .composer__stop {
   height: 28px;

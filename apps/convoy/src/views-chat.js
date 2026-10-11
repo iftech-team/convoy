@@ -9,7 +9,8 @@
 // redrawn. The conversation itself is state (`state.chats`), fed by the
 // backend's `chat:event`s.
 
-import { call, done, isRunning, loadWorkspace, anySession, state, toast } from "./state.js";
+import { call, done, ensureModels, isRunning, loadWorkspace, anySession, rememberChoice, state, toast } from "./state.js";
+import { EFFORT_NAMES } from "./dialogs.js";
 import { escape } from "./ui.js";
 import { t } from "./i18n.js";
 import { icon, icons } from "./icons.js";
@@ -157,6 +158,9 @@ export function reduce(chat, event, replay = false) {
     case "error":
       add(chat, { key: `e:${chat.items.length}`, kind: "error", message: event.message ?? "" });
       break;
+    case "models":
+      if (Array.isArray(event.models) && event.models.length) chat.models = event.models;
+      break;
     default:
       break;
   }
@@ -217,6 +221,105 @@ function loadHistory(id) {
     chat.providerId ??= fresh.providerId;
     refresh(id);
   });
+}
+
+/// The models the agent listed the last time this session's chat ran, for a
+/// window opened since. Asked once; a live `models` event replaces it.
+function loadModels(id) {
+  const chat = chatOf(id);
+  if (chat.modelsAsked) return;
+  chat.modelsAsked = true;
+  call("chat_models", { id }).then((event) => {
+    if (event?.type === "models" && !chat.models) {
+      reduce(chat, event);
+      refresh(id);
+    }
+  });
+}
+
+// ---------------------------------------------------------- model, effort --
+
+/// What Claude Code takes when nothing more precise is known.
+const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+
+const effortName = (level) => (EFFORT_NAMES[level] ? t(EFFORT_NAMES[level]) : level);
+
+/// The models a chat offers: the agent's own list once it has reported it,
+/// else the list read from its files for the session's account.
+function modelsFor(id) {
+  const chat = chatOf(id);
+  if (chat.models?.length) return chat.models;
+  const item = anySession(id);
+  if (!item) return [];
+  ensureModels(item.agent, item.profile_id ?? "");
+  return state.models?.[`${item.agent}:${item.profile_id ?? ""}`] ?? [];
+}
+
+/// The levels `model` takes ("" is the default model). Before anything is
+/// known, Claude's own levels; none when the model reports none.
+function effortsFor(id, model) {
+  const models = modelsFor(id);
+  const chosen = model ? models.find((entry) => entry.id === model) : models.find((entry) => entry.is_default);
+  if (chosen) return chosen.efforts ?? [];
+  if (!model && models.length) return [...new Set(models.flatMap((entry) => entry.efforts ?? []))];
+  return anySession(id)?.agent === "codex" ? [] : CLAUDE_EFFORTS;
+}
+
+function chips(id, blocked) {
+  const item = anySession(id);
+  if (!item) return "";
+  const models = modelsFor(id);
+  const model = item.model ?? "";
+  const fallback = models.find((entry) => entry.is_default);
+  const modelOptions = [["", fallback ? `${t("Default")} · ${fallback.name}` : t("Default")], ...models.map((entry) => [entry.id, entry.name])];
+  if (model && !modelOptions.some(([value]) => value === model)) modelOptions.push([model, model]);
+  const efforts = effortsFor(id, model);
+  const effort = item.effort ?? "";
+  const chosen = model ? models.find((entry) => entry.id === model) : fallback;
+  const level = chosen?.default_effort;
+  const effortOptions = [["", level ? `${t("Default")} · ${effortName(level)}` : t("Default")], ...efforts.map((value) => [value, effortName(value)])];
+  if (effort && !efforts.includes(effort)) effortOptions.push([effort, effortName(effort)]);
+  const options = (list, selected) =>
+    list.map(([value, label]) => `<option value="${escape(value)}"${value === selected ? " selected" : ""}>${escape(label)}</option>`).join("");
+  const disabled = blocked ? "disabled" : "";
+  const modelChip = `<select class="composer__chip" data-chat-model aria-label="${escape(t("Model"))}" title="${escape(t("Model"))}" ${disabled}>${options(modelOptions, model)}</select>`;
+  // A model that takes no effort level has nothing to choose.
+  const effortChip = efforts.length
+    ? `<select class="composer__chip" data-chat-effort aria-label="${escape(t("Reasoning effort"))}" title="${escape(t("Reasoning effort"))}" ${disabled}>${options(effortOptions, effort)}</select>`
+    : "";
+  return `<span class="composer__chips">${modelChip}${effortChip}</span>`;
+}
+
+/// Updates the session as shown at once, and puts it back if refused.
+function setChoice(id, field, value) {
+  const items = [state.sessions, state.allSessions].flatMap((list) => (list ?? []).filter((entry) => entry.id === id));
+  const before = items.map((entry) => entry[field]);
+  for (const entry of items) entry[field] = value;
+  refresh(id);
+  return () => {
+    items.forEach((entry, at) => (entry[field] = before[at]));
+    refresh(id);
+  };
+}
+
+async function chooseModel(id, model) {
+  const item = anySession(id);
+  if (!item || (item.model ?? "") === model) return;
+  const undo = setChoice(id, "model", model);
+  if (!(await done("chat_set_model", { id, model: model || null }))) return undo();
+  // The next new session for this agent starts from it, as /model does.
+  rememberChoice(item.agent, model, item.effort ?? "");
+  // A level the new model does not take goes back to its default.
+  const effort = item.effort ?? "";
+  if (effort && !effortsFor(id, model).includes(effort)) await chooseEffort(id, "");
+}
+
+async function chooseEffort(id, effort) {
+  const item = anySession(id);
+  if (!item || (item.effort ?? "") === effort) return;
+  const undo = setChoice(id, "effort", effort);
+  if (!(await done("chat_set_effort", { id, effort: effort || null }))) return undo();
+  rememberChoice(item.agent, item.model ?? "", effort);
 }
 
 /// The conversation as text, for the saved output and for reviews.
@@ -442,6 +545,7 @@ function composerBar(id) {
   return `
     <button class="composer__tool" data-chat-attach title="${escape(t("Attach images"))}" ${blocked ? "disabled" : ""}>${glyphs.image}</button>
     <button class="composer__tool" data-action="quick-menu" title="${escape(t("Quick commands"))}">${icons.bolt}</button>
+    ${chips(id, blocked)}
     <span class="composer__hint">${escape(t("Enter to send · Shift+Enter for a new line"))}</span>
     <span class="composer__spacer"></span>
     ${
@@ -541,6 +645,10 @@ function wireHost(host) {
   host.file.addEventListener("change", () => {
     attach(id, [...host.file.files]);
     host.file.value = "";
+  });
+  root.addEventListener("change", (event) => {
+    if (event.target.matches("[data-chat-model]")) chooseModel(id, event.target.value);
+    else if (event.target.matches("[data-chat-effort]")) chooseEffort(id, event.target.value);
   });
   root.addEventListener("click", (event) => {
     const target = event.target.closest("[data-chat-send],[data-chat-stop],[data-chat-answer],[data-chat-attach],[data-chat-unattach]");
@@ -723,6 +831,7 @@ export function mountChat(id, slotSelector = "#chat-host") {
   if (!slot) return;
   const host = hostFor(id);
   loadHistory(id);
+  loadModels(id);
   slot.append(host.root);
   sync(host);
   // A detached element forgets its scroll offset.

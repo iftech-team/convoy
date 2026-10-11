@@ -178,6 +178,10 @@ pub fn plan_chat_launch(
     let session = workspace.session(id)?;
     let settings = workspace.settings();
     let model = session.model.as_deref().filter(|model| !model.is_empty());
+    let effort = session
+        .effort
+        .as_deref()
+        .filter(|effort| crate::provider::valid_effort(session.agent, effort));
     let (args, driver) = match session.agent {
         Agent::Claude => (
             claude::args(
@@ -195,14 +199,16 @@ pub fn plan_chat_launch(
                 ]
                 .concat(),
             ),
-            Driver::Claude(claude::ClaudeStream::new(session.provider_id.clone())),
+            Driver::Claude(
+                claude::ClaudeStream::new(session.provider_id.clone()).with_choice(model, effort),
+            ),
         ),
         Agent::Codex => (
             codex::args(),
             Driver::Codex(codex::CodexClient::new(codex::Options {
                 cwd: launch.directory.to_string_lossy().into_owned(),
                 model: model.map(str::to_string),
-                effort: session.effort.clone(),
+                effort: effort.map(str::to_string),
                 // A Codex session that never printed its thread id cannot be
                 // resumed exactly, so it starts a new thread.
                 resume: (launch.resume && !session.provider_id.is_empty())

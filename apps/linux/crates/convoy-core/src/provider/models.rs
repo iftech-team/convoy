@@ -66,8 +66,16 @@ fn claude_model(id: &str, name: &str, efforts: &[String]) -> Model {
 pub fn list(agent: Agent, home: &Path, claude_efforts: Option<&[String]>) -> Vec<Model> {
     match agent {
         Agent::Claude => {
-            let fallback: Vec<String> = CLAUDE_EFFORTS.iter().map(|level| level.to_string()).collect();
-            claude(home, claude_efforts.filter(|levels| !levels.is_empty()).unwrap_or(&fallback))
+            let fallback: Vec<String> = CLAUDE_EFFORTS
+                .iter()
+                .map(|level| level.to_string())
+                .collect();
+            claude(
+                home,
+                claude_efforts
+                    .filter(|levels| !levels.is_empty())
+                    .unwrap_or(&fallback),
+            )
         }
         Agent::Codex => codex(home),
     }
@@ -144,7 +152,10 @@ fn claude(home: &Path, efforts: &[String]) -> Vec<Model> {
         })
         .filter(|id| !id.is_empty() && !models.iter().any(|known| &known.id == id));
     if let Some(id) = configured {
-        models.insert(0, claude_model(&id, &format!("{id} · set in settings.json"), efforts));
+        models.insert(
+            0,
+            claude_model(&id, &format!("{id} · set in settings.json"), efforts),
+        );
     }
     models
 }
@@ -186,7 +197,13 @@ fn codex(home: &Path) -> Vec<Model> {
                 .filter(|level| super::EFFORTS.contains(level))
                 .map(str::to_string)
                 .collect();
-            Some((priority, Model { efforts, ..model(id, name) }))
+            Some((
+                priority,
+                Model {
+                    efforts,
+                    ..model(id, name)
+                },
+            ))
         })
         .collect();
     listed.sort_by_key(|(priority, _)| *priority);
@@ -214,7 +231,10 @@ mod tests {
             efforts: vec!["low".into(), "high".into()],
             ..model("b", "B")
         };
-        assert_eq!(list(Agent::Codex, dir.path(), None), vec![model("a", "A"), b]);
+        assert_eq!(
+            list(Agent::Codex, dir.path(), None),
+            vec![model("a", "A"), b]
+        );
         assert!(list(Agent::Codex, &dir.path().join("none"), None).is_empty());
     }
 

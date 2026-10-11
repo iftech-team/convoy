@@ -11,7 +11,7 @@ pub mod codex;
 pub mod event;
 pub mod history;
 
-pub use event::{ApprovalKind, ChatEvent, Decision, Image, ToolKind, Usage};
+pub use event::{ApprovalKind, ChatEvent, ChatModel, Decision, Image, ToolKind, Usage};
 
 use crate::Result;
 
@@ -82,6 +82,29 @@ impl Driver {
         match self {
             Driver::Claude(claude) => vec![claude.interrupt()],
             Driver::Codex(codex) => codex.interrupt().into_iter().collect(),
+        }
+    }
+
+    /// Switches the model; none goes back to the agent's default. Claude
+    /// switches at once; Codex from the next turn, so nothing is written.
+    pub fn set_model(&mut self, model: Option<&str>) -> Vec<String> {
+        match self {
+            Driver::Claude(claude) => vec![claude.set_model(model)],
+            Driver::Codex(codex) => {
+                codex.set_model(model);
+                Vec::new()
+            }
+        }
+    }
+
+    /// Switches the effort level, as [`Driver::set_model`] does the model.
+    pub fn set_effort(&mut self, effort: Option<&str>) -> Vec<String> {
+        match self {
+            Driver::Claude(claude) => vec![claude.set_effort(effort)],
+            Driver::Codex(codex) => {
+                codex.set_effort(effort);
+                Vec::new()
+            }
         }
     }
 

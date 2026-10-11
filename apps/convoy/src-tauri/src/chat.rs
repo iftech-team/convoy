@@ -86,6 +86,9 @@ struct Chat {
 #[derive(Default)]
 pub struct Chats {
     sessions: Mutex<HashMap<String, Chat>>,
+    /// The last list of models each session's agent reported, kept after it
+    /// stops so a window opened later can offer them.
+    models: Mutex<HashMap<String, ChatEvent>>,
 }
 
 impl Chats {
@@ -193,6 +196,7 @@ impl Chats {
         let (read_done, reading) = mpsc::channel::<()>();
         if let Some(stdout) = stdout {
             let handle = Arc::clone(&handle);
+            let chats = Arc::clone(self);
             let id = id.to_string();
             std::thread::spawn(move || {
                 let mut reader = BufReader::new(stdout);
@@ -216,6 +220,13 @@ impl Chats {
                         Err(_) => break,
                     };
                     let _ = handle.write(&replies);
+                    if let Some(listed) = events
+                        .iter()
+                        .rev()
+                        .find(|event| matches!(event, ChatEvent::Models { .. }))
+                    {
+                        chats.remember_models(&id, listed.clone());
+                    }
                     handle.emit(&id, &events);
                 }
                 let _ = read_done.send(());
@@ -316,6 +327,44 @@ impl Chats {
         handle.write(&[line])?;
         handle.emit(id, &[resolved]);
         Ok(())
+    }
+
+    fn remember_models(&self, id: &str, event: ChatEvent) {
+        if let Ok(mut models) = self.models.lock() {
+            models.insert(id.to_string(), event);
+        }
+    }
+
+    /// The last list of models the session's agent reported, if any.
+    pub fn models(&self, id: &str) -> Option<ChatEvent> {
+        self.models.lock().ok()?.get(id).cloned()
+    }
+
+    /// Switches a running chat's model. Nothing to do when none runs: the
+    /// next launch reads the session.
+    pub fn set_model(&self, id: &str, model: Option<&str>) -> Result<(), String> {
+        let Ok(handle) = self.handle(id) else {
+            return Ok(());
+        };
+        let lines = handle
+            .driver
+            .lock()
+            .map_err(|_| "Chat unavailable.")?
+            .set_model(model);
+        handle.write(&lines)
+    }
+
+    /// Switches a running chat's effort level, as [`Chats::set_model`].
+    pub fn set_effort(&self, id: &str, effort: Option<&str>) -> Result<(), String> {
+        let Ok(handle) = self.handle(id) else {
+            return Ok(());
+        };
+        let lines = handle
+            .driver
+            .lock()
+            .map_err(|_| "Chat unavailable.")?
+            .set_effort(effort);
+        handle.write(&lines)
     }
 
     /// Stops the current turn; the process stays for the next one.
@@ -615,6 +664,62 @@ pub fn chat_interrupt(id: String, chats: State<'_, Arc<Chats>>) -> Result<(), St
     chats.interrupt(&id)
 }
 
+/// The models the session's agent last listed, with the session's own
+/// choice; none before its chat has run in this window's lifetime.
+#[tauri::command]
+pub fn chat_models(
+    id: String,
+    workspace: State<'_, Workspace>,
+    chats: State<'_, Arc<Chats>>,
+) -> Result<Option<ChatEvent>, String> {
+    let Some(ChatEvent::Models { models, .. }) = chats.models(&id) else {
+        return Ok(None);
+    };
+    let (model, effort) = workspace.with(|core| {
+        core.session(&id)
+            .map(|session| (session.model.clone(), session.effort.clone()))
+            .map_err(|error| error.to_string())
+    })?;
+    Ok(Some(ChatEvent::Models {
+        models,
+        model: model.filter(|model| !model.is_empty()),
+        effort,
+    }))
+}
+
+/// Chooses the session's model: kept for every later launch, and switched at
+/// once in a running chat. None is the agent's default.
+#[tauri::command]
+pub fn chat_set_model(
+    app: AppHandle,
+    id: String,
+    model: Option<String>,
+    workspace: State<'_, Workspace>,
+    chats: State<'_, Arc<Chats>>,
+) -> Result<(), String> {
+    let model = model.filter(|model| !model.is_empty());
+    workspace.act(|core| core.set_session_model(&id, model.as_deref()).map(|_| ()))?;
+    chats.set_model(&id, model.as_deref())?;
+    let _ = app.emit("session:changed", id);
+    Ok(())
+}
+
+/// Chooses how hard the session's agent thinks, as [`chat_set_model`].
+#[tauri::command]
+pub fn chat_set_effort(
+    app: AppHandle,
+    id: String,
+    effort: Option<String>,
+    workspace: State<'_, Workspace>,
+    chats: State<'_, Arc<Chats>>,
+) -> Result<(), String> {
+    let effort = effort.filter(|effort| !effort.is_empty());
+    workspace.act(|core| core.set_session_effort(&id, effort.as_deref()).map(|_| ()))?;
+    chats.set_effort(&id, effort.as_deref())?;
+    let _ = app.emit("session:changed", id);
+    Ok(())
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
@@ -856,5 +961,75 @@ mod tests {
         assert_eq!(lines[0]["request"]["subtype"], "initialize");
         assert_eq!(lines[1]["message"]["content"], "hello");
         assert!(chats.send("s1", "again", &[]).is_err());
+    }
+
+    /// The models the agent lists are kept for a window that asks later, and
+    /// a switch reaches the running agent as a control request.
+    #[test]
+    fn the_listed_models_are_kept_and_a_switch_is_written() {
+        let root = tempfile::tempdir().unwrap();
+        let app = tauri::test::mock_app();
+        let received = root.path().join("received");
+        let init = serde_json::json!({
+            "type": "control_response",
+            "response": { "subtype": "success", "request_id": "init", "response": {
+                "models": [{ "value": "opus", "displayName": "Opus", "supportsEffort": true, "supportedEffortLevels": ["low", "high"] }]
+            } }
+        });
+        let chats = Arc::new(Chats::new());
+        chats
+            .start(
+                Arc::new(Window::new(app.handle())),
+                ChatLaunch {
+                    id: "s1",
+                    program: "/bin/sh",
+                    args: &[
+                        "-c".to_string(),
+                        format!(
+                            "printf '%s\\n' '{init}'; exec cat > '{}'",
+                            received.display()
+                        ),
+                    ],
+                    cwd: root.path(),
+                    env: &[("PATH".to_string(), "/usr/bin:/bin".to_string())],
+                    driver: Driver::Claude(convoy_core::chat::claude::ClaudeStream::new("s")),
+                },
+            )
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while chats.models("s1").is_none() {
+            assert!(std::time::Instant::now() < deadline, "no models");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let Some(ChatEvent::Models { models, .. }) = chats.models("s1") else {
+            unreachable!()
+        };
+        assert_eq!(models[0].id, "opus");
+        assert_eq!(models[0].efforts, ["low", "high"]);
+
+        chats.set_model("s1", Some("opus")).unwrap();
+        chats.set_effort("s1", Some("high")).unwrap();
+        while !std::fs::read_to_string(&received).is_ok_and(|text| text.contains("effortLevel")) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the switch never arrived"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let written = std::fs::read_to_string(&received).unwrap();
+        let lines: Vec<serde_json::Value> = written
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(lines[1]["request"]["subtype"], "set_model");
+        assert_eq!(lines[1]["request"]["model"], "opus");
+        assert_eq!(lines[2]["request"]["settings"]["effortLevel"], "high");
+        chats.stop("s1");
+        // Kept after the process ends; a session not running has nothing to switch.
+        while chats.running("s1") {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(chats.models("s1").is_some());
+        assert!(chats.set_model("s1", None).is_ok());
     }
 }

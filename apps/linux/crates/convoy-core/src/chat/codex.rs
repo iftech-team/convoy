@@ -9,8 +9,8 @@
 //! from the I/O so it can be replayed in a test.
 
 use super::event::{
-    added_diff, clip_head, clip_tail, one_line, short_path, ApprovalKind, ChatEvent, Decision,
-    Image, ToolKind, Usage, DETAIL_LIMIT, OUTPUT_LIMIT,
+    added_diff, clip_head, clip_tail, one_line, short_path, ApprovalKind, ChatEvent, ChatModel,
+    Decision, Image, ToolKind, Usage, DETAIL_LIMIT, OUTPUT_LIMIT,
 };
 use crate::{bail, Result};
 use serde_json::{json, Value};
@@ -24,7 +24,66 @@ pub fn args() -> Vec<String> {
 // Fixed ids for the handshake; turns and interrupts count up from THREAD.
 // The same numbers the recorded traffic used, so it replays as recorded.
 const INITIALIZE: i64 = 1;
+/// `model/list`, and each further page of it.
+const MODEL_LIST: i64 = 2;
 const THREAD: i64 = 11;
+
+/// Asks for the models this account may use, from `cursor` on.
+fn model_list(cursor: Option<&str>) -> String {
+    let params = match cursor {
+        Some(cursor) => json!({ "cursor": cursor }),
+        None => json!({}),
+    };
+    json!({ "id": MODEL_LIST, "method": "model/list", "params": params }).to_string()
+}
+
+/// The models in a `model/list` result, in its order. Hidden ones and
+/// anything malformed are left out.
+pub fn models(result: &Value) -> Vec<ChatModel> {
+    let level = |value: &Value| {
+        value
+            .as_str()
+            .filter(|level| crate::provider::valid_effort(crate::model::Agent::Codex, level))
+            .map(str::to_string)
+    };
+    result
+        .get("data")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|entry| entry.get("hidden").and_then(Value::as_bool) != Some(true))
+        .filter_map(|entry| {
+            let id = entry
+                .get("id")
+                .or_else(|| entry.get("model"))
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty() && crate::patterns::MODEL.is_match(id))?;
+            let name = entry
+                .get("displayName")
+                .and_then(Value::as_str)
+                .filter(|name| !name.is_empty())
+                .unwrap_or(id);
+            let efforts: Vec<String> = entry
+                .get("supportedReasoningEfforts")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|option| option.get("reasoningEffort").and_then(level))
+                .collect();
+            let default_effort = entry
+                .get("defaultReasoningEffort")
+                .and_then(level)
+                .filter(|level| efforts.contains(level));
+            Some(ChatModel {
+                id: id.to_string(),
+                name: name.to_string(),
+                efforts,
+                default_effort,
+                is_default: entry.get("isDefault").and_then(Value::as_bool) == Some(true),
+            })
+        })
+        .collect()
+}
 
 /// How the thread is opened.
 #[derive(Debug, Clone, Default)]
@@ -63,6 +122,13 @@ pub struct CodexClient {
     pending: HashMap<String, Pending>,
     usage: Usage,
     outbox: Vec<String>,
+    /// What `model/list` returned so far, pages joined.
+    models: Vec<ChatModel>,
+    /// Set once the user switches mid-conversation: from then on each turn
+    /// says which model and effort, the default's spelled out, since a
+    /// turn's override lasts until another replaces it.
+    model_changed: bool,
+    effort_changed: bool,
 }
 
 impl CodexClient {
@@ -78,6 +144,30 @@ impl CodexClient {
             pending: HashMap::new(),
             usage: Usage::default(),
             outbox: Vec::new(),
+            models: Vec::new(),
+            model_changed: false,
+            effort_changed: false,
+        }
+    }
+
+    /// Switches the model from the next turn on; none is Codex's default.
+    pub fn set_model(&mut self, model: Option<&str>) {
+        self.options.model = model.filter(|m| !m.is_empty()).map(str::to_string);
+        self.model_changed = true;
+    }
+
+    /// Switches the reasoning effort from the next turn on; none is the
+    /// model's default.
+    pub fn set_effort(&mut self, effort: Option<&str>) {
+        self.options.effort = effort.filter(|e| !e.is_empty()).map(str::to_string);
+        self.effort_changed = true;
+    }
+
+    /// The model a turn runs on: the one chosen, else the server's default.
+    fn current_model(&self) -> Option<&ChatModel> {
+        match self.options.model.as_deref() {
+            Some(id) => self.models.iter().find(|model| model.id == id),
+            None => self.models.iter().find(|model| model.is_default),
         }
     }
 
@@ -142,7 +232,25 @@ impl CodexClient {
     fn turn_request(&mut self, input: Value) -> String {
         let thread = self.thread.clone().unwrap_or_default();
         let mut params = json!({ "threadId": thread, "input": input });
-        if let Some(effort) = self.options.effort.as_deref().filter(|e| !e.is_empty()) {
+        if self.model_changed {
+            let model = self
+                .options
+                .model
+                .clone()
+                .or_else(|| self.current_model().map(|model| model.id.clone()));
+            if let Some(model) = model {
+                params["model"] = json!(model);
+            }
+        }
+        let effort = match self.options.effort.as_deref().filter(|e| !e.is_empty()) {
+            Some(effort) => Some(effort.to_string()),
+            // Back to the default after a switch: the model's own level.
+            None if self.effort_changed || self.model_changed => self
+                .current_model()
+                .and_then(|model| model.default_effort.clone()),
+            None => None,
+        };
+        if let Some(effort) = effort {
             params["effort"] = json!(effort);
         }
         self.request("turn/start", params)
@@ -232,6 +340,13 @@ impl CodexClient {
     }
 
     fn response(&mut self, id: &Value, message: &Value, events: &mut Vec<ChatEvent>) {
+        if id.as_i64() == Some(MODEL_LIST) {
+            // A server without the method keeps the window's own list.
+            if let Some(result) = message.get("result") {
+                self.model_page(result, events);
+            }
+            return;
+        }
         if let Some(error) = message.get("error") {
             let text = error
                 .get("message")
@@ -261,6 +376,7 @@ impl CodexClient {
                 self.outbox
                     .push(json!({ "method": "initialized" }).to_string());
                 self.outbox.push(self.thread_request());
+                self.outbox.push(model_list(None));
             }
             Some(THREAD) => {
                 let Some(thread) = result.pointer("/thread/id").and_then(Value::as_str) else {
@@ -281,6 +397,30 @@ impl CodexClient {
                     self.turn = Some(turn.to_string());
                 }
             }
+        }
+    }
+
+    /// One page of `model/list`. The list is reported once it is whole.
+    fn model_page(&mut self, result: &Value, events: &mut Vec<ChatEvent>) {
+        for model in models(result) {
+            if !self.models.iter().any(|known| known.id == model.id) {
+                self.models.push(model);
+            }
+        }
+        if let Some(cursor) = result
+            .get("nextCursor")
+            .and_then(Value::as_str)
+            .filter(|cursor| !cursor.is_empty())
+        {
+            self.outbox.push(model_list(Some(cursor)));
+            return;
+        }
+        if !self.models.is_empty() {
+            events.push(ChatEvent::Models {
+                models: self.models.clone(),
+                model: self.options.model.clone(),
+                effort: self.options.effort.clone(),
+            });
         }
     }
 
@@ -761,6 +901,7 @@ mod tests {
                 "initialize",
                 "initialized",
                 "thread/start",
+                "model/list",
                 "turn/start",
                 "answer \"accept\"",
                 "answer \"accept\"",
@@ -769,7 +910,7 @@ mod tests {
         );
         let recorded = outbound("codex", "approval-allow");
         assert_eq!(sent[2]["params"]["cwd"], recorded[2]["params"]["cwd"]);
-        assert_eq!(sent[3]["params"], recorded[3]["params"]);
+        assert_eq!(sent[4]["params"], recorded[3]["params"]);
         // Answers go back under the server's own ids.
         let answers: Vec<&Value> = sent.iter().filter(|m| m.get("result").is_some()).collect();
         assert_eq!(
@@ -925,7 +1066,10 @@ mod tests {
         assert_eq!(codex.thread_id(), Some("thread-1"));
         let (lines, _) = codex.send("go", &[]);
         let turn: Value = serde_json::from_str(&lines[0]).unwrap();
-        assert_eq!(turn["params"]["effort"], "high", "each turn asks for the effort");
+        assert_eq!(
+            turn["params"]["effort"], "high",
+            "each turn asks for the effort"
+        );
         codex.feed(
             &json!({ "id": turn["id"], "result": { "turn": { "id": "turn-9" } } }).to_string(),
         );
@@ -968,5 +1112,113 @@ mod tests {
                 }
             ]
         );
+    }
+
+    /// `model/list` as Codex 0.162 answers it (trimmed).
+    const MODEL_LIST_RESULT: &str = r#"{"id":2,"result":{"data":[
+        {"id":"gpt-6.1-sol","model":"gpt-6.1-sol","displayName":"GPT-6.1-Sol","description":"","hidden":false,"isDefault":true,"defaultReasoningEffort":"low",
+         "supportedReasoningEfforts":[{"reasoningEffort":"low","description":""},{"reasoningEffort":"high","description":""},{"reasoningEffort":"ultra","description":""}]},
+        {"id":"gpt-6-luna","model":"gpt-6-luna","displayName":"GPT-6-Luna","description":"","hidden":false,"isDefault":false,"defaultReasoningEffort":"medium",
+         "supportedReasoningEfforts":[{"reasoningEffort":"medium","description":""},{"reasoningEffort":"Bad Level","description":""}]},
+        {"id":"secret","model":"secret","displayName":"Hidden","description":"","hidden":true,"isDefault":false,"defaultReasoningEffort":"low","supportedReasoningEfforts":[]}
+    ],"nextCursor":null}}"#;
+
+    #[test]
+    fn the_models_are_listed_after_the_handshake() {
+        let mut codex = CodexClient::new(Options {
+            cwd: "/work".into(),
+            model: Some("gpt-6-luna".into()),
+            effort: Some("medium".into()),
+            ..Default::default()
+        });
+        codex.start();
+        codex.feed(r#"{"id":1,"result":{}}"#);
+        let out: Vec<Value> = codex
+            .take_outgoing()
+            .iter()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(
+            out[2],
+            json!({ "id": 2, "method": "model/list", "params": {} })
+        );
+
+        let events = codex.feed(&MODEL_LIST_RESULT.replace('\n', ""));
+        let [ChatEvent::Models {
+            models,
+            model,
+            effort,
+        }] = events.as_slice()
+        else {
+            panic!("{events:?}")
+        };
+        assert_eq!(model.as_deref(), Some("gpt-6-luna"));
+        assert_eq!(effort.as_deref(), Some("medium"));
+        assert_eq!(
+            models,
+            &[
+                ChatModel {
+                    id: "gpt-6.1-sol".into(),
+                    name: "GPT-6.1-Sol".into(),
+                    efforts: vec!["low".into(), "high".into(), "ultra".into()],
+                    default_effort: Some("low".into()),
+                    is_default: true,
+                },
+                ChatModel {
+                    id: "gpt-6-luna".into(),
+                    name: "GPT-6-Luna".into(),
+                    efforts: vec!["medium".into()],
+                    default_effort: Some("medium".into()),
+                    is_default: false,
+                },
+            ]
+        );
+
+        // A further page is asked for; the list is reported once whole.
+        let mut codex = client();
+        let events = codex.feed(r#"{"id":2,"result":{"data":[],"nextCursor":"c2"}}"#);
+        assert!(events.is_empty());
+        let next: Value = serde_json::from_str(&codex.take_outgoing()[0]).unwrap();
+        assert_eq!(next["params"], json!({ "cursor": "c2" }));
+        // An old server without the method: nothing shown, nothing ended.
+        assert!(codex
+            .feed(r#"{"id":2,"error":{"code":-32601,"message":"unknown method"}}"#)
+            .is_empty());
+    }
+
+    #[test]
+    fn a_switch_applies_from_the_next_turn() {
+        let mut codex = client();
+        codex.start();
+        codex.feed(r#"{"id":1,"result":{}}"#);
+        codex.feed(&MODEL_LIST_RESULT.replace('\n', ""));
+        codex.feed(r#"{"id":11,"result":{"thread":{"id":"t"}}}"#);
+        codex.take_outgoing();
+        let turn = |codex: &mut CodexClient| -> Value {
+            let (lines, _) = codex.send("go", &[]);
+            codex.feed(
+                r#"{"method":"turn/completed","params":{"turn":{"id":"x","status":"completed"}}}"#,
+            );
+            serde_json::from_str(&lines[0]).unwrap()
+        };
+        let first = turn(&mut codex);
+        assert!(
+            first["params"].get("model").is_none(),
+            "nothing chosen, nothing sent"
+        );
+        assert!(first["params"].get("effort").is_none());
+
+        codex.set_model(Some("gpt-6-luna"));
+        codex.set_effort(Some("medium"));
+        let second = turn(&mut codex);
+        assert_eq!(second["params"]["model"], "gpt-6-luna");
+        assert_eq!(second["params"]["effort"], "medium");
+
+        // Back to the defaults: spelled out, since the override lasts.
+        codex.set_model(None);
+        codex.set_effort(None);
+        let third = turn(&mut codex);
+        assert_eq!(third["params"]["model"], "gpt-6.1-sol");
+        assert_eq!(third["params"]["effort"], "low");
     }
 }

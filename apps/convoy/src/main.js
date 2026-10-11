@@ -27,6 +27,7 @@ import {
   state,
   toast,
   visibleSessions,
+  ensureModels,
 } from "./state.js";
 import { escape, plural, value } from "./ui.js";
 import { setLanguage, t } from "./i18n.js";
@@ -300,20 +301,6 @@ function stepTabs(step) {
   if (state.tabs.length < 2) return stepSession(step);
   const at = state.tabs.indexOf(state.sessionId);
   return openTab(state.tabs[(Math.max(at, 0) + step + state.tabs.length) % state.tabs.length]);
-}
-
-/// The models of an agent for an account, read once and kept.
-const modelsLoading = new Set();
-function ensureModels(agent, profileId = "") {
-  const key = `${agent}:${profileId}`;
-  state.models ??= {};
-  if (state.models[key] || modelsLoading.has(key)) return;
-  modelsLoading.add(key);
-  call("models_list", { agent, profileId: profileId || null }).then((models) => {
-    modelsLoading.delete(key);
-    state.models[key] = models ?? [];
-    render();
-  });
 }
 
 function render() {

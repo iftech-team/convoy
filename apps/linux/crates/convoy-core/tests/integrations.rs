@@ -361,7 +361,9 @@ fn import_creates_tasks_with_per_issue_models_and_skips_duplicates() {
     assert_eq!(session.model.as_deref(), Some("sonnet"));
 
     // Changing the model detaches the prepared session.
-    workspace.set_task_agent(&id, Agent::Codex, "o3", "high").unwrap();
+    workspace
+        .set_task_agent(&id, Agent::Codex, "o3", "high")
+        .unwrap();
     let task = workspace
         .state()
         .tasks
@@ -383,7 +385,9 @@ fn import_creates_tasks_with_per_issue_models_and_skips_duplicates() {
         workspace.state().sessions.last().unwrap().effort.as_deref(),
         Some("high")
     );
-    assert!(workspace.set_task_agent(&id, Agent::Codex, "o3", "loud").is_err());
+    assert!(workspace
+        .set_task_agent(&id, Agent::Codex, "o3", "loud")
+        .is_err());
 
     let mcp = connection(TrackerKind::Jira, TrackerAuth::Mcp);
     workspace

@@ -61,7 +61,7 @@ export function modelSelect(id, agent, profileId, value) {
 /// How hard the agent thinks, from the levels the chosen model takes as the
 /// agent itself lists them; with the default model, every level any of its
 /// models takes. A level the model does not take falls back to the default.
-const EFFORT_NAMES = {
+export const EFFORT_NAMES = {
   minimal: "Minimal",
   low: "Low",
   medium: "Medium",

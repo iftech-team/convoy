@@ -75,6 +75,28 @@ pub enum ChatEvent {
     Error {
         message: String,
     },
+    /// The models the agent offers this account, as it listed them itself,
+    /// and the session's current choice (none: the agent's default).
+    Models {
+        models: Vec<ChatModel>,
+        model: Option<String>,
+        effort: Option<String>,
+    },
+}
+
+/// One model a chat can switch to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatModel {
+    /// What `--model`, `set_model` and `turn/start` take.
+    pub id: String,
+    pub name: String,
+    /// The effort levels it takes, as the agent lists them; empty when it
+    /// takes none.
+    pub efforts: Vec<String>,
+    pub default_effort: Option<String>,
+    /// The model the agent uses when none is chosen.
+    #[serde(default)]
+    pub is_default: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -263,6 +285,21 @@ mod tests {
             })
             .unwrap(),
             json!({ "type": "turn_ended", "usage": { "input": 1, "output": 2, "cache_read": 3, "cache_write": 4 }, "error": null })
+        );
+        assert_eq!(
+            serde_json::to_value(ChatEvent::Models {
+                models: vec![ChatModel {
+                    id: "opus".into(),
+                    name: "Opus".into(),
+                    efforts: vec!["high".into()],
+                    default_effort: None,
+                    is_default: true,
+                }],
+                model: None,
+                effort: Some("high".into()),
+            })
+            .unwrap(),
+            json!({ "type": "models", "models": [{ "id": "opus", "name": "Opus", "efforts": ["high"], "default_effort": null, "is_default": true }], "model": null, "effort": "high" })
         );
         assert_eq!(
             serde_json::to_value(ChatEvent::Tool {

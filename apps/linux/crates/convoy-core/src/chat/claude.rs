@@ -8,7 +8,7 @@
 
 use super::event::{
     added_diff, clip_head, clip_tail, one_line, replacement_diff, short_path, ApprovalKind,
-    ChatEvent, Decision, Image, ToolKind, Usage, DETAIL_LIMIT, OUTPUT_LIMIT,
+    ChatEvent, ChatModel, Decision, Image, ToolKind, Usage, DETAIL_LIMIT, OUTPUT_LIMIT,
 };
 use crate::{bail, Result};
 use serde_json::{json, Value};
@@ -106,6 +106,107 @@ pub fn interrupt(request_id: &str) -> String {
     .to_string()
 }
 
+/// Switches the model mid-conversation; none goes back to the default.
+pub fn set_model(request_id: &str, model: Option<&str>) -> String {
+    let mut request = json!({ "subtype": "set_model" });
+    if let Some(model) = model.filter(|model| !model.is_empty()) {
+        request["model"] = json!(model);
+    }
+    json!({ "type": "control_request", "request_id": request_id, "request": request }).to_string()
+}
+
+/// Switches the effort level mid-conversation, as the `effortLevel` setting;
+/// none clears it, so the model's own default applies.
+pub fn set_effort(request_id: &str, effort: Option<&str>) -> String {
+    json!({
+        "type": "control_request",
+        "request_id": request_id,
+        "request": {
+            "subtype": "apply_flag_settings",
+            "settings": { "effortLevel": effort.filter(|effort| !effort.is_empty()) }
+        }
+    })
+    .to_string()
+}
+
+/// The models listed in the answer to `initialize`, in its order. The entry
+/// named `default` is not a model of its own: it marks which one is used
+/// when none is chosen. Anything malformed is skipped, never fatal.
+pub fn models(response: &Value) -> Vec<ChatModel> {
+    let entries: Vec<&Value> = response
+        .get("models")
+        .and_then(Value::as_array)
+        .map(|list| list.iter().collect())
+        .unwrap_or_default();
+    let resolved = |entry: &Value| {
+        entry
+            .get("resolvedModel")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    };
+    let default = entries
+        .iter()
+        .find(|entry| entry.get("value").and_then(Value::as_str) == Some("default"))
+        .and_then(|entry| resolved(entry));
+    let mut marked = false;
+    let mut models = Vec::new();
+    for entry in entries {
+        let Some(id) = entry
+            .get("value")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty() && *id != "default")
+        else {
+            continue;
+        };
+        if !crate::patterns::MODEL.is_match(id) || models.iter().any(|m: &ChatModel| m.id == id) {
+            continue;
+        }
+        let name = entry
+            .get("displayName")
+            .and_then(Value::as_str)
+            .filter(|name| !name.is_empty())
+            .unwrap_or(id)
+            .to_string();
+        let listed: Option<Vec<String>> = entry
+            .get("supportedEffortLevels")
+            .and_then(Value::as_array)
+            .map(|levels| {
+                levels
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .filter(|level| crate::provider::CLAUDE_EFFORTS.contains(level))
+                    .map(str::to_string)
+                    .collect()
+            });
+        let supports = entry.get("supportsEffort").and_then(Value::as_bool);
+        let efforts = match (supports, listed) {
+            (Some(false), _) => Vec::new(),
+            (_, Some(levels)) => levels,
+            (Some(true), None) => crate::provider::CLAUDE_EFFORTS
+                .iter()
+                .map(|level| level.to_string())
+                .collect(),
+            (None, None) => Vec::new(),
+        };
+        let default_effort = ["defaultEffortLevel", "defaultEffort"]
+            .iter()
+            .find_map(|key| entry.get(*key).and_then(Value::as_str))
+            .filter(|level| efforts.iter().any(|known| known == level))
+            .map(str::to_string);
+        let is_default =
+            !marked && default.is_some() && resolved(entry).as_deref() == default.as_deref();
+        marked |= is_default;
+        models.push(ChatModel {
+            id: id.to_string(),
+            name,
+            efforts,
+            default_effort,
+            is_default,
+        });
+    }
+    models
+}
+
 /// The answer to a `can_use_tool` question. Allowing echoes the input back
 /// unchanged; "always" also accepts the rules Claude suggested, which is
 /// exactly what its own "don't ask again" choice does.
@@ -173,6 +274,9 @@ pub struct ClaudeStream {
     pending: HashMap<String, Pending>,
     outbox: Vec<String>,
     requests: u64,
+    /// The model and effort chosen for this conversation; none is the default.
+    model: Option<String>,
+    effort: Option<String>,
 }
 
 impl ClaudeStream {
@@ -181,6 +285,34 @@ impl ClaudeStream {
             session_id: session_id.into(),
             ..Default::default()
         }
+    }
+
+    /// The model and effort the process was started with, reported back
+    /// with the list of models.
+    pub fn with_choice(mut self, model: Option<&str>, effort: Option<&str>) -> Self {
+        self.model = model.filter(|m| !m.is_empty()).map(str::to_string);
+        self.effort = effort.filter(|e| !e.is_empty()).map(str::to_string);
+        self
+    }
+
+    /// Switches the model from the next request on.
+    pub fn set_model(&mut self, model: Option<&str>) -> String {
+        self.model = model.filter(|m| !m.is_empty()).map(str::to_string);
+        self.requests += 1;
+        set_model(
+            &format!("set-model-{}", self.requests),
+            self.model.as_deref(),
+        )
+    }
+
+    /// Switches the effort level from the next request on.
+    pub fn set_effort(&mut self, effort: Option<&str>) -> String {
+        self.effort = effort.filter(|e| !e.is_empty()).map(str::to_string);
+        self.requests += 1;
+        set_effort(
+            &format!("set-effort-{}", self.requests),
+            self.effort.as_deref(),
+        )
     }
 
     pub fn session_id(&self) -> &str {
@@ -492,10 +624,32 @@ impl ClaudeStream {
 
     fn control_response(&mut self, message: &Value, events: &mut Vec<ChatEvent>) {
         let response = message.get("response").unwrap_or(&Value::Null);
-        if response.get("request_id").and_then(Value::as_str) != Some("init") {
+        let failed = response.get("subtype").and_then(Value::as_str) == Some("error");
+        let request = response
+            .get("request_id")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if request != "init" {
+            let what = if request.starts_with("set-model-") {
+                "Claude Code could not switch the model"
+            } else if request.starts_with("set-effort-") {
+                "Claude Code could not change the effort level"
+            } else {
+                return;
+            };
+            if failed {
+                let reason = response.get("error").and_then(Value::as_str).unwrap_or("");
+                events.push(ChatEvent::Error {
+                    message: if reason.is_empty() {
+                        format!("{what}.")
+                    } else {
+                        format!("{what}: {reason}")
+                    },
+                });
+            }
             return;
         }
-        if response.get("subtype").and_then(Value::as_str) == Some("error") {
+        if failed {
             events.push(ChatEvent::Error {
                 message: response
                     .get("error")
@@ -505,6 +659,15 @@ impl ClaudeStream {
             });
         } else {
             self.ready = true;
+            let models = models(response.get("response").unwrap_or(&Value::Null));
+            // An empty list says nothing; the window keeps its own.
+            if !models.is_empty() {
+                events.push(ChatEvent::Models {
+                    models,
+                    model: self.model.clone(),
+                    effort: self.effort.clone(),
+                });
+            }
         }
     }
 
@@ -749,6 +912,7 @@ mod tests {
                 ChatEvent::ApprovalResolved { .. } => "approval_resolved",
                 ChatEvent::TurnEnded { .. } => "turn_ended",
                 ChatEvent::Error { .. } => "error",
+                ChatEvent::Models { .. } => "models",
             };
             // Runs of deltas are one step.
             if !(name == "text" && outline.last() == Some(&"text")) {
@@ -1005,5 +1169,95 @@ mod tests {
                 message: "bad".into()
             }]
         );
+    }
+
+    /// The answer to `initialize`, as Claude Code 2.1 sends it (trimmed).
+    const INIT_WITH_MODELS: &str = r#"{"type":"control_response","response":{"subtype":"success","request_id":"init","response":{"commands":[],"models":[
+        {"value":"default","resolvedModel":"claude-opus-5-5","displayName":"Default (recommended)","description":"Opus 5.5","supportsEffort":true,"supportedEffortLevels":["low","medium","high","xhigh","max"]},
+        {"value":"opus","resolvedModel":"claude-opus-5-5","displayName":"Opus 5.5","supportsEffort":true,"supportedEffortLevels":["low","medium","high","xhigh","max"]},
+        {"value":"sonnet","resolvedModel":"claude-sonnet-5-5","displayName":"Sonnet 5.5","supportsEffort":true,"supportedEffortLevels":["low","medium","high","max","ultra"]},
+        {"value":"claude-haiku-4-5-20251001","displayName":"Haiku 4.5"},
+        {"value":"bad model","displayName":"Bad"},
+        {"displayName":"No value"},
+        {"value":"fable","supportsEffort":true}
+    ],"pid":1}}}"#;
+
+    #[test]
+    fn the_models_come_from_the_answer_to_initialize() {
+        let mut stream = ClaudeStream::new("s").with_choice(Some("sonnet"), Some("high"));
+        let events = stream.feed(&INIT_WITH_MODELS.replace('\n', ""));
+        assert!(stream.ready());
+        let [ChatEvent::Models {
+            models,
+            model,
+            effort,
+        }] = events.as_slice()
+        else {
+            panic!("{events:?}")
+        };
+        assert_eq!(model.as_deref(), Some("sonnet"));
+        assert_eq!(effort.as_deref(), Some("high"));
+        let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["opus", "sonnet", "claude-haiku-4-5-20251001", "fable"]
+        );
+        assert_eq!(models[0].name, "Opus 5.5");
+        assert!(models[0].is_default, "the default entry names it");
+        assert!(!models[1].is_default);
+        assert_eq!(models[0].efforts, ["low", "medium", "high", "xhigh", "max"]);
+        assert_eq!(
+            models[1].efforts,
+            ["low", "medium", "high", "max"],
+            "unknown levels dropped"
+        );
+        assert!(
+            models[2].efforts.is_empty(),
+            "no effort for a model that lists none"
+        );
+        assert_eq!(models[3].name, "fable");
+        assert_eq!(
+            models[3].efforts.len(),
+            5,
+            "supportsEffort without a list: every level"
+        );
+
+        // The recorded fixtures had the list scrubbed: nothing is reported.
+        let mut stream = ClaudeStream::new("s");
+        assert!(stream
+            .feed(r#"{"type":"control_response","response":{"subtype":"success","request_id":"init","response":{"models":[]}}}"#)
+            .is_empty());
+        assert!(stream.ready());
+    }
+
+    #[test]
+    fn model_and_effort_switch_with_control_requests() {
+        let mut stream = ClaudeStream::new("s");
+        let line: Value = serde_json::from_str(&stream.set_model(Some("opus"))).unwrap();
+        assert_eq!(
+            line,
+            json!({ "type": "control_request", "request_id": "set-model-1", "request": { "subtype": "set_model", "model": "opus" } })
+        );
+        let line: Value = serde_json::from_str(&stream.set_model(None)).unwrap();
+        assert_eq!(line["request"], json!({ "subtype": "set_model" }));
+        let line: Value = serde_json::from_str(&stream.set_effort(Some("xhigh"))).unwrap();
+        assert_eq!(
+            line,
+            json!({ "type": "control_request", "request_id": "set-effort-3", "request": { "subtype": "apply_flag_settings", "settings": { "effortLevel": "xhigh" } } })
+        );
+        let line: Value = serde_json::from_str(&stream.set_effort(None)).unwrap();
+        assert_eq!(line["request"]["settings"], json!({ "effortLevel": null }));
+
+        // A refusal is shown; a success says nothing.
+        assert!(stream
+            .feed(r#"{"type":"control_response","response":{"subtype":"success","request_id":"set-model-1","response":{}}}"#)
+            .is_empty());
+        assert_eq!(
+            stream.feed(r#"{"type":"control_response","response":{"subtype":"error","request_id":"set-model-2","error":"Unknown model"}}"#),
+            [ChatEvent::Error {
+                message: "Claude Code could not switch the model: Unknown model".into()
+            }]
+        );
+        assert!(!stream.ready(), "only initialize makes it ready");
     }
 }

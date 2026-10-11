@@ -110,8 +110,8 @@ try {
         : { kind: "text", text: "<<<<<<< HEAD", language: "diff", hash: "h" };
       if (cmd === "review_template_default") return "DEFAULT BRIEF";
       if (cmd === "models_list") return args.agent === "claude"
-        ? [{ id: "opus", name: "Opus · most capable" }, { id: "sonnet", name: "Sonnet · balanced" }]
-        : [{ id: "gpt-6", name: "GPT-6" }];
+        ? [{ id: "opus", name: "Opus · most capable", efforts: ["low", "medium", "high", "xhigh", "max"] }, { id: "sonnet", name: "Sonnet · balanced", efforts: ["low", "high"] }]
+        : [{ id: "gpt-6", name: "GPT-6", efforts: ["low", "medium", "high", "ultra"] }];
       if (cmd === "task_account") { tasks.find((item) => item.id === args.id).profile_id = args.profileId; return null; }
       if (["files_mutate", "files_open"].includes(cmd)) return cmd === "files_mutate" ? "" : null;
       if (cmd === "history_scan") return [{ agent: "claude", provider_id: "0199aaaa-0000-4000-8000-000000000001", title: "Fix flaky login", at: Date.now(), directory: "/fixture/worktrees/fix-login", profile_id: null, profile: null, session_id: null }];
@@ -175,6 +175,9 @@ try {
       if (cmd === "chat_history") return window.chatHistory?.[args.id] ?? [];
       if (cmd === "chat_start") { sessions.find((item) => item.id === args.id).running = true; return null; }
       if (["chat_send", "chat_answer", "chat_interrupt"].includes(cmd)) return null;
+      if (cmd === "chat_models") return null;
+      if (cmd === "chat_set_model") { sessions.find((item) => item.id === args.id).model = args.model ?? ""; return null; }
+      if (cmd === "chat_set_effort") { sessions.find((item) => item.id === args.id).effort = args.effort ?? ""; return null; }
       if (cmd === "session_view") { sessions.find((item) => item.id === args.id).view = args.view; return null; }
       if (cmd === "session_start") { sessions.find((item) => item.id === args.id).running = true; return null; }
       if (["keep_awake", "terminal_resize", "terminal_write", "terminal_paste"].includes(cmd)) return null;
@@ -200,10 +203,14 @@ try {
   await reviewSheet.locator('[data-set="agent"][data-value="claude"]').click();
   await reviewSheet.locator('#draft-model option[value="sonnet"]').waitFor({ state: "attached" });
   await reviewSheet.locator("#draft-model").selectOption("sonnet");
+  // Effort follows the model: Sonnet here takes only two levels.
+  await reviewSheet.locator('#draft-effort option[value="xhigh"]').waitFor({ state: "detached" });
+  await reviewSheet.locator("#draft-effort").selectOption("high");
   await page.locator('[data-action="create-review"]').click();
   const reviewCall = await page.evaluate(() => window.checkCalls.filter((call) => call.cmd === "review_create").at(-1).args);
   assert.equal(reviewCall.agent, "claude");
   assert.equal(reviewCall.model, "sonnet");
+  assert.equal(reviewCall.effort, "high");
   await page.locator('[data-action="session-menu"]').last().click();
   await page.locator('[data-action="send-feedback"]').click();
   await page.locator("#draft-feedback").waitFor();
@@ -542,6 +549,9 @@ try {
   await page.locator("#draft-title").fill("Fix flaky checkout");
   assert.equal(await page.locator("#draft-branch").inputValue(), "convoy/fix-flaky-checkout", "the branch follows the name");
   await page.locator("#draft-account").selectOption("work");
+  // The effort beside the model, from the levels Codex lists for it.
+  await page.locator('#draft-effort option[value="ultra"]').waitFor({ state: "attached" });
+  await page.locator("#draft-effort").selectOption("ultra");
   if (shots) await page.screenshot({ path: `${shots}/new-session.png` });
   await page.locator('[data-action="create-session"]').click();
   await page.locator('.tab-item--selected[data-tab-open="fresh"]').waitFor();
@@ -550,6 +560,7 @@ try {
   assert.equal(made[0].profileId, "work");
   assert.equal(made[0].agent, "codex");
   assert.equal(made[0].view, "terminal", "the sheet starts from Settings' default view");
+  assert.equal(made[0].effort, "ultra", "the effort chosen in the sheet");
   assert.deepEqual([made[1].branch, made[1].base], ["convoy/fix-flaky-checkout", "origin/main"]);
 
   // Project settings: a page, as on macOS, saving each choice.
@@ -783,6 +794,37 @@ try {
   await page.locator('.workbench__bar [data-start="chatty"]').waitFor({ state: "detached" });
   assert(!(await page.evaluate(() => window.checkCalls.some((c) => c.cmd === "session_start" && c.args.id === "chatty"))), "a chat session starts in chat mode");
   const emitChat = (events) => page.evaluate((list) => list.forEach((event) => window.emitTauri("chat:event", { id: "chatty", event })), events);
+  // Model and effort chips: the account's list until the agent reports its
+  // own, then the agent's; changing either is saved and sent at once.
+  const modelChip = chat.locator("[data-chat-model]");
+  const effortChip = chat.locator("[data-chat-effort]");
+  await modelChip.locator('option[value="sonnet"]').waitFor({ state: "attached" });
+  assert.deepEqual(await effortChip.locator("option").evaluateAll((list) => list.map((option) => option.value)), ["", "low", "medium", "high", "xhigh", "max"], "every level the account's models take, before the agent reports");
+  assert(await page.evaluate(() => window.checkCalls.some((c) => c.cmd === "chat_models" && c.args.id === "chatty")), "a reopened window asks for the last list");
+  await emitChat([{ type: "models", model: null, effort: null, models: [
+    { id: "opus", name: "Opus 5.5", efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: null, is_default: true },
+    { id: "claude-haiku-4-5", name: "Haiku 4.5", efforts: [], default_effort: null, is_default: false },
+    { id: "claude-sonnet-4-6", name: "Sonnet 4.6", efforts: ["low", "medium", "high", "max"], default_effort: null, is_default: false },
+  ] }]);
+  await modelChip.locator('option[value="claude-sonnet-4-6"]').waitFor({ state: "attached" });
+  assert.deepEqual(await modelChip.locator("option").evaluateAll((list) => list.map((option) => option.textContent)), ["Default · Opus 5.5", "Opus 5.5", "Haiku 4.5", "Sonnet 4.6"]);
+  await modelChip.selectOption("claude-sonnet-4-6");
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "chat_set_model"));
+  assert.deepEqual(await page.evaluate(() => window.checkCalls.find((c) => c.cmd === "chat_set_model").args), { id: "chatty", model: "claude-sonnet-4-6" });
+  await effortChip.locator('option[value="xhigh"]').waitFor({ state: "detached" });
+  await effortChip.selectOption("max");
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "chat_set_effort"));
+  assert.deepEqual(await page.evaluate(() => window.checkCalls.find((c) => c.cmd === "chat_set_effort").args), { id: "chatty", effort: "max" });
+  assert.equal(await effortChip.inputValue(), "max");
+  // A model with no effort levels has no effort chip, and the level it
+  // cannot take goes back to the default.
+  await modelChip.selectOption("claude-haiku-4-5");
+  await effortChip.waitFor({ state: "detached" });
+  await page.waitForFunction(() => window.checkCalls.filter((c) => c.cmd === "chat_set_effort").length === 2);
+  assert.deepEqual(await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "chat_set_effort").at(-1).args), { id: "chatty", effort: null });
+  await modelChip.selectOption("");
+  await page.waitForFunction(() => window.checkCalls.filter((c) => c.cmd === "chat_set_model").at(-1).args.model === null);
+  await effortChip.waitFor();
   await emitChat([
     { type: "user", id: "u1", text: "Add a test for the code step" },
     { type: "turn_started" },

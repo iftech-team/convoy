@@ -87,7 +87,8 @@ pub struct NewSession {
     pub review_of: Option<String>,
     pub profile_id: Option<String>,
     pub model: String,
-    /// One of [`crate::provider::EFFORTS`], or empty for the agent's default.
+    /// A level [`crate::provider::valid_effort`] accepts for the agent, or
+    /// empty for its default.
     pub effort: String,
 }
 
@@ -511,7 +512,7 @@ impl Workspace {
             "Invalid model name."
         );
         ensure!(
-            input.effort.is_empty() || crate::provider::EFFORTS.contains(&input.effort.as_str()),
+            input.effort.is_empty() || crate::provider::valid_effort(input.agent, &input.effort),
             "Invalid effort."
         );
         self.update(move |state| {
@@ -601,6 +602,42 @@ impl Workspace {
         let (id, view) = (id.to_string(), view.to_string());
         self.update(move |state| {
             find_session_mut(state, &id)?.view = Some(view);
+            Ok(())
+        })
+    }
+
+    /// The model the session asks for from its next turn or launch; none is
+    /// the agent's default. Allowed while it runs: a chat switches at once.
+    pub fn set_session_model(&mut self, id: &str, model: Option<&str>) -> Result<&State> {
+        let model = model.filter(|model| !model.is_empty());
+        if let Some(model) = model {
+            ensure!(
+                utf16_len(model) <= 100 && MODEL.is_match(model),
+                "Invalid model name."
+            );
+        }
+        self.session(id)?;
+        let (id, model) = (id.to_string(), model.map(str::to_string));
+        self.update(move |state| {
+            find_session_mut(state, &id)?.model = model;
+            Ok(())
+        })
+    }
+
+    /// How hard the session's agent thinks, as [`Workspace::set_session_model`]
+    /// sets its model. Checked against what that agent takes.
+    pub fn set_session_effort(&mut self, id: &str, effort: Option<&str>) -> Result<&State> {
+        let effort = effort.filter(|effort| !effort.is_empty());
+        let agent = self.session(id)?.agent;
+        if let Some(effort) = effort {
+            ensure!(
+                crate::provider::valid_effort(agent, effort),
+                "Invalid effort."
+            );
+        }
+        let (id, effort) = (id.to_string(), effort.map(str::to_string));
+        self.update(move |state| {
+            find_session_mut(state, &id)?.effort = effort;
             Ok(())
         })
     }

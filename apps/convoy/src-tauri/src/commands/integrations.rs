@@ -429,7 +429,9 @@ fn claude_efforts() -> Option<Vec<String>> {
             .stdin(std::process::Stdio::null())
             .output()
             .ok()?;
-        convoy_core::provider::models::claude_efforts_from_help(&String::from_utf8_lossy(&output.stdout))
+        convoy_core::provider::models::claude_efforts_from_help(&String::from_utf8_lossy(
+            &output.stdout,
+        ))
     })
     .clone()
 }
@@ -470,5 +472,9 @@ pub async fn models_list(
             .flatten(),
         Agent::Codex => None,
     };
-    Ok(convoy_core::provider::models::list(agent, &home, efforts.as_deref()))
+    Ok(convoy_core::provider::models::list(
+        agent,
+        &home,
+        efforts.as_deref(),
+    ))
 }
