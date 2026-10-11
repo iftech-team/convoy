@@ -1035,6 +1035,12 @@ function workspaceMenu() {
         ${item(state.settings.compact_sidebar !== false, "compact", "Compact rows")}
         <div class="menu__divider"></div>
         <button class="menu__item" data-action="settings"><span class="menu__icon">${icons.gear}</span><span>${escape(t("Settings…"))}</span></button>
+        ${
+          state.projects.length
+            ? `<div class="menu__divider"></div>
+               <button class="menu__item menu__item--danger" data-action="remove-all-projects"><span class="menu__icon">${icons.trash}</span><span>${escape(t("Remove all projects…"))}</span></button>`
+            : ""
+        }
       </div>
     </div>`;
 }

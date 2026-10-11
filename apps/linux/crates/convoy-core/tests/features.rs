@@ -510,3 +510,35 @@ fn quick_commands_stay_inside_the_project_they_were_scoped_to() {
     );
     assert!(convoy_core::review::quick_command(&workspace, &builder, "missing").is_err());
 }
+
+#[test]
+fn removing_every_project_keeps_global_quick_commands_and_settings() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut workspace =
+        convoy_core::workspace::Workspace::load(dir.path().join("workspace.json")).unwrap();
+    for name in ["app", "web"] {
+        let folder = dir.path().join(name);
+        std::fs::create_dir_all(&folder).unwrap();
+        workspace.add_project(&folder).unwrap();
+    }
+    let project = workspace.state().projects[0].id.clone();
+    workspace
+        .add_session(convoy_core::workspace::NewSession::new(
+            project,
+            convoy_core::model::Agent::Claude,
+            "Fix login",
+        ))
+        .unwrap();
+    let state = workspace.remove_all_projects().unwrap();
+    assert!(state.projects.is_empty());
+    assert!(state.sessions.is_empty());
+    assert!(state.tasks.is_empty() && state.specs.is_empty() && state.activity.is_empty());
+    assert!(state
+        .quick_commands
+        .iter()
+        .all(|command| command.project_id.is_none()));
+    // Saved: a reload sees the same.
+    let reloaded =
+        convoy_core::workspace::Workspace::load(dir.path().join("workspace.json")).unwrap();
+    assert!(reloaded.state().projects.is_empty());
+}

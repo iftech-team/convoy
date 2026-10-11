@@ -232,6 +232,29 @@ const removeProject = (dialog) =>
     foot: foot(t("Remove"), "confirm-remove-project", "danger-solid"),
   });
 
+/// Every project at once. Nothing on disk goes, so the folders can be added
+/// again; a running agent has to be stopped first.
+const removeAllProjects = (dialog) =>
+  modal({
+    title: t("Remove all projects?"),
+    body: `
+      <p class="modal__hint">${escape(
+        t("{projects} and {sessions} leave Convoy, with their specs and tasks.", {
+          projects: plural(dialog.projects, "project"),
+          sessions: plural(dialog.sessions, "session"),
+        }),
+      )}</p>
+      <p class="modal__hint">${escape(t("Files, git repositories, worktrees and the agents' own conversations stay on disk. Add the folders again at any time."))}</p>
+      ${
+        dialog.running
+          ? `<p class="modal__hint modal__hint--warn">${escape(t("Stop the running sessions first ({count} running).", { count: dialog.running }))}</p>`
+          : ""
+      }`,
+    foot: `
+      ${button({ label: t("Cancel"), data: { dismiss: "1" } })}
+      ${button({ label: t("Remove all"), action: "confirm-remove-all-projects", kind: "danger-solid", disabled: dialog.running > 0 })}`,
+  });
+
 // --------------------------------------------------------------- worktrees --
 
 const createWorktree = (dialog) =>
@@ -855,6 +878,7 @@ const VIEWS = {
   output: savedOutput,
   usage,
   "remove-project": removeProject,
+  "remove-all-projects": removeAllProjects,
   worktree: createWorktree,
   "worktree-setup": worktreeSetup,
   "remove-worktree": removeWorktree,

@@ -1,9 +1,11 @@
 //! Projects: adding a folder, editing how it is shown, and letting it go.
 
 use super::Workspace;
+use crate::pty::Terminals;
 use convoy_core::workspace::ProjectPatch;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tauri::State;
 
 /// Adds every project inside a folder, or the folder itself when it contains
@@ -122,6 +124,29 @@ pub fn project_reconnect(
 #[tauri::command]
 pub fn project_remove(id: String, workspace: State<'_, Workspace>) -> Result<(), String> {
     workspace.act(|workspace| workspace.remove_project(&id).map(|_| ()))
+}
+
+/// Forgets every project and its saved sessions at once. Refused while an
+/// agent runs: its terminal would be left with no project to belong to.
+#[tauri::command]
+pub fn projects_remove_all(
+    workspace: State<'_, Workspace>,
+    terminals: State<'_, Arc<Terminals>>,
+) -> Result<(), String> {
+    let running = workspace.act(|workspace| {
+        Ok(workspace
+            .state()
+            .sessions
+            .iter()
+            .filter(|session| terminals.running(&session.id))
+            .count())
+    })?;
+    if running > 0 {
+        return Err(format!(
+            "Stop the running sessions first ({running} running)."
+        ));
+    }
+    workspace.act(|workspace| workspace.remove_all_projects().map(|_| ()))
 }
 
 /// Everything the project settings form needs.

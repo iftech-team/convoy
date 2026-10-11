@@ -659,6 +659,21 @@ const ACTIONS = {
       await loadWorkspace();
     }
   },
+  "remove-all-projects": () => {
+    state.menu = null;
+    const running = state.allSessions.filter((item) => isRunning(item.id)).length;
+    openModal({ kind: "remove-all-projects", projects: state.projects.length, sessions: state.allSessions.length, running });
+  },
+  "confirm-remove-all-projects": async () => {
+    const count = state.dialog.projects;
+    if (!(await done("projects_remove_all"))) return;
+    state.projectId = null;
+    state.sessionId = null;
+    closeDialog();
+    await loadWorkspace();
+    openHome();
+    toast(t("Removed {count}", { count: plural(count, "project") }));
+  },
   "reveal-project": () => call("path_reveal", { path: project()?.path ?? "" }),
   "copy-path": async () => {
     await navigator.clipboard.writeText(project()?.path ?? "");
@@ -3029,6 +3044,7 @@ function paletteEntries() {
     ["Project settings", "", openProjectSettings],
     ["Import provider history", "Conversations the agent already has for this folder", openTranscripts],
     ["Import all history…", "Every Claude Code and Codex conversation on this computer", openHistorySweep],
+    ["Remove all projects…", "Clear the project list; nothing on disk is touched", ACTIONS["remove-all-projects"]],
     ["Git: Commit…", "The commit composer in Files & Changes", inFiles(() => showFilesView("changes"))],
     ["Git: Push", "", inFiles(() => ACTIONS.push())],
     ["Git: Pull (fast-forward)", "", inFiles(() => ACTIONS.pull())],

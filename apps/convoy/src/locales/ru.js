@@ -4,6 +4,14 @@
 
 export default {
   strings: {
+    "Remove all projects…": "Убрать все проекты…",
+    "Clear the project list; nothing on disk is touched": "Очистить список проектов; на диске ничего не меняется",
+    "Remove all projects?": "Убрать все проекты?",
+    "{projects} and {sessions} leave Convoy, with their specs and tasks.": "{projects} и {sessions} будут убраны из Convoy вместе со спецификациями и задачами.",
+    "Files, git repositories, worktrees and the agents' own conversations stay on disk. Add the folders again at any time.": "Файлы, git-репозитории, рабочие деревья и собственные диалоги агентов останутся на диске. Папки можно добавить снова в любой момент.",
+    "Stop the running sessions first ({count} running).": "Сначала остановите работающие сессии (работает: {count}).",
+    "Remove all": "Убрать все",
+    "Removed {count}": "Убрано: {count}",
     // The window: toasts, confirmations, the command palette
     "The workspace file is at {path}.": "Файл рабочей области: {path}.",
     "Convoy could not start": "Не удалось запустить Convoy",

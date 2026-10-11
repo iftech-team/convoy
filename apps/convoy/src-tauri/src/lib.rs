@@ -94,6 +94,7 @@ pub fn run() {
             commands::project::project_detail,
             commands::project::project_reconnect,
             commands::project::project_remove,
+            commands::project::projects_remove_all,
             commands::project::project_move,
             commands::project::project_refresh,
             commands::project::path_reveal,

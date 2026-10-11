@@ -2197,6 +2197,10 @@ select:disabled {
   color: var(--text-muted);
 }
 
+.modal__hint--warn {
+  color: var(--state-failed);
+}
+
 .menu__item--danger,
 .menu__item--danger .menu__icon {
   color: var(--state-failed);

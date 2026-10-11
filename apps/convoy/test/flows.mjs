@@ -735,6 +735,16 @@ try {
   assert(calls.some(c => c.cmd === "issues_import" && c.args.options.model === "sonnet"));
   assert(calls.some(c => c.cmd === "task_agent" && c.args.model === "opus"));
   assert.deepEqual(calls.filter((c) => c.cmd === "task_status").map((c) => c.args.status), ["review", "changes"]);
+  // Remove all projects is in the sidebar's ⋯ menu, and waits while an agent runs.
+  await page.locator('[data-action="workspace-menu"]').click();
+  await page.locator('[data-action="remove-all-projects"]').click();
+  const removeAll = page.locator(".modal", { hasText: "Remove all projects?" });
+  await removeAll.getByText("Files, git repositories, worktrees").waitFor();
+  await removeAll.locator(".modal__hint--warn", { hasText: "Stop the running sessions first" }).waitFor();
+  assert.equal(await removeAll.locator('[data-action="confirm-remove-all-projects"]').isDisabled(), true);
+  await removeAll.getByRole("button", { name: "Cancel" }).click();
+  await removeAll.waitFor({ state: "detached" });
+  assert(!(await page.evaluate(() => window.checkCalls.some((c) => c.cmd === "projects_remove_all"))));
   assert.deepEqual(errors, []);
   assert.equal(await page.locator(".toast--error").count(), 0);
   if (process.env.CONVOY_TEST_SCREENSHOT) await page.screenshot({ path: process.env.CONVOY_TEST_SCREENSHOT });

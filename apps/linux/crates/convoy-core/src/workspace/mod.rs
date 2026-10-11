@@ -372,6 +372,23 @@ impl Workspace {
         })
     }
 
+    /// Forgets every project at once, in one save: their sessions, specs,
+    /// tasks and activity, and the quick commands that belonged to one.
+    /// Global quick commands and settings stay. Nothing on disk is touched.
+    pub fn remove_all_projects(&mut self) -> Result<&State> {
+        self.update(|state| {
+            state.projects.clear();
+            state.sessions.clear();
+            state.specs.clear();
+            state.tasks.clear();
+            state
+                .quick_commands
+                .retain(|command| command.project_id.is_none());
+            state.activity.clear();
+            Ok(())
+        })
+    }
+
     pub fn remove_project(&mut self, id: &str) -> Result<&State> {
         let id = id.to_string();
         self.update(move |state| {
