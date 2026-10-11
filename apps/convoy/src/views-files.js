@@ -7,6 +7,7 @@ import { anchorStyle } from "./views.js";
 
 import { icons } from "./icons.js";
 import { button, escape, empty } from "./ui.js";
+import { language, t } from "./i18n.js";
 import { project, session, state } from "./state.js";
 
 const VIEWS = [
@@ -23,7 +24,7 @@ function fileTargets() {
   const current = project();
   const targets = [];
   const open = session();
-  if (open?.working_directory) targets.push([open.id, `${open.title} (worktree)`]);
+  if (open?.working_directory) targets.push([open.id, t("{title} (worktree)", { title: open.title })]);
   if (current) targets.push([current.id, current.title]);
   if (current?.group) {
     for (const item of state.projects) {
@@ -41,40 +42,40 @@ export function filesView() {
   return `
     <div class="files">
       <div class="files__bar">
-        ${button({ icon: "back", action: "files-close", kind: "quiet", title: "Back" })}
+        ${button({ icon: "back", action: "files-close", kind: "quiet", title: t("Back") })}
         <div class="segmented">
           ${VIEWS.map(
             ([key, label]) =>
-              `<button data-files-view="${key}" aria-pressed="${files.view === key}">${label}</button>`,
+              `<button data-files-view="${key}" aria-pressed="${files.view === key}">${escape(t(label))}</button>`,
           ).join("")}
         </div>
         ${
           fileTargets().length > 1
-            ? `<select id="files-repo" class="files__repo" title="Repository">${fileTargets()
+            ? `<select id="files-repo" class="files__repo" title="${escape(t("Repository"))}">${fileTargets()
                 .map(([id, name]) => `<option value="${escape(id)}"${id === files.id ? " selected" : ""}>${escape(name)}</option>`)
                 .join("")}</select>`
             : ""
         }
         <span class="crumb__muted">
           ${snapshot ? escape(snapshot.branch) : "…"}
-          ${snapshot ? ` · ${snapshot.changes.length} changed` : ""}
+          ${snapshot ? ` · ${escape(t("{count} changed", { count: snapshot.changes.length }))}` : ""}
         </span>
         ${
           snapshot?.upstream
-            ? `<span class="files__sync" title="Compared with ${escape(snapshot.upstream.name)}">↑${snapshot.upstream.ahead} ↓${snapshot.upstream.behind}</span>`
+            ? `<span class="files__sync" title="${escape(t("Compared with {name}", { name: snapshot.upstream.name }))}">↑${snapshot.upstream.ahead} ↓${snapshot.upstream.behind}</span>`
             : ""
         }
         <span class="section__spacer"></span>
-        ${button({ icon: "refresh", action: "files-refresh", kind: "icon", title: "Refresh" })}
+        ${button({ icon: "refresh", action: "files-refresh", kind: "icon", title: t("Refresh") })}
         ${button({
-          label: "Side by side",
+          label: t("Side by side"),
           icon: "split",
           action: "files-split",
           kind: files.sideBySide ? "primary" : "",
         })}
-        ${button({ label: "Wrap", action: "files-wrap", kind: files.wrap ? "primary" : "" })}
-        ${files.preview?.kind === "markdown" ? button({ label: files.raw ? "Rendered" : "Raw", action: "files-raw" }) : ""}
-        ${button({ label: "Remote", icon: "git", action: "files-remote" })}
+        ${button({ label: t("Wrap"), action: "files-wrap", kind: files.wrap ? "primary" : "" })}
+        ${files.preview?.kind === "markdown" ? button({ label: files.raw ? t("Rendered") : t("Raw"), action: "files-raw" }) : ""}
+        ${button({ label: t("Remote"), icon: "git", action: "files-remote" })}
       </div>
       <div class="files__body">
         <div class="files__column">
@@ -89,11 +90,11 @@ export function filesView() {
 
 function list(files) {
   const snapshot = files.snapshot;
-  if (!snapshot) return '<div class="list__none">Reading…</div>';
+  if (!snapshot) return `<div class="list__none">${escape(t("Reading…"))}</div>`;
 
   if (files.view === "changes") {
     if (!snapshot.changes.length) {
-      return '<div class="list__none">Nothing has changed.</div>';
+      return `<div class="list__none">${escape(t("Nothing has changed."))}</div>`;
     }
     return `
       ${snapshot.changes
@@ -111,7 +112,7 @@ function list(files) {
 
   if (files.view === "files") {
     if (!snapshot.files.length) {
-      return '<div class="list__none">No files.</div>';
+      return `<div class="list__none">${escape(t("No files."))}</div>`;
     }
     return snapshot.files
       .map(
@@ -126,7 +127,7 @@ function list(files) {
 
   if (files.view === "log") {
     if (!snapshot.log.length) {
-      return '<div class="list__none">No commits yet.</div>';
+      return `<div class="list__none">${escape(t("No commits yet."))}</div>`;
     }
     return `
       ${snapshot.log
@@ -151,7 +152,7 @@ function list(files) {
       <button class="change${files.branch === branch ? " change--on" : ""}"
               data-branch="${escape(branch)}">
         <span class="change__path">${escape(branch)}</span>
-        ${branch === snapshot.branch ? '<span class="badge--muted badge">current</span>' : ""}
+        ${branch === snapshot.branch ? `<span class="badge--muted badge">${escape(t("current"))}</span>` : ""}
       </button>`,
       )
       .join("")}
@@ -165,38 +166,38 @@ function actions(files) {
   if (files.view === "changes") {
     return `
       <div class="files__actions">
-        ${button({ label: "Stage", action: "stage" })}
-        ${button({ label: "Unstage", action: "unstage" })}
-        ${button({ label: "Stage all", action: "stage-all" })}
-        ${button({ label: "Unstage all", action: "unstage-all" })}
+        ${button({ label: t("Stage"), action: "stage" })}
+        ${button({ label: t("Unstage"), action: "unstage" })}
+        ${button({ label: t("Stage all"), action: "stage-all" })}
+        ${button({ label: t("Unstage all"), action: "unstage-all" })}
         ${
           files.selection && files.snapshot.changes.some((change) => change.path === files.selection.path && change.conflict)
-            ? button({ label: "Mark resolved", action: "resolve", kind: "primary" })
+            ? button({ label: t("Mark resolved"), action: "resolve", kind: "primary" })
             : ""
         }
-        ${button({ icon: "open", action: "file-open", kind: "quiet", title: "Open in its app" })}
-        ${button({ icon: "folder", action: "file-reveal", kind: "quiet", title: "Show in folder" })}
-        ${button({ icon: "copy", action: "file-copy", kind: "quiet", title: "Copy path" })}
-        ${button({ label: "Discard", action: "discard", kind: "danger" })}
-        ${button({ label: "Trash", action: "trash", kind: "danger" })}
-        ${button({ label: "Discard hunk", action: "discard-hunk", kind: "danger" })}
+        ${button({ icon: "open", action: "file-open", kind: "quiet", title: t("Open in its app") })}
+        ${button({ icon: "folder", action: "file-reveal", kind: "quiet", title: t("Show in folder") })}
+        ${button({ icon: "copy", action: "file-copy", kind: "quiet", title: t("Copy path") })}
+        ${button({ label: t("Discard"), action: "discard", kind: "danger" })}
+        ${button({ label: t("Trash"), action: "trash", kind: "danger" })}
+        ${button({ label: t("Discard hunk"), action: "discard-hunk", kind: "danger" })}
       </div>`;
   }
   if (files.view === "log") {
     return `
       <div class="files__actions">
-        ${button({ label: "Copy SHA", action: "copy-sha" })}
-        ${button({ label: "Copy subject", action: "copy-subject" })}
-        ${button({ label: "Revert", action: "revert", kind: "danger" })}
-        ${button({ label: "Reset soft", action: "reset-soft", kind: "danger" })}
-        ${button({ label: "Reset mixed", action: "reset-mixed", kind: "danger" })}
+        ${button({ label: t("Copy SHA"), action: "copy-sha" })}
+        ${button({ label: t("Copy subject"), action: "copy-subject" })}
+        ${button({ label: t("Revert"), action: "revert", kind: "danger" })}
+        ${button({ label: t("Reset soft"), action: "reset-soft", kind: "danger" })}
+        ${button({ label: t("Reset mixed"), action: "reset-mixed", kind: "danger" })}
       </div>`;
   }
   if (files.view === "branches") {
     return `
       <div class="files__actions">
-        ${button({ label: "Switch", action: "switch-branch" })}
-        ${button({ label: "New branch…", action: "new-branch" })}
+        ${button({ label: t("Switch"), action: "switch-branch" })}
+        ${button({ label: t("New branch…"), action: "new-branch" })}
       </div>`;
   }
   return "";
@@ -216,7 +217,7 @@ const LINES = 3000;
 function preview(files) {
   const shown = files.preview;
   if (!shown) {
-    return empty("diff", "Nothing selected", "Choose a file or a commit.");
+    return empty("diff", t("Nothing selected"), t("Choose a file or a commit."));
   }
   if (shown.kind === "image") {
     return `<img class="preview__image" alt=""
@@ -243,7 +244,7 @@ function preview(files) {
       </div>`;
   }
   if (!shown.text.trim()) {
-    return empty("check", "Nothing to show", "This selection has no differences.");
+    return empty("check", t("Nothing to show"), t("This selection has no differences."));
   }
   // A very long diff is drawn in part until asked for the rest, as on macOS:
   // tens of thousands of lines make the page crawl.
@@ -251,7 +252,7 @@ function preview(files) {
   const cut = !files.loadAll && lines.length > LINES;
   const text = cut ? lines.slice(0, LINES).join("\n") : shown.text;
   return `<pre class="preview__text${files.wrap ? " preview__text--wrap" : ""}">${highlight(text, shown.language)}</pre>
-    ${cut ? `<div class="preview__more">${button({ label: `Load all ${lines.length.toLocaleString()} lines`, action: "files-load-all" })}</div>` : ""}`;
+    ${cut ? `<div class="preview__more">${button({ label: t("Load all {count} lines", { count: lines.length.toLocaleString(language()) }), action: "files-load-all" })}</div>` : ""}`;
 }
 
 function side(cell, which) {
@@ -332,13 +333,13 @@ function commitBar(files) {
   if (files.view !== "changes") return "";
   return `
     <div class="commit-bar">
-      <textarea id="commit-message" placeholder="Commit message"
+      <textarea id="commit-message" placeholder="${escape(t("Commit message"))}"
                 spellcheck="false">${escape(files.message)}</textarea>
       <div class="commit-bar__actions">
-        ${button({ label: "Commit", action: "commit", kind: "primary" })}
-        ${button({ label: "Commit & Push", action: "commit-push" })}
-        ${button({ label: "Amend", action: "amend" })}
-        ${button({ label: "Generate with Claude", action: "generate", icon: "bolt" })}
+        ${button({ label: t("Commit"), action: "commit", kind: "primary" })}
+        ${button({ label: t("Commit & Push"), action: "commit-push" })}
+        ${button({ label: t("Amend"), action: "amend" })}
+        ${button({ label: t("Generate with Claude"), action: "generate", icon: "bolt" })}
       </div>
     </div>`;
 }
@@ -347,11 +348,11 @@ export function remoteMenu() {
   return `
     <div class="scrim scrim--clear" data-dismiss="1">
       <div class="menu menu--anchored" role="menu" style="${anchorStyle()}">
-        <button class="menu__item" data-action="fetch"><span>Fetch</span></button>
-        <button class="menu__item" data-action="pull"><span>Pull (fast-forward only)</span></button>
-        <button class="menu__item" data-action="push"><span>Push</span></button>
+        <button class="menu__item" data-action="fetch"><span>${escape(t("Fetch"))}</span></button>
+        <button class="menu__item" data-action="pull"><span>${escape(t("Pull (fast-forward only)"))}</span></button>
+        <button class="menu__item" data-action="push"><span>${escape(t("Push"))}</span></button>
         <div class="menu__divider"></div>
-        <button class="menu__item" data-action="pr"><span>Create pull request</span></button>
+        <button class="menu__item" data-action="pr"><span>${escape(t("Create pull request"))}</span></button>
       </div>
     </div>`;
 }

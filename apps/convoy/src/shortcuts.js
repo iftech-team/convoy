@@ -5,6 +5,7 @@
 // is the one honoured here rather than a translation of it.
 
 import { state } from "./state.js";
+import { t } from "./i18n.js";
 
 /// The actions, their defaults, what they do and where the settings page
 /// lists them. Mirrors `SHORTCUT_ACTIONS`, `DEFAULTS` and `DESCRIPTIONS` in
@@ -66,6 +67,13 @@ export const SHORTCUTS = [
 ];
 
 export const SHORTCUT_GROUPS = ["General", "Sessions", "Panes", "Project", "Limits"];
+
+/// What an action does, in the window's language. The table above stays in
+/// English: it is read once, at load, and its names are matched elsewhere.
+export const describe = (action) => {
+  const what = SHORTCUTS.find(([name]) => name === action)?.[2];
+  return what ? t(what) : action;
+};
 
 /// What is bound to an action right now: the saved value if there is one and
 /// it is well formed, the default otherwise.
@@ -149,7 +157,7 @@ export function capture(event) {
 
 /// How a binding is shown. The stored form is for the file, not for reading.
 export function label(stored) {
-  if (!stored) return "unset";
+  if (!stored) return t("unset");
   const mac = isMac();
   const names = mac
     ? { mod: "⌘", ctrl: "⌃", alt: "⌥", shift: "⇧" }

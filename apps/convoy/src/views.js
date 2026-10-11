@@ -7,10 +7,12 @@ import {
   empty,
   escape,
   group,
+  plural,
   segmented,
   setting,
   toggle,
 } from "./ui.js";
+import { language, t } from "./i18n.js";
 import { activeAccount, anySession, isRunning, project, session, state, visibleSessions } from "./state.js";
 import { TASK_STATUSES, runnable } from "./views-planning.js";
 import { missingConversation } from "./terminal.js";
@@ -29,10 +31,10 @@ const TABS = [
 /// "Show in Finder" on a Mac, the file manager's own name elsewhere.
 export const revealLabel = () =>
   /Mac/.test(navigator.platform)
-    ? "Show in Finder"
+    ? t("Show in Finder")
     : /Win/.test(navigator.platform)
-      ? "Show in Explorer"
-      : "Show in Files";
+      ? t("Show in Explorer")
+      : t("Show in Files");
 
 /// The dot beside a session: what its agent last reported, or whether it runs.
 function stateDot(item) {
@@ -46,13 +48,13 @@ function stateDot(item) {
       : reported === "done"
         ? "done"
         : "running";
-  const label = {
+  const label = t({
     stopped: "Stopped",
     idle: "Not started",
     waiting: "Needs you",
     done: "Finished its turn",
     running: reported ?? "Running",
-  }[tone];
+  }[tone]);
   return `<span class="dot dot--${tone}" title="${escape(label)}"></span>`;
 }
 
@@ -73,7 +75,7 @@ function sidebarSession(item, { showProject = false } = {}) {
             : state.settings.compact_sidebar === false
               ? `<span class="side-session__detail">${escape(
                   [
-                    item.running ? (state.agentState.get(item.id) ?? "Running") : item.started ? "Stopped" : "Saved",
+                    t(item.running ? (state.agentState.get(item.id) ?? "Running") : item.started ? "Stopped" : "Saved"),
                     item.agent === "claude" ? "Claude Code" : "Codex",
                   ].join(" · "),
                 )}</span>`
@@ -83,7 +85,7 @@ function sidebarSession(item, { showProject = false } = {}) {
       ${
         item.branch
           ? `<span class="chip chip--branch">${icons.branch}${escape(item.branch)}</span>`
-          : `${agentIcon(item.agent, 11)}${item.review_of ? '<span class="side-session__tag">review</span>' : ""}`
+          : `${agentIcon(item.agent, 11)}${item.review_of ? `<span class="side-session__tag">${escape(t("review"))}</span>` : ""}`
       }
     </button>`;
 }
@@ -99,8 +101,8 @@ function sessionsOf(id) {
 /// how many sessions it has when it is not a repository.
 function projectDetail(item) {
   const git = state.settings.git_status === false ? null : state.projectGit.get(item.id);
-  if (git) return `⎇ ${git.branch}${git.changed_files ? ` · ${git.changed_files} changed` : " · clean"}`;
-  return `${item.sessions} session${item.sessions === 1 ? "" : "s"}`;
+  if (git) return `⎇ ${git.branch} · ${git.changed_files ? t("{count} changed", { count: git.changed_files }) : t("clean")}`;
+  return plural(item.sessions, "session");
 }
 
 export function sidebar() {
@@ -136,7 +138,7 @@ export function sidebar() {
            data-menu-project="${escape(item.id)}"
            ${state.settings.sort_projects ? "" : `draggable="true" data-project-drag="${escape(item.id)}"`}>
         <button class="project-row__chevron" data-expand="${escape(item.id)}"
-                title="${expanded ? "Collapse" : "Expand"}"
+                title="${escape(expanded ? t("Collapse") : t("Expand"))}"
                 ${sessions.length ? "" : 'style="visibility:hidden"'}>
           ${expanded ? icons.chevronDown : icons.chevronRight}
         </button>
@@ -149,14 +151,14 @@ export function sidebar() {
         </button>
         ${
           waiting
-            ? '<span class="dot dot--waiting" title="A session needs you"></span>'
+            ? `<span class="dot dot--waiting" title="${escape(t("A session needs you"))}"></span>`
             : item.running
-              ? `<span class="dot dot--running" title="${item.running} running"></span>`
+              ? `<span class="dot dot--running" title="${escape(t("{count} running", { count: item.running }))}"></span>`
               : ""
         }
         ${item.sessions ? `<span class="project-row__count">${item.sessions}</span>` : ""}
         <button class="project-row__more" data-project-more="${escape(item.id)}"
-                title="Actions for ${escape(item.title)}">${icons.more}</button>
+                title="${escape(t("Actions for {name}", { name: item.title }))}">${icons.more}</button>
       </div>
       ${
         expanded && sessions.length
@@ -168,7 +170,7 @@ export function sidebar() {
   const pinned = needle ? [] : state.allSessions.filter((entry) => entry.pinned && !entry.archived);
   const body = [
     pinned.length
-      ? `<div class="sidebar__group">Pinned</div>
+      ? `<div class="sidebar__group">${escape(t("Pinned"))}</div>
          <div class="project-row__sessions project-row__sessions--pinned">${pinned
            .map((entry) => sidebarSession(entry, { showProject: true }))
            .join("")}</div>`
@@ -198,33 +200,33 @@ export function sidebar() {
       </div>
       <div class="sidebar__search">
         ${icons.search}
-        <input id="project-search" type="search" placeholder="Find a project"
+        <input id="project-search" type="search" placeholder="${escape(t("Find a project"))}"
                value="${escape(state.search)}" spellcheck="false" />
       </div>
       <div class="sidebar__label">
-        <span>Projects</span>
-        <button class="sidebar__add" data-action="workspace-menu" title="Workspace options">${icons.more}</button>
-        <button class="sidebar__add" data-action="open-folder" title="Open folder">${icons.plus}</button>
+        <span>${escape(t("Projects"))}</span>
+        <button class="sidebar__add" data-action="workspace-menu" title="${escape(t("Workspace options"))}">${icons.more}</button>
+        <button class="sidebar__add" data-action="open-folder" title="${escape(t("Open folder"))}">${icons.plus}</button>
       </div>
       <div class="sidebar__list" data-scroll="sidebar">
-        ${body || `<div class="sidebar__none">${state.search ? "No matching projects" : "No projects yet."}</div>`}
+        ${body || `<div class="sidebar__none">${escape(state.search ? t("No matching projects") : t("No projects yet."))}</div>`}
       </div>
       ${
         selected
           ? `<div class="sidebar__selection">
-               <span>${selected} selected</span>
-               ${button({ label: "Archive", action: "selection-archive", kind: "quiet" })}
-               ${button({ label: "Close tabs", action: "selection-close", kind: "quiet" })}
-               ${button({ icon: "close", action: "selection-clear", kind: "quiet", title: "Clear selection" })}
+               <span>${escape(t("{count} selected", { count: selected }))}</span>
+               ${button({ label: t("Archive"), action: "selection-archive", kind: "quiet" })}
+               ${button({ label: t("Close tabs"), action: "selection-close", kind: "quiet" })}
+               ${button({ icon: "close", action: "selection-clear", kind: "quiet", title: t("Clear selection") })}
              </div>`
           : ""
       }
       <div class="sidebar__footer">
         <div class="sidebar__open">
-          <button class="sidebar__link" data-action="open-folder">${icons.folder} Open folder…</button>
-          <span class="sidebar__hint">A repository, or a folder of related projects.</span>
+          <button class="sidebar__link" data-action="open-folder">${icons.folder} ${escape(t("Open folder…"))}</button>
+          <span class="sidebar__hint">${escape(t("A repository, or a folder of related projects."))}</span>
         </div>
-        <button class="sidebar__gear" data-action="settings" title="Settings"
+        <button class="sidebar__gear" data-action="settings" title="${escape(t("Settings"))}"
                 aria-pressed="${state.page === "settings"}">${icons.gear}</button>
       </div>
     </aside>`;
@@ -244,71 +246,71 @@ export function contextMenu(menu) {
             ${enabled ? "" : "disabled"}>
       <span class="menu__icon">${icons[icon] ?? ""}</span>
       <span>${escape(label)}</span>
-      ${hint ? `<span class="menu__hint">${escape(hint)}</span>` : ""}
+      ${hint ? `<span class="menu__hint">${escape(t(hint))}</span>` : ""}
     </button>`;
   const divider = '<div class="menu__divider"></div>';
   let entries = "";
 
   if (menu.kind === "project") {
     entries = [
-      item("New session…", "new-session", { icon: "plus" }),
-      item("Import provider history…", "import-history", { icon: "history" }),
+      item(t("New session…"), "new-session", { icon: "plus" }),
+      item(t("Import provider history…"), "import-history", { icon: "history" }),
       item(
-        state.projects.find((entry) => entry.id === menu.id)?.group ? "Refresh projects" : "Import projects from this folder",
+        state.projects.find((entry) => entry.id === menu.id)?.group ? t("Refresh projects") : t("Import projects from this folder"),
         "refresh",
         { icon: "refresh" },
       ),
       divider,
       item(revealLabel(), "reveal", { icon: "folder" }),
-      item("Copy folder path", "copy-path", { icon: "copy" }),
-      item("Reconnect folder…", "reconnect", { icon: "link" }),
+      item(t("Copy folder path"), "copy-path", { icon: "copy" }),
+      item(t("Reconnect folder…"), "reconnect", { icon: "link" }),
       divider,
-      item("Project settings…", "project-settings", { icon: "gear" }),
+      item(t("Project settings…"), "project-settings", { icon: "gear" }),
       ...(state.settings.sort_projects
         ? []
-        : [item("Move up", "move-up"), item("Move down", "move-down")]),
+        : [item(t("Move up"), "move-up"), item(t("Move down"), "move-down")]),
       divider,
-      item("Remove from Convoy…", "remove", { icon: "trash", danger: true }),
+      item(t("Remove from Convoy…"), "remove", { icon: "trash", danger: true }),
     ].join("");
   } else if (menu.kind === "task") {
     const task = [...(state.planning?.tasks ?? []), ...(state.allTasks ?? [])].find((entry) => entry.id === menu.id);
     if (!task) return "";
     const building = task.status === "building";
     entries = [
-      item("Run", "task-run", { icon: "play", enabled: runnable(task) }),
-      item("Open session", "task-session", { icon: "terminal", enabled: !!task.session_id }),
-      item("Open reviewer", "task-reviewer", { icon: "review", enabled: !!task.review_session_id }),
-      task.pr_url ? item("Open pull request", "task-pr", { icon: "open" }) : "",
-      task.source?.url ? item(`Open ${task.source.key}`, "task-issue", { icon: "open" }) : "",
-      item("Edit…", "task-edit", { icon: "edit" }),
+      item(t("Run"), "task-run", { icon: "play", enabled: runnable(task) }),
+      item(t("Open session"), "task-session", { icon: "terminal", enabled: !!task.session_id }),
+      item(t("Open reviewer"), "task-reviewer", { icon: "review", enabled: !!task.review_session_id }),
+      task.pr_url ? item(t("Open pull request"), "task-pr", { icon: "open" }) : "",
+      task.source?.url ? item(t("Open {key}", { key: task.source.key }), "task-issue", { icon: "open" }) : "",
+      item(t("Edit…"), "task-edit", { icon: "edit" }),
       divider,
       ...TASK_STATUSES.filter(([key]) => key !== "building" && key !== task.status).map(([key, label]) =>
-        item(`Set status: ${label}`, `task-status:${key}`, {
+        item(t("Set status: {status}", { status: t(label) }), `task-status:${key}`, {
           enabled: !building,
           hint: building ? "stop it first" : "",
         }),
       ),
       divider,
-      item("Delete task…", "task-delete", { icon: "trash", danger: true, enabled: !building }),
+      item(t("Delete task…"), "task-delete", { icon: "trash", danger: true, enabled: !building }),
     ].join("");
   } else {
     const target = anySession(menu.id);
     if (!target) return "";
     const running = target.running;
     entries = [
-      item("Open", "open", { icon: "open" }),
-      item(target.pinned ? "Unpin" : "Pin to top", "pin", { icon: "pin" }),
+      item(t("Open"), "open", { icon: "open" }),
+      item(target.pinned ? t("Unpin") : t("Pin to top"), "pin", { icon: "pin" }),
       running
-        ? item("Sleep", "sleep", { icon: "moon", hint: "stops, keeps the conversation" }) +
-          item("Stop session…", "stop", { icon: "stop", danger: true })
-        : item(target.started ? "Resume" : "Start", "start", {
+        ? item(t("Sleep"), "sleep", { icon: "moon", hint: "stops, keeps the conversation" }) +
+          item(t("Stop session…"), "stop", { icon: "stop", danger: true })
+        : item(target.started ? t("Resume") : t("Start"), "start", {
             icon: "play",
             enabled: !target.archived && !target.worktree_removed,
           }),
       divider,
-      item("Edit name & notes…", "edit", { icon: "edit" }),
-      item("Start review…", "review", { icon: "review" }),
-      item(target.archived ? "Restore" : "Archive", "archive", {
+      item(t("Edit name & notes…"), "edit", { icon: "edit" }),
+      item(t("Start review…"), "review", { icon: "review" }),
+      item(target.archived ? t("Restore") : t("Archive"), "archive", {
         icon: "archive",
         enabled: !running,
         hint: running ? "stop it first" : "",
@@ -316,9 +318,9 @@ export function contextMenu(menu) {
       ...(target.working_directory
         ? [
             divider,
-            item(`${revealLabel()} (worktree)`, "reveal-worktree", { icon: "folder" }),
-            item("Copy worktree path", "copy-worktree", { icon: "copy" }),
-            item("Remove worktree…", "remove-worktree", {
+            item(t("{reveal} (worktree)", { reveal: revealLabel() }), "reveal-worktree", { icon: "folder" }),
+            item(t("Copy worktree path"), "copy-worktree", { icon: "copy" }),
+            item(t("Remove worktree…"), "remove-worktree", {
               icon: "trash",
               danger: true,
               enabled: !running && target.owns_worktree,
@@ -362,7 +364,7 @@ export function header() {
           ([key, label], index) =>
             `${index > 1 ? '<span class="tab__divider"></span>' : ""}
              <button class="tab" data-tab="${key}"
-                     aria-selected="${state.tab === key}">${label}</button>`,
+                     aria-selected="${state.tab === key}">${escape(t(label))}</button>`,
         ).join("")}
       </nav>
     </div>`;
@@ -376,9 +378,9 @@ function sessionRow(item) {
   const reported = state.agentState.get(item.id);
   const meta = [
     agentName(item.agent),
-    item.running ? (reported ?? "running") : item.started ? "stopped" : "never started",
-    item.archived ? "archived" : null,
-    item.branch ? `on ${item.branch}` : null,
+    escape(t(item.running ? (reported ?? "running") : item.started ? "stopped" : "never started")),
+    item.archived ? escape(t("archived")) : null,
+    item.branch ? escape(t("on {branch}", { branch: item.branch })) : null,
     item.provider_id ? `<code>${escape(item.provider_id.slice(0, 8))}</code>` : null,
   ]
     .filter(Boolean)
@@ -396,15 +398,15 @@ function sessionRow(item) {
       <div class="row__actions">
         ${
           item.running
-            ? button({ label: "Stop", icon: "stop", kind: "danger", data: { stop: item.id } })
+            ? button({ label: t("Stop"), icon: "stop", kind: "danger", data: { stop: item.id } })
             : button({
-                label: item.started ? "Resume" : "Start",
+                label: item.started ? t("Resume") : t("Start"),
                 icon: "play",
                 data: { start: item.id },
                 disabled: item.archived || item.worktree_removed,
               })
         }
-        ${button({ icon: "open", kind: "quiet", data: { open: item.id }, title: "Open the terminal" })}
+        ${button({ icon: "open", kind: "quiet", data: { open: item.id }, title: t("Open the terminal") })}
       </div>
     </div>`;
 }
@@ -413,36 +415,35 @@ export function sessionsView() {
   if (!state.sessions.length && !state.showArchived) {
     return empty(
       "review",
-      "No sessions yet",
-      "Start one to run Claude Code or Codex in this folder.",
+      t("No sessions yet"),
+      t("Start one to run Claude Code or Codex in this folder."),
     );
   }
   const rows = visibleSessions().map(sessionRow).join("");
   return `
     <div class="section">
-      <h2 class="section__title">Saved conversations
+      <h2 class="section__title">${escape(t("Saved conversations"))}
         <span class="section__count">${visibleSessions().length}</span>
       </h2>
       <span class="section__spacer"></span>
       <div class="filter">
         ${icons.search}
-        <input id="session-filter" type="search" placeholder="Filter by name or ID"
+        <input id="session-filter" type="search" placeholder="${escape(t("Filter by name or ID"))}"
                value="${escape(state.filter)}" spellcheck="false" />
       </div>
-      ${button({ icon: "refresh", action: "refresh", kind: "icon", title: "Refresh" })}
+      ${button({ icon: "refresh", action: "refresh", kind: "icon", title: t("Refresh") })}
       <label class="check">
         <input type="checkbox" data-toggle-state="showArchived"
                ${state.showArchived ? "checked" : ""} />
-        Archived
+        ${escape(t("Archived"))}
       </label>
-      ${button({ label: "New session", icon: "plus", action: "new-session", kind: "primary" })}
+      ${button({ label: t("New session"), icon: "plus", action: "new-session", kind: "primary" })}
     </div>
     <p class="section__hint">
-      Pick a session, start a new one, or import a conversation Claude Code or
-      Codex already saved for this folder.
+      ${escape(t("Pick a session, start a new one, or import a conversation Claude Code or Codex already saved for this folder."))}
     </p>
     <div class="list">
-      ${rows || `<div class="list__none">Nothing matches “${escape(state.filter)}”.</div>`}
+      ${rows || `<div class="list__none">${escape(t("Nothing matches “{filter}”.", { filter: state.filter }))}</div>`}
     </div>`;
 }
 
@@ -451,19 +452,18 @@ export function reviewsView() {
   if (!reviews.length) {
     return empty(
       "review",
-      "Review with another agent",
-      "Open a session and choose Start review. The other agent receives an editable brief.",
+      t("Review with another agent"),
+      t("Open a session and choose Start review. The other agent receives an editable brief."),
     );
   }
   return `
     <div class="section">
-      <h2 class="section__title">Reviews
+      <h2 class="section__title">${escape(t("Reviews"))}
         <span class="section__count">${reviews.length}</span>
       </h2>
     </div>
     <p class="section__hint">
-      A review runs in the builder's own folder, so it reads exactly what was
-      written there.
+      ${escape(t("A review runs in the builder's own folder, so it reads exactly what was written there."))}
     </p>
     <div class="list">${reviews.map(sessionRow).join("")}</div>`;
 }
@@ -474,11 +474,11 @@ export function workbench() {
   const current = session();
   if (!current) return "";
   const reported = state.agentState.get(current.id);
-  const label = current.running
+  const label = t(current.running
     ? (reported ?? "Running")
     : current.started
       ? "Stopped"
-      : "Not started";
+      : "Not started");
   const tone = current.running
     ? reported === "waiting"
       ? "state--waiting"
@@ -491,17 +491,17 @@ export function workbench() {
   return `
     <div class="workbench">
       <div class="workbench__bar">
-        <button class="crumb crumb--menu" data-project-more="${escape(current.project_id ?? state.projectId)}" title="Project actions">
+        <button class="crumb crumb--menu" data-project-more="${escape(current.project_id ?? state.projectId)}" title="${escape(t("Project actions"))}">
           ${escape(project()?.title ?? "")} ${icons.chevronDown}
         </button>
         <span class="crumb__sep">/</span>
-        <button class="crumb crumb--menu crumb--session" data-action="session-menu" title="Session actions">
+        <button class="crumb crumb--menu crumb--session" data-action="session-menu" title="${escape(t("Session actions"))}">
           <span>${escape(current.title)}</span> ${icons.chevronDown}
         </button>
         <span class="section__spacer"></span>
         ${
           git
-            ? `<span class="bar-git" id="git-status" title="Branch and changed files">${icons.branch} ${escape(git.branch)} · ${git.changed} changed</span>`
+            ? `<span class="bar-git" id="git-status" title="${escape(t("Branch and changed files"))}">${icons.branch} ${escape(git.branch)} · ${escape(t("{count} changed", { count: git.changed }))}</span>`
             : ""
         }
         <span class="bar-agent">${current.agent === "claude" ? "Claude Code" : "Codex"}</span>
@@ -510,27 +510,27 @@ export function workbench() {
           current.running
             ? ""
             : button({
-                label: current.started ? "Resume" : "Start",
+                label: current.started ? t("Resume") : t("Start"),
                 icon: "play",
                 data: { start: current.id },
                 disabled: current.archived || current.worktree_removed,
               })
         }
-        ${button({ icon: "bolt", action: "quick-menu", kind: "quiet", title: "Quick commands" })}
-        ${button({ icon: "plus", action: "new-session", kind: "quiet", title: "New session" })}
-        ${button({ icon: "more", action: "session-menu", kind: "quiet", title: "Session actions" })}
+        ${button({ icon: "bolt", action: "quick-menu", kind: "quiet", title: t("Quick commands") })}
+        ${button({ icon: "plus", action: "new-session", kind: "quiet", title: t("New session") })}
+        ${button({ icon: "more", action: "session-menu", kind: "quiet", title: t("Session actions") })}
       </div>
       ${
         !current.running && missingConversation(current.id)
           ? `<div class="session-banner session-banner--warn">
                <div>
-                 <div class="session-banner__title">Claude couldn't find this conversation</div>
-                 <div class="session-banner__text">It may have closed before the first message. Start fresh; this session is kept.</div>
+                 <div class="session-banner__title">${escape(t("Claude couldn't find this conversation"))}</div>
+                 <div class="session-banner__text">${escape(t("It may have closed before the first message. Start fresh; this session is kept."))}</div>
                </div>
-               ${button({ label: "Start fresh", action: "start-fresh", kind: "primary" })}
+               ${button({ label: t("Start fresh"), action: "start-fresh", kind: "primary" })}
              </div>`
           : !current.running && current.started
-            ? `<div class="session-banner">${icons.history} Saved output · read-only. Resume to reconnect to the agent.</div>`
+            ? `<div class="session-banner">${icons.history} ${escape(t("Saved output · read-only. Resume to reconnect to the agent."))}</div>`
             : ""
       }
       ${state.find ? findBar() : ""}
@@ -541,18 +541,18 @@ export function workbench() {
 /// Find in the focused terminal: next and previous, match case, "n of m".
 function findBar() {
   const find = state.find;
-  const count = !find.term ? "" : find.count ? `${find.index + 1} of ${find.count}` : "No matches";
+  const count = !find.term ? "" : find.count ? t("{index} of {count}", { index: find.index + 1, count: find.count }) : t("No matches");
   return `
     <div class="find-bar" role="search">
       ${icons.search}
-      <input id="find-term" class="find-bar__input" type="search" placeholder="Find in terminal"
+      <input id="find-term" class="find-bar__input" type="search" placeholder="${escape(t("Find in terminal"))}"
              value="${escape(find.term)}" spellcheck="false" autocomplete="off" />
       <span class="find-bar__count">${escape(count)}</span>
       <button class="find-bar__button find-bar__case" data-action="find-case" aria-pressed="${find.caseSensitive}"
-              title="Match case">Aa</button>
-      <button class="find-bar__button find-bar__up" data-action="find-previous" title="Previous match (⇧↩)">${icons.chevronDown}</button>
-      <button class="find-bar__button" data-action="find-next" title="Next match (↩)">${icons.chevronDown}</button>
-      <button class="find-bar__button" data-action="find-close" title="Close (Esc)">${icons.close}</button>
+              title="${escape(t("Match case"))}">Aa</button>
+      <button class="find-bar__button find-bar__up" data-action="find-previous" title="${escape(t("Previous match (⇧↩)"))}">${icons.chevronDown}</button>
+      <button class="find-bar__button" data-action="find-next" title="${escape(t("Next match (↩)"))}">${icons.chevronDown}</button>
+      <button class="find-bar__button" data-action="find-close" title="${escape(t("Close (Esc)"))}">${icons.close}</button>
     </div>`;
 }
 
@@ -577,7 +577,7 @@ function panesView() {
     if (!info) {
       return `
         <div class="pane pane--empty${focused ? " pane--focused" : ""}" data-pane="${index}">
-          <div class="pane__label"><span class="pane__number">${index + 1}</span> Empty pane</div>
+          <div class="pane__label"><span class="pane__number">${index + 1}</span> ${escape(t("Empty pane"))}</div>
           <div class="pane__empty">
             ${paneSuggestions()
               .map((item) => `
@@ -588,8 +588,8 @@ function panesView() {
               </button>`)
               .join("")}
             <div class="pane__empty-actions">
-              ${button({ label: "Choose a session…", icon: "terminal", data: { "pane-pick": index } })}
-              ${button({ label: "New session", icon: "plus", data: { "pane-new": index } })}
+              ${button({ label: t("Choose a session…"), icon: "terminal", data: { "pane-pick": index } })}
+              ${button({ label: t("New session"), icon: "plus", data: { "pane-new": index } })}
             </div>
           </div>
         </div>`;
@@ -607,11 +607,11 @@ function panesView() {
           ${
             running
               ? ""
-              : button({ label: info.started ? "Resume" : "Start", icon: "play", kind: "quiet", data: { start: id } })
+              : button({ label: info.started ? t("Resume") : t("Start"), icon: "play", kind: "quiet", data: { start: id } })
           }
-          ${running ? button({ icon: "bolt", kind: "quiet", title: "Quick commands", data: { "pane-quick": index } }) : ""}
-          ${button({ icon: "paneOne", kind: "quiet", title: "Maximize (one pane)", data: { "pane-max": index } })}
-          ${button({ icon: "close", kind: "quiet", title: "Close pane", data: { "pane-close": index } })}
+          ${running ? button({ icon: "bolt", kind: "quiet", title: t("Quick commands"), data: { "pane-quick": index } }) : ""}
+          ${button({ icon: "paneOne", kind: "quiet", title: t("Maximize (one pane)"), data: { "pane-max": index } })}
+          ${button({ icon: "close", kind: "quiet", title: t("Close pane"), data: { "pane-close": index } })}
         </div>
         <div class="term" id="terminal-host-${index}"></div>
       </div>`;
@@ -626,8 +626,8 @@ export function sessionMenu() {
   const busy = current.running;
   const item = (label, action, enabled = true, hint = "") => `
     <button class="menu__item" data-action="${action}" ${enabled ? "" : "disabled"}>
-      <span>${escape(label)}</span>
-      ${hint ? `<span class="menu__hint">${escape(hint)}</span>` : ""}
+      <span>${escape(t(label))}</span>
+      ${hint ? `<span class="menu__hint">${escape(t(hint))}</span>` : ""}
     </button>`;
 
   return `
@@ -674,15 +674,15 @@ export function quickMenu() {
                   (command) => `
             <button class="menu__item" data-quick="${escape(command.id)}">
               <span>${escape(command.title)}</span>
-              ${command.submit ? '<span class="menu__hint">sends Enter</span>' : ""}
+              ${command.submit ? `<span class="menu__hint">${escape(t("sends Enter"))}</span>` : ""}
             </button>`,
                 )
                 .join("")
-            : '<div class="menu__empty">No quick commands yet.</div>'
+            : `<div class="menu__empty">${escape(t("No quick commands yet."))}</div>`
         }
         <div class="menu__divider"></div>
         <button class="menu__item" data-action="manage-commands">
-          <span>Manage quick commands…</span>
+          <span>${escape(t("Manage quick commands…"))}</span>
         </button>
       </div>
     </div>`;
@@ -696,19 +696,19 @@ export function status() {
   return `
     <footer class="status">
       <button class="status__item status__button" data-action="limits"
-              aria-pressed="${state.menu?.kind === "limits"}" title="AI Limits">
-        ${icons.limits} <strong>AI Limits</strong>
+              aria-pressed="${state.menu?.kind === "limits"}" title="${escape(t("AI Limits"))}">
+        ${icons.limits} <strong>${escape(t("AI Limits"))}</strong>
         ${limitsSummary()}
       </button>
       ${accountChip("claude")}${accountChip("codex")}
       <span class="status__spacer"></span>
-      ${queues ? `<span class="status__item">${icons.bolt} ${queues} queue${queues > 1 ? "s" : ""}</span><span class="status__sep"></span>` : ""}
+      ${queues ? `<span class="status__item">${icons.bolt} ${escape(plural(queues, "queue"))}</span><span class="status__sep"></span>` : ""}
       ${needsYouButton()}
-      <span class="status__item">${icons.terminal} ${running} running</span>
+      <span class="status__item">${icons.terminal} ${escape(t("{count} running", { count: running }))}</span>
       <span class="status__sep"></span>
       <button class="status__item status__button${awakeActive() ? " status__button--on" : ""}" data-action="awake-menu"
-              aria-pressed="${state.menu?.kind === "awake"}" title="Keep the computer awake while agents work">
-        ${awakeActive() ? icons.cupFilled : icons.cup} ${awakeActive() ? "Awake" : "Keep awake"} ${icons.chevronDown}
+              aria-pressed="${state.menu?.kind === "awake"}" title="${escape(t("Keep the computer awake while agents work"))}">
+        ${awakeActive() ? icons.cupFilled : icons.cup} ${escape(awakeActive() ? t("Awake") : t("Keep awake"))} ${icons.chevronDown}
       </button>
     </footer>`;
 }
@@ -732,14 +732,14 @@ function limitsSummary() {
     ["Claude", peak(limits.claude), stale(limits.claude)],
   ]
     .filter(([, percent]) => percent !== null)
-    .map(([name, percent, stale]) => `<span class="status__limit${percent >= 90 ? " status__limit--high" : ""}">${name} ${Math.round(percent)}% used${stale ? " · cached" : ""}</span>`);
+    .map(([name, percent, stale]) => `<span class="status__limit${percent >= 90 ? " status__limit--high" : ""}">${escape(t("{name} {percent}% used", { name, percent: Math.round(percent) }))}${stale ? ` · ${escape(t("cached"))}` : ""}</span>`);
   return parts.join("");
 }
 
 const windowName = (window) => {
   if (window.minutes) {
-    if (window.minutes % 1440 === 0) return `${window.minutes / 1440}-day window`;
-    if (window.minutes % 60 === 0) return `${window.minutes / 60}-hour window`;
+    if (window.minutes % 1440 === 0) return t("{count}-day window", { count: window.minutes / 1440 });
+    if (window.minutes % 60 === 0) return t("{count}-hour window", { count: window.minutes / 60 });
   }
   return window.name.replace(/_/g, " ");
 };
@@ -748,7 +748,7 @@ const resetText = (window) => {
   if (!window.resets_at) return "";
   const date = new Date(window.resets_at * 1000);
   const soon = date - Date.now() < 24 * 3600 * 1000;
-  return `resets ${soon ? date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : date.toLocaleDateString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}`;
+  return t("resets {when}", { when: soon ? date.toLocaleTimeString(language(), { hour: "numeric", minute: "2-digit" }) : date.toLocaleDateString(language(), { weekday: "short", hour: "numeric", minute: "2-digit" }) });
 };
 
 export function limitsBlock(name, icon, reading, loading) {
@@ -766,9 +766,9 @@ export function limitsBlock(name, icon, reading, loading) {
       </div>`,
         )
         .join("")
-    : `<div class="limit__empty">${escape(loading ? "Reading…" : reading?.note ?? "Not read yet.")}</div>`;
+    : `<div class="limit__empty">${escape(loading ? t("Reading…") : reading?.note ?? t("Not read yet."))}</div>`;
   const updated = reading?.updated_at
-    ? new Date(reading.updated_at * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    ? new Date(reading.updated_at * 1000).toLocaleTimeString(language(), { hour: "numeric", minute: "2-digit" })
     : "";
   return `
     <section class="limits__provider">
@@ -781,17 +781,17 @@ export function limitsPanel() {
   const limits = state.limits ?? {};
   return `
     <div class="scrim scrim--clear" data-dismiss="1">
-      <div class="menu limits" role="dialog" aria-label="AI Limits">
+      <div class="menu limits" role="dialog" aria-label="${escape(t("AI Limits"))}">
         <div class="limits__header">
-          <strong>AI Limits</strong>
+          <strong>${escape(t("AI Limits"))}</strong>
           <span class="section__spacer"></span>
-          ${button({ icon: "refresh", action: "limits-refresh", kind: "quiet", title: "Refresh", disabled: !!limits.loading })}
+          ${button({ icon: "refresh", action: "limits-refresh", kind: "quiet", title: t("Refresh"), disabled: !!limits.loading })}
         </div>
         ${limitsBlock("Claude", "claude", limits.claude, false)}
         ${limitsBlock("Codex", "codex", limits.codex, limits.loading && !limits.codex?.windows?.length)}
         <div class="limits__foot">
-          <span>Read from your own logins. No tokens are copied and no model request is sent.</span>
-          <button class="sidebar__link" data-action="limits-settings">Settings…</button>
+          <span>${escape(t("Read from your own logins. No tokens are copied and no model request is sent."))}</span>
+          <button class="sidebar__link" data-action="limits-settings">${escape(t("Settings…"))}</button>
         </div>
       </div>
     </div>`;
@@ -808,7 +808,7 @@ export const unreadActivity = () =>
 export function bell() {
   const unread = unreadActivity();
   return `
-    <button class="button button--icon bell" data-action="activity" title="Activity"
+    <button class="button button--icon bell" data-action="activity" title="${escape(t("Activity"))}"
             aria-pressed="${state.menu?.kind === "activity"}">
       ${icons.bell}
       ${unread ? `<span class="bell__badge">${Math.min(99, unread)}</span>` : ""}
@@ -837,19 +837,19 @@ function activityPanel() {
   for (const event of events) {
     const date = new Date(event.at);
     const key = date.toDateString();
-    const name = key === today ? "Today" : key === yesterday ? "Yesterday" : date.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+    const name = key === today ? t("Today") : key === yesterday ? t("Yesterday") : date.toLocaleDateString(language(), { day: "numeric", month: "short", year: "numeric" });
     if (!days.has(name)) days.set(name, []);
     days.get(name).push(event);
   }
   const row = (event) => {
     const [label, glyph, tone] = ACTIVITY[event.kind] ?? [event.kind, "clock", ""];
-    const time = new Date(event.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const time = new Date(event.at).toLocaleTimeString(language(), { hour: "numeric", minute: "2-digit" });
     return `
       <button class="activity ${tone}" data-activity-open="${escape(event.session_id)}"
               data-activity-project="${escape(event.project_id ?? "")}">
         <span class="activity__icon">${icons[glyph] ?? ""}</span>
         <span class="activity__body">
-          <span class="activity__title">${escape(event.title)} <em>${escape(label)}</em></span>
+          <span class="activity__title">${escape(event.title)} <em>${escape(t(label))}</em></span>
           <span class="activity__meta">${escape([event.project, event.detail].filter(Boolean).join(" · "))}</span>
         </span>
         <span class="activity__time">${escape(time)}</span>
@@ -857,22 +857,22 @@ function activityPanel() {
   };
   return `
     <div class="scrim scrim--clear" data-dismiss="1">
-      <div class="menu activity-feed" role="dialog" aria-label="Activity">
+      <div class="menu activity-feed" role="dialog" aria-label="${escape(t("Activity"))}">
         <div class="activity-feed__head">
-          <strong>Activity</strong>
+          <strong>${escape(t("Activity"))}</strong>
           <span class="section__spacer"></span>
-          <button class="sidebar__link" data-action="activity-clear">Clear</button>
+          <button class="sidebar__link" data-action="activity-clear">${escape(t("Clear"))}</button>
         </div>
         <div class="sidebar__search activity-feed__search">
           ${icons.search}
-          <input id="activity-filter" type="search" placeholder="Filter by session or project"
+          <input id="activity-filter" type="search" placeholder="${escape(t("Filter by session or project"))}"
                  value="${escape(state.activityFilter ?? "")}" spellcheck="false" />
         </div>
         <div class="activity-feed__list" data-scroll="activity">
           ${
             events.length
               ? [...days].map(([day, items]) => `<div class="activity-feed__day">${escape(day)}</div>${items.map(row).join("")}`).join("")
-              : `<p class="activity-feed__none">${needle ? "Nothing matches." : "Nothing yet. Completions, questions and worktree events show here."}</p>`
+              : `<p class="activity-feed__none">${escape(needle ? t("Nothing matches.") : t("Nothing yet. Completions, questions and worktree events show here."))}</p>`
           }
         </div>
       </div>
@@ -890,8 +890,8 @@ export const tabInfo = (id) =>
 /// its turn, a warning when it needs you, a dot while it works.
 function tabGlyph(id, running, info) {
   const reported = state.agentState.get(id);
-  if (running && reported === "done") return `<span class="tab-glyph tab-glyph--done" title="Finished its turn">${icons.checkCircle}</span>`;
-  if (running && reported === "waiting") return `<span class="tab-glyph tab-glyph--waiting" title="Needs you">${icons.warn}</span>`;
+  if (running && reported === "done") return `<span class="tab-glyph tab-glyph--done" title="${escape(t("Finished its turn"))}">${icons.checkCircle}</span>`;
+  if (running && reported === "waiting") return `<span class="tab-glyph tab-glyph--waiting" title="${escape(t("Needs you"))}">${icons.warn}</span>`;
   return stateDot({ ...info, running, started: info.started ?? running });
 }
 
@@ -907,7 +907,7 @@ export function tabBar() {
       const selected = state.sessionId === id && !state.files && state.page !== "project";
       return `
         <div class="tab-item${selected ? " tab-item--selected" : ""}" data-tab-open="${escape(id)}"
-             draggable="true" title="${escape(`${owner?.title ?? ""} · ${info.agent === "claude" ? "Claude Code" : "Codex"}${running ? "" : " · not running"}`)}">
+             draggable="true" title="${escape(`${owner?.title ?? ""} · ${info.agent === "claude" ? "Claude Code" : "Codex"}${running ? "" : ` · ${t("not running")}`}`)}">
           <span class="tab-item__bar" style="background:${owner ? projectTint(owner) : "var(--border-strong)"}"></span>
           ${tabGlyph(id, running, info)}
           ${agentIcon(info.agent, 12)}
@@ -917,12 +917,12 @@ export function tabBar() {
           </span>
           ${
             state.layout > 1 && state.panes.indexOf(id) >= 0 && state.panes.indexOf(id) < state.layout
-              ? `<span class="tab-item__pane" style="background:${owner ? projectTint(owner) : "var(--text-faint)"}" title="In pane ${state.panes.indexOf(id) + 1}">${state.panes.indexOf(id) + 1}</span>`
+              ? `<span class="tab-item__pane" style="background:${owner ? projectTint(owner) : "var(--text-faint)"}" title="${escape(t("In pane {number}", { number: state.panes.indexOf(id) + 1 }))}">${state.panes.indexOf(id) + 1}</span>`
               : ""
           }
           ${index < 9 && !selected && !(state.layout > 1 && state.panes.includes(id)) ? `<span class="tab-item__number">${/mac/i.test(navigator.platform) ? "⌘" : "Ctrl+"}${index + 1}</span>` : ""}
           <button class="tab-item__close" data-tab-close="${escape(id)}"
-                  title="${running ? "Stop and close" : "Close tab"}">${icons.close}</button>
+                  title="${escape(running ? t("Stop and close") : t("Close tab"))}">${icons.close}</button>
         </div>`;
     })
     .join("");
@@ -930,11 +930,11 @@ export function tabBar() {
   return `
     <div class="tabbar">
       <button class="tabbar__home${state.sidebarHidden ? "" : " tabbar__home--on"}" data-action="toggle-sidebar"
-              title="${state.sidebarHidden ? "Show sidebar" : "Hide sidebar"}">${icons.sidebar}</button>
-      <button class="tabbar__home${home ? " tabbar__home--on" : ""}" data-action="home" title="Home">${icons.home}</button>
+              title="${escape(state.sidebarHidden ? t("Show sidebar") : t("Hide sidebar"))}">${icons.sidebar}</button>
+      <button class="tabbar__home${home ? " tabbar__home--on" : ""}" data-action="home" title="${escape(t("Home"))}">${icons.home}</button>
       <span class="tabbar__divider"></span>
       <div class="tabbar__tabs" data-scroll="tabs">
-        ${tabs || '<span class="tabbar__none">No open terminals</span>'}
+        ${tabs || `<span class="tabbar__none">${escape(t("No open terminals"))}</span>`}
       </div>
       <span class="tabbar__actions">
         <span class="layouts">
@@ -945,16 +945,16 @@ export function tabBar() {
           ]
             .map(
               ([count, glyph, name]) =>
-                `<button class="layouts__button" data-layout="${count}" aria-pressed="${state.layout === count}" title="${name}">${icons[glyph]}</button>`,
+                `<button class="layouts__button" data-layout="${count}" aria-pressed="${state.layout === count}" title="${escape(t(name))}">${icons[glyph]}</button>`,
             )
             .join("")}
         </span>
-        <button class="button button--icon counted" data-action="files" title="Files & Changes">
+        <button class="button button--icon counted" data-action="files" title="${escape(t("Files & Changes"))}">
           ${icons.git}
           ${state.settings.git_status !== false && state.git?.changed ? `<span class="counted__badge">${Math.min(99, state.git.changed)}</span>` : ""}
         </button>
         ${bell()}
-        ${state.projects.length ? button({ icon: "plus", action: "new-session", kind: "icon", title: "New session" }) : ""}
+        ${state.projects.length ? button({ icon: "plus", action: "new-session", kind: "icon", title: t("New session") }) : ""}
       </span>
     </div>`;
 }
@@ -962,13 +962,13 @@ export function tabBar() {
 function tabMenu(menu) {
   const at = state.tabs.indexOf(menu.id);
   const item = (label, act, enabled = true) =>
-    `<button class="menu__item" data-tab-act="${act}" ${enabled ? "" : "disabled"}><span>${escape(label)}</span></button>`;
+    `<button class="menu__item" data-tab-act="${act}" ${enabled ? "" : "disabled"}><span>${escape(t(label))}</span></button>`;
   return `
     <div class="scrim scrim--clear" data-dismiss="1">
       <div class="menu menu--context" role="menu" style="left:${Math.max(8, Math.min(menu.x, window.innerWidth - 240))}px;top:${menu.y}px">
         ${
           state.layout > 1
-            ? Array.from({ length: state.layout }, (_, index) => item(`Open in pane ${index + 1}`, `pane-${index}`)).join("") +
+            ? Array.from({ length: state.layout }, (_, index) => item(t("Open in pane {number}", { number: index + 1 }), `pane-${index}`)).join("") +
               '<div class="menu__divider"></div>'
             : ""
         }
@@ -993,7 +993,7 @@ function needsYouButton() {
   return `
     <button class="status__item status__button status__needs" data-needs-you="${escape(waiting[0])}"
             title="${escape(titles)}">
-      ${icons.warn} ${waiting.length} need${waiting.length === 1 ? "s" : ""} you
+      ${icons.warn} ${escape(plural(waiting.length, "needs you", "need you"))}
     </button>
     <span class="status__sep"></span>`;
 }
@@ -1003,17 +1003,17 @@ function needsYouButton() {
 function workspaceMenu() {
   const item = (on, act, name) => `
     <button class="menu__item" data-workspace-option="${act}">
-      <span class="menu__icon">${on ? icons.check : ""}</span><span>${name}</span>
+      <span class="menu__icon">${on ? icons.check : ""}</span><span>${escape(t(name))}</span>
     </button>`;
   return `
     <div class="scrim scrim--clear" data-dismiss="1">
       <div class="menu menu--anchored" role="menu" style="${anchorStyle()}">
-        <div class="menu__heading">Sidebar</div>
+        <div class="menu__heading">${escape(t("Sidebar"))}</div>
         ${item(state.groupHierarchy !== false, "hierarchy", "Show group hierarchy")}
         ${item(!!state.settings.sort_projects, "sort", "Sort projects by name")}
         ${item(state.settings.compact_sidebar !== false, "compact", "Compact rows")}
         <div class="menu__divider"></div>
-        <button class="menu__item" data-action="settings"><span class="menu__icon">${icons.gear}</span><span>Settings…</span></button>
+        <button class="menu__item" data-action="settings"><span class="menu__icon">${icons.gear}</span><span>${escape(t("Settings…"))}</span></button>
       </div>
     </div>`;
 }
@@ -1028,11 +1028,11 @@ function accountMenu(agent) {
   return `
     <div class="scrim scrim--clear" data-dismiss="1">
       <div class="menu menu--status" role="menu" style="left:${Math.max(8, state.anchor?.left ?? 8)}px">
-        <div class="menu__heading">${agent === "claude" ? "Claude Code" : "Codex"} account</div>
-        ${item("", "System login")}
+        <div class="menu__heading">${escape(t("{agent} account", { agent: agent === "claude" ? "Claude Code" : "Codex" }))}</div>
+        ${item("", t("System login"))}
         ${(state.profiles ?? []).filter((profile) => profile.agent === agent).map((profile) => item(profile.id, profile.label)).join("")}
         <div class="menu__divider"></div>
-        <button class="menu__item" data-settings-open="Accounts"><span class="menu__icon">${icons.person}</span><span>Manage accounts…</span></button>
+        <button class="menu__item" data-settings-open="Accounts"><span class="menu__icon">${icons.person}</span><span>${escape(t("Manage accounts…"))}</span></button>
       </div>
     </div>`;
 }
@@ -1041,11 +1041,11 @@ function accountMenu(agent) {
 function accountChip(agent) {
   if (!(state.profiles ?? []).some((profile) => profile.agent === agent)) return "";
   const id = activeAccount(agent);
-  const name = id ? state.profiles.find((profile) => profile.id === id)?.label : "System";
+  const name = id ? state.profiles.find((profile) => profile.id === id)?.label : t("System");
   return `
     <button class="status__item status__button" data-action="account-menu" data-agent="${agent}"
-            title="Account for new ${agent === "claude" ? "Claude Code" : "Codex"} sessions">
-      ${agentIcon(agent, 12)} ${escape(name ?? "System")} ${icons.chevronDown}
+            title="${escape(t("Account for new {agent} sessions", { agent: agent === "claude" ? "Claude Code" : "Codex" }))}">
+      ${agentIcon(agent, 12)} ${escape(name ?? t("System"))} ${icons.chevronDown}
     </button>`;
 }
 
@@ -1053,18 +1053,18 @@ function awakeMenu() {
   const mode = state.settings.keep_awake;
   const item = (value, name) => `
     <button class="menu__item" data-awake="${value}">
-      <span class="menu__icon">${mode === value ? icons.check : ""}</span><span>${name}</span>
+      <span class="menu__icon">${mode === value ? icons.check : ""}</span><span>${escape(t(name))}</span>
     </button>`;
   return `
     <div class="scrim scrim--clear" data-dismiss="1">
       <div class="menu menu--awake" role="menu">
-        <div class="menu__heading">Keep awake</div>
+        <div class="menu__heading">${escape(t("Keep awake"))}</div>
         ${item("always", "Always while Convoy is open")}
         ${item("sessions", "While a session is running")}
         ${item("off", "Off — normal system sleep")}
         <div class="menu__divider"></div>
         <button class="menu__item" data-action="awake-settings">
-          <span class="menu__icon">${icons.gear}</span><span>Settings…</span>
+          <span class="menu__icon">${icons.gear}</span><span>${escape(t("Settings…"))}</span>
         </button>
       </div>
     </div>`;

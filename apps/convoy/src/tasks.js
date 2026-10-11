@@ -5,6 +5,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { agentIcon } from "./icons.js";
+import { t } from "./i18n.js";
+import { plural } from "./ui.js";
 
 const MODELS = {
   claude: [["opus", "Opus · most capable"], ["sonnet", "Sonnet · balanced"], ["haiku", "Haiku · fastest"]],
@@ -46,21 +48,21 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
   const modelList = (agent) => {
     const loaded = state.models?.[`${agent}:`]?.map((model) => [model.id, model.name]);
     const models = loaded?.length ? loaded : MODELS[agent];
-    return `<datalist id="models-${agent}">${models.map(([id, name]) => `<option value="${escape(id)}">${escape(name)}</option>`).join("")}</datalist>`;
+    return `<datalist id="models-${agent}">${models.map(([id, name]) => `<option value="${escape(id)}">${escape(t(name))}</option>`).join("")}</datalist>`;
   };
 
   const agentSelect = (attrs, value) =>
     `<select ${attrs}>${AGENTS.map(([id, name]) => `<option value="${id}"${id === value ? " selected" : ""}>${name}</option>`).join("")}</select>`;
 
   const modelInput = (attrs, agent, value) =>
-    `<input ${attrs} list="models-${agent}" value="${escape(value || "")}" placeholder="Agent default" spellcheck="false" />`;
+    `<input ${attrs} list="models-${agent}" value="${escape(value || "")}" placeholder="${escape(t("Agent default"))}" spellcheck="false" />`;
 
   const sourceBadge = (source) => {
     if (!source) return "";
     const label = `${trackerName(source.tracker)} ${source.key}`;
     return source.url
-      ? `<a class="badge badge--muted" href="${escape(source.url)}" target="_blank" rel="noreferrer" title="Open ${escape(label)}">${escape(source.key)}</a>`
-      : `<span class="badge badge--muted" title="${escape(label)}${source.viaMCP ? " — fetched by the agent via MCP" : ""}">${escape(source.key)}</span>`;
+      ? `<a class="badge badge--muted" href="${escape(source.url)}" target="_blank" rel="noreferrer" title="${escape(t("Open {name}", { name: label }))}">${escape(source.key)}</a>`
+      : `<span class="badge badge--muted" title="${escape(source.viaMCP ? t("{name} — fetched by the agent via MCP", { name: label }) : label)}">${escape(source.key)}</span>`;
   };
 
   // Keys of issues already imported into this project from the same site.
@@ -132,7 +134,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
     draft.loading = false;
     const taken = importedKeys();
     draft.selected = new Set(issues.map((issue) => issue.key).filter((key) => !taken.has(key)));
-    draft.message = issues.length ? null : "No matching open issues.";
+    draft.message = issues.length ? null : t("No matching open issues.");
     render();
   }
 
@@ -190,12 +192,16 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
     state.dialog = null;
     state.tab = "tasks";
     await loadTasks();
-    const skipped = result.skipped ? `, ${result.skipped} already imported` : "";
-    toast(`Imported ${result.created.length} task${result.created.length === 1 ? "" : "s"}${skipped}`);
+    const tasks = plural(result.created.length, "task");
+    toast(
+      result.skipped
+        ? t("Imported {tasks}, {skipped} already imported", { tasks, skipped: result.skipped })
+        : t("Imported {tasks}", { tasks }),
+    );
     if (draft.runNow) {
       let started = 0;
       for (const id of result.created) if (await runTask(id, { background: true })) started += 1;
-      if (started) toast(`Started ${started} task${started === 1 ? "" : "s"}`);
+      if (started) toast(t("Started {tasks}", { tasks: plural(started, "task") }));
     }
     await loadWorkspace();
   }
@@ -223,7 +229,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
       render();
       try {
         const issues = await invoke("issues_search", { connectionId: saved.id, query: "", mineOnly: true, rawJql: false });
-        draft.result = { ok: true, text: `Connected — ${issues.length} open issue${issues.length === 1 ? "" : "s"} assigned to you.` };
+        draft.result = { ok: true, text: t("Connected — {issues} assigned to you.", { issues: plural(issues.length, "open issue") }) };
       } catch (error) {
         draft.result = { ok: false, text: String(error) };
       }
@@ -244,8 +250,8 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         const [label, css] = STATUS[task.status] ?? [task.status, "state"];
         const meta = [
           task.agent === "claude" ? "Claude Code" : "Codex",
-          task.model ? `<code>${escape(task.model)}</code>` : "default model",
-          MODES.find(([id]) => id === task.mode)?.[1],
+          task.model ? `<code>${escape(task.model)}</code>` : escape(t("default model")),
+          escape(t(MODES.find(([id]) => id === task.mode)?.[1] ?? "")),
           task.last_error ? escape(task.last_error) : null,
         ]
           .filter(Boolean)
@@ -260,18 +266,18 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
           </div>
           <div class="row__actions">
             ${sourceBadge(task.source)}
-            <span class="${css}"><span class="state__dot"></span>${label}</span>
-            ${runnable ? `<button class="button" data-task-edit="${escape(task.id)}" title="Agent and model">${icons.gear}</button>` : ""}
+            <span class="${css}"><span class="state__dot"></span>${escape(t(label))}</span>
+            ${runnable ? `<button class="button" data-task-edit="${escape(task.id)}" title="${escape(t("Agent and model"))}">${icons.gear}</button>` : ""}
             ${
               runnable
-                ? `<button class="button button--primary" data-task-run="${escape(task.id)}">${icons.play} Run</button>`
+                ? `<button class="button button--primary" data-task-run="${escape(task.id)}">${icons.play} ${escape(t("Run"))}</button>`
                 : task.session_id
-                  ? `<button class="button button--quiet" data-open="${escape(task.session_id)}" title="Open the terminal">${icons.open}</button>`
+                  ? `<button class="button button--quiet" data-open="${escape(task.session_id)}" title="${escape(t("Open the terminal"))}">${icons.open}</button>`
                   : ""
             }
             ${
               task.status === "review"
-                ? `<button class="button" data-task-done="${escape(task.id)}">Mark done</button>`
+                ? `<button class="button" data-task-done="${escape(task.id)}">${escape(t("Mark done"))}</button>`
                 : ""
             }
           </div>
@@ -281,20 +287,19 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
 
     return `
       <div class="section">
-        <h2 class="section__title">Tasks <span class="section__count">${state.tasks.length}</span></h2>
+        <h2 class="section__title">${escape(t("Tasks"))} <span class="section__count">${state.tasks.length}</span></h2>
         <span class="section__spacer"></span>
-        <button class="button button--icon" data-action="tasks-refresh" title="Refresh">${icons.refresh}</button>
-        <button class="button" data-action="integrations">Linear &amp; Jira…</button>
-        <button class="button button--primary" data-action="import">${icons.plus} Import issues</button>
+        <button class="button button--icon" data-action="tasks-refresh" title="${escape(t("Refresh"))}">${icons.refresh}</button>
+        <button class="button" data-action="integrations">${escape(t("Linear & Jira…"))}</button>
+        <button class="button button--primary" data-action="import">${icons.plus} ${escape(t("Import issues"))}</button>
       </div>
       <p class="section__hint">
-        Import Linear or Jira issues, choose the agent and model for all of them or per issue, then run each in its
-        own session.
+        ${escape(t("Import Linear or Jira issues, choose the agent and model for all of them or per issue, then run each in its own session."))}
       </p>
       <div class="list">${
         rows ||
-        `<div class="empty"><h2 class="empty__title">No tasks yet</h2>
-           <p class="empty__text">Import issues from Linear or Jira to start.</p></div>`
+        `<div class="empty"><h2 class="empty__title">${escape(t("No tasks yet"))}</h2>
+           <p class="empty__text">${escape(t("Import issues from Linear or Jira to start."))}</p></div>`
       }</div>`;
   }
 
@@ -306,36 +311,36 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
     const picked = chosen();
 
     if (!state.integrations.length) {
-      return modal("Import issues", `In ${escape(project()?.title ?? "")}`, `
-        <p class="empty__text">Connect Linear or Jira first: an API key, a Jira login, or the agent’s own MCP server.</p>`,
-        `<button class="button" data-dismiss="1">Cancel</button>
-         <button class="button button--primary" data-action="integrations">Connect Linear or Jira</button>`);
+      return modal(t("Import issues"), escape(t("In {project}", { project: project()?.title ?? "" })), `
+        <p class="empty__text">${escape(t("Connect Linear or Jira first: an API key, a Jira login, or the agent’s own MCP server."))}</p>`,
+        `<button class="button" data-dismiss="1">${escape(t("Cancel"))}</button>
+         <button class="button button--primary" data-action="integrations">${escape(t("Connect Linear or Jira"))}</button>`);
     }
 
     const source = `
       <div class="field">
-        <span class="field__label">From</span>
+        <span class="field__label">${escape(t("From"))}</span>
         <div class="import__source">
           <select id="imp-connection">${state.integrations
-            .map((item) => `<option value="${escape(item.id)}"${item.id === draft.connectionId ? " selected" : ""}>${escape(item.name)} · ${AUTH[item.auth][item.kind]}</option>`)
+            .map((item) => `<option value="${escape(item.id)}"${item.id === draft.connectionId ? " selected" : ""}>${escape(item.name)} · ${escape(t(AUTH[item.auth][item.kind]))}</option>`)
             .join("")}</select>
-          <button class="button button--quiet" data-action="integrations">Manage…</button>
+          <button class="button button--quiet" data-action="integrations">${escape(t("Manage…"))}</button>
         </div>
       </div>`;
 
     const finder =
       current?.auth === "mcp"
         ? `<label class="field">
-             <span class="field__label">Issue keys or links</span>
+             <span class="field__label">${escape(t("Issue keys or links"))}</span>
              <textarea id="imp-manual" spellcheck="false" placeholder="ENG-123 Optional title&#10;https://linear.app/acme/issue/ENG-124/…">${escape(draft.manual)}</textarea>
-             <span class="field__note">The agent reads each issue itself through its ${trackerName(current.kind)} MCP server, which must be configured in Claude Code or Codex.</span>
+             <span class="field__note">${escape(t("The agent reads each issue itself through its {tracker} MCP server, which must be configured in Claude Code or Codex.", { tracker: trackerName(current.kind) }))}</span>
            </label>`
         : `<div class="import__search">
              <input id="imp-query" value="${escape(draft.query)}" spellcheck="false"
-                    placeholder="${current?.kind === "jira" ? (draft.rawJql ? "JQL, e.g. project in (PAY, OPS)" : "Text, issue key, or JQL") : "Title text or issue key, e.g. ENG-123"}" />
+                    placeholder="${escape(current?.kind === "jira" ? (draft.rawJql ? t("JQL, e.g. project in (PAY, OPS)") : t("Text, issue key, or JQL")) : t("Title text or issue key, e.g. ENG-123"))}" />
              ${current?.kind === "jira" ? `<label class="import__check"><input type="checkbox" id="imp-jql"${draft.rawJql ? " checked" : ""} /> JQL</label>` : ""}
-             <label class="import__check"><input type="checkbox" id="imp-mine"${draft.mineOnly ? " checked" : ""} /> Assigned to me</label>
-             <button class="button" data-action="import-search"${draft.loading ? " disabled" : ""}>${draft.loading ? "Searching…" : "Search"}</button>
+             <label class="import__check"><input type="checkbox" id="imp-mine"${draft.mineOnly ? " checked" : ""} /> ${escape(t("Assigned to me"))}</label>
+             <button class="button" data-action="import-search"${draft.loading ? " disabled" : ""}>${escape(draft.loading ? t("Searching…") : t("Search"))}</button>
            </div>`;
 
     const rows = list
@@ -349,12 +354,12 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
           <code class="import__key">${escape(issue.key)}</code>
           <div class="import__title">
             <div>${escape(issue.title)}</div>
-            <div class="import__meta">${done ? "Already imported" : escape([issue.status, issue.priority].filter(Boolean).join(" · "))}</div>
+            <div class="import__meta">${done ? escape(t("Already imported")) : escape([issue.status, issue.priority].filter(Boolean).join(" · "))}</div>
           </div>
           ${
             done
               ? ""
-              : `<div class="import__pick${custom ? " import__pick--custom" : ""}" title="Agent and model for this issue only">
+              : `<div class="import__pick${custom ? " import__pick--custom" : ""}" title="${escape(t("Agent and model for this issue only"))}">
                    ${agentSelect(`data-row-agent="${escape(issue.key)}"`, pick.agent)}
                    ${modelInput(`data-row-model="${escape(issue.key)}"`, pick.agent, pick.model)}
                  </div>`
@@ -369,41 +374,41 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
       ${source}
       ${finder}
       <div class="field">
-        <span class="field__label">Issues ${list.length ? `· ${picked.length} of ${list.length} selected` : ""}
-          ${allKeys.length ? `<button class="button button--quiet" data-action="import-all">${everything ? "Select none" : "Select all"}</button>` : ""}</span>
+        <span class="field__label">${escape(list.length ? t("Issues · {picked} of {total} selected", { picked: picked.length, total: list.length }) : t("Issues"))}
+          ${allKeys.length ? `<button class="button button--quiet" data-action="import-all">${escape(everything ? t("Select none") : t("Select all"))}</button>` : ""}</span>
         <div class="import__list">${
           rows ||
           `<div class="import__empty${draft.message ? " import__empty--error" : ""}">${escape(
-            draft.message ?? (draft.loading ? "Loading…" : current?.auth === "mcp" ? "Paste issue keys or links above." : "No issues loaded."),
+            draft.message ?? (draft.loading ? t("Loading…") : current?.auth === "mcp" ? t("Paste issue keys or links above.") : t("No issues loaded.")),
           )}</div>`
         }</div>
         ${draft.message && rows ? `<span class="field__note">${escape(draft.message)}</span>` : ""}
       </div>
       <div class="import__defaults">
         <label class="field">
-          <span class="field__label">Agent for all</span>
+          <span class="field__label">${escape(t("Agent for all"))}</span>
           ${agentSelect('id="imp-agent"', draft.agent)}
         </label>
         <label class="field">
-          <span class="field__label">Model for all</span>
+          <span class="field__label">${escape(t("Model for all"))}</span>
           ${modelInput('id="imp-model"', draft.agent, draft.model)}
         </label>
         <label class="field">
-          <span class="field__label">When done</span>
-          <select id="imp-mode">${MODES.map(([id, name]) => `<option value="${id}"${id === draft.mode ? " selected" : ""}>${name}</option>`).join("")}</select>
+          <span class="field__label">${escape(t("When done"))}</span>
+          <select id="imp-mode">${MODES.map(([id, name]) => `<option value="${id}"${id === draft.mode ? " selected" : ""}>${escape(t(name))}</option>`).join("")}</select>
         </label>
       </div>
       ${modelList("claude")}${modelList("codex")}`;
 
     const foot = `
-      <label class="import__check"><input type="checkbox" id="imp-review"${draft.autoReview ? " checked" : ""} /> Auto-review</label>
-      <label class="import__check"><input type="checkbox" id="imp-run"${draft.runNow ? " checked" : ""} /> Run immediately</label>
+      <label class="import__check"><input type="checkbox" id="imp-review"${draft.autoReview ? " checked" : ""} /> ${escape(t("Auto-review"))}</label>
+      <label class="import__check"><input type="checkbox" id="imp-run"${draft.runNow ? " checked" : ""} /> ${escape(t("Run immediately"))}</label>
       <span class="section__spacer"></span>
-      <button class="button" data-dismiss="1">Cancel</button>
+      <button class="button" data-dismiss="1">${escape(t("Cancel"))}</button>
       <button class="button button--primary" data-action="import-run"${picked.length ? "" : " disabled"}>
-        ${draft.runNow ? icons.play : ""} Import${picked.length ? ` ${picked.length}` : ""}
+        ${draft.runNow ? icons.play : ""} ${escape(t("Import"))}${picked.length ? ` ${picked.length}` : ""}
       </button>`;
-    return modal("Import issues", `In ${escape(project()?.title ?? "")}`, body, foot, "modal--wide");
+    return modal(t("Import issues"), escape(t("In {project}", { project: project()?.title ?? "" })), body, foot, "modal--wide");
   }
 
   function integrationsDialog() {
@@ -413,25 +418,24 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         <div class="setting">
           <div class="setting__text">
             <div class="setting__title">${escape(item.name)}</div>
-            <div class="setting__hint">${escape([trackerName(item.kind), AUTH[item.auth][item.kind], item.site, item.username].filter(Boolean).join(" · "))}</div>
+            <div class="setting__hint">${escape([trackerName(item.kind), t(AUTH[item.auth][item.kind]), item.site, item.username].filter(Boolean).join(" · "))}</div>
           </div>
           <div class="setting__control">
-            <button class="button" data-conn-edit="${escape(item.id)}">Edit</button>
-            <button class="button button--danger" data-conn-remove="${escape(item.id)}">Remove</button>
+            <button class="button" data-conn-edit="${escape(item.id)}">${escape(t("Edit"))}</button>
+            <button class="button button--danger" data-conn-remove="${escape(item.id)}">${escape(t("Remove"))}</button>
           </div>
         </div>`,
       )
       .join("");
-    return modal("Linear & Jira", "Import issues as tasks from the Tasks tab.", `
+    return modal("Linear & Jira", escape(t("Import issues as tasks from the Tasks tab.")), `
       <div class="group">
-        <div class="group__label">Connections</div>
-        ${rows || '<p class="setting__hint">None yet.</p>'}
+        <div class="group__label">${escape(t("Connections"))}</div>
+        ${rows || `<p class="setting__hint">${escape(t("None yet."))}</p>`}
       </div>
       <p class="modal__note">
-        Keys, tokens and passwords are kept in <code>integrations.json</code> beside the workspace, readable by your
-        user only. MCP connections store nothing: the agent fetches each issue with its own MCP server.
+        ${t("Keys, tokens and passwords are kept in {file} beside the workspace, readable by your user only. MCP connections store nothing: the agent fetches each issue with its own MCP server.", { file: "<code>integrations.json</code>" })}
       </p>`,
-      `<button class="button" data-dismiss="1">Close</button>
+      `<button class="button" data-dismiss="1">${escape(t("Close"))}</button>
        <button class="button" data-conn-add="jira">${icons.plus} Jira</button>
        <button class="button button--primary" data-conn-add="linear">${icons.plus} Linear</button>`);
   }
@@ -443,33 +447,33 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
     const help =
       item.auth === "mcp"
         ? item.kind === "linear"
-          ? "Add Linear’s MCP server to your agent, e.g. claude mcp add --transport http linear https://mcp.linear.app/mcp, then import by issue key or link."
-          : "Add the Atlassian MCP server to your agent, then import by issue key or link."
+          ? t("Add Linear’s MCP server to your agent, e.g. claude mcp add --transport http linear https://mcp.linear.app/mcp, then import by issue key or link.")
+          : t("Add the Atlassian MCP server to your agent, then import by issue key or link.")
         : item.kind === "linear"
-          ? "Create a key in Linear → Settings → Security & access → Personal API keys."
+          ? t("Create a key in Linear → Settings → Security & access → Personal API keys.")
           : item.auth === "password"
-            ? "Jira Server / Data Center with basic authentication. Jira Cloud needs an API token instead."
-            : "Jira Cloud: your account email plus an API token from id.atlassian.com. Data Center: leave the email empty and paste a personal access token.";
-    const secretLabel = item.kind === "linear" ? "Personal API key" : item.auth === "password" ? "Password" : "API token or personal access token";
+            ? t("Jira Server / Data Center with basic authentication. Jira Cloud needs an API token instead.")
+            : t("Jira Cloud: your account email plus an API token from id.atlassian.com. Data Center: leave the email empty and paste a personal access token.");
+    const secretLabel = item.kind === "linear" ? t("Personal API key") : item.auth === "password" ? t("Password") : t("API token or personal access token");
     const body = `
       <label class="field">
-        <span class="field__label">Name</span>
+        <span class="field__label">${escape(t("Name"))}</span>
         <input id="conn-name" value="${escape(item.name)}" spellcheck="false" />
       </label>
       <div class="field">
-        <span class="field__label">Connect with</span>
+        <span class="field__label">${escape(t("Connect with"))}</span>
         <div class="choice">${authOptions(item.kind)
-          .map((auth) => `<button data-conn-auth="${auth}" aria-pressed="${item.auth === auth}">${AUTH[auth][item.kind]}</button>`)
+          .map((auth) => `<button data-conn-auth="${auth}" aria-pressed="${item.auth === auth}">${escape(t(AUTH[auth][item.kind]))}</button>`)
           .join("")}</div>
       </div>
       ${
         item.kind === "jira" && needsSecret
           ? `<label class="field">
-               <span class="field__label">Site URL</span>
+               <span class="field__label">${escape(t("Site URL"))}</span>
                <input id="conn-site" value="${escape(item.site || "")}" placeholder="https://acme.atlassian.net" spellcheck="false" />
              </label>
              <label class="field">
-               <span class="field__label">${item.auth === "password" ? "Username" : "Email"}</span>
+               <span class="field__label">${escape(item.auth === "password" ? t("Username") : t("Email"))}</span>
                <input id="conn-user" value="${escape(item.username || "")}" spellcheck="false" />
              </label>`
           : ""
@@ -477,37 +481,38 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
       ${
         needsSecret
           ? `<label class="field">
-               <span class="field__label">${secretLabel}</span>
+               <span class="field__label">${escape(secretLabel)}</span>
                <input id="conn-secret" type="password" value="${escape(draft.secret)}"
-                      placeholder="${draft.hasSecret ? "Saved — leave empty to keep" : ""}" autocomplete="off" />
+                      placeholder="${draft.hasSecret ? escape(t("Saved — leave empty to keep")) : ""}" autocomplete="off" />
              </label>`
           : ""
       }
       <span class="field__note">${escape(help)}</span>
       ${draft.result ? `<span class="field__note" style="color:var(${draft.result.ok ? "--state-done" : "--state-failed"})">${escape(draft.result.text)}</span>` : ""}`;
     const foot = `
-      <button class="button" data-action="integrations">Back</button>
+      <button class="button" data-action="integrations">${escape(t("Back"))}</button>
       <span class="section__spacer"></span>
-      ${needsSecret ? `<button class="button" data-action="conn-test"${draft.testing ? " disabled" : ""}>${draft.testing ? "Testing…" : "Save & test"}</button>` : ""}
-      <button class="button button--primary" data-action="conn-save">Save</button>`;
-    return modal(`${item.id ? "Edit" : "Add"} ${trackerName(item.kind)} connection`, "", body, foot);
+      ${needsSecret ? `<button class="button" data-action="conn-test"${draft.testing ? " disabled" : ""}>${escape(draft.testing ? t("Testing…") : t("Save & test"))}</button>` : ""}
+      <button class="button button--primary" data-action="conn-save">${escape(t("Save"))}</button>`;
+    const tracker = trackerName(item.kind);
+    return modal(item.id ? t("Edit {tracker} connection", { tracker }) : t("Add {tracker} connection", { tracker }), "", body, foot);
   }
 
   function taskDialog() {
     const draft = state.dialog;
-    return modal("Agent and model", escape(draft.title), `
+    return modal(t("Agent and model"), escape(draft.title), `
       <label class="field">
-        <span class="field__label">Agent</span>
+        <span class="field__label">${escape(t("Agent"))}</span>
         ${agentSelect('id="task-agent"', draft.agent)}
       </label>
       <label class="field">
-        <span class="field__label">Model</span>
+        <span class="field__label">${escape(t("Model"))}</span>
         ${modelInput('id="task-model"', draft.agent, draft.model)}
-        <span class="field__note">Passed as --model; leave empty for the CLI default.</span>
+        <span class="field__note">${escape(t("Passed as --model; leave empty for the CLI default."))}</span>
       </label>
       ${modelList("claude")}${modelList("codex")}`,
-      `<button class="button" data-dismiss="1">Cancel</button>
-       <button class="button button--primary" data-action="task-save">Save</button>`);
+      `<button class="button" data-dismiss="1">${escape(t("Cancel"))}</button>
+       <button class="button button--primary" data-action="task-save">${escape(t("Save"))}</button>`);
   }
 
   const modal = (title, hint, body, foot, extra = "") => `

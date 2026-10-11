@@ -27,6 +27,7 @@ import {
   visibleSessions,
 } from "./state.js";
 import { escape, plural, value } from "./ui.js";
+import { setLanguage, t } from "./i18n.js";
 import { SHORTCUTS, binding, capture, label, matches } from "./shortcuts.js";
 import { dialogView } from "./dialogs.js";
 import * as terminal from "./terminal.js";
@@ -63,11 +64,11 @@ const isImportDialog = () => ["import", "integrations", "connection", "task-mode
 // can act on — a corrupt workspace file says so.
 function fatal(detail) {
   const where = state.storage
-    ? `<p>The workspace file is at <code>${escape(state.storage)}</code>.</p>`
+    ? `<p>${escape(t("The workspace file is at {path}.", { path: "\u0000" })).replace("\u0000", `<code>${escape(state.storage)}</code>`)}</p>`
     : "";
   app.innerHTML = `
     <div class="fatal">
-      <h1>Convoy could not start</h1>
+      <h1>${escape(t("Convoy could not start"))}</h1>
       <pre>${escape(detail)}</pre>
       ${where}
     </div>`;
@@ -87,8 +88,8 @@ function content() {
   if (!project()) {
     return `<div class="empty">
       <span class="empty__mark">📁</span>
-      <h2 class="empty__title">No project selected</h2>
-      <p class="empty__text">Open a folder to begin.</p>
+      <h2 class="empty__title">${escape(t("No project selected"))}</h2>
+      <p class="empty__text">${escape(t("Open a folder to begin."))}</p>
     </div>`;
   }
   if (state.page === "project" && state.projectDraft) return projectSettingsPage();
@@ -254,9 +255,9 @@ function closeTab(id) {
   if (state.running.includes(id)) {
     return openModal({
       kind: "confirm",
-      title: "Stop this agent and close the tab?",
-      body: "Recent output stays saved and the session can be resumed later.",
-      confirmLabel: "Stop and close",
+      title: t("Stop this agent and close the tab?"),
+      body: t("Recent output stays saved and the session can be resumed later."),
+      confirmLabel: t("Stop and close"),
       danger: true,
       run: async () => {
         await terminal.stop(id);
@@ -590,7 +591,12 @@ const ACTIONS = {
     for (const id of ids.filter((id) => !isRunning(id))) await done("session_archive", { id, archived: true });
     state.selected = new Set(running);
     await loadWorkspace();
-    if (running.length) toast(`${plural(running.length, "running session")} kept — stop ${running.length === 1 ? "it" : "them"} first.`);
+    if (running.length)
+      toast(
+        running.length === 1
+          ? t("{count} kept — stop it first.", { count: plural(running.length, "running session") })
+          : t("{count} kept — stop them first.", { count: plural(running.length, "running session") }),
+      );
     render();
   },
   "selection-close": () => {
@@ -611,9 +617,9 @@ const ACTIONS = {
     state.menu = null;
     return openModal({
       kind: "confirm",
-      title: "Stop this agent?",
-      body: "This interrupts current work. The saved conversation stays with the agent.",
-      confirmLabel: "Stop",
+      title: t("Stop this agent?"),
+      body: t("This interrupts current work. The saved conversation stays with the agent."),
+      confirmLabel: t("Stop"),
       danger: true,
       run: () => terminal.stop(current.id),
     });
@@ -654,7 +660,7 @@ const ACTIONS = {
   "reveal-project": () => call("path_reveal", { path: project()?.path ?? "" }),
   "copy-path": async () => {
     await navigator.clipboard.writeText(project()?.path ?? "");
-    toast("Path copied");
+    toast(t("Path copied"));
   },
   "reconnect-project": reconnectProject,
 
@@ -752,7 +758,7 @@ const ACTIONS = {
   "confirm-setup": async () => {
     const id = state.dialog.id;
     closeDialog();
-    if (await done("worktree_setup", { id })) toast("Worktree setup finished");
+    if (await done("worktree_setup", { id })) toast(t("Worktree setup finished"));
   },
   "remove-worktree": openRemoveWorktree,
   "confirm-remove-worktree": async () => {
@@ -864,13 +870,13 @@ const ACTIONS = {
   "file-reveal": () => fileAct(true),
   "file-copy": async () => {
     const path = selectedPath();
-    if (!path) return toast("Select a file first.");
+    if (!path) return toast(t("Select a file first."));
     const root = state.files.snapshot?.directory ?? "";
     await navigator.clipboard.writeText(`${root}${/[\\/]$/.test(root) ? "" : "/"}${path}`);
-    toast("Path copied");
+    toast(t("Path copied"));
   },
   discard: () =>
-    confirmThen("Discard changes to this file?", selectedPath(), () =>
+    confirmThen(t("Discard changes to this file?"), selectedPath(), () =>
       mutate({ action: "discard", path: selectedPath() }),
     ),
   trash: trashFile,
@@ -879,8 +885,8 @@ const ACTIONS = {
   commit: () => commit(false),
   amend: () =>
     confirmThen(
-      "Amend the latest commit?",
-      "The previous commit is replaced. Do not amend something already pushed.",
+      t("Amend the latest commit?"),
+      t("The previous commit is replaced. Do not amend something already pushed."),
       () => commit(true),
     ),
   generate: generateMessage,
@@ -889,15 +895,15 @@ const ACTIONS = {
   push: () => mutate({ action: "push" }),
   pr: createPullRequest,
   revert: () =>
-    confirmThen("Revert this commit?", selectedCommit(), () =>
+    confirmThen(t("Revert this commit?"), selectedCommit(), () =>
       mutate({ action: "revert", commit: selectedCommit() }),
     ),
   "reset-soft": () =>
-    confirmThen("Reset to this commit, keeping the index?", selectedCommit(), () =>
+    confirmThen(t("Reset to this commit, keeping the index?"), selectedCommit(), () =>
       mutate({ action: "resetSoft", commit: selectedCommit() }),
     ),
   "reset-mixed": () =>
-    confirmThen("Reset to this commit and clear the index?", selectedCommit(), () =>
+    confirmThen(t("Reset to this commit and clear the index?"), selectedCommit(), () =>
       mutate({ action: "resetMixed", commit: selectedCommit() }),
     ),
   "switch-branch": () =>
@@ -936,7 +942,7 @@ const ACTIONS = {
   },
   "copy-markdown": async () => {
     await navigator.clipboard.writeText(state.dialog.text);
-    toast("Copied");
+    toast(t("Copied"));
   },
 };
 
@@ -971,9 +977,9 @@ const SHORTCUT_ACTIONS = {
       current.running &&
       openModal({
         kind: "confirm",
-        title: "Stop this agent?",
-        body: "This interrupts current work. The saved conversation stays with the agent.",
-        confirmLabel: "Stop",
+        title: t("Stop this agent?"),
+        body: t("This interrupts current work. The saved conversation stays with the agent."),
+        confirmLabel: t("Stop"),
         danger: true,
         run: () => terminal.stop(current.id),
       }),
@@ -1026,7 +1032,7 @@ const SHORTCUT_ACTIONS = {
   wake: () => {
     // As on macOS: on means "while agents run", the setting most people want.
     const next = state.settings.keep_awake === "off" ? "sessions" : "off";
-    toast(next === "off" ? "Sleep allowed" : "Keeping the computer awake while agents run");
+    toast(next === "off" ? t("Sleep allowed") : t("Keeping the computer awake while agents run"));
     return savePref({ keep_awake: next });
   },
   limits: () => openLimits(),
@@ -1152,6 +1158,10 @@ app.addEventListener("click", async (event) => {
       if (data.settingsSection === "Setup" && !state.diagnostics) await runDiagnostics();
       if (data.settingsSection === "Setup") checkMacImport().then(render);
       return;
+    }
+    if (data.prefSet === "language") {
+      setLanguage(data.value);
+      return render();
     }
     if (data.prefSet === "profile_agent") {
       state.profileAgent = data.value;
@@ -1358,11 +1368,11 @@ app.addEventListener("click", async (event) => {
     const brief = await call("review_brief", { id: data.specBrief });
     if (brief === undefined) return;
     await navigator.clipboard.writeText(brief);
-    return toast("Review brief copied");
+    return toast(t("Review brief copied"));
   }
   if (data.historyCopy) {
     await navigator.clipboard.writeText(data.historyCopy);
-    return toast("Conversation ID copied");
+    return toast(t("Conversation ID copied"));
   }
   if (data.historyResume) return resumeHistory(data.historyResume);
   if (data.taskScope) {
@@ -1494,7 +1504,7 @@ app.addEventListener("change", async (event) => {
     if (await done("task_link_session", { id, sessionId: event.target.value })) {
       await loadWorkspace();
       await loadPlanning();
-      toast("Session linked");
+      toast(t("Session linked"));
     }
     return render();
   }
@@ -1558,7 +1568,7 @@ addEventListener("keydown", async (event) => {
     if (!pressed) return;
     const taken = SHORTCUTS.find(([other]) => other !== action && binding(other) === pressed);
     if (taken) {
-      toast(`${label(pressed)} is already “${taken[2]}”. Change that one first, or press another.`);
+      toast(t("{key} is already “{action}”. Change that one first, or press another.", { key: label(pressed), action: t(taken[2]) }));
       return;
     }
     state.capturing = null;
@@ -1616,7 +1626,7 @@ addEventListener(
       event.stopPropagation();
       const step = /Equal|Add/.test(event.code) ? 1 : /Minus|Subtract/.test(event.code) ? -1 : 0;
       const size = terminal.zoom(state.sessionId, step);
-      if (size) toast(`Terminal text ${size} pt`);
+      if (size) toast(t("Terminal text {size} pt", { size }));
       return;
     }
     const digit = /^Digit([1-9])$/.exec(event.code ?? "");
@@ -1653,7 +1663,7 @@ async function placeProject(id, before) {
   const moving = state.projects[from];
   const target = state.projects[index];
   if ((moving.group ?? "") !== (target.group ?? "")) {
-    return toast(moving.group || target.group ? "Projects move within their group." : "");
+    return toast(moving.group || target.group ? t("Projects move within their group.") : "");
   }
   if (await done("project_move", { id, index: from < index ? index - 1 : index })) await loadWorkspace();
 }
@@ -1673,7 +1683,7 @@ async function refreshProjects(id) {
   const added = await call("project_refresh", { id });
   if (added === undefined) return;
   await loadWorkspace();
-  toast(added ? `Added ${plural(added, "project")}` : "No new projects in this folder");
+  toast(added ? t("Added {count}", { count: plural(added, "project") }) : t("No new projects in this folder"));
 }
 
 // ----------------------------------------------------------------- history --
@@ -1698,7 +1708,7 @@ async function resumeHistory(providerId) {
       projectId: state.projectId,
       agent: entry.agent,
       providerId: entry.provider_id,
-      title: entry.title || "Imported conversation",
+      title: entry.title || t("Imported conversation"),
       profileId: entry.profile_id,
       directory: entry.directory,
     });
@@ -1716,7 +1726,7 @@ async function openClaudeUsage() {
   const existing = state.sessions.find((item) => item.agent === "claude" && item.title === "Claude usage" && isRunning(item.id));
   if (existing) {
     openSession(existing.id);
-    return toast("Claude usage session selected. Run /usage there to refresh.");
+    return toast(t("Claude usage session selected. Run /usage there to refresh."));
   }
   const id = await call("session_create", {
     projectId: state.projectId,
@@ -1735,10 +1745,10 @@ async function openClaudeUsage() {
 
 async function copyCommit(what) {
   const id = selectedCommit();
-  if (!id) return toast("Select a commit first.");
+  if (!id) return toast(t("Select a commit first."));
   const commit = state.files?.snapshot?.log.find((entry) => entry.id === id);
   await navigator.clipboard.writeText(what === "id" ? id : (commit?.subject ?? ""));
-  toast(what === "id" ? "SHA copied" : "Subject copied");
+  toast(what === "id" ? t("SHA copied") : t("Subject copied"));
 }
 
 async function openFolder() {
@@ -1746,7 +1756,7 @@ async function openFolder() {
   if (!chosen) return;
   const added = await call("project_open", { path: chosen });
   if (added === undefined) return;
-  if (added > 1) toast(`Added ${added} projects`);
+  if (added > 1) toast(t("Added {count}", { count: plural(added, "project") }));
   await loadWorkspace();
   // The folder just opened is what to show next.
   if (state.page === "home" || state.page === "dashboard") state.page = null;
@@ -1805,14 +1815,14 @@ async function setProjectImage(source) {
   if (source === "upload") {
     const chosen = await openDialogNative({
       multiple: false,
-      filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg"] }],
+      filters: [{ name: t("Image"), extensions: ["png", "jpg", "jpeg"] }],
     });
     if (!chosen) return;
     value = chosen;
   }
   if (source === "favicon") {
     value = document.querySelector("#proj-favicon")?.value.trim() ?? "";
-    if (!value) return toast("Enter a domain such as example.com.");
+    if (!value) return toast(t("Enter a domain such as example.com."));
   }
   state.iconBusy = true;
   render();
@@ -1840,7 +1850,7 @@ function autoTitle(agent, prompt) {
 }
 
 async function openNewSession(projectId) {
-  if (!projectId) return toast("Open a folder first.");
+  if (!projectId) return toast(t("Open a folder first."));
   await loadProfiles();
   const draft = {
     kind: "session",
@@ -1911,7 +1921,7 @@ async function createSession() {
   const setup = draft.setup;
   if (draft.keepOpen) {
     Object.assign(draft, { title: "", prompt: "", notes: "", branchEdited: false, branch: suggestBranch("session", target) });
-    toast(`Started ${title}`);
+    toast(t("Started {title}", { title }));
   } else {
     closeDialog();
   }
@@ -1922,12 +1932,12 @@ async function createSession() {
   if (wantsWorktree) {
     const made = await attempt("worktree_create", { id, branch, base: base || null });
     if (!made.ok) {
-      toast(`Started in the project folder: ${made.error}`);
+      toast(t("Started in the project folder: {error}", { error: made.error }));
     } else {
       await loadSessions();
       const plan = made.value;
       if (setup !== "skip" && (plan.shared_paths.length || plan.setup_command)) {
-        toast("Running worktree setup…");
+        toast(t("Running worktree setup…"));
         if (!(await done("worktree_setup", { id }))) return;
       }
     }
@@ -1983,7 +1993,7 @@ async function insertFeedback() {
   if (!builder) return;
   if (await terminal.paste(builder, text, false)) {
     closeDialog();
-    toast("Feedback inserted; press Enter in the builder to send it");
+    toast(t("Feedback inserted; press Enter in the builder to send it"));
   }
 }
 
@@ -1992,7 +2002,7 @@ async function openSavedOutput() {
   state.menu = null;
   const text = await call("session_output", { id: current.id });
   if (text === undefined) return;
-  openModal({ kind: "output", title: current.title, text: text || "Nothing saved yet." });
+  openModal({ kind: "output", title: current.title, text: text || t("Nothing saved yet.") });
 }
 
 async function openUsage() {
@@ -2026,7 +2036,7 @@ async function confirmWorktree() {
     });
   } else {
     closeDialog();
-    toast(`Worktree created on ${plan.branch}`);
+    toast(t("Worktree created on {branch}", { branch: plan.branch }));
   }
 }
 
@@ -2072,7 +2082,7 @@ async function checkMacImport() {
 async function offerMacImport(offer) {
   const settings = offer;
   const report = await call("macos_import_preview", { settings });
-  if (!report) return toast("There is no macOS app workspace on this Mac.");
+  if (!report) return toast(t("There is no macOS app workspace on this Mac."));
   openModal({ kind: "macos-import", report, settings, offer });
 }
 
@@ -2098,7 +2108,7 @@ async function runMacImport() {
   await loadPlanning();
   loadActivity();
   checkMacImport();
-  toast(`Imported ${plural(report.projects, "project")} and ${plural(report.sessions, "session")}`);
+  toast(t("Imported {projects} and {sessions}", { projects: plural(report.projects, "project"), sessions: plural(report.sessions, "session") }));
   if (report.warnings.length) openModal({ kind: "macos-import-done", warnings: report.warnings });
 }
 
@@ -2143,7 +2153,7 @@ async function savePref(patch) {
 
 async function addPageProfile() {
   const label = value("pref-profile-label").trim();
-  if (!label) return toast("Give the account a label.");
+  if (!label) return toast(t("Give the account a label."));
   const before = new Set((state.profiles ?? []).map((item) => item.id));
   if (!(await done("profile_add", { label, agent: state.profileAgent }))) return;
   await loadProfiles();
@@ -2193,7 +2203,7 @@ async function runMenu(act) {
       case "copy-path":
         await navigator.clipboard.writeText(target.path);
         render();
-        return toast("Path copied");
+        return toast(t("Path copied"));
       case "reconnect":
         render();
         return reconnectProject();
@@ -2230,9 +2240,9 @@ async function runMenu(act) {
     case "stop":
       return openModal({
         kind: "confirm",
-        title: "Stop this agent?",
-        body: "This interrupts current work. The saved conversation stays with the agent.",
-        confirmLabel: "Stop",
+        title: t("Stop this agent?"),
+        body: t("This interrupts current work. The saved conversation stays with the agent."),
+        confirmLabel: t("Stop"),
         danger: true,
         run: () => terminal.stop(target.id),
       });
@@ -2254,7 +2264,7 @@ async function runMenu(act) {
     case "copy-worktree":
       await navigator.clipboard.writeText(target.working_directory);
       render();
-      return toast("Path copied");
+      return toast(t("Path copied"));
     case "remove-worktree":
       state.sessionId = target.id;
       return openRemoveWorktree();
@@ -2315,7 +2325,7 @@ async function importTranscript(providerId, title) {
   });
   if (!id) return;
   await loadSessions();
-  toast("Imported");
+  toast(t("Imported"));
 }
 
 async function addQuickCommand() {
@@ -2401,7 +2411,7 @@ async function saveDoc() {
   if (!(await done("doc_write", { projectId: docs.projectId, path: docs.selected, text: docs.text }))) return;
   state.docs = { ...docs, editing: false, dirty: false };
   render();
-  toast("Saved");
+  toast(t("Saved"));
 }
 
 /// Starts Claude with one of the Docs prompts, as the macOS app does.
@@ -2445,13 +2455,13 @@ Object.assign(ACTIONS, {
   "doc-save": () => saveDoc(),
   "doc-copy-path": async () => {
     await navigator.clipboard.writeText(`${project()?.path ?? ""}/${state.docs.selected}`);
-    toast("Path copied");
+    toast(t("Path copied"));
   },
   "doc-new-spec": () => openModal({ kind: "doc-spec", title: "" }),
   "doc-create-spec": async () => {
     captureDraft();
     const title = state.dialog.title?.trim();
-    if (!title) return toast("Give the spec a title.");
+    if (!title) return toast(t("Give the spec a title."));
     const path = await call("spec_create", { projectId: state.projectId, title });
     if (!path) return;
     closeDialog();
@@ -2463,12 +2473,12 @@ Object.assign(ACTIONS, {
   },
   "doc-write-project": async () => {
     const prompts = await call("doc_prompts", { path: PROJECT_DOC, title: "" });
-    if (prompts) await startDocSession("Write project doc", prompts.project_doc);
+    if (prompts) await startDocSession(t("Write project doc"), prompts.project_doc);
   },
   "doc-draft-spec": async () => {
     const title = docTitle();
     const prompts = await call("doc_prompts", { path: state.docs.selected, title });
-    if (prompts) await startDocSession(`Spec: ${title}`, prompts.spec);
+    if (prompts) await startDocSession(t("Spec: {title}", { title }), prompts.spec);
   },
   "doc-task": async () => {
     const path = state.docs.selected;
@@ -2530,12 +2540,12 @@ async function exportSpec(id) {
     filters: [{ name: "Markdown", extensions: ["md"] }],
   });
   if (!path) {
-    return openModal({ kind: "markdown", title: "Specification", text });
+    return openModal({ kind: "markdown", title: t("Specification"), text });
   }
   const { writeTextFile } = await import("@tauri-apps/plugin-fs");
   try {
     await writeTextFile(path, text);
-    toast(`Exported to ${path}`);
+    toast(t("Exported to {path}", { path }));
   } catch (error) {
     toast(error, "error");
   }
@@ -2620,7 +2630,7 @@ async function runTask(id) {
 async function moveTask(id, status) {
   const task = findTask(id);
   if (!task || task.status === status) return;
-  if (status === "building") return runnable(task) ? runTask(id) : toast("Only a queued, failed or returned task can run.");
+  if (status === "building") return runnable(task) ? runTask(id) : toast(t("Only a queued, failed or returned task can run."));
   if (await done("task_status", { id, status })) await reloadTasks();
 }
 
@@ -2646,9 +2656,9 @@ async function runTaskMenu(act, id) {
     case "task-delete":
       return openModal({
         kind: "confirm",
-        title: `Delete "${task.title}"?`,
-        body: "The task goes; its session and anything the agent changed stay.",
-        confirmLabel: "Delete",
+        title: t('Delete "{name}"?', { name: task.title }),
+        body: t("The task goes; its session and anything the agent changed stay."),
+        confirmLabel: t("Delete"),
         danger: true,
         run: async () => {
           if (await done("task_delete", { id })) await reloadTasks();
@@ -2668,7 +2678,7 @@ async function prepareTask(id) {
 
 async function startQueue() {
   const summary = await call("queue_summary", { projectId: state.projectId });
-  if (!summary?.length) return toast("No queued tasks.");
+  if (!summary?.length) return toast(t("No queued tasks."));
   openModal({ kind: "queue", summary });
 }
 
@@ -2695,7 +2705,7 @@ async function advanceQueue(projectId) {
 
 async function fileAct(reveal) {
   const path = selectedPath();
-  if (!path) return toast("Select a file first.");
+  if (!path) return toast(t("Select a file first."));
   await done("files_open", { id: state.files.id, path, reveal });
 }
 
@@ -2752,13 +2762,13 @@ const selectedOriginal = () =>
   state.files?.snapshot?.changes.find((change) => change.path === selectedPath())?.original ?? null;
 
 function confirmThen(title, body, run) {
-  openModal({ kind: "confirm", title, body, confirmLabel: "Continue", danger: true, run });
+  openModal({ kind: "confirm", title, body, confirmLabel: t("Continue"), danger: true, run });
 }
 
 async function mutate(mutation) {
   if (!state.files) return;
-  if (mutation.path === "" && "path" in mutation) return toast("Select a file first.");
-  if (mutation.commit === "" && "commit" in mutation) return toast("Select a commit first.");
+  if (mutation.path === "" && "path" in mutation) return toast(t("Select a file first."));
+  if (mutation.commit === "" && "commit" in mutation) return toast(t("Select a commit first."));
   state.menu = null;
   const output = await call("files_mutate", { id: state.files.id, mutation });
   if (output === undefined) return false;
@@ -2769,8 +2779,8 @@ async function mutate(mutation) {
 
 async function trashFile() {
   const path = selectedPath();
-  if (!path) return toast("Select a file first.");
-  confirmThen("Move untracked file to Trash?", path, async () => {
+  if (!path) return toast(t("Select a file first."));
+  confirmThen(t("Move untracked file to Trash?"), path, async () => {
     if (await done("files_trash", { id: state.files.id, path })) await loadFiles();
   });
 }
@@ -2778,10 +2788,10 @@ async function trashFile() {
 async function openHunkChoice() {
   const path = selectedPath();
   if (!path || state.files.selection.kind !== "unstaged") {
-    return toast("Hunks can only be discarded from unstaged changes.");
+    return toast(t("Hunks can only be discarded from unstaged changes."));
   }
   const hunks = await call("files_hunks", { id: state.files.id, path });
-  if (!hunks?.length) return toast("This hunk cannot be discarded separately.");
+  if (!hunks?.length) return toast(t("This hunk cannot be discarded separately."));
   openModal({ kind: "hunk", path, hunks, hunk: 0 });
 }
 
@@ -2808,7 +2818,7 @@ async function commit(amend) {
 async function generateMessage() {
   const existing = document.querySelector("#commit-message")?.value ?? "";
   const run = async () => {
-    toast("Asking Claude for a commit message…");
+    toast(t("Asking Claude for a commit message…"));
     const message = await call("commit_generate", { id: state.files.id });
     if (message === undefined) return;
     state.files.message = message;
@@ -2816,8 +2826,8 @@ async function generateMessage() {
   };
   if (existing.trim()) {
     return confirmThen(
-      "Replace the message you have written?",
-      "Generating asks Claude for a new message for the staged diff.",
+      t("Replace the message you have written?"),
+      t("Generating asks Claude for a new message for the staged diff."),
       run,
     );
   }
@@ -2882,8 +2892,8 @@ function paletteEntries() {
         owner?.title,
         item.agent === "claude" ? "Claude Code" : "Codex",
         item.branch ? `⎇ ${item.branch}` : "",
-        item.review_of ? "review" : "",
-        reported ?? "",
+        item.review_of ? t("review") : "",
+        reported ? t(reported) : "",
       ]
         .filter(Boolean)
         .join(" · "),
@@ -2939,7 +2949,7 @@ function paletteEntries() {
     ["Activity", "What the agents did, newest first", "activity"],
     ["Settings…", "Appearance, terminal, agents, git, notifications", "settings"],
     ["Files & Changes", "Browse files, stage, commit, push, log", "files"],
-  ].map(([title, subtitle, action]) => ({ kind: "Action", title, subtitle, shortcut: bound(action), run: () => SHORTCUT_ACTIONS[action]() }));
+  ].map(([title, subtitle, action]) => ({ kind: "Action", title: t(title), subtitle: t(subtitle), shortcut: bound(action), run: () => SHORTCUT_ACTIONS[action]() }));
   const more = [
     ["Theme: System", "Follow the system appearance", () => savePref({ theme: "system" })],
     ["Theme: Light", "", () => savePref({ theme: "light" })],
@@ -2955,7 +2965,7 @@ function paletteEntries() {
     ["Git: Log", "Recent commits with revert and reset", inFiles(() => showFilesView("log"))],
     ["Git: Files", "Browse the project tree", inFiles(() => showFilesView("files"))],
     ["Git: Branches", "", inFiles(() => showFilesView("branches"))],
-  ].map(([title, subtitle, run]) => ({ kind: "Action", title, subtitle, run }));
+  ].map(([title, subtitle, run]) => ({ kind: "Action", title: t(title), subtitle: t(subtitle), run }));
   return [...entries, ...actions, ...more];
 }
 
@@ -2997,7 +3007,7 @@ function terminalEntries() {
     return {
       kind: "Session",
       title: item.title,
-      subtitle: [owner?.title, isRunning(id) ? (state.agentState.get(id) ?? "running") : "stopped", id === current ? "current" : ""]
+      subtitle: [owner?.title, t(isRunning(id) ? (state.agentState.get(id) ?? "running") : "stopped"), id === current ? t("current") : ""]
         .filter(Boolean)
         .join(" · "),
       shortcut: index < 9 ? label(`mod+${index + 1}`) : "",
@@ -3014,7 +3024,7 @@ function quickEntries() {
     kind: "Action",
     title: command.title,
     subtitle: command.text.slice(0, 90).replace(/\n/g, " "),
-    shortcut: command.submit ? "↩ sends" : command.project_id ? "" : "global",
+    shortcut: command.submit ? t("↩ sends") : command.project_id ? "" : t("global"),
     run: () => done("quick_command_send", { sessionId: id, commandId: command.id }),
   }));
 }
@@ -3113,7 +3123,7 @@ async function notify(entry) {
   if (!granted) granted = (await requestPermission()) === "granted";
   if (!granted) return;
   sendNotification({
-    title: entry.state === "done" ? "Agent finished a turn" : "Agent needs your attention",
+    title: entry.state === "done" ? t("Agent finished a turn") : t("Agent needs your attention"),
     body: entry.title,
     ...(prefs.notification_sound === "none" ? {} : { sound: prefs.notification_sound || "default" }),
   });
@@ -3243,7 +3253,7 @@ terminal.onExit(async (exit) => {
   if (!exit.clean) {
     if (queued && exit.cause !== "hibernated") {
       state.queues.delete(projectId);
-      toast("The queue is paused: the last task did not finish cleanly.", "bad");
+      toast(t("The queue is paused: the last task did not finish cleanly."), "bad");
       render();
     }
     return;
@@ -3256,7 +3266,7 @@ terminal.onExit(async (exit) => {
   if (!step) return;
   if (step.kind === "superseded") {
     state.queues.delete(projectId);
-    toast("The specification changed while the task ran. It is back in changes.", "bad");
+    toast(t("The specification changed while the task ran. It is back in changes."), "bad");
     await loadPlanning();
     return render();
   }
@@ -3291,7 +3301,7 @@ function dropPaths(paths, x, y) {
   const id = terminalAt(x, y);
   if (!id || !paths?.length) return false;
   if (!isRunning(id)) {
-    toast("Start the session to drop files into it.");
+    toast(t("Start the session to drop files into it."));
     return false;
   }
   terminal.insert(id, `${paths.map(shellQuote).join(" ")} `);

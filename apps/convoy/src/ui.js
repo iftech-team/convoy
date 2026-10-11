@@ -1,6 +1,7 @@
 // The pieces every screen is built from. Markup only — no state, no calls.
 
 import { icons } from "./icons.js";
+import { countWord, t } from "./i18n.js";
 
 export const escape = (value) =>
   String(value ?? "").replace(
@@ -11,13 +12,14 @@ export const escape = (value) =>
       ],
   );
 
+/// "1 task", "2 tasks". Small, but a count that reads wrong is the kind of
+/// detail that makes an app feel unfinished. Russian has three forms; they
+/// live in the locale under the English singular.
+export const plural = (count, one, many = `${one}s`) =>
+  `${count} ${countWord(count, one, many)}`;
+
 /// Shortens a path for a place that cannot hold it, keeping the end, which is
 /// the part that identifies it.
-/// "1 task", "2 tasks". Small, but a count that reads wrong is the kind of
-/// detail that makes an app feel unfinished.
-export const plural = (count, one, many = `${one}s`) =>
-  `${count} ${count === 1 ? one : many}`;
-
 export const shorten = (value, max = 48) => {
   const text = String(value ?? "");
   return text.length <= max ? text : `…${text.slice(-(max - 1))}`;
@@ -126,7 +128,7 @@ export const confirm = ({ title, body, confirmLabel, action, danger = true }) =>
     title,
     body: `<p class="modal__hint">${escape(body)}</p>`,
     foot: `
-      ${button({ label: "Cancel", data: { dismiss: "1" } })}
+      ${button({ label: t("Cancel"), data: { dismiss: "1" } })}
       ${button({ label: confirmLabel, action, kind: danger ? "danger-solid" : "primary" })}`,
   });
 

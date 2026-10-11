@@ -7,6 +7,7 @@
 import { button, empty, escape, plural } from "./ui.js";
 import { state } from "./state.js";
 import { agentIcon, icons } from "./icons.js";
+import { t } from "./i18n.js";
 
 const COLUMNS = [
   ["queued", "Queued", "idle"],
@@ -22,16 +23,16 @@ const MODES = { none: "no publishing", pr: "pull request", push: "push" };
 
 export function specsView() {
   const planning = state.planning;
-  if (!planning) return '<div class="list__none">Reading…</div>';
+  if (!planning) return `<div class="list__none">${escape(t("Reading…"))}</div>`;
   if (!planning.specs.length) {
     return `
       ${empty(
         "list",
-        "No specifications yet",
-        "A task can run without one, but a specification is what makes acceptance checkable.",
+        t("No specifications yet"),
+        t("A task can run without one, but a specification is what makes acceptance checkable."),
       )}
       <div class="centre-action">
-        ${button({ label: "New specification", icon: "plus", action: "new-spec", kind: "primary" })}
+        ${button({ label: t("New specification"), icon: "plus", action: "new-spec", kind: "primary" })}
       </div>`;
   }
   const needle = (state.specFilter ?? "").toLowerCase();
@@ -40,13 +41,13 @@ export function specsView() {
   );
   return `
     <div class="section">
-      <h2 class="section__title">Specifications
+      <h2 class="section__title">${escape(t("Specifications"))}
         <span class="section__count">${planning.specs.length}</span>
       </h2>
-      <input id="spec-filter" class="section__filter" type="search" placeholder="Find a specification"
+      <input id="spec-filter" class="section__filter" type="search" placeholder="${escape(t("Find a specification"))}"
              value="${escape(state.specFilter ?? "")}" spellcheck="false" />
       <span class="section__spacer"></span>
-      ${button({ label: "New specification", icon: "plus", action: "new-spec", kind: "primary" })}
+      ${button({ label: t("New specification"), icon: "plus", action: "new-spec", kind: "primary" })}
     </div>
     <div class="list">
       ${specs
@@ -57,13 +58,13 @@ export function specsView() {
           <div class="row__body">
             <div class="row__title">${escape(spec.title)}</div>
             <div class="row__meta">
-              Revision ${spec.revision} · ${spec.approved ? "approved" : "draft"}
+              ${escape(spec.approved ? t("Revision {revision} · approved", { revision: spec.revision }) : t("Revision {revision} · draft", { revision: spec.revision }))}
               · ${plural(planning.tasks.filter((task) => task.spec_id === spec.id).length, "task")}
             </div>
           </div>
           <div class="row__actions">
-            ${spec.approved ? "" : button({ label: "Approve", data: { approve: spec.id, revision: spec.revision } })}
-            ${button({ label: "Export", icon: "download", data: { export: spec.id } })}
+            ${spec.approved ? "" : button({ label: t("Approve"), data: { approve: spec.id, revision: spec.revision } })}
+            ${button({ label: t("Export"), icon: "download", data: { export: spec.id } })}
             ${button({ icon: "open", kind: "quiet", data: { spec: spec.id } })}
           </div>
         </div>`,
@@ -78,40 +79,40 @@ export const shownTasks = () =>
 
 export function tasksView() {
   const planning = state.planning;
-  if (!planning) return '<div class="list__none">Reading…</div>';
+  if (!planning) return `<div class="list__none">${escape(t("Reading…"))}</div>`;
   const running = state.queues.has(state.projectId);
   const tasks = shownTasks();
 
   const head = `
     <div class="section">
-      <h2 class="section__title">Tasks
+      <h2 class="section__title">${escape(t("Tasks"))}
         <span class="section__count">${tasks.length}</span>
       </h2>
       <div class="segmented">
-        <button data-task-view="list" aria-pressed="${state.taskView !== "board"}">List</button>
-        <button data-task-view="board" aria-pressed="${state.taskView === "board"}">Board</button>
+        <button data-task-view="list" aria-pressed="${state.taskView !== "board"}">${escape(t("List"))}</button>
+        <button data-task-view="board" aria-pressed="${state.taskView === "board"}">${escape(t("Board"))}</button>
       </div>
       <div class="segmented">
-        <button data-task-scope="project" aria-pressed="${state.taskScope !== "all"}">This project</button>
-        <button data-task-scope="all" aria-pressed="${state.taskScope === "all"}">All projects</button>
+        <button data-task-scope="project" aria-pressed="${state.taskScope !== "all"}">${escape(t("This project"))}</button>
+        <button data-task-scope="all" aria-pressed="${state.taskScope === "all"}">${escape(t("All projects"))}</button>
       </div>
-      <label class="check"><input type="checkbox" data-toggle-state="hideDone" ${state.hideDone ? "checked" : ""} /> Hide done</label>
+      <label class="check"><input type="checkbox" data-toggle-state="hideDone" ${state.hideDone ? "checked" : ""} /> ${escape(t("Hide done"))}</label>
       <span class="section__spacer"></span>
-      <span class="section__count">${planning.queued} queued</span>
+      <span class="section__count">${escape(t("{count} queued", { count: planning.queued }))}</span>
       ${button({
-        label: running ? "Pause queue" : "Run queue",
+        label: running ? t("Pause queue") : t("Run queue"),
         icon: running ? "stop" : "play",
         action: running ? "queue-stop" : "queue-start",
         kind: running ? "danger" : "",
         disabled: !running && planning.queued === 0,
       })}
-      ${button({ label: "Import issues", action: "import" })}
-      ${button({ label: "Linear & Jira", action: "integrations" })}
-      ${button({ label: "New task", icon: "plus", action: "new-task", kind: "primary" })}
+      ${button({ label: t("Import issues"), action: "import" })}
+      ${button({ label: t("Linear & Jira"), action: "integrations" })}
+      ${button({ label: t("New task"), icon: "plus", action: "new-task", kind: "primary" })}
     </div>`;
 
   if (!tasks.length) {
-    return `${head}${empty("board", "No tasks yet", "Add one to queue work for an agent.")}`;
+    return `${head}${empty("board", t("No tasks yet"), t("Add one to queue work for an agent."))}`;
   }
   return `${head}${state.taskView === "board" ? board(tasks) : taskList(tasks)}`;
 }
@@ -131,17 +132,17 @@ function taskRow(task) {
       <div class="row__body">
         <div class="row__title">${escape(task.title)}</div>
         <div class="row__meta">
-          ${owner ? `${escape(owner)} · ` : ""}${task.source ? escape(`${task.source.tracker === "jira" ? "Jira" : "Linear"} ${task.source.key}`) + " · " : ""}${task.model ? escape(task.model) + " · " : ""}${escape(MODES[task.mode] ?? task.mode)}
-          ${task.auto_review ? " · automatic review" : ""}
+          ${owner ? `${escape(owner)} · ` : ""}${task.source ? escape(`${task.source.tracker === "jira" ? "Jira" : "Linear"} ${task.source.key}`) + " · " : ""}${task.model ? escape(task.model) + " · " : ""}${escape(t(MODES[task.mode] ?? task.mode))}
+          ${task.auto_review ? ` · ${escape(t("automatic review"))}` : ""}
           ${task.last_error ? ` · ${escape(task.last_error)}` : ""}
-          ${task.blocked_by?.length ? ` · <span class="task-blocked">waits for ${escape(task.blocked_by.join(", "))}</span>` : ""}
+          ${task.blocked_by?.length ? ` · <span class="task-blocked">${escape(t("waits for {tasks}", { tasks: task.blocked_by.join(", ") }))}</span>` : ""}
         </div>
       </div>
       <div class="row__actions">
-        ${task.pr_url ? button({ label: "Pull request", icon: "open", data: { "task-pr": task.id } }) : ""}
+        ${task.pr_url ? button({ label: t("Pull request"), icon: "open", data: { "task-pr": task.id } }) : ""}
         ${task.source?.url ? button({ label: task.source.key, data: { "issue-source": task.id } }) : ""}
-        ${runnable(task) ? button({ label: "Run", icon: "play", data: { "task-run": task.id } }) : ""}
-        ${button({ icon: "more", kind: "quiet", title: "Task actions", data: { "task-more": task.id } })}
+        ${runnable(task) ? button({ label: t("Run"), icon: "play", data: { "task-run": task.id } }) : ""}
+        ${button({ icon: "more", kind: "quiet", title: t("Task actions"), data: { "task-more": task.id } })}
       </div>
     </div>`;
 }
@@ -157,7 +158,7 @@ function taskList(tasks) {
         <button class="task-group" data-task-group="${key}" aria-expanded="${!folded}">
           <span class="task-group__chevron">${folded ? icons.chevronRight : icons.chevronDown}</span>
           <span class="state__dot state__dot--${tone}"></span>
-          <span class="task-group__title">${escape(label)}</span>
+          <span class="task-group__title">${escape(t(label))}</span>
           <span class="board__count">${group.length}</span>
         </button>
         ${folded ? "" : `<div class="list">${group.map(taskRow).join("")}</div>`}`;
@@ -176,7 +177,7 @@ function board(tasks) {
           <div class="board__column" data-task-column="${key}">
             <div class="board__head">
               <span class="state__dot state__dot--${tone}"></span>
-              <span class="board__title">${escape(label)}</span>
+              <span class="board__title">${escape(t(label))}</span>
               <span class="board__count">${cards.length}</span>
             </div>
             <div class="board__cards">
@@ -191,15 +192,15 @@ function board(tasks) {
                   ${projectName(task) ? `<div class="card__project">${escape(projectName(task))}</div>` : ""}
                   ${task.details ? `<div class="card__body">${escape(task.details)}</div>` : ""}
                   <div class="card__foot">
-                    <span class="badge--muted badge">${escape(MODES[task.mode] ?? task.mode)}</span>
-                    ${task.auto_review ? '<span class="badge--muted badge">auto review</span>' : ""}
+                    <span class="badge--muted badge">${escape(t(MODES[task.mode] ?? task.mode))}</span>
+                    ${task.auto_review ? `<span class="badge--muted badge">${escape(t("auto review"))}</span>` : ""}
                     ${task.pr_url ? '<span class="badge--muted badge">PR</span>' : ""}
-                    ${task.blocked_by?.length ? `<span class="badge task-blocked" title="Waits for ${escape(task.blocked_by.join(", "))}">blocked</span>` : ""}
+                    ${task.blocked_by?.length ? `<span class="badge task-blocked" title="${escape(t("Waits for {tasks}", { tasks: task.blocked_by.join(", ") }))}">${escape(t("blocked"))}</span>` : ""}
                   </div>
                 </button>`,
                       )
                       .join("")
-                  : '<div class="board__empty">No tasks</div>'
+                  : `<div class="board__empty">${escape(t("No tasks"))}</div>`
               }
             </div>
           </div>`;

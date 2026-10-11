@@ -5,6 +5,7 @@ import { agentIcon, icons, projectIcon } from "./icons.js";
 import { button, escape, plural } from "./ui.js";
 import { isRunning, state } from "./state.js";
 import { limitsBlock } from "./views.js";
+import { t } from "./i18n.js";
 
 const ownerOf = (item) => state.projects.find((entry) => entry.id === item.project_id);
 const reported = (item) => (isRunning(item.id) ? state.agentState.get(item.id) : null);
@@ -12,7 +13,7 @@ const waiting = (item) => reported(item) === "waiting";
 
 function greeting() {
   const hour = new Date().getHours();
-  return hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  return t(hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening");
 }
 
 /// One session as a card: its state, project and agent, and the one action
@@ -21,7 +22,7 @@ function sessionCard(item) {
   const owner = ownerOf(item);
   const running = isRunning(item.id);
   const state_ = reported(item);
-  const label = !running ? (item.started ? "Stopped" : "Not started") : state_ === "waiting" ? "Needs you" : state_ === "done" ? "Finished its turn" : "Working";
+  const label = t(!running ? (item.started ? "Stopped" : "Not started") : state_ === "waiting" ? "Needs you" : state_ === "done" ? "Finished its turn" : "Working");
   const tone = !running ? "stopped" : state_ === "waiting" ? "waiting" : state_ === "done" ? "done" : "running";
   return `
     <div class="home-card" data-open="${escape(item.id)}" data-menu-session="${escape(item.id)}">
@@ -34,7 +35,7 @@ function sessionCard(item) {
       ${
         running
           ? ""
-          : `<div class="home-card__actions">${button({ label: item.started ? "Resume" : "Start", icon: "play", data: { start: item.id } })}</div>`
+          : `<div class="home-card__actions">${button({ label: item.started ? t("Resume") : t("Start"), icon: "play", data: { start: item.id } })}</div>`
       }
     </div>`;
 }
@@ -70,21 +71,21 @@ export function homeView() {
   return `
     <div class="home" data-scroll="home">
       <div class="home__head">
-        <h1 class="home__greeting">${greeting()}</h1>
+        <h1 class="home__greeting">${escape(greeting())}</h1>
         <div class="home__summary">
-          ${escape(plural(running.length + needs.length, "agent") + " running")}${needs.length ? ` · <strong>${needs.length} need${needs.length === 1 ? "s" : ""} you</strong>` : ""}
+          ${escape(t("{agents} running", { agents: plural(running.length + needs.length, "agent") }))}${needs.length ? ` · <strong>${escape(plural(needs.length, "needs you", "need you"))}</strong>` : ""}
           ${missing ? `<button class="chip chip--warn" data-settings-open="Setup">${icons.warn} ${escape(plural(missing, "setup problem"))}</button>` : ""}
         </div>
         <span class="section__spacer"></span>
-        ${button({ label: "Agent Dashboard", icon: "board", action: "dashboard" })}
-        ${button({ label: "New session", icon: "plus", action: "new-session", kind: "primary" })}
+        ${button({ label: t("Agent Dashboard"), icon: "board", action: "dashboard" })}
+        ${button({ label: t("New session"), icon: "plus", action: "new-session", kind: "primary" })}
       </div>
-      ${needs.length ? block("Needs you", cards(needs, ""), needs.length) : ""}
-      ${block("Running", cards(running, "Nothing is running."), running.length)}
-      ${block("Recent", cards(recent, "No sessions yet. Start one with New session."))}
+      ${needs.length ? block(t("Needs you"), cards(needs, ""), needs.length) : ""}
+      ${block(t("Running"), cards(running, t("Nothing is running.")), running.length)}
+      ${block(t("Recent"), cards(recent, t("No sessions yet. Start one with New session.")))}
       <div class="home-columns">
         ${block(
-          "Tasks",
+          t("Tasks"),
           `<div class="home-stats">
              ${[
                ["Queued", count("queued")],
@@ -92,13 +93,13 @@ export function homeView() {
                ["To review", count("review", "pr", "changes")],
                ["Done", count("done")],
              ]
-               .map(([name, value]) => `<button class="home-stat" data-home-tasks="1"><strong>${value}</strong><span>${name}</span></button>`)
+               .map(([name, value]) => `<button class="home-stat" data-home-tasks="1"><strong>${value}</strong><span>${escape(t(name))}</span></button>`)
                .join("")}
            </div>`,
         )}
-        ${block("AI Limits", `<div class="home-limits">${limitsBlock("Claude", "claude", limits.claude, limits.loading)}${limitsBlock("Codex", "codex", limits.codex, limits.loading)}</div>`)}
+        ${block(t("AI Limits"), `<div class="home-limits">${limitsBlock("Claude", "claude", limits.claude, limits.loading)}${limitsBlock("Codex", "codex", limits.codex, limits.loading)}</div>`)}
         ${block(
-          "Activity",
+          t("Activity"),
           activity.length
             ? `<ul class="home-activity">${activity
                 .map(
@@ -109,22 +110,22 @@ export function homeView() {
                 </button></li>`,
                 )
                 .join("")}</ul>`
-            : '<p class="home-none">Nothing yet.</p>',
+            : `<p class="home-none">${escape(t("Nothing yet."))}</p>`,
         )}
       </div>
       ${block(
-        "Projects",
+        t("Projects"),
         state.projects.length
           ? `<div class="home-grid">${state.projects
               .map(
                 (item) => `
             <button class="home-card home-card--project" data-project="${escape(item.id)}">
               <div class="home-card__head">${projectIcon(item)}<span class="home-card__title">${escape(item.title)}</span></div>
-              <div class="home-card__meta">${escape(plural(item.sessions, "session"))}${item.running ? ` · ${item.running} running` : ""}</div>
+              <div class="home-card__meta">${escape(plural(item.sessions, "session"))}${item.running ? ` · ${escape(t("{count} running", { count: item.running }))}` : ""}</div>
             </button>`,
               )
               .join("")}</div>`
-          : '<p class="home-none">Open a folder to add a project.</p>',
+          : `<p class="home-none">${escape(t("Open a folder to add a project."))}</p>`,
         state.projects.length,
       )}
     </div>`;
@@ -145,11 +146,11 @@ export function dashboardView() {
   return `
     <div class="home" data-scroll="dashboard">
       <div class="home__head">
-        <h1 class="home__greeting">Agent Dashboard</h1>
-        <input id="dashboard-filter" class="home__filter" type="search" placeholder="Filter sessions and projects"
+        <h1 class="home__greeting">${escape(t("Agent Dashboard"))}</h1>
+        <input id="dashboard-filter" class="home__filter" type="search" placeholder="${escape(t("Filter sessions and projects"))}"
                value="${escape(state.dashboardFilter ?? "")}" spellcheck="false" />
         <span class="section__spacer"></span>
-        ${button({ label: "Home", icon: "home", action: "home" })}
+        ${button({ label: t("Home"), icon: "home", action: "home" })}
       </div>
       <div class="board board--dashboard">
         ${columns
@@ -158,10 +159,10 @@ export function dashboardView() {
           <div class="board__column">
             <div class="board__head">
               <span class="dot dot--${tone}"></span>
-              <span class="board__title">${escape(title)}</span>
+              <span class="board__title">${escape(t(title))}</span>
               <span class="board__count">${items.length}</span>
             </div>
-            <div class="board__cards">${items.length ? items.map(sessionCard).join("") : '<div class="board__empty">None</div>'}</div>
+            <div class="board__cards">${items.length ? items.map(sessionCard).join("") : `<div class="board__empty">${escape(t("None"))}</div>`}</div>
           </div>`,
           )
           .join("")}

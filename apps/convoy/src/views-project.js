@@ -6,6 +6,7 @@ import { SYMBOLS, agentIcon, icon, projectIcon } from "./icons.js";
 import { icons } from "./icons.js";
 import { button, escape, shorten } from "./ui.js";
 import { state } from "./state.js";
+import { t } from "./i18n.js";
 
 /// The macOS app's palette and emoji choices, in its order.
 export const COLORS = ["#5E6AD2", "#4CAF83", "#E5A54B", "#D65C5C", "#3FA7D6", "#B067C9", "#8A8F98", "#E07C4C"];
@@ -55,23 +56,23 @@ function identity(project) {
       : tab === "image"
         ? `<div class="icon-images">
              <div class="pref-inline pref-inline--flush">
-               ${button({ label: "Use GitHub avatar", icon: "person", data: { "icon-source": "github" } })}
-               ${button({ label: "Upload PNG…", icon: "download", data: { "icon-source": "upload" } })}
+               ${button({ label: t("Use GitHub avatar"), icon: "person", data: { "icon-source": "github" } })}
+               ${button({ label: t("Upload PNG…"), icon: "download", data: { "icon-source": "upload" } })}
              </div>
              <div class="pref-inline pref-inline--flush">
                <input id="proj-favicon" class="pref-text pref-text--wide" placeholder="example.com" spellcheck="false" />
-               ${button({ label: "Favicon", icon: "link", data: { "icon-source": "favicon" } })}
+               ${button({ label: t("Favicon"), icon: "link", data: { "icon-source": "favicon" } })}
              </div>
-             ${state.iconBusy ? '<p class="pref-group__footer">Downloading…</p>' : ""}
+             ${state.iconBusy ? `<p class="pref-group__footer">${escape(t("Downloading…"))}</p>` : ""}
            </div>`
         : `<div class="icon-grid">${EMOJIS.map((emoji) => tile(emoji, `<span class="icon-tile__emoji">${emoji}</span>`, emoji)).join("")}</div>`;
 
   return groupBox(
-    "Identity",
-    `${row("Display name", "", text("title", project.title, "Name", true))}
-     ${row("Group", "Shown as a heading above related projects in the sidebar.", text("group", project.group, "none"))}
+    t("Identity"),
+    `${row(t("Display name"), "", text("title", project.title, t("Name"), true))}
+     ${row(t("Group"), t("Shown as a heading above related projects in the sidebar."), text("group", project.group, t("none")))}
      <div class="pref-block pref-stack">
-       <div class="pref-row__title">Color</div>
+       <div class="pref-row__title">${escape(t("Color"))}</div>
        <div class="swatches">
          ${COLORS.map(
            (hex) => `<button class="swatch" data-proj-color="${hex}" style="background:${hex}"
@@ -79,25 +80,25 @@ function identity(project) {
          ).join("")}
          <input class="pref-text pref-text--hex" data-proj-text="color" value="${escape(project.color ?? "")}"
                 placeholder="#5E6AD2" spellcheck="false" />
-         ${button({ label: "Auto", data: { "proj-color": "" }, kind: "quiet", title: "Derive a colour from the name" })}
+         ${button({ label: t("Auto"), data: { "proj-color": "" }, kind: "quiet", title: t("Derive a colour from the name") })}
        </div>
-       <div class="pref-row__title">Icon</div>
+       <div class="pref-row__title">${escape(t("Icon"))}</div>
        <div class="segmented">
          ${[
            ["emoji", "Emoji"],
            ["symbol", "Icon"],
            ["image", "Image"],
          ]
-           .map(([value, name]) => `<button data-icon-tab="${value}" aria-pressed="${tab === value}">${name}</button>`)
+           .map(([value, name]) => `<button data-icon-tab="${value}" aria-pressed="${tab === value}">${escape(t(name))}</button>`)
            .join("")}
        </div>
        ${picker}
        <div class="pref-inline pref-inline--flush">
          <span class="icon-preview">${projectIcon(project, 22)}</span>
-         ${button({ label: "Reset to folder icon", data: { "proj-icon": "" }, disabled: !project.icon })}
+         ${button({ label: t("Reset to folder icon"), data: { "proj-icon": "" }, disabled: !project.icon })}
        </div>
      </div>`,
-    "Shown in the sidebar, tabs and menus so parallel projects stay distinguishable.",
+    t("Shown in the sidebar, tabs and menus so parallel projects stay distinguishable."),
   );
 }
 
@@ -109,112 +110,112 @@ export function projectSettingsPage() {
   return `
     <div class="prefs__page prefs__page--project" data-scroll="project-settings">
       <div class="prefs__content">
-        <button class="prefs__back prefs__back--inline" data-action="close-project-settings">${icons.back} Back</button>
+        <button class="prefs__back prefs__back--inline" data-action="close-project-settings">${icons.back} ${escape(t("Back"))}</button>
         <div class="project-title">
           <span class="icon-preview">${projectIcon(project, 26)}</span>
           <div>
             <h1 class="prefs__title">${escape(project.title)}</h1>
-            <div class="pref-row__detail">Project settings</div>
+            <div class="pref-row__detail">${escape(t("Project settings"))}</div>
           </div>
         </div>
         ${identity(project)}
         ${groupBox(
-          "Agent",
+          t("Agent"),
           row(
-            "Default agent",
+            t("Default agent"),
             "",
             select(
               "default_agent",
               [
-                ["", `Use global (${global})`],
+                ["", t("Use global ({agent})", { agent: global })],
                 ["claude", "Claude Code"],
                 ["codex", "Codex"],
               ],
               project.default_agent ?? "",
             ),
           ),
-          `Preselected for new sessions and tasks in this project. Global default: ${global}.`,
+          t("Preselected for new sessions and tasks in this project. Global default: {agent}.", { agent: global }),
         )}
         ${groupBox(
-          "Git & worktrees",
-          `${row("Base ref for worktrees", "Empty starts from the current HEAD.", text("base_ref", project.base_ref, "main"))}
-           ${row("Branch prefix", `Global: ${state.settings.branch_prefix || "none"}`, text("branch_prefix", project.branch_prefix, "feature"))}
+          t("Git & worktrees"),
+          `${row(t("Base ref for worktrees"), t("Empty starts from the current HEAD."), text("base_ref", project.base_ref, "main"))}
+           ${row(t("Branch prefix"), t("Global: {prefix}", { prefix: state.settings.branch_prefix || t("none") }), text("branch_prefix", project.branch_prefix, "feature"))}
            <div class="pref-block pref-stack">
-             <div class="pref-row__title">Shared paths (one per line)</div>
+             <div class="pref-row__title">${escape(t("Shared paths (one per line)"))}</div>
              <textarea class="pref-area" data-proj-text="shared_paths" rows="3" spellcheck="false"
                        placeholder=".env">${escape(project.shared_paths ?? "")}</textarea>
-             <div class="pref-row__detail">e.g. .env, node_modules, vendor</div>
-             <div class="pref-row__title">Worktree setup commands</div>
+             <div class="pref-row__detail">${escape(t("e.g. {examples}", { examples: ".env, node_modules, vendor" }))}</div>
+             <div class="pref-row__title">${escape(t("Worktree setup commands"))}</div>
              <textarea class="pref-area" data-proj-text="setup_command" rows="3" spellcheck="false"
                        placeholder="pnpm install">${escape(project.setup_command ?? "")}</textarea>
-             <div class="pref-row__detail">e.g. pnpm install · composer install · direnv allow</div>
+             <div class="pref-row__detail">${escape(t("e.g. {examples}", { examples: "pnpm install · composer install · direnv allow" }))}</div>
            </div>`,
-          "Shared paths are gitignored files copied into each new worktree; existing files are never replaced. Setup commands run once, after you confirm, following the global ones in Settings → Git.",
+          t("Shared paths are gitignored files copied into each new worktree; existing files are never replaced. Setup commands run once, after you confirm, following the global ones in Settings → Git."),
         )}
         ${groupBox(
-          "Review & tasks",
+          t("Review & tasks"),
           `${row(
-            "Tasks finish with",
+            t("Tasks finish with"),
             "",
             select(
               "task_mode",
               [
-                ["none", "Commit only"],
-                ["pr", "Pull request"],
-                ["push", "Push"],
+                ["none", t("Commit only")],
+                ["pr", t("Pull request")],
+                ["push", t("Push")],
               ],
               project.task_mode || "none",
             ),
           )}
            ${row(
-             "Auto-run task queue",
-             "Start the next queued task when one finishes.",
+             t("Auto-run task queue"),
+             t("Start the next queued task when one finishes."),
              `<button class="switch" data-proj-toggle="auto_run_tasks" aria-pressed="${!!project.auto_run_tasks}"
-                      aria-label="Auto-run task queue"></button>`,
+                      aria-label="${escape(t("Auto-run task queue"))}"></button>`,
            )}
            <div class="pref-block pref-stack">
-             <div class="pref-row__title">Review brief template</div>
+             <div class="pref-row__title">${escape(t("Review brief template"))}</div>
              <textarea class="pref-area" data-proj-text="review_template" rows="6" spellcheck="false"
-                       placeholder="Empty uses the global template from Settings → Agents">${escape(project.review_template ?? "")}</textarea>
+                       placeholder="${escape(t("Empty uses the global template from Settings → Agents"))}">${escape(project.review_template ?? "")}</textarea>
              <div class="pref-inline pref-inline--flush">
-               ${button({ label: "Insert default", action: "insert-review-default", kind: "quiet" })}
-               ${button({ label: "Use global", data: { "proj-clear": "review_template" }, disabled: !project.review_template })}
+               ${button({ label: t("Insert default"), action: "insert-review-default", kind: "quiet" })}
+               ${button({ label: t("Use global"), data: { "proj-clear": "review_template" }, disabled: !project.review_template })}
              </div>
            </div>`,
         )}
         ${groupBox(
-          "Quick commands for this project",
+          t("Quick commands for this project"),
           (commands.length
             ? commands
                 .map((command) =>
                   row(
                     command.title,
                     shorten(command.text.replace(/\n/g, " "), 100),
-                    button({ icon: "trash", kind: "quiet", data: { "remove-command": command.id }, title: "Remove" }),
+                    button({ icon: "trash", kind: "quiet", data: { "remove-command": command.id }, title: t("Remove") }),
                   ),
                 )
                 .join("")
-            : '<div class="pref-empty">None yet.</div>') +
-            `<div class="pref-inline">${button({ label: "Add", icon: "plus", action: "manage-commands" })}</div>`,
-          "Sent to a terminal from the ⚡ menu. Global commands are managed in Settings → Quick Commands.",
+            : `<div class="pref-empty">${escape(t("None yet."))}</div>`) +
+            `<div class="pref-inline">${button({ label: t("Add"), icon: "plus", action: "manage-commands" })}</div>`,
+          t("Sent to a terminal from the ⚡ menu. Global commands are managed in Settings → Quick Commands."),
         )}
         ${groupBox(
-          "Folder",
+          t("Folder"),
           row(
             project.path,
             "",
-            `${button({ label: "Show", icon: "folder", action: "reveal-project" })}
-             ${button({ label: "Reconnect…", icon: "link", action: "reconnect-project" })}`,
+            `${button({ label: t("Show"), icon: "folder", action: "reveal-project" })}
+             ${button({ label: t("Reconnect…"), icon: "link", action: "reconnect-project" })}`,
           ),
         )}
         ${groupBox(
-          "Remove",
+          t("Remove"),
           row(
-            "Remove project from Convoy",
+            t("Remove project from Convoy"),
             "",
-            button({ label: "Remove…", kind: "danger", action: "remove-project", disabled: project.running > 0 }),
+            button({ label: t("Remove…"), kind: "danger", action: "remove-project", disabled: project.running > 0 }),
           ),
-          "Stop this project's running sessions first. Files, worktrees and the agents' own history stay on disk.",
+          t("Stop this project's running sessions first. Files, worktrees and the agents' own history stay on disk."),
         )}
       </div>
     </div>`;

@@ -16,6 +16,7 @@ import {
 import { markdown } from "./views-files.js";
 import { state, project, session } from "./state.js";
 import { agentIcon } from "./icons.js";
+import { t } from "./i18n.js";
 
 const AGENTS = [
   ["claude", "Claude Code", agentIcon("claude", 15)],
@@ -30,14 +31,14 @@ export function dialogView() {
 }
 
 const foot = (confirmLabel, action, kind = "primary") => `
-  ${button({ label: "Cancel", data: { dismiss: "1" } })}
+  ${button({ label: t("Cancel"), data: { dismiss: "1" } })}
   ${button({ label: confirmLabel, action, kind })}`;
 
 // ---------------------------------------------------------------- sessions --
 
 /// The account a new session signs in with: the system login or a profile.
 const accountOptions = (agent) => [
-  ["", "System login"],
+  ["", t("System login")],
   ...(state.profiles ?? []).filter((item) => item.agent === agent).map((item) => [item.id, item.label]),
 ];
 
@@ -50,9 +51,9 @@ const select = (id, options, selected, disabled = false) =>
 /// the CLI's default first. A model set earlier by name stays listed.
 export function modelSelect(id, agent, profileId, value) {
   const models = state.models?.[`${agent}:${profileId}`];
-  const options = [["", "Default"], ...(models ?? []).map((model) => [model.id, model.name])];
+  const options = [["", t("Default")], ...(models ?? []).map((model) => [model.id, model.name])];
   if (value && !options.some(([option]) => option === value)) options.push([value, value]);
-  if (!models) options.push(["__loading", "Loading models…"]);
+  if (!models) options.push(["__loading", t("Loading models…")]);
   return select(id, options, value);
 }
 
@@ -67,22 +68,22 @@ function newSession(dialog) {
   const worktree = dialog.repo
     ? `<div class="sheet-box">
         ${setting(
-          "Isolated git worktree",
-          "Own checkout and branch, so parallel sessions never touch each other's files.",
-          toggle("worktree", dialog.worktree, "Isolated git worktree"),
+          t("Isolated git worktree"),
+          t("Own checkout and branch, so parallel sessions never touch each other's files."),
+          toggle("worktree", dialog.worktree, t("Isolated git worktree")),
         )}
         ${
           dialog.worktree
             ? `<div class="field-row">
                 ${field(
-                  "Create from",
+                  t("Create from"),
                   `<input id="draft-base" list="draft-refs" value="${escape(dialog.base)}"
-                          placeholder="${escape(dialog.defaultBase || "current branch")}" spellcheck="false" />
+                          placeholder="${escape(dialog.defaultBase || t("current branch"))}" spellcheck="false" />
                    <datalist id="draft-refs">${refs
-                     .map((ref) => `<option value="${escape(ref.replace(/^tag:/, ""))}">${ref.startsWith("tag:") ? "tag" : ref.startsWith("origin/") ? "remote" : "branch"}</option>`)
+                     .map((ref) => `<option value="${escape(ref.replace(/^tag:/, ""))}">${escape(t(ref.startsWith("tag:") ? "tag" : ref.startsWith("origin/") ? "remote" : "branch"))}</option>`)
                      .join("")}</datalist>`,
                 )}
-                ${field("Branch", textInput("draft-branch", dialog.branch, "branch-name"))}
+                ${field(t("Branch"), textInput("draft-branch", dialog.branch, "branch-name"))}
               </div>`
             : ""
         }
@@ -90,177 +91,183 @@ function newSession(dialog) {
     : "";
   const advanced = dialog.advanced
     ? `<div class="sheet-box">
-        ${field("Note", textInput("draft-notes", dialog.notes, "Where you left off, links, context for later"))}
+        ${field(t("Note"), textInput("draft-notes", dialog.notes, t("Where you left off, links, context for later")))}
         ${
           dialog.repo && dialog.worktree
             ? field(
-                "Worktree setup",
-                `${choice("setup", [["run", "Run"], ["skip", "Skip"]], dialog.setup)}
+                t("Worktree setup"),
+                `${choice("setup", [["run", t("Run")], ["skip", t("Skip")]], dialog.setup)}
                  ${
                    dialog.setupPreview
                      ? `<pre class="sheet-preview">${escape(dialog.setupPreview)}</pre>`
-                     : '<span class="field__note">None configured. Add it in Project settings or Settings → Git.</span>'
+                     : `<span class="field__note">${escape(t("None configured. Add it in Project settings or Settings → Git."))}</span>`
                  }`,
               )
             : ""
         }
-        ${setting("Keep this dialog open to create more", "", toggle("keepOpen", dialog.keepOpen, "Keep open"))}
+        ${setting(t("Keep this dialog open to create more"), "", toggle("keepOpen", dialog.keepOpen, t("Keep open")))}
       </div>`
     : "";
   return modal({
-    title: "New session",
+    title: t("New session"),
     hint: target?.path ?? "",
     body: `
       ${field(
-        "Project",
+        t("Project"),
         select("draft-project", state.projects.map((item) => [item.id, item.title]), dialog.projectId),
       )}
-      ${field("Name (optional)", textInput("draft-title", dialog.title, "Leave empty to name it after the first message"))}
+      ${field(t("Name (optional)"), textInput("draft-title", dialog.title, t("Leave empty to name it after the first message")))}
       ${worktree}
-      ${field("Agent", choice("agent", AGENTS, dialog.agent))}
+      ${field(t("Agent"), choice("agent", AGENTS, dialog.agent))}
       <div class="field-row">
-        ${field("Account", select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
-        ${field("Model", modelSelect("draft-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}
+        ${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
+        ${field(t("Model"), modelSelect("draft-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}
       </div>
       ${field(
-        "First message (optional)",
-        textArea("draft-prompt", dialog.prompt, "Sent once, when the agent starts. Resuming never replays it."),
+        t("First message (optional)"),
+        textArea("draft-prompt", dialog.prompt, t("Sent once, when the agent starts. Resuming never replays it.")),
       )}
       <button class="sheet-disclosure" data-toggle="advanced" aria-expanded="${!!dialog.advanced}">
-        ${dialog.advanced ? "▾" : "▸"} Advanced
+        ${dialog.advanced ? "▾" : "▸"} ${escape(t("Advanced"))}
       </button>
       ${advanced}`,
     note: escape(
       yolo
-        ? "Starts without permission prompts (Yolo is on in Settings → Agents)."
-        : "Uses your installed agent, its login and its approval settings.",
+        ? t("Starts without permission prompts (Yolo is on in Settings → Agents).")
+        : t("Uses your installed agent, its login and its approval settings."),
     ),
-    foot: foot(dialog.busy ? "Starting…" : `Start ${agentName}`, "create-session"),
+    foot: foot(dialog.busy ? t("Starting…") : t("Start {agent}", { agent: agentName }), "create-session"),
   });
 }
 
 const editSession = (dialog) =>
   modal({
-    title: "Edit session",
-    hint: dialog.running ? "Running — the provider ID is fixed until it stops." : "",
+    title: t("Edit session"),
+    hint: dialog.running ? t("Running — the provider ID is fixed until it stops.") : "",
     body: `
-      ${field("Name", textInput("draft-title", dialog.title))}
+      ${field(t("Name"), textInput("draft-title", dialog.title))}
       ${field(
-        "Provider session ID",
+        t("Provider session ID"),
         `<input id="draft-provider" value="${escape(dialog.provider_id)}"
                 spellcheck="false" ${dialog.running ? "disabled" : ""} />`,
-        "What makes an exact resume possible.",
+        t("What makes an exact resume possible."),
       )}
-      ${field("Notes", textArea("draft-notes", dialog.notes, "", 5))}`,
-    foot: foot("Save", "save-session"),
+      ${field(t("Notes"), textArea("draft-notes", dialog.notes, "", 5))}`,
+    foot: foot(t("Save"), "save-session"),
   });
 
 const startReview = (dialog) =>
   modal({
-    title: "Start review",
-    hint: `A ${dialog.reviewer === "claude" ? "Claude Code" : "Codex"} session will review this work in the same folder. It is told not to edit files.`,
+    title: t("Start review"),
+    hint: t("A {agent} session will review this work in the same folder. It is told not to edit files.", {
+      agent: dialog.reviewer === "claude" ? "Claude Code" : "Codex",
+    }),
     wide: true,
-    body: field("Brief", textArea("draft-brief", dialog.brief, "", 14)),
-    foot: foot("Create review", "create-review"),
+    body: field(t("Brief"), textArea("draft-brief", dialog.brief, "", 14)),
+    foot: foot(t("Create review"), "create-review"),
   });
 
 const sendFeedback = (dialog) =>
   modal({
-    title: "Send feedback to builder",
-    hint: "Trim the reviewer's output, then insert it. It is typed into the builder's terminal; nothing is submitted for you.",
+    title: t("Send feedback to builder"),
+    hint: t("Trim the reviewer's output, then insert it. It is typed into the builder's terminal; nothing is submitted for you."),
     wide: true,
-    body: field("Findings", textArea("draft-feedback", dialog.feedback ?? "", "", 14)),
-    foot: foot("Insert", "insert-feedback"),
+    body: field(t("Findings"), textArea("draft-feedback", dialog.feedback ?? "", "", 14)),
+    foot: foot(t("Insert"), "insert-feedback"),
   });
 
 const savedOutput = (dialog) =>
   modal({
-    title: "Saved output",
-    hint: `${dialog.title} · bounded plain text, not a transcript`,
+    title: t("Saved output"),
+    hint: t("{title} · bounded plain text, not a transcript", { title: dialog.title }),
     wide: true,
     body: `<pre class="preview__text preview__text--boxed">${escape(dialog.text)}</pre>`,
-    foot: button({ label: "Close", data: { dismiss: "1" } }),
+    foot: button({ label: t("Close"), data: { dismiss: "1" } }),
   });
 
 const usage = (dialog) =>
   modal({
-    title: "Usage limits",
-    hint: dialog.loading ? "Reading…" : "",
+    title: t("Usage limits"),
+    hint: dialog.loading ? t("Reading…") : "",
     body: dialog.loading
-      ? '<p class="modal__hint">Asking the provider…</p>'
+      ? `<p class="modal__hint">${escape(t("Asking the provider…"))}</p>`
       : dialog.windows?.length
         ? `<div class="group">${dialog.windows
             .map((window) =>
               setting(window.name, "", `<strong>${Math.round(window.percent)}%</strong>`),
             )
             .join("")}</div>`
-        : `<p class="modal__hint">${escape(dialog.note ?? "No quota reported.")}</p>`,
-    foot: button({ label: "Close", data: { dismiss: "1" } }),
+        : `<p class="modal__hint">${escape(dialog.note ?? t("No quota reported."))}</p>`,
+    foot: button({ label: t("Close"), data: { dismiss: "1" } }),
   });
 
 // ---------------------------------------------------------------- projects --
 
 const docSpec = (dialog) =>
   modal({
-    title: "New specification",
-    hint: `In ${project()?.title ?? ""}. Starts from a template; draft it with AI afterwards, or write it yourself.`,
+    title: t("New specification"),
+    hint: t("In {project}. Starts from a template; draft it with AI afterwards, or write it yourself.", {
+      project: project()?.title ?? "",
+    }),
     body: field(
-      "Title",
-      textInput("draft-title", dialog.title, "Feature or problem, e.g. Checkout retries"),
-      "Saved as .specdesk/specs/<slug>.md in the repository.",
+      t("Title"),
+      textInput("draft-title", dialog.title, t("Feature or problem, e.g. Checkout retries")),
+      t("Saved as .specdesk/specs/<slug>.md in the repository."),
     ),
-    foot: foot("Create spec", "doc-create-spec"),
+    foot: foot(t("Create spec"), "doc-create-spec"),
   });
 
 const removeProject = (dialog) =>
   modal({
-    title: "Remove project and its saved sessions?",
-    body: `<p class="modal__hint">Files, worktrees and provider conversations remain on disk.</p>
+    title: t("Remove project and its saved sessions?"),
+    body: `<p class="modal__hint">${escape(t("Files, worktrees and provider conversations remain on disk."))}</p>
            <p class="modal__hint"><code>${escape(dialog.path)}</code></p>`,
-    foot: foot("Remove", "confirm-remove-project", "danger-solid"),
+    foot: foot(t("Remove"), "confirm-remove-project", "danger-solid"),
   });
 
 // --------------------------------------------------------------- worktrees --
 
 const createWorktree = (dialog) =>
   modal({
-    title: "Create worktree",
-    hint: "A separate checkout on a new branch. The project's own checkout stays where it is.",
-    body: field("New branch", textInput("draft-branch", dialog.branch)),
-    foot: foot("Create", "confirm-worktree"),
+    title: t("Create worktree"),
+    hint: t("A separate checkout on a new branch. The project's own checkout stays where it is."),
+    body: field(t("New branch"), textInput("draft-branch", dialog.branch)),
+    foot: foot(t("Create"), "confirm-worktree"),
   });
 
 const worktreeSetup = (dialog) =>
   modal({
-    title: "Run this project's worktree setup?",
+    title: t("Run this project's worktree setup?"),
     body: `
-      <p class="modal__hint">Copies: ${escape(dialog.shared.join(", ") || "none")}</p>
-      <p class="modal__hint">Command: ${escape(dialog.command || "none")}</p>
+      <p class="modal__hint">${escape(t("Copies: {files}", { files: dialog.shared.join(", ") || t("none") }))}</p>
+      <p class="modal__hint">${escape(t("Command: {command}", { command: dialog.command || t("none") }))}</p>
       <p class="modal__hint"><code>${escape(dialog.directory)}</code></p>`,
     foot: `
-      ${button({ label: "Skip setup", data: { dismiss: "1" } })}
-      ${button({ label: "Run setup", action: "confirm-setup", kind: "primary" })}`,
+      ${button({ label: t("Skip setup"), data: { dismiss: "1" } })}
+      ${button({ label: t("Run setup"), action: "confirm-setup", kind: "primary" })}`,
   });
 
 const removeWorktree = (dialog) =>
   modal({
-    title: "Remove this worktree?",
+    title: t("Remove this worktree?"),
     body: `<p class="modal__hint">
-      Git removes <code>${escape(dialog.directory)}</code> only if it is clean.
-      The branch is kept. ${plural(dialog.linked, "linked session")} will be archived.
+      ${t("Git removes {directory} only if it is clean. The branch is kept. {sessions} will be archived.", {
+        directory: `<code>${escape(dialog.directory)}</code>`,
+        sessions: escape(plural(dialog.linked, "linked session")),
+      })}
     </p>`,
-    foot: foot("Remove worktree", "confirm-remove-worktree", "danger-solid"),
+    foot: foot(t("Remove worktree"), "confirm-remove-worktree", "danger-solid"),
   });
 
 // ---------------------------------------------------------------- accounts --
 
 const accounts = (dialog) =>
   modal({
-    title: "Accounts",
-    hint: "Sign in through the provider's own interface inside the terminal.",
+    title: t("Accounts"),
+    hint: t("Sign in through the provider's own interface inside the terminal."),
     body: `
       ${group(
-        "Profiles",
+        t("Profiles"),
         (state.profiles ?? []).length
           ? state.profiles
               .map((profile) =>
@@ -268,108 +275,108 @@ const accounts = (dialog) =>
                   profile.label,
                   `${profile.agent === "claude" ? "Claude Code" : "Codex"} · ${
                     profile.sessions === 0
-                      ? "not in use"
-                      : `${profile.sessions} session${profile.sessions > 1 ? "s" : ""}`
+                      ? t("not in use")
+                      : plural(profile.sessions, "session")
                   }`,
                   button({
                     icon: "trash",
                     kind: "quiet",
                     data: { "remove-profile": profile.id },
                     disabled: profile.sessions > 0,
-                    title: profile.sessions ? "Bound to saved sessions" : "Remove this record",
+                    title: profile.sessions ? t("Bound to saved sessions") : t("Remove this record"),
                   }),
                 ),
               )
               .join("")
-          : '<p class="modal__hint">No profiles yet. Without one, a session uses the provider\'s default home.</p>',
+          : `<p class="modal__hint">${escape(t("No profiles yet. Without one, a session uses the provider's default home."))}</p>`,
       )}
       ${group(
-        "New profile",
+        t("New profile"),
         `
-        ${field("Label", textInput("draft-label", dialog.label))}
-        ${field("Provider", choice("agent", AGENTS, dialog.agent))}`,
+        ${field(t("Label"), textInput("draft-label", dialog.label))}
+        ${field(t("Provider"), choice("agent", AGENTS, dialog.agent))}`,
       )}`,
-    note: "Removing a profile removes only Convoy's record of it. Credential files stay where they are.",
+    note: escape(t("Removing a profile removes only Convoy's record of it. Credential files stay where they are.")),
     foot: `
-      ${button({ label: "Close", data: { dismiss: "1" } })}
-      ${button({ label: "Add profile", action: "add-profile", kind: "primary" })}`,
+      ${button({ label: t("Close"), data: { dismiss: "1" } })}
+      ${button({ label: t("Add profile"), action: "add-profile", kind: "primary" })}`,
   });
 
 const transcripts = (dialog) =>
   modal({
-    title: "Import provider history",
-    hint: "Conversations the provider already saved for this folder.",
+    title: t("Import provider history"),
+    hint: t("Conversations the provider already saved for this folder."),
     wide: true,
     body: `
-      ${field("Provider", choice("agent", AGENTS, dialog.agent))}
+      ${field(t("Provider"), choice("agent", AGENTS, dialog.agent))}
       ${field(
-        "Account",
+        t("Account"),
         choice(
           "profile",
-          [["", "Default home"], ...(state.profiles ?? []).map((p) => [p.id, p.label])],
+          [["", t("Default home")], ...(state.profiles ?? []).map((p) => [p.id, p.label])],
           dialog.profile ?? "",
         ),
       )}
       ${group(
-        "Conversations",
+        t("Conversations"),
         dialog.scanning
-          ? '<p class="modal__hint">Looking…</p>'
+          ? `<p class="modal__hint">${escape(t("Looking…"))}</p>`
           : dialog.found === null
-            ? '<p class="modal__hint">Press Scan to look for conversations in this folder.</p>'
+            ? `<p class="modal__hint">${escape(t("Press Scan to look for conversations in this folder."))}</p>`
             : dialog.found.length
               ? dialog.found
                   .map((item) =>
                     setting(
                       item.title,
                       item.provider_id,
-                      button({ label: "Import", data: { import: item.provider_id, title: item.title } }),
+                      button({ label: t("Import"), data: { import: item.provider_id, title: item.title } }),
                     ),
                   )
                   .join("")
-              : '<p class="modal__hint">Nothing found. Conversations are matched by the folder the CLI ran in.</p>',
+              : `<p class="modal__hint">${escape(t("Nothing found. Conversations are matched by the folder the CLI ran in."))}</p>`,
       )}`,
     foot: `
-      ${button({ label: "Close", data: { dismiss: "1" } })}
-      ${button({ label: "Scan", action: "scan-transcripts", kind: "primary" })}`,
+      ${button({ label: t("Close"), data: { dismiss: "1" } })}
+      ${button({ label: t("Scan"), action: "scan-transcripts", kind: "primary" })}`,
   });
 
 const quickCommands = (dialog) =>
   modal({
-    title: "Quick commands",
-    hint: "Saved text, sent into a running agent on demand.",
+    title: t("Quick commands"),
+    hint: t("Saved text, sent into a running agent on demand."),
     wide: true,
     body: `
       ${group(
-        "Saved",
+        t("Saved"),
         state.quickCommands.length
           ? state.quickCommands
               .map((command) =>
                 setting(
                   command.title,
-                  `${command.text.slice(0, 80)}${command.submit ? " · sends Enter" : ""}`,
-                  button({ icon: "edit", kind: "quiet", data: { "command-edit": command.id }, title: "Edit" }) +
+                  `${command.text.slice(0, 80)}${command.submit ? ` · ${t("sends Enter")}` : ""}`,
+                  button({ icon: "edit", kind: "quiet", data: { "command-edit": command.id }, title: t("Edit") }) +
                     button({
                       icon: "trash",
                       kind: "quiet",
                       data: { "remove-command": command.id },
-                      title: "Remove",
+                      title: t("Remove"),
                     }),
                 ),
               )
               .join("")
-          : '<p class="modal__hint">Nothing saved yet.</p>',
+          : `<p class="modal__hint">${escape(t("Nothing saved yet."))}</p>`,
       )}
       ${group(
-        dialog.editing ? "Edit command" : "New command",
+        dialog.editing ? t("Edit command") : t("New command"),
         `
-        ${field("Name", textInput("draft-title", dialog.title))}
-        ${field("Text", textArea("draft-text", dialog.text, "", 4))}
-        ${setting("Send Enter", "Off by default: the text is typed, not submitted.", toggle("submit", dialog.submit, "Send Enter"))}
-        ${setting("Only this project", "", toggle("scoped", dialog.scoped, "Only this project"))}`,
+        ${field(t("Name"), textInput("draft-title", dialog.title))}
+        ${field(t("Text"), textArea("draft-text", dialog.text, "", 4))}
+        ${setting(t("Send Enter"), t("Off by default: the text is typed, not submitted."), toggle("submit", dialog.submit, t("Send Enter")))}
+        ${setting(t("Only this project"), "", toggle("scoped", dialog.scoped, t("Only this project")))}`,
       )}`,
     foot: `
-      ${button({ label: "Close", data: { dismiss: "1" } })}
-      ${button({ label: dialog.editing ? "Save command" : "Add command", action: "add-command", kind: "primary" })}`,
+      ${button({ label: t("Close"), data: { dismiss: "1" } })}
+      ${button({ label: dialog.editing ? t("Save command") : t("Add command"), action: "add-command", kind: "primary" })}`,
   });
 
 // ---------------------------------------------------------------- planning --
@@ -379,21 +386,21 @@ const quickCommands = (dialog) =>
 function specWork(dialog) {
   const tasks = (state.planning?.tasks ?? []).filter((task) => task.spec_id === dialog.id);
   const sessions = state.allSessions.filter((item) => item.project_id === state.projectId);
-  const title = (id) => sessions.find((item) => item.id === id)?.title ?? "session";
+  const title = (id) => sessions.find((item) => item.id === id)?.title ?? t("session");
   const rows = tasks
     .map(
       (task) => `
       <div class="spec-work">
         <div class="spec-work__head">
           <strong>${escape(task.title)}</strong>
-          <span class="badge badge--muted">${escape(task.status)}</span>
+          <span class="badge badge--muted">${escape(t(task.status))}</span>
         </div>
         <div class="spec-work__actions">
-          ${task.session_id ? button({ label: `Builder: ${title(task.session_id)}`, icon: "terminal", data: { open: task.session_id } }) : ""}
-          ${task.review_session_id ? button({ label: `Reviewer: ${title(task.review_session_id)}`, icon: "review", data: { open: task.review_session_id } }) : ""}
-          ${task.session_id ? button({ label: "Copy review brief", icon: "copy", data: { "spec-brief": task.session_id } }) : ""}
-          <select class="field__select spec-work__link" data-link-task="${escape(task.id)}" title="Link an existing session as the builder">
-            <option value="">Link existing session…</option>
+          ${task.session_id ? button({ label: t("Builder: {session}", { session: title(task.session_id) }), icon: "terminal", data: { open: task.session_id } }) : ""}
+          ${task.review_session_id ? button({ label: t("Reviewer: {session}", { session: title(task.review_session_id) }), icon: "review", data: { open: task.review_session_id } }) : ""}
+          ${task.session_id ? button({ label: t("Copy review brief"), icon: "copy", data: { "spec-brief": task.session_id } }) : ""}
+          <select class="field__select spec-work__link" data-link-task="${escape(task.id)}" title="${escape(t("Link an existing session as the builder"))}">
+            <option value="">${escape(t("Link existing session…"))}</option>
             ${sessions
               .filter((item) => item.id !== task.session_id)
               .map((item) => `<option value="${escape(item.id)}">${escape(item.title)}</option>`)
@@ -404,27 +411,29 @@ function specWork(dialog) {
       </div>`,
     )
     .join("");
-  return group("Work", rows || '<p class="modal__hint">No tasks for this specification yet.</p>');
+  return group(t("Work"), rows || `<p class="modal__hint">${escape(t("No tasks for this specification yet."))}</p>`);
 }
 
 const specForm = (dialog) =>
   modal({
-    title: dialog.id ? "Specification" : "New specification",
-    hint: dialog.id ? `Revision ${dialog.revision} · ${dialog.approved ? "approved" : "draft"}` : "",
+    title: dialog.id ? t("Specification") : t("New specification"),
+    hint: dialog.id
+      ? t("Revision {revision} · {state}", { revision: dialog.revision, state: dialog.approved ? t("approved") : t("draft") })
+      : "",
     wide: true,
     body: `
-      ${field("Title", textInput("spec-title", dialog.title))}
-      ${field("Problem", textArea("spec-problem", dialog.problem, "", 3))}
-      ${field("Requirements", textArea("spec-requirements", dialog.requirements, "", 4))}
-      ${field("Acceptance", textArea("spec-acceptance", dialog.acceptance, "", 3))}
-      ${field("Constraints", textArea("spec-constraints", dialog.constraints, "", 3))}
-      ${field("Plan", textArea("spec-plan", dialog.plan, "", 4))}
+      ${field(t("Title"), textInput("spec-title", dialog.title))}
+      ${field(t("Problem"), textArea("spec-problem", dialog.problem, "", 3))}
+      ${field(t("Requirements"), textArea("spec-requirements", dialog.requirements, "", 4))}
+      ${field(t("Acceptance"), textArea("spec-acceptance", dialog.acceptance, "", 3))}
+      ${field(t("Constraints"), textArea("spec-constraints", dialog.constraints, "", 3))}
+      ${field(t("Plan"), textArea("spec-plan", dialog.plan, "", 4))}
       ${dialog.id ? specWork(dialog) : ""}`,
     foot: `
-      ${button({ label: "Cancel", data: { dismiss: "1" } })}
-      ${dialog.id ? button({ label: "New task for this spec", icon: "plus", action: "spec-new-task" }) : ""}
-      ${dialog.id && !dialog.approved ? button({ label: "Approve revision", action: "approve-spec" }) : ""}
-      ${button({ label: "Save", action: "save-spec", kind: "primary" })}`,
+      ${button({ label: t("Cancel"), data: { dismiss: "1" } })}
+      ${dialog.id ? button({ label: t("New task for this spec"), icon: "plus", action: "spec-new-task" }) : ""}
+      ${dialog.id && !dialog.approved ? button({ label: t("Approve revision"), action: "approve-spec" }) : ""}
+      ${button({ label: t("Save"), action: "save-spec", kind: "primary" })}`,
   });
 
 /// Which tasks of the project this one waits for. The queue passes it by
@@ -436,13 +445,13 @@ function blockedBy(dialog) {
   if (!others.length) return "";
   const chosen = new Set(dialog.depends_on ?? []);
   return field(
-    "Blocked by",
+    t("Blocked by"),
     `<div class="check-list">${others
       .map(
         (task) => `
       <label class="check">
         <input type="checkbox" data-depends-on="${escape(task.id)}" ${chosen.has(task.id) ? "checked" : ""} />
-        ${escape(task.title)}${task.status === "done" ? " · done" : ""}
+        ${escape(task.title)}${task.status === "done" ? ` · ${escape(t("done"))}` : ""}
       </label>`,
       )
       .join("")}</div>`,
@@ -452,72 +461,71 @@ function blockedBy(dialog) {
 const taskForm = (dialog) => {
   const specs = state.planning?.specs ?? [];
   return modal({
-    title: dialog.id ? "Task" : "New task",
-    hint: dialog.id ? `${dialog.status}${dialog.last_error ? ` · ${dialog.last_error}` : ""}` : "",
+    title: dialog.id ? t("Task") : t("New task"),
+    hint: dialog.id ? `${t(dialog.status)}${dialog.last_error ? ` · ${dialog.last_error}` : ""}` : "",
     wide: true,
     body: `
-      ${field("Title", textInput("task-title", dialog.title))}
-      ${field("Agent", choice("agent", AGENTS, dialog.agent))}
+      ${field(t("Title"), textInput("task-title", dialog.title))}
+      ${field(t("Agent"), choice("agent", AGENTS, dialog.agent))}
       ${
         // A list, not a row of buttons: a project may have a hundred specs.
         specs.length
           ? field(
-              "Specification",
+              t("Specification"),
               select(
                 "task-spec",
-                [["", "None"], ...specs.map((spec) => [spec.id, `${spec.title}${spec.approved ? "" : " · draft"}`])],
+                [["", t("None")], ...specs.map((spec) => [spec.id, `${spec.title}${spec.approved ? "" : ` · ${t("draft")}`}`])],
                 dialog.spec_id ?? "",
                 !!dialog.id,
               ),
-              dialog.id ? "Fixed once the task exists." : "",
+              dialog.id ? t("Fixed once the task exists.") : "",
             )
           : ""
       }
       ${field(
-        "Publishing",
+        t("Publishing"),
         choice(
           "mode",
-          [["none", "Do not publish"], ["pr", "Pull request"], ["push", "Push"]],
+          [["none", t("Do not publish")], ["pr", t("Pull request")], ["push", t("Push")]],
           dialog.mode,
         ),
       )}
-      ${setting("Hand to the other agent when it finishes", "", toggle("auto_review", dialog.auto_review, "Automatic review"))}
+      ${setting(t("Hand to the other agent when it finishes"), "", toggle("auto_review", dialog.auto_review, t("Automatic review")))}
       ${blockedBy(dialog)}
-      ${field("Details", textArea("task-details", dialog.details, "", 4))}
-      ${field("Findings", textArea("task-findings", dialog.findings, "", 3))}
+      ${field(t("Details"), textArea("task-details", dialog.details, "", 4))}
+      ${field(t("Findings"), textArea("task-findings", dialog.findings, "", 3))}
       <button class="sheet-disclosure" data-toggle="advanced" aria-expanded="${!!dialog.advanced}">
-        ${dialog.advanced ? "▾" : "▸"} Advanced
+        ${dialog.advanced ? "▾" : "▸"} ${escape(t("Advanced"))}
       </button>
       ${
         dialog.advanced
           ? `<div class="sheet-box"><div class="field-row">
-               ${field("Model", modelSelect("task-model", dialog.agent, dialog.profile_id ?? "", dialog.model ?? ""))}
-               ${field("Account", select("task-account", accountOptions(dialog.agent), dialog.profile_id ?? ""))}
+               ${field(t("Model"), modelSelect("task-model", dialog.agent, dialog.profile_id ?? "", dialog.model ?? ""))}
+               ${field(t("Account"), select("task-account", accountOptions(dialog.agent), dialog.profile_id ?? ""))}
              </div></div>`
           : ""
       }`,
     foot: `
-      ${dialog.id ? button({ icon: "trash", kind: "quiet", title: "Delete task", action: "delete-task", disabled: dialog.status === "building" }) : ""}
-      ${button({ label: "Cancel", data: { dismiss: "1" } })}
-      ${dialog.id ? button({ label: "Back to queue", data: { status: "queued" } }) : ""}
-      ${dialog.id ? button({ label: "Accept", data: { status: "done" } }) : ""}
-      ${!dialog.id || ["queued", "failed", "changes"].includes(dialog.status) ? button({ label: "Run now", icon: "play", action: "run-task-now" }) : ""}
-      ${button({ label: "Save", action: "save-task", kind: "primary" })}`,
+      ${dialog.id ? button({ icon: "trash", kind: "quiet", title: t("Delete task"), action: "delete-task", disabled: dialog.status === "building" }) : ""}
+      ${button({ label: t("Cancel"), data: { dismiss: "1" } })}
+      ${dialog.id ? button({ label: t("Back to queue"), data: { status: "queued" } }) : ""}
+      ${dialog.id ? button({ label: t("Accept"), data: { status: "done" } }) : ""}
+      ${!dialog.id || ["queued", "failed", "changes"].includes(dialog.status) ? button({ label: t("Run now"), icon: "play", action: "run-task-now" }) : ""}
+      ${button({ label: t("Save"), action: "save-task", kind: "primary" })}`,
   });
 };
 
 const queueConfirm = (dialog) =>
   modal({
-    title: `Run ${plural(dialog.summary.length, "queued task")}?`,
+    title: t("Run {tasks}?", { tasks: plural(dialog.summary.length, "queued task") }),
     body: `
       <ul class="plain-list">
         ${dialog.summary.map((line) => `<li>${escape(line)}</li>`).join("")}
       </ul>
       <p class="modal__hint">
-        Runs the installed agents. Publishing happens only for tasks configured
-        for it. A failure pauses the queue.
+        ${escape(t("Runs the installed agents. Publishing happens only for tasks configured for it. A failure pauses the queue."))}
       </p>`,
-    foot: foot("Run queue", "confirm-queue"),
+    foot: foot(t("Run queue"), "confirm-queue"),
   });
 
 // ------------------------------------------------------------------- misc --
@@ -525,28 +533,28 @@ const queueConfirm = (dialog) =>
 /// A new branch, from where HEAD is or from any branch, remote branch or tag.
 const newBranch = (dialog) =>
   modal({
-    title: "New branch",
+    title: t("New branch"),
     body: `
-      ${field("Branch name", textInput("draft-branch", dialog.branch))}
+      ${field(t("Branch name"), textInput("draft-branch", dialog.branch))}
       ${field(
-        "Start from",
-        `<input id="draft-base" list="branch-bases" value="${escape(dialog.base ?? "")}" placeholder="Current branch" spellcheck="false" />
+        t("Start from"),
+        `<input id="draft-base" list="branch-bases" value="${escape(dialog.base ?? "")}" placeholder="${escape(t("Current branch"))}" spellcheck="false" />
          <datalist id="branch-bases">${(state.files?.snapshot?.branches ?? []).map((name) => `<option value="${escape(name)}"></option>`).join("")}</datalist>`,
-        "Empty starts from where you are now.",
+        t("Empty starts from where you are now."),
       )}`,
-    foot: foot("Create and switch", "confirm-branch"),
+    foot: foot(t("Create and switch"), "confirm-branch"),
   });
 
 const hunkChoice = (dialog) =>
   modal({
-    title: "Discard which hunk?",
+    title: t("Discard which hunk?"),
     hint: dialog.path,
     body: choice(
       "hunk",
       dialog.hunks.map((label, index) => [String(index), `${index + 1}. ${label}`]),
       String(dialog.hunk ?? 0),
     ),
-    foot: foot("Discard hunk", "confirm-hunk", "danger-solid"),
+    foot: foot(t("Discard hunk"), "confirm-hunk", "danger-solid"),
   });
 
 const confirmAction = (dialog) =>
@@ -558,18 +566,18 @@ const confirmAction = (dialog) =>
 
 const palette = (dialog) => `
   <div class="scrim" data-dismiss="1">
-    <div class="modal modal--palette" role="dialog" aria-modal="true" aria-label="Commands">
+    <div class="modal modal--palette" role="dialog" aria-modal="true" aria-label="${escape(t("Commands"))}">
       <div class="palette__search">
         <input id="palette-input" type="search"
-               placeholder="${
+               placeholder="${escape(
                  dialog.mode === "terminals"
-                   ? "Switch to an open terminal…"
+                   ? t("Switch to an open terminal…")
                    : dialog.mode === "quick"
-                     ? "Send a quick command to this terminal…"
+                     ? t("Send a quick command to this terminal…")
                      : dialog.mode === "search"
-                       ? "Search sessions and projects…"
-                       : "Jump to a session or project, or run a command…"
-               }"
+                       ? t("Search sessions and projects…")
+                       : t("Jump to a session or project, or run a command…"),
+               )}"
                value="${escape(dialog.query)}" spellcheck="false" />
       </div>
       <div class="palette__list">
@@ -584,17 +592,17 @@ const palette = (dialog) => `
               <span class="palette__title">${entry.needsYou ? '<span class="dot dot--waiting"></span>' : entry.running ? '<span class="dot dot--running"></span>' : ""}${escape(entry.title)}</span>
               ${entry.subtitle ? `<span class="palette__subtitle">${escape(entry.subtitle)}</span>` : ""}
             </span>
-            <span class="palette__kind">${escape(entry.shortcut || entry.kind)}</span>
+            <span class="palette__kind">${escape(entry.shortcut || t(entry.kind))}</span>
           </button>`,
                 )
                 .join("")
-            : `<div class="menu__empty">${
+            : `<div class="menu__empty">${escape(
                 dialog.mode === "terminals" && !dialog.query
-                  ? "No open terminals. Pick a session in the sidebar, or start a new one."
+                  ? t("No open terminals. Pick a session in the sidebar, or start a new one.")
                   : dialog.mode === "quick" && !dialog.query
-                    ? "No quick commands yet — add them in Settings → Quick Commands."
-                    : "Nothing matches."
-              }</div>`
+                    ? t("No quick commands yet — add them in Settings → Quick Commands.")
+                    : t("Nothing matches."),
+              )}</div>`
         }
       </div>
     </div>
@@ -606,8 +614,8 @@ const markdownPreview = (dialog) =>
     wide: true,
     body: `<div class="preview__markdown">${markdown(dialog.text)}</div>`,
     foot: `
-      ${button({ label: "Close", data: { dismiss: "1" } })}
-      ${button({ label: "Copy", action: "copy-markdown", kind: "primary" })}`,
+      ${button({ label: t("Close"), data: { dismiss: "1" } })}
+      ${button({ label: t("Copy"), action: "copy-markdown", kind: "primary" })}`,
   });
 
 /// Which session a pane shows: any session of any project, minus those
@@ -618,8 +626,8 @@ function splitPicker(dialog) {
   const others = state.allSessions.filter((item) => !shown.has(item.id));
   const name = (item) => state.projects.find((entry) => entry.id === item.project_id)?.title ?? "";
   return modal({
-    title: `Session for pane ${pane + 1}`,
-    hint: "Any session, from any project. It keeps running when the pane is closed.",
+    title: t("Session for pane {number}", { number: pane + 1 }),
+    hint: t("Any session, from any project. It keeps running when the pane is closed."),
     body: others.length
       ? `<div class="plain-list plain-list--rows">
            ${others
@@ -627,27 +635,30 @@ function splitPicker(dialog) {
                (item) => `
              <button class="menu__item" data-split="${escape(item.id)}">
                <span>${escape(item.title)}</span>
-               <span class="menu__hint">${escape(name(item))} · ${item.running ? "running" : item.started ? "stopped" : "never started"}</span>
+               <span class="menu__hint">${escape(name(item))} · ${escape(item.running ? t("running") : item.started ? t("stopped") : t("never started"))}</span>
              </button>`,
              )
              .join("")}
          </div>`
-      : '<p class="modal__hint">There is no other session.</p>',
-    foot: button({ label: "Cancel", data: { dismiss: "1" } }),
+      : `<p class="modal__hint">${escape(t("There is no other session."))}</p>`,
+    foot: button({ label: t("Cancel"), data: { dismiss: "1" } }),
   });
 }
 
 /// Closing the window ends every agent with it.
 const quitting = (dialog) =>
   modal({
-    title: dialog.running === 1 ? "An agent is still running" : "Agents are still running",
+    title: dialog.running === 1 ? t("An agent is still running") : t("Agents are still running"),
     body: `<p class="modal__hint">
-      Closing Convoy stops ${dialog.running === 1 ? "it" : `all ${dialog.running}`}.
-      Anything not written to disk by then is gone.
+      ${escape(
+        dialog.running === 1
+          ? t("Closing Convoy stops it. Anything not written to disk by then is gone.")
+          : t("Closing Convoy stops all {count}. Anything not written to disk by then is gone.", { count: dialog.running }),
+      )}
     </p>`,
     foot: `
-      ${button({ label: "Stay open", data: { dismiss: "1" } })}
-      ${button({ label: "Stop and quit", action: "quit", kind: "danger-solid" })}`,
+      ${button({ label: t("Stay open"), data: { dismiss: "1" } })}
+      ${button({ label: t("Stop and quit"), action: "quit", kind: "danger-solid" })}`,
   });
 
 /// The macOS app's workspace, counted before anything is written.
@@ -666,42 +677,50 @@ function macosImport(dialog) {
     .map(([count, one, many]) => `<li>${escape(plural(count, one, many))}</li>`)
     .join("");
   const existing = report.projects_existing
-    ? `<p class="modal__hint">${escape(plural(report.projects_existing, "project is", "projects are"))} already here; ${report.projects_existing === 1 ? "it keeps" : "they keep"} ${report.projects_existing === 1 ? "its" : "their"} settings and gain the sessions.</p>`
+    ? `<p class="modal__hint">${escape(
+        report.projects_existing === 1
+          ? t("1 project is already here; it keeps its settings and gains the sessions.")
+          : t("{projects} are already here; they keep their settings and gain the sessions.", {
+              projects: plural(report.projects_existing, "project"),
+            }),
+      )}</p>`
     : "";
   const warnings = report.warnings.map((warning) => `<li>${escape(warning)}</li>`).join("");
   return modal({
-    title: "Import from the macOS app",
-    hint: "Nothing in the macOS app changes. Sessions resume the same conversations.",
+    title: t("Import from the macOS app"),
+    hint: t("Nothing in the macOS app changes. Sessions resume the same conversations."),
     body: `
-      ${counts ? `<ul class="import-counts">${counts}</ul>` : '<p class="modal__hint">Everything the macOS app has is already here.</p>'}
+      ${counts ? `<ul class="import-counts">${counts}</ul>` : `<p class="modal__hint">${escape(t("Everything the macOS app has is already here."))}</p>`}
       ${existing}
       ${setting(
-        "Settings and shortcuts",
-        "Theme, notifications, awake mode, AI limits and your shortcuts. Replaces the ones set here.",
-        toggle("settings", dialog.settings, "Import settings and shortcuts"),
+        t("Settings and shortcuts"),
+        t("Theme, notifications, awake mode, AI limits and your shortcuts. Replaces the ones set here."),
+        toggle("settings", dialog.settings, t("Import settings and shortcuts")),
       )}
       ${warnings ? `<ul class="import-warnings">${warnings}</ul>` : ""}`,
     foot: `
-      ${button({ label: dialog.offer ? "Not now" : "Cancel", data: { dismiss: "1" } })}
-      ${button({ label: dialog.busy ? "Importing…" : "Import", action: "macos-import-run", kind: "primary", disabled: dialog.busy })}`,
+      ${button({ label: dialog.offer ? t("Not now") : t("Cancel"), data: { dismiss: "1" } })}
+      ${button({ label: dialog.busy ? t("Importing…") : t("Import"), action: "macos-import-run", kind: "primary", disabled: dialog.busy })}`,
   });
 }
 
 const macosImportDone = (dialog) =>
   modal({
-    title: "Imported, with notes",
+    title: t("Imported, with notes"),
     body: `<ul class="import-warnings">${dialog.warnings.map((warning) => `<li>${escape(warning)}</li>`).join("")}</ul>`,
-    foot: button({ label: "Done", kind: "primary", data: { dismiss: "1" } }),
+    foot: button({ label: t("Done"), kind: "primary", data: { dismiss: "1" } }),
   });
 
 /// An account's login, in its own terminal.
 const login = (dialog) =>
   modal({
-    title: `Log in: ${dialog.label}`,
-    hint: `${dialog.agent === "claude" ? "Claude Code" : "Codex"} runs its own login here. Nothing you type is kept by Convoy.`,
+    title: t("Log in: {label}", { label: dialog.label }),
+    hint: t("{agent} runs its own login here. Nothing you type is kept by Convoy.", {
+      agent: dialog.agent === "claude" ? "Claude Code" : "Codex",
+    }),
     wide: true,
     body: '<div class="login-term" id="login-host"></div>',
-    foot: button({ label: dialog.finished ? "Done" : "Close", kind: dialog.finished ? "primary" : "", data: { dismiss: "1" } }),
+    foot: button({ label: dialog.finished ? t("Done") : t("Close"), kind: dialog.finished ? "primary" : "", data: { dismiss: "1" } }),
   });
 
 const VIEWS = {

@@ -11,6 +11,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
 import { call, done, state, changed, loadWorkspace, toast } from "./state.js";
+import { t } from "./i18n.js";
 
 const terminals = new Map();
 
@@ -234,11 +235,11 @@ export async function wire() {
     if (entry) {
       const how =
         payload.cause === "hibernated"
-          ? "hibernated"
+          ? t("session hibernated")
           : payload.cause === "stopped"
-            ? "stopped"
-            : `exited with code ${payload.code}`;
-      entry.terminal.write(`\r\n\x1b[2m── session ${how} ──\x1b[0m\r\n`);
+            ? t("session stopped")
+            : t("session exited with code {code}", { code: payload.code });
+      entry.terminal.write(`\r\n\x1b[2m── ${how} ──\x1b[0m\r\n`);
     }
     state.agentState.delete(payload.id);
     await snapshot(payload.id);
@@ -256,7 +257,7 @@ export function restore(id, text) {
   entry.saved = text;
   if (!text) return;
   if (MISSING.test(text)) entry.missing = true;
-  entry.terminal.write(`\x1b[2m── saved output · resume to reconnect ──\x1b[0m\r\n${text.replace(/\r?\n/g, "\r\n")}\r\n`);
+  entry.terminal.write(`\x1b[2m── ${t("saved output · resume to reconnect")} ──\x1b[0m\r\n${text.replace(/\r?\n/g, "\r\n")}\r\n`);
 }
 
 export const missingConversation = (id) => !!terminals.get(id)?.missing;
