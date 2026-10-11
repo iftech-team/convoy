@@ -433,7 +433,8 @@ fn claude_conversations(root: &Path) -> Vec<Raw> {
                 .map(str::to_string);
             result.push(Raw {
                 agent: Agent::Claude,
-                title: transcripts::title(Agent::Claude, &records, &id),
+                title: transcripts::named(Agent::Claude, &file, &id, &HashMap::new())
+                    .unwrap_or_else(|| transcripts::title(Agent::Claude, &records, &id)),
                 id,
                 cwd,
                 file,
@@ -443,9 +444,10 @@ fn claude_conversations(root: &Path) -> Vec<Raw> {
     result
 }
 
-fn codex_conversations(root: &Path) -> Vec<Raw> {
+fn codex_conversations(home: &Path) -> Vec<Raw> {
     let mut files = Vec::new();
-    rollouts(root, 0, &mut files);
+    rollouts(&home.join("sessions"), 0, &mut files);
+    let names = transcripts::codex_names(home);
     let mut result = Vec::new();
     for file in files {
         let records = transcripts::head(&file);
@@ -478,7 +480,8 @@ fn codex_conversations(root: &Path) -> Vec<Raw> {
             .map(str::to_string);
         result.push(Raw {
             agent: Agent::Codex,
-            title: transcripts::title(Agent::Codex, &records, &id),
+            title: transcripts::named(Agent::Codex, &file, &id, &names)
+                .unwrap_or_else(|| transcripts::title(Agent::Codex, &records, &id)),
             id,
             cwd,
             file,
@@ -491,7 +494,7 @@ fn codex_conversations(root: &Path) -> Vec<Raw> {
 /// the rules allow, newest first. Reads the disk; run it off the UI thread.
 pub fn scan(roots: &Roots, targets: &[Target], known: &HashSet<String>) -> Vec<Found> {
     let mut raw = claude_conversations(&roots.claude_projects());
-    raw.extend(codex_conversations(&roots.codex.join("sessions")));
+    raw.extend(codex_conversations(&roots.codex));
 
     // The same conversation in two places counts once: the newest copy.
     let mut newest: HashMap<String, (f64, Raw)> = HashMap::new();

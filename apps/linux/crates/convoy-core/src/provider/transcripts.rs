@@ -2,16 +2,21 @@
 //! for a folder so an existing session can be imported.
 //!
 //! Only the head of each `.jsonl` is read — enough for the session metadata and
-//! the first user message, and bounded regardless of how long the file grew.
+//! the first user message, and bounded regardless of how long the file grew —
+//! plus, for Claude, its tail, where the conversation's name is kept.
 
 use crate::patterns::is_uuid;
 use crate::workspace::model::Agent;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 const HEAD_BYTES: u64 = 96_000;
+/// Claude appends a conversation's name again as it goes, so the latest one is
+/// always near the end.
+const TAIL_BYTES: u64 = 64_000;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Transcript {
@@ -35,6 +40,78 @@ pub(crate) fn head(file: &Path) -> Vec<Value> {
         .split('\n')
         .filter_map(|line| serde_json::from_str(line).ok())
         .collect()
+}
+
+/// The name a conversation was given, as `claude --resume` and Codex show it:
+/// one set with `/rename` first, then the one the agent wrote itself. `None`
+/// when it has none, and the first message stands in.
+pub(crate) fn named(
+    agent: Agent,
+    file: &Path,
+    id: &str,
+    codex: &HashMap<String, String>,
+) -> Option<String> {
+    let name = match agent {
+        Agent::Claude => claude_name(file)?,
+        Agent::Codex => codex.get(&id.to_lowercase())?.clone(),
+    };
+    let folded = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!folded.is_empty()).then(|| crate::json::head(&folded, 100).to_string())
+}
+
+/// The last `custom-title`, else the last `ai-title`, else the last `summary`
+/// in the tail of a Claude transcript.
+fn claude_name(file: &Path) -> Option<String> {
+    let mut handle = fs::File::open(file).ok()?;
+    let length = handle.metadata().ok()?.len();
+    handle
+        .seek(SeekFrom::Start(length.saturating_sub(TAIL_BYTES)))
+        .ok()?;
+    let mut raw = Vec::new();
+    handle.read_to_end(&mut raw).ok()?;
+    let mut found: [Option<String>; 3] = Default::default();
+    for line in String::from_utf8_lossy(&raw).split('\n') {
+        let (slot, key) = if line.starts_with(r#"{"type":"custom-title""#) {
+            (0, "customTitle")
+        } else if line.starts_with(r#"{"type":"ai-title""#) {
+            (1, "aiTitle")
+        } else if line.starts_with(r#"{"type":"summary""#) {
+            (2, "summary")
+        } else {
+            continue;
+        };
+        let Ok(record) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if let Some(text) = record
+            .get(key)
+            .and_then(Value::as_str)
+            .filter(|text| !text.trim().is_empty())
+        {
+            found[slot] = Some(text.to_string());
+        }
+    }
+    found.into_iter().flatten().next()
+}
+
+/// Codex's thread names by id, from `session_index.jsonl` in its home; a
+/// thread renamed later appears again, and the last line wins.
+pub(crate) fn codex_names(home: &Path) -> HashMap<String, String> {
+    let mut names = HashMap::new();
+    let Ok(text) = fs::read_to_string(home.join("session_index.jsonl")) else {
+        return names;
+    };
+    for line in text.lines() {
+        let Ok(record) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        let id = record.get("id").and_then(Value::as_str);
+        let name = record.get("thread_name").and_then(Value::as_str);
+        if let (Some(id), Some(name)) = (id, name) {
+            names.insert(id.to_lowercase(), name.to_string());
+        }
+    }
+    names
 }
 
 fn walk(folder: &Path, depth: u32, max_depth: u32, visited: &mut usize, files: &mut Vec<PathBuf>) {
@@ -86,6 +163,10 @@ pub fn scan(agent: Agent, home: &Path, directory: &Path) -> Vec<Transcript> {
         Agent::Codex => walk(&root, 0, 5, &mut visited, &mut files),
     }
 
+    let codex = match agent {
+        Agent::Codex => codex_names(home),
+        Agent::Claude => HashMap::new(),
+    };
     let mut result = Vec::new();
     for file in files {
         let records = head(&file);
@@ -126,7 +207,7 @@ pub fn scan(agent: Agent, home: &Path, directory: &Path) -> Vec<Transcript> {
                 continue;
             }
         }
-        let title = title(agent, &records, &id);
+        let title = named(agent, &file, &id, &codex).unwrap_or_else(|| title(agent, &records, &id));
         let at = fs::metadata(&file)
             .and_then(|metadata| metadata.modified())
             .ok()
@@ -262,6 +343,64 @@ mod tests {
                 ID
             ),
             "claude 0199aaaa"
+        );
+    }
+
+    #[test]
+    fn a_claude_name_beats_the_first_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join(format!("{ID}.jsonl"));
+        let none = HashMap::new();
+        let mut lines = vec![
+            r#"{"type":"user","message":{"role":"user","content":"'/var/folders/x/IMAGE.jpg' what is this"}}"#.to_string(),
+        ];
+        fs::write(&file, lines.join("\n")).unwrap();
+        assert_eq!(named(Agent::Claude, &file, ID, &none), None);
+        // The agent's own title, then a later one, then the one set with /rename.
+        lines.push(r#"{"type":"ai-title","aiTitle":"Old title","sessionId":"x"}"#.into());
+        lines.push(
+            r#"{"type":"ai-title","aiTitle":"Upload  screenshot\nreview","sessionId":"x"}"#.into(),
+        );
+        fs::write(&file, lines.join("\n")).unwrap();
+        assert_eq!(
+            named(Agent::Claude, &file, ID, &none).as_deref(),
+            Some("Upload screenshot review")
+        );
+        lines.push(
+            r#"{"type":"custom-title","customTitle":"Репозиторий convoy","sessionId":"x"}"#.into(),
+        );
+        lines.push(r#"{"type":"ai-title","aiTitle":"Later title","sessionId":"x"}"#.into());
+        fs::write(&file, lines.join("\n")).unwrap();
+        assert_eq!(
+            named(Agent::Claude, &file, ID, &none).as_deref(),
+            Some("Репозиторий convoy")
+        );
+    }
+
+    #[test]
+    fn a_codex_name_is_the_last_one_in_its_index() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("session_index.jsonl"),
+            format!(
+                "{{\"id\":\"{ID}\",\"thread_name\":\"Hi Codex!\"}}\n{{\"id\":\"{}\",\"thread_name\":\"Respond to greeting\"}}\n",
+                ID.to_uppercase()
+            ),
+        )
+        .unwrap();
+        let names = codex_names(dir.path());
+        assert_eq!(
+            named(Agent::Codex, Path::new("unused"), ID, &names).as_deref(),
+            Some("Respond to greeting")
+        );
+        assert_eq!(
+            named(
+                Agent::Codex,
+                Path::new("unused"),
+                "0199aaaa-0000-4000-8000-000000000002",
+                &names
+            ),
+            None
         );
     }
 }
