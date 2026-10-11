@@ -64,6 +64,8 @@ export const icons = {
   doc: icon('<path d="M3.5 1.8h6l3 3v9.4h-9z"/><path d="M9.5 1.8v3h3M5.5 8h5M5.5 10.5h5"/>', 13),
   page: icon('<path d="M3.5 1.8h6l3 3v9.4h-9z"/><path d="M9.5 1.8v3h3"/>', 13),
   bell: icon('<path d="M4 11V7.5a4 4 0 0 1 8 0V11l1 1.2H3z"/><path d="M6.8 13.8a1.3 1.3 0 0 0 2.4 0"/>', 14),
+  // A tray with a check falling in: what the agents are waiting on you for.
+  approvals: icon('<path d="M2.5 9.5h3l.9 1.7h3.2l.9-1.7h3"/><path d="M4.2 5.5 2.5 9.5v3.2a.8.8 0 0 0 .8.8h9.4a.8.8 0 0 0 .8-.8V9.5l-1.7-4"/><path d="m6.2 4.6 1.5 1.5 2.9-3.1"/>', 14),
   warn: icon('<path d="M8 2.8 14 13H2z"/><path d="M8 6.8v2.6M8 11.3v.1"/>', 14),
 };
 

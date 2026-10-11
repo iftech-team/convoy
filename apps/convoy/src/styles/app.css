@@ -3129,6 +3129,342 @@ select:disabled {
   align-self: center;
 }
 
+/* --------------------------------------------------------- approvals inbox -- */
+
+.inbox-button {
+  color: var(--text-faint);
+  background: none;
+}
+
+.inbox-button--waiting {
+  color: color-mix(in srgb, var(--state-review) 80%, var(--text));
+  background: color-mix(in srgb, var(--state-review) 10%, transparent);
+}
+
+.inbox-button--waiting:hover {
+  background: color-mix(in srgb, var(--state-review) 16%, transparent);
+  color: color-mix(in srgb, var(--state-review) 90%, var(--text));
+}
+
+.inbox-button[aria-pressed="true"] {
+  background: var(--bg-active);
+}
+
+.inbox-button .inbox-button__badge {
+  background: var(--state-review);
+}
+
+.menu.inbox {
+  position: fixed;
+  top: 64px;
+  right: 18px;
+  width: min(420px, calc(100vw - 36px));
+  max-height: min(600px, calc(100vh - 120px));
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.menu.inbox:focus {
+  outline: none;
+}
+
+.inbox__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.inbox__count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--state-review) 14%, transparent);
+  color: color-mix(in srgb, var(--state-review) 85%, var(--text));
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.inbox__hint {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.inbox__list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.inbox-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 11px 14px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.inbox-row:last-child {
+  border-bottom: none;
+}
+
+.inbox-row--busy {
+  background: var(--bg-subtle);
+}
+
+.inbox-row__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.inbox-row__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--state-review) 12%, transparent);
+  color: color-mix(in srgb, var(--state-review) 85%, var(--text));
+}
+
+.inbox-row--terminal .inbox-row__icon {
+  background: var(--bg-active);
+  color: var(--text-muted);
+}
+
+.inbox-row__icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.inbox-row__place {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 5px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.inbox-row__project {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inbox-row__dot {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.inbox-row__session {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.inbox-row__time {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.inbox-row__ask {
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--state-review) 80%, var(--text));
+}
+
+.inbox-row--terminal .inbox-row__ask {
+  color: var(--text-muted);
+}
+
+.inbox-row__title {
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.inbox-row__title code,
+.inbox-row__short {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.inbox-row__title code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--bg-sunken);
+}
+
+.inbox-row__detail {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.inbox-row__short {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.inbox-row__more {
+  flex: none;
+  padding: 0 2px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent-text);
+}
+
+.inbox-row__more:hover {
+  text-decoration: underline;
+}
+
+.inbox-row__full {
+  max-height: 180px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.inbox-row__hint {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.inbox-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.inbox-row__actions .button {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.inbox-row__deny:hover:not(:disabled) {
+  color: var(--state-failed);
+}
+
+.inbox-row__spacer {
+  flex: 1;
+}
+
+.inbox-row__busy {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.inbox-row__open svg {
+  width: 12px;
+  height: 12px;
+}
+
+.inbox-row__jump {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  margin-right: -4px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent-text);
+}
+
+.inbox-row__jump:hover {
+  background: var(--accent-soft);
+}
+
+.inbox-row__jump svg {
+  width: 11px;
+  height: 11px;
+}
+
+.inbox-row button:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 1px;
+}
+
+.inbox__none {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 32px 28px 36px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.inbox__none strong {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.inbox__none-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 4px;
+  border-radius: 12px;
+  background: var(--bg-active);
+  color: var(--text-muted);
+}
+
+.inbox__none-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
 /* ------------------------------------------------------------ tab bar -- */
 
 .tabbar {

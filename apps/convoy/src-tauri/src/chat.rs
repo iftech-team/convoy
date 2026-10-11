@@ -7,7 +7,7 @@
 //! waits for the exit and reports it exactly as a terminal's is reported, so
 //! the queue, review and exit rules cannot tell the two apart.
 
-use convoy_core::chat::{ChatEvent, Decision, Driver, Image};
+use convoy_core::chat::{ChatEvent, Decision, Driver, Image, PendingApprovals};
 use convoy_core::session::{mark_started, plan_chat_launch, ChatPlan};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -48,6 +48,8 @@ struct Handle {
     stdin: Mutex<Option<ChildStdin>>,
     driver: Mutex<Driver>,
     sink: Arc<dyn ChatSink>,
+    /// What the agent is waiting on, for a window that was not listening.
+    pending: Mutex<PendingApprovals>,
 }
 
 impl Handle {
@@ -68,7 +70,15 @@ impl Handle {
         stdin.flush().map_err(|error| error.to_string())
     }
 
+    /// Every event goes through here, so the waiting approvals can never
+    /// disagree with what the window was told.
     fn emit(&self, id: &str, events: &[ChatEvent]) {
+        if let Ok(mut pending) = self.pending.lock() {
+            let now = now_ms();
+            for event in events {
+                pending.observe(event, now);
+            }
+        }
         for event in events {
             self.sink.event(id, event);
         }
@@ -171,6 +181,7 @@ impl Chats {
             stdin: Mutex::new(child.stdin.take()),
             driver: Mutex::new(driver),
             sink: Arc::clone(&sink),
+            pending: Mutex::new(PendingApprovals::default()),
         });
         // Registered before any thread runs, so even an instant exit finds it.
         if let Ok(mut sessions) = self.sessions.lock() {
@@ -290,13 +301,50 @@ impl Chats {
         Ok(pid)
     }
 
-    /// Removes the chat and says how it ended.
+    /// Every running chat's waiting approvals, oldest first.
+    pub fn approvals(&self) -> Vec<WaitingApproval> {
+        let handles: Vec<(String, Arc<Handle>)> = match self.sessions.lock() {
+            Ok(sessions) => sessions
+                .iter()
+                .map(|(id, chat)| (id.clone(), Arc::clone(&chat.handle)))
+                .collect(),
+            Err(_) => return Vec::new(),
+        };
+        let mut list: Vec<WaitingApproval> = handles
+            .into_iter()
+            .filter_map(|(id, handle)| {
+                let pending = handle.pending.lock().ok()?;
+                Some(
+                    pending
+                        .list()
+                        .iter()
+                        .map(|item| WaitingApproval {
+                            id: id.clone(),
+                            at: item.at,
+                            event: item.event.clone(),
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .flatten()
+            .collect();
+        list.sort_by_key(|item| item.at);
+        list
+    }
+
+    /// Removes the chat and says how it ended. Nothing it asked can be
+    /// answered any more.
     fn take(&self, id: &str, code: i32) -> Ended {
         let chat = self
             .sessions
             .lock()
             .ok()
             .and_then(|mut sessions| sessions.remove(id));
+        if let Some(chat) = &chat {
+            if let Ok(mut pending) = chat.handle.pending.lock() {
+                pending.clear();
+            }
+        }
         match chat {
             Some(chat) if chat.hibernating => Ended::Hibernated,
             Some(chat) if chat.stopping => Ended::Stopped,
@@ -419,6 +467,24 @@ impl Chats {
             }
         });
     }
+}
+
+/// One approval a running chat waits on, as `chat_approvals` returns it.
+#[derive(Debug, Clone, Serialize)]
+pub struct WaitingApproval {
+    /// The Convoy session.
+    pub id: String,
+    /// When it arrived, in milliseconds since the Unix epoch.
+    pub at: u64,
+    /// The `approval` event the window was sent.
+    pub event: ChatEvent,
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 #[cfg(unix)]
@@ -657,6 +723,13 @@ pub fn chat_answer(
 ) -> Result<(), String> {
     let decision = Decision::parse(&decision).ok_or("Unknown decision.")?;
     chats.answer(&id, &request, decision)
+}
+
+/// Every approval a running chat waits on, across sessions, so a reloaded
+/// window — or one that never opened the session — still knows them.
+#[tauri::command]
+pub fn chat_approvals(chats: State<'_, Arc<Chats>>) -> Vec<WaitingApproval> {
+    chats.approvals()
 }
 
 #[tauri::command]
@@ -1031,5 +1104,120 @@ mod tests {
         }
         assert!(chats.models("s1").is_some());
         assert!(chats.set_model("s1", None).is_ok());
+    }
+
+    /// The approvals a chat waits on are kept for a window that was not
+    /// listening: listed across sessions, gone once answered, and gone with
+    /// the process.
+    #[test]
+    fn waiting_approvals_are_listed_until_answered_or_the_agent_ends() {
+        let root = tempfile::tempdir().unwrap();
+        let app = tauri::test::mock_app();
+        let ask = |request: &str, command: &str| {
+            serde_json::json!({
+                "type": "control_request",
+                "request_id": request,
+                "request": {
+                    "subtype": "can_use_tool",
+                    "tool_name": "Bash",
+                    "input": { "command": command },
+                    "permission_suggestions": [{ "type": "addRules", "destination": "session" }]
+                }
+            })
+            .to_string()
+        };
+        let chats = Arc::new(Chats::new());
+        let start = |id: &str, lines: Vec<String>| {
+            let printed: String = lines
+                .iter()
+                .map(|line| format!("printf '%s\\n' '{line}'; "))
+                .collect();
+            chats
+                .start(
+                    Arc::new(Window::new(app.handle())),
+                    ChatLaunch {
+                        id,
+                        program: "/bin/sh",
+                        args: &[
+                            "-c".to_string(),
+                            format!("{printed}exec cat > '{}'", root.path().join(id).display()),
+                        ],
+                        cwd: root.path(),
+                        env: &[("PATH".to_string(), "/usr/bin:/bin".to_string())],
+                        driver: Driver::Claude(convoy_core::chat::claude::ClaudeStream::new("s")),
+                    },
+                )
+                .unwrap();
+        };
+        let before = now_ms();
+        start("s1", vec![ask("r1", "npm test"), ask("r2", "git push")]);
+        start("s2", vec![ask("r3", "rm -rf build")]);
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while chats.approvals().len() < 3 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "{:?}",
+                chats.approvals()
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let listed = chats.approvals();
+        let mut seen: Vec<(String, String)> = listed
+            .iter()
+            .map(|item| {
+                assert!(item.at >= before);
+                let ChatEvent::Approval {
+                    request, always, ..
+                } = &item.event
+                else {
+                    panic!("not an approval: {:?}", item.event)
+                };
+                assert!(always);
+                (item.id.clone(), request.clone())
+            })
+            .collect();
+        seen.sort();
+        assert_eq!(
+            seen,
+            [
+                ("s1".into(), "r1".into()),
+                ("s1".into(), "r2".into()),
+                ("s2".into(), "r3".into())
+            ]
+        );
+        assert!(listed.windows(2).all(|pair| pair[0].at <= pair[1].at));
+        let value = serde_json::to_value(&listed[0]).unwrap();
+        assert_eq!(value["event"]["type"], "approval");
+        assert!(value["at"].is_u64());
+
+        // Answered: gone from the list, the rest still waiting.
+        chats.answer("s1", "r1", Decision::Allow).unwrap();
+        let requests = |chats: &Chats| -> Vec<String> {
+            chats
+                .approvals()
+                .into_iter()
+                .filter_map(|item| match item.event {
+                    ChatEvent::Approval { request, .. } => Some(request),
+                    _ => None,
+                })
+                .collect()
+        };
+        let mut left = requests(&chats);
+        left.sort();
+        assert_eq!(left, ["r2", "r3"]);
+
+        // The process ended: nothing it asked can be answered.
+        chats.stop("s2");
+        while chats.running("s2") {
+            assert!(std::time::Instant::now() < deadline, "s2 never stopped");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(requests(&chats), ["r2"]);
+        chats.stop("s1");
+        while chats.running("s1") {
+            assert!(std::time::Instant::now() < deadline, "s1 never stopped");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(chats.approvals().is_empty());
     }
 }

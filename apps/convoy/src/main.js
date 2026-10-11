@@ -34,7 +34,8 @@ import { setLanguage, t } from "./i18n.js";
 import { SHORTCUTS, binding, capture, label, matches } from "./shortcuts.js";
 import { dialogView, effortLevels, sweepChoices, sweepGroups, sweepProject } from "./dialogs.js";
 import * as terminal from "./terminal.js";
-import { chatEvent, chatExited, chatSnapshot, chatText, insertDraft, mountChat, sendText, viewOf, waitingFor } from "./views-chat.js";
+import { adoptApprovals, answer, chatEvent, chatExited, chatSnapshot, chatText, insertDraft, mountChat, sendText, viewOf, waitingFor } from "./views-chat.js";
+import { inboxItems } from "./views-inbox.js";
 import {
   header,
   quickMenu,
@@ -391,6 +392,11 @@ function render() {
     }
   } else if (state.dialog) {
     document.querySelector(".modal input, .modal textarea")?.focus();
+  } else if (state.menu?.kind === "approvals") {
+    // A redraw — a row answered elsewhere, a new one arriving — keeps the
+    // keyboard in the inbox.
+    const active = document.activeElement;
+    if (!active || active === document.body) document.querySelector(".inbox")?.focus();
   }
 }
 
@@ -1054,6 +1060,7 @@ const SHORTCUT_ACTIONS = {
   tasksTab: () => withProject(() => showTab("tasks")),
   docsTab: () => withProject(() => showTab("docs")),
   activity: () => ACTIONS.activity(),
+  approvals: () => ACTIONS.approvals(),
   nextTab: () => withProject(() => stepTab(1)),
   previousTab: () => withProject(() => stepTab(-1)),
   reveal: () => withProject(() => ACTIONS["reveal-project"]()),
@@ -1116,7 +1123,7 @@ app.addEventListener("click", async (event) => {
       + "[data-capture],[data-expand],[data-project-more],[data-menu-act],[data-settings-section]," +
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
-      "[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
+      "[data-inbox-answer],[data-inbox-open],[data-inbox-expand],[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
       "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-sweep-group],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
   );
   if (!target) return;
@@ -1133,6 +1140,18 @@ app.addEventListener("click", async (event) => {
     return savePref({ keep_awake: data.awake });
   }
   if (data.needsYou) return openTab(data.needsYou);
+  if (data.inboxAnswer) {
+    // Busy until the backend says it was resolved; the row then goes.
+    return answer(data.inboxSession, data.inboxRequest, data.inboxAnswer);
+  }
+  if (data.inboxOpen) {
+    state.menu = null;
+    return openAnywhere(data.inboxOpen);
+  }
+  if (data.inboxExpand) {
+    if (!state.inboxExpanded.delete(data.inboxExpand)) state.inboxExpanded.add(data.inboxExpand);
+    return render();
+  }
   if (data.tabClose) return closeTab(data.tabClose);
   if (data.tabOpen) return openTab(data.tabOpen);
   if (data.tabAct) {
@@ -2489,6 +2508,14 @@ function markActivitySeen() {
   }
 }
 
+/// The approvals inbox. The keyboard goes into it, so Tab reaches its rows.
+function openApprovals() {
+  state.dialog = null;
+  state.menu = { kind: "approvals" };
+  render();
+  document.querySelector(".inbox")?.focus();
+}
+
 async function openActivity() {
   state.dialog = null;
   state.menu = { kind: "activity" };
@@ -2555,6 +2582,7 @@ const docTitle = () => {
 
 Object.assign(ACTIONS, {
   activity: () => (state.menu?.kind === "activity" ? closeDialog() : openActivity()),
+  approvals: () => (state.menu?.kind === "approvals" ? closeDialog() : openApprovals()),
   "activity-clear": async () => {
     if (await done("activity_clear")) {
       state.activity = [];
@@ -3075,6 +3103,7 @@ function paletteEntries() {
     ["Copy project path", "", "copyPath"],
     ["Toggle keep awake", "", "wake"],
     ["Activity", "What the agents did, newest first", "activity"],
+    ["Approvals…", "What the agents are waiting on you for, in every project", "approvals"],
     ["Settings…", "Appearance, terminal, agents, git, notifications", "settings"],
     ["Files & Changes", "Browse files, stage, commit, push, log", "files"],
   ].map(([title, subtitle, action]) => ({ kind: "Action", title: t(title), subtitle: t(subtitle), shortcut: bound(action), run: () => SHORTCUT_ACTIONS[action]() }));
@@ -3280,9 +3309,22 @@ function onChatEvent(payload) {
   if (event.type === "session") loadSessions();
   // A new approval asks even when the state already says waiting.
   const asks = event.type === "approval" || next !== before;
-  if (!asks || !next) return;
+  if (!asks || !next) {
+    // An answer or a turn's end changes the inbox even when the state
+    // stays — another approval of the same session still waits.
+    if (["approval_resolved", "turn_ended"].includes(event.type)) render();
+    return;
+  }
   state.agentState.set(id, next);
   if (next === "waiting" || next === "done") notify({ id, state: next, title: anySession(id)?.title ?? "" });
+  render();
+  updateBadge();
+}
+
+async function adoptWaiting() {
+  const listed = await attempt("chat_approvals");
+  if (!listed.ok) return;
+  for (const id of adoptApprovals(listed.value)) state.agentState.set(id, "waiting");
   render();
   updateBadge();
 }
@@ -3301,6 +3343,8 @@ async function monitorTick() {
     if (viewOf(anySession(entry.id)) === "chat") continue;
     if (state.agentState.get(entry.id) !== entry.state) {
       state.agentState.set(entry.id, entry.state);
+      if (entry.state === "waiting") state.waitingSince.set(entry.id, Date.now());
+      else state.waitingSince.delete(entry.id);
       touched = true;
       if (entry.notable) notify(entry);
     }
@@ -3341,7 +3385,13 @@ let notified = null;
 addEventListener("focus", () => {
   const last = notified;
   notified = null;
-  if (last && isRunning(last.id) && state.agentState.get(last.id) === last.state && state.sessionId !== last.id) {
+  if (!last) return;
+  // Several things waiting: the inbox, where all of them are. One: its session.
+  if (last.state === "waiting" && inboxItems().length > 1) {
+    if (state.menu?.kind !== "approvals") openApprovals();
+    return;
+  }
+  if (isRunning(last.id) && state.agentState.get(last.id) === last.state && state.sessionId !== last.id) {
     openAnywhere(last.id);
   }
 });
@@ -3437,7 +3487,9 @@ async function applyKeepAwake() {
 
 terminal.onExit(async (exit) => {
   chatExited(exit.id, exit);
+  state.waitingSince.delete(exit.id);
   updateBadge();
+  if (state.menu?.kind === "approvals") render();
   if (exit.id.startsWith("login:")) {
     if (state.dialog?.id === exit.id) {
       state.dialog.finished = true;
@@ -3564,6 +3616,11 @@ try {
     for (const id of state.running) if (viewOf(anySession(id)) === "chat") chatSnapshot(id);
   }, 4000);
   await listen("chat:event", ({ payload }) => onChatEvent(payload));
+  // Approvals asked before this window listened — a reload, or a session it
+  // never opened — are still waiting in the backend.
+  await adoptWaiting();
+  // How long each has waited, kept current while the inbox is open.
+  setInterval(() => state.menu?.kind === "approvals" && render(), 30000);
   // The backend found a Codex id or a pull request in an agent's output.
   await listen("session:changed", async () => {
     await loadSessions();

@@ -663,6 +663,7 @@ pub const SHORTCUT_ACTIONS: &[&str] = &[
     "panePrevious",
     "paneClose",
     "activity",
+    "approvals",
     "nextTab",
     "previousTab",
     "reveal",
