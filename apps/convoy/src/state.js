@@ -62,6 +62,10 @@ export const state = {
   queues: new Set(),
   /// What each running agent last reported, from its hooks.
   agentState: new Map(),
+  /// When each terminal session started waiting, for the approvals inbox.
+  waitingSince: new Map(),
+  /// Inbox rows showing their full detail.
+  inboxExpanded: new Set(),
   // Projects the user folded shut in the sidebar, kept across launches.
   collapsed: new Set(remembered(COLLAPSED)),
   // Groups as folding rows (on) or a flat list (off); per machine.

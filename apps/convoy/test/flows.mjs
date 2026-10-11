@@ -176,6 +176,8 @@ try {
       if (cmd === "chat_start") { sessions.find((item) => item.id === args.id).running = true; return null; }
       if (["chat_send", "chat_answer", "chat_interrupt"].includes(cmd)) return null;
       if (cmd === "chat_models") return null;
+      // One approval asked before this window listened, from a session it never opened.
+      if (cmd === "chat_approvals") return [{ id: "chat-c", at: Date.now() - 5 * 60000 - 1000, event: { type: "approval", request: "r30", kind: "command", title: "Run `./deploy staging`", detail: "./deploy staging", always: false } }];
       if (cmd === "chat_set_model") { sessions.find((item) => item.id === args.id).model = args.model ?? ""; return null; }
       if (cmd === "chat_set_effort") { sessions.find((item) => item.id === args.id).effort = args.effort ?? ""; return null; }
       if (cmd === "session_view") { sessions.find((item) => item.id === args.id).view = args.view; return null; }
@@ -192,6 +194,18 @@ try {
   await offer.getByRole("button", { name: "Not now" }).click();
   await offer.waitFor({ state: "detached" });
   assert.equal(await page.evaluate(() => localStorage.getItem("convoy.macImportOffered")), "1");
+  // Approvals asked before the window listened are read from the backend
+  // and wait in the inbox like any other, with how long they have waited.
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "chat_approvals"));
+  const inbox = page.locator(".inbox");
+  await page.locator('.tabbar [data-action="approvals"]').click();
+  const adopted = inbox.locator(".inbox-row", { hasText: "deploy staging" });
+  await adopted.waitFor();
+  assert.equal(await adopted.locator(".inbox-row__time").textContent(), "5 min");
+  await page.evaluate(() => window.emitTauri("chat:event", { id: "chat-c", event: { type: "approval_resolved", request: "r30" } }));
+  await adopted.waitFor({ state: "detached" });
+  await page.keyboard.press("Escape");
+  await inbox.waitFor({ state: "detached" });
   await page.locator('[data-action="open-folder"]').first().click();
   await page.getByRole("heading", { name: "Example", exact: true }).waitFor();
   await page.locator('[data-open="builder"]').first().click();
@@ -930,11 +944,108 @@ try {
   const switched = await page.evaluate(() => window.checkCalls.filter((c) => ["session_stop", "session_view", "session_start"].includes(c.cmd) && c.args.id === "chatty").map((c) => [c.cmd, c.args.view]));
   assert.deepEqual(switched, [["session_stop", undefined], ["session_view", "terminal"], ["session_start", undefined]]);
   assert.equal(await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "chat_history").length), 1, "history is read once");
+
+  // ---------------------------------------------------------- approvals inbox --
+  // Two chat sessions ask — one never opened in this window — and a terminal
+  // session waits: one inbox, newest first, answered in place, in step with
+  // the chat's own card.
+  await page.evaluate(() => {
+    window.mockSessions.push(
+      { id: "chat-a", project_id: "project", title: "Ship the release", agent: "claude", provider_id: "pa", started: true, running: true, pinned: false, review_of: null, view: "chat" },
+      { id: "chat-b", project_id: "other", title: "Migrate the database", agent: "codex", provider_id: "pb", started: true, running: true, pinned: false, review_of: null, view: "chat" },
+    );
+  });
+  await page.locator('[data-action="home"]').first().click();
+  await page.locator('[data-open="chat-a"]').first().click();
+  const chatA = page.locator('.chat[data-chat="chat-a"]');
+  await chatA.waitFor();
+  const emitTo = (id, events) => page.evaluate(([target, list]) => list.forEach((event) => window.emitTauri("chat:event", { id: target, event })), [id, events]);
+  await emitTo("chat-a", [{ type: "turn_started" }, { type: "approval", request: "r10", kind: "command", title: "Run `npm run release`", detail: "npm run release -- --tag next", always: true }]);
+  await page.waitForTimeout(20);
+  await emitTo("chat-b", [{ type: "turn_started" }, { type: "approval", request: "r20", kind: "edit", title: "Edit db/migrate.sql", detail: "--- a/db/migrate.sql\n+++ b/db/migrate.sql\n@@ -1 +1,2 @@\n ALTER TABLE users ADD COLUMN code text;\n+CREATE INDEX users_code ON users (code);", always: false }]);
+  await page.locator(".inbox-button__badge", { hasText: "3" }).waitFor();
+  // More than one: "need you" opens the inbox rather than one session.
+  await page.locator(".status__needs", { hasText: "3 need you" }).click();
+  await inbox.waitFor();
+  const rows = inbox.locator(".inbox-row");
+  assert.equal(await rows.count(), 3);
+  const places = await rows.locator(".inbox-row__session").allTextContents();
+  assert.deepEqual(places, ["Migrate the database", "Ship the release", "Fix login"], "newest first");
+  const rowA = rows.filter({ hasText: "Ship the release" });
+  const rowB = rows.filter({ hasText: "Migrate the database" });
+  const rowTerminal = rows.filter({ hasText: "Fix login" });
+  assert.equal((await rowB.locator(".inbox-row__project").textContent()).trim(), "Other");
+  assert.equal(await rowA.locator("[data-inbox-answer]").count(), 3, "Allow, Allow for session, Deny");
+  assert.equal(await rowB.locator("[data-inbox-answer]").count(), 2, "no session-wide answer offered");
+  // A terminal session can only be opened: it answers in its own terminal.
+  assert.equal(await rowTerminal.locator("[data-inbox-answer]").count(), 0);
+  await rowTerminal.locator(".inbox-row__hint", { hasText: "answered in its own terminal" }).waitFor();
+  await rowTerminal.locator("[data-inbox-open]").waitFor();
+  // The short detail expands to the whole of it.
+  assert.equal(await rowB.locator(".inbox-row__full").count(), 0);
+  await rowB.locator("[data-inbox-expand]").click();
+  await rowB.locator(".inbox-row__full", { hasText: "CREATE INDEX users_code" }).waitFor();
+  assert.equal(await rowB.locator("[data-inbox-expand]").getAttribute("aria-expanded"), "true");
+  if (shots) {
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate((value) => document.documentElement.setAttribute("data-theme", value), theme);
+      await page.waitForTimeout(200);
+      await page.screenshot({ path: `${shots}/inbox-${theme}.png` });
+    }
+    await page.evaluate(() => document.documentElement.setAttribute("data-theme", "light"));
+  }
+  // Allow from the inbox: busy here and on the chat's card until resolved.
+  await rowA.locator('[data-inbox-answer="allow"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "chat_answer" && c.args.id === "chat-a"));
+  assert.deepEqual(await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "chat_answer").at(-1).args), { id: "chat-a", request: "r10", decision: "allow" });
+  assert(await rowA.locator('[data-inbox-answer="allow"]').isDisabled(), "busy until resolved");
+  assert(await chatA.locator('.approval [data-chat-answer="allow"]').isDisabled(), "the chat's card is busy too");
+  await emitTo("chat-a", [{ type: "approval_resolved", request: "r10" }]);
+  await rowA.waitFor({ state: "detached" });
+  await chatA.locator(".approval .approval__answer", { hasText: "Allowed" }).waitFor();
+  await page.locator(".inbox-button__badge", { hasText: "2" }).waitFor();
+  // The keyboard reaches the rows; Esc closes the inbox.
+  await inbox.focus();
+  await page.keyboard.press("Tab");
+  assert(await page.evaluate(() => !!document.activeElement?.closest(".inbox")), "Tab moves into the inbox");
+  await page.keyboard.press("Escape");
+  await inbox.waitFor({ state: "detached" });
+  // The palette has it, and so does a shortcut.
+  await page.keyboard.press(`${primary}+k`);
+  await page.locator("#palette-input").fill("Approvals");
+  await page.locator(".palette__row", { hasText: "Approvals…" }).first().waitFor();
+  await page.keyboard.press("Enter");
+  await inbox.waitFor();
+  await page.keyboard.press("Escape");
+  await inbox.waitFor({ state: "detached" });
+  await page.keyboard.press(`${mod}+Alt+a`);
+  await inbox.waitFor();
+  // Open goes to a session this window had never shown, its card waiting.
+  await rowB.locator("[data-inbox-open]").click();
+  await inbox.waitFor({ state: "detached" });
+  const chatB = page.locator('.chat[data-chat="chat-b"]');
+  await chatB.locator(".approval", { hasText: "db/migrate.sql" }).waitFor();
+  // Denied from the card: the inbox follows, and with one thing left the
+  // status bar jumps straight to it.
+  await chatB.locator('[data-chat-answer="deny"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "chat_answer" && c.args.id === "chat-b" && c.args.decision === "deny"));
+  await emitTo("chat-b", [{ type: "approval_resolved", request: "r20" }]);
+  await page.locator(".inbox-button__badge", { hasText: "1" }).waitFor();
+  await page.locator('.status__needs[data-needs-you="builder"]', { hasText: "1 needs you" }).waitFor();
+
+  // Every string the inbox shows has its Russian.
+  const ru = (await import("../src/locales/ru.js")).default.strings;
+  const { readFile } = await import("node:fs/promises");
+  const inboxSource = await readFile(new URL("../src/views-inbox.js", import.meta.url), "utf8");
+  const keys = [...inboxSource.matchAll(/\bt\("((?:[^"\\]|\\.)*)"/g)].map((match) => match[1]);
+  keys.push("Approvals…", "What the agents are waiting on you for, in every project");
+  assert(keys.length > 15, "the inbox's strings were found");
+  assert.deepEqual(keys.filter((key) => !(key in ru)), [], "untranslated inbox strings");
   assert.equal(await page.locator(".toast--error").count(), 0);
   assert.deepEqual(errors, []);
   assert.equal(await page.locator(".toast--error").count(), 0);
   if (process.env.CONVOY_TEST_SCREENSHOT) await page.screenshot({ path: process.env.CONVOY_TEST_SCREENSHOT });
-  console.log("PASS: folder → builder → review → feedback; Linear MCP import → per-task model; sidebar menus; settled dialogs; settings page saves; chat session events, approval, composer and view switch; no browser errors. IPC mocked.");
+  console.log("PASS: folder → builder → review → feedback; Linear MCP import → per-task model; sidebar menus; settled dialogs; settings page saves; chat session events, approval, composer and view switch; approvals inbox across sessions; no browser errors. IPC mocked.");
 } finally {
   await browser?.close();
   await server.close();

@@ -123,6 +123,7 @@ pub fn run() {
             chat::chat_history,
             chat::chat_send,
             chat::chat_answer,
+            chat::chat_approvals,
             chat::chat_interrupt,
             chat::chat_models,
             chat::chat_set_model,

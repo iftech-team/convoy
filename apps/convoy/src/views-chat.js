@@ -9,7 +9,7 @@
 // redrawn. The conversation itself is state (`state.chats`), fed by the
 // backend's `chat:event`s.
 
-import { call, done, ensureModels, isRunning, loadWorkspace, anySession, rememberChoice, state, toast } from "./state.js";
+import { call, changed, done, ensureModels, isRunning, loadWorkspace, anySession, rememberChoice, state, toast } from "./state.js";
 import { EFFORT_NAMES } from "./dialogs.js";
 import { escape } from "./ui.js";
 import { t } from "./i18n.js";
@@ -36,6 +36,9 @@ const blank = () => ({
   index: new Map(),
   turn: false,
   approvals: new Set(),
+  /// Requests answered while this window listened, so a list read from the
+  /// backend a moment earlier cannot bring one back.
+  answered: new Set(),
   loaded: false,
   loading: false,
   images: [],
@@ -134,6 +137,8 @@ export function reduce(chat, event, replay = false) {
       if (replay) item.resolved = item.resolved ?? "answered";
       else {
         item.resolved = null;
+        // When it started waiting, for the inbox; asked again keeps it.
+        item.at ??= Date.now();
         chat.approvals.add(event.request);
       }
       break;
@@ -145,6 +150,7 @@ export function reduce(chat, event, replay = false) {
         item.busy = false;
       }
       chat.approvals.delete(event.request);
+      chat.answered.add(event.request);
       break;
     }
     case "turn_ended":
@@ -184,6 +190,37 @@ export function chatEvent({ id, event }) {
   reduce(chat, event);
   refresh(id);
   return chat;
+}
+
+/// Approvals the backend still holds, read when the window opens or reloads:
+/// they reach the chats as if their events had just arrived, keeping the time
+/// each one started waiting. Returns the sessions that have one.
+export function adoptApprovals(list) {
+  const sessions = new Set();
+  for (const entry of Array.isArray(list) ? list : []) {
+    const { id, at, event } = entry ?? {};
+    if (!id || event?.type !== "approval" || !event.request) continue;
+    const chat = chatOf(id);
+    if (chat.answered.has(event.request) || chat.index.get(`p:${event.request}`)?.resolved) continue;
+    reduce(chat, event);
+    const item = chat.index.get(`p:${event.request}`);
+    if (item && Number.isFinite(at)) item.at = at;
+    sessions.add(id);
+  }
+  for (const id of sessions) refresh(id);
+  return [...sessions];
+}
+
+/// Every approval a chat is waiting on, in any session, oldest first.
+export function waitingApprovals() {
+  const list = [];
+  for (const [id, chat] of state.chats) {
+    for (const request of chat.approvals) {
+      const item = chat.index.get(`p:${request}`);
+      if (item && !item.resolved) list.push({ id, item });
+    }
+  }
+  return list.sort((a, b) => (a.item.at ?? 0) - (b.item.at ?? 0));
 }
 
 export const waitingFor = (id) => (state.chats.get(id)?.approvals.size ?? 0) > 0;
@@ -721,18 +758,26 @@ async function send(id) {
   if (!isRunning(id)) await loadWorkspace();
 }
 
-async function answer(id, request, decision) {
+/// Answers an approval, from its card or from the inbox: both read the same
+/// item, so either shows the other's answer. The card stays busy until the
+/// backend's `approval_resolved`; a failure is a toast and the card is free
+/// again. The whole window redraws after each step, for the inbox and badge.
+export async function answer(id, request, decision) {
   const chat = chatOf(id);
   const item = chat.index.get(`p:${request}`);
-  if (!item || item.resolved || item.busy) return;
+  if (!item || item.resolved || item.busy) return false;
   item.busy = true;
   item.answer = decision;
   refresh(id);
+  changed();
   if (!(await done("chat_answer", { id, request, decision }))) {
     item.busy = false;
     item.answer = null;
     refresh(id);
+    changed();
+    return false;
   }
+  return true;
 }
 
 /// Text put into a chat's composer, not sent: dropped paths, feedback, a

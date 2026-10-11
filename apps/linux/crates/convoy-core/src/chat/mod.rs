@@ -10,8 +10,10 @@ pub mod claude;
 pub mod codex;
 pub mod event;
 pub mod history;
+pub mod pending;
 
 pub use event::{ApprovalKind, ChatEvent, ChatModel, Decision, Image, ToolKind, Usage};
+pub use pending::{PendingApproval, PendingApprovals};
 
 use crate::Result;
 

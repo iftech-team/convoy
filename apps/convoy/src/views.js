@@ -18,6 +18,7 @@ import { activeAccount, anySession, isRunning, project, session, state, visibleS
 import { TASK_STATUSES, runnable } from "./views-planning.js";
 import { missingConversation } from "./terminal.js";
 import { viewOf } from "./views-chat.js";
+import { approvalsButton, approvalsPanel, inboxItems } from "./views-inbox.js";
 
 const TABS = [
   ["sessions", "Sessions"],
@@ -261,6 +262,7 @@ export function contextMenu(menu) {
   if (menu.kind === "awake") return awakeMenu();
   if (menu.kind === "tab") return tabMenu(menu);
   if (menu.kind === "activity") return activityPanel();
+  if (menu.kind === "approvals") return approvalsPanel();
   const item = (label, act, { icon = "", enabled = true, danger = false, hint = "" } = {}) => `
     <button class="menu__item${danger ? " menu__item--danger" : ""}" data-menu-act="${act}"
             ${enabled ? "" : "disabled"}>
@@ -1016,6 +1018,7 @@ export function tabBar() {
           ${icons.git}
           ${state.settings.git_status !== false && state.git?.changed ? `<span class="counted__badge">${Math.min(99, state.git.changed)}</span>` : ""}
         </button>
+        ${approvalsButton()}
         ${bell()}
         ${state.projects.length ? button({ icon: "plus", action: "new-session", kind: "icon", title: t("New session") }) : ""}
       </span>
@@ -1048,15 +1051,17 @@ function tabMenu(menu) {
 export const awakeActive = () =>
   state.settings.keep_awake === "always" || (state.settings.keep_awake === "sessions" && state.running.length > 0);
 
-/// "N need you": agents waiting for an answer, in any project. Opens the first.
+/// "N need you": what waits for an answer, in any project. One opens its
+/// session; more open the approvals inbox.
 function needsYouButton() {
-  const waiting = state.running.filter((id) => state.agentState.get(id) === "waiting");
-  if (!waiting.length) return "";
-  const titles = waiting.map((id) => tabInfo(id)?.title).filter(Boolean).join(", ");
+  const items = inboxItems();
+  if (!items.length) return "";
+  const titles = [...new Set(items.map((item) => tabInfo(item.id)?.title).filter(Boolean))].join(", ");
+  const target = items.length === 1 ? `data-needs-you="${escape(items[0].id)}"` : 'data-action="approvals"';
   return `
-    <button class="status__item status__button status__needs" data-needs-you="${escape(waiting[0])}"
+    <button class="status__item status__button status__needs" ${target}
             title="${escape(titles)}">
-      ${icons.warn} ${escape(plural(waiting.length, "needs you", "need you"))}
+      ${icons.warn} ${escape(plural(items.length, "needs you", "need you"))}
     </button>
     <span class="status__sep"></span>`;
 }
