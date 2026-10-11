@@ -132,7 +132,11 @@ pub fn plan_launch(
             .map(|file| file.to_string_lossy())
             .as_deref(),
         &account.env,
-        &permission_flags(session.agent, workspace.settings()),
+        &[
+            permission_flags(session.agent, workspace.settings()),
+            crate::provider::knowledge::flags(session.agent, &storage.knowledge(), &session.id),
+        ]
+        .concat(),
     );
 
     Ok(LaunchPlan {
@@ -196,6 +200,11 @@ pub fn plan_chat_launch(
                 &[
                     permission_flags(Agent::Claude, settings),
                     crate::provider::effort_flags(Agent::Claude, session.effort.as_deref()),
+                    crate::provider::knowledge::flags(
+                        Agent::Claude,
+                        &storage.knowledge(),
+                        &session.id,
+                    ),
                 ]
                 .concat(),
             ),

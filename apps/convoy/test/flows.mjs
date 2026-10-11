@@ -619,7 +619,21 @@ try {
   // The effort beside the model, from the levels Codex lists for it.
   await page.locator('#draft-effort option[value="ultra"]').waitFor({ state: "attached" });
   await page.locator("#draft-effort").selectOption("ultra");
-  if (shots) await page.screenshot({ path: `${shots}/new-session.png` });
+  // Earlier conversations as background: a session of this project and a
+  // saved one, picked from one menu; a chip takes one back out.
+  await page.locator('#draft-knowledge option[value="c:claude:0199aaaa-0000-4000-8000-000000000001"]').waitFor({ state: "attached" });
+  await page.locator("#draft-knowledge").selectOption("s:builder");
+  await page.locator('[data-knowledge-remove="s:builder"]').waitFor();
+  await page.locator("#draft-knowledge").selectOption("c:claude:0199aaaa-0000-4000-8000-000000000001");
+  await page.locator(".knowledge__chip", { hasText: "Fix flaky login" }).waitFor();
+  assert.equal(await page.locator('#draft-knowledge option[value="s:builder"]').count(), 0, "a picked one leaves the menu");
+  assert.equal(await page.locator("#draft-title").inputValue(), "Fix flaky checkout", "picking keeps what was typed");
+  if (shots) {
+    await page.locator("#draft-knowledge").scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `${shots}/new-session.png` });
+  }
+  await page.locator('[data-knowledge-remove="s:builder"]').click();
+  await page.locator('#draft-knowledge option[value="s:builder"]').waitFor({ state: "attached" });
   await page.locator('[data-action="create-session"]').click();
   await page.locator('.tab-item--selected[data-tab-open="fresh"]').waitFor();
   const made = await page.evaluate(() => window.checkCalls.filter((c) => ["session_create", "worktree_create"].includes(c.cmd) || (c.cmd === "session_start" && c.args.id === "fresh")).map((c) => ({ cmd: c.cmd, ...c.args })));
@@ -628,6 +642,7 @@ try {
   assert.equal(made[0].agent, "codex");
   assert.equal(made[0].view, "terminal", "the sheet starts from Settings' default view");
   assert.equal(made[0].effort, "ultra", "the effort chosen in the sheet");
+  assert.deepEqual(made[0].knowledge, [{ agent: "claude", provider_id: "0199aaaa-0000-4000-8000-000000000001", title: "Fix flaky login" }]);
   assert.deepEqual([made[1].branch, made[1].base], ["convoy/fix-flaky-checkout", "origin/main"]);
 
   // Project settings: a page, as on macOS, saving each choice.

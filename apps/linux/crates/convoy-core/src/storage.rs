@@ -160,6 +160,12 @@ impl Storage {
     pub fn worktrees(&self) -> PathBuf {
         self.root.join("worktrees")
     }
+
+    /// Earlier conversations written out for a session to read, one
+    /// `<session id>.md` each.
+    pub fn knowledge(&self) -> PathBuf {
+        self.root.join("knowledge")
+    }
 }
 
 #[cfg(test)]

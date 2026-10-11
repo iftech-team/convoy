@@ -1145,7 +1145,7 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-inbox-answer],[data-inbox-open],[data-inbox-expand],[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
+      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -1451,6 +1451,11 @@ app.addEventListener("click", async (event) => {
   }
   if (data.historyResume) return resumeHistory(data.historyResume);
   if (data.historyDelete) return confirmDelete([data.historyDelete]);
+  if (data.knowledgeRemove && state.dialog?.kind === "session") {
+    captureDraft();
+    state.dialog.knowledge = state.dialog.knowledge.filter((item) => item.key !== data.knowledgeRemove);
+    return render();
+  }
   // The checkbox itself is handled as a change; the rest of the row toggles it.
   if (data.pickRow && state.picked && !event.target.matches("[data-pick]")) {
     togglePick(data.pickRow, !state.picked.has(data.pickRow));
@@ -1631,6 +1636,20 @@ app.addEventListener("change", async (event) => {
   if (state.dialog?.kind === "session" && event.target.id === "draft-project") {
     captureDraft();
     return sessionProject(state.dialog, event.target.value);
+  }
+  // Picking a conversation adds it as a chip; the menu goes back to its prompt.
+  if (state.dialog?.kind === "session" && event.target.id === "draft-knowledge") {
+    captureDraft();
+    const key = event.target.value;
+    if (!key) return;
+    const draft = state.dialog;
+    const entry = key.startsWith("s:")
+      ? anySession(key.slice(2))
+      : draft.saved?.find((item) => `c:${item.agent}:${item.provider_id}` === key);
+    if (entry && !draft.knowledge.some((item) => item.key === key)) {
+      draft.knowledge.push({ key, agent: entry.agent, title: entry.title || t("Untitled conversation") });
+    }
+    return render();
   }
   if (["session", "review"].includes(state.dialog?.kind) && event.target.id === "draft-account") {
     state.dialog.account = event.target.value;
@@ -2129,12 +2148,17 @@ async function sessionProject(draft, projectId) {
   draft.refs = [];
   draft.repo = false;
   draft.base = "";
+  draft.saved = [];
+  draft.knowledge ??= [];
   render();
-  const [refs, detail] = await Promise.all([
+  const [refs, detail, history] = await Promise.all([
     call("git_refs", { projectId }),
     call("project_detail", { id: projectId }),
+    call("history_scan", { projectId }),
   ]);
   if (state.dialog !== draft || draft.projectId !== projectId) return;
+  // Saved conversations no session holds, for the knowledge picker.
+  draft.saved = (history ?? []).filter((entry) => !entry.session_id);
   draft.refs = refs ?? [];
   draft.repo = draft.refs.length > 0;
   draft.defaultBase = detail?.base_ref || draft.refs.find((ref) => !ref.startsWith("origin/") && !ref.startsWith("tag:")) || "";
@@ -2162,6 +2186,11 @@ async function createSession() {
     profileId: draft.account || null,
     notes: draft.notes,
     view: draft.view === "chat" ? "chat" : "terminal",
+    knowledge: (draft.knowledge ?? []).map((item) => {
+      if (item.key.startsWith("s:")) return { session_id: item.key.slice(2) };
+      const [, agent, provider_id] = item.key.split(":");
+      return { agent, provider_id, title: item.title };
+    }),
   });
   draft.busy = false;
   if (!id) return render();

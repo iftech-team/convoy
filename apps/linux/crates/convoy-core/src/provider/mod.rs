@@ -2,6 +2,7 @@
 //! quotas are read.
 
 pub mod codex;
+pub mod knowledge;
 pub mod launch;
 pub mod models;
 pub mod sweep;

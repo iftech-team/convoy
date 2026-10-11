@@ -52,11 +52,23 @@ pub fn session_detail(
     })
 }
 
+/// A conversation picked as background for a new session: a session, or a
+/// saved conversation no session holds.
+#[derive(Deserialize)]
+pub struct KnowledgeItem {
+    pub session_id: Option<String>,
+    pub agent: Option<Agent>,
+    pub provider_id: Option<String>,
+    pub title: Option<String>,
+}
+
 /// Creates a session. Its title, model name and review relationship are all
 /// checked by the core, so the rules are the ones every build enforces.
+/// Conversations picked as background are written to one file the first
+/// message points at; reading them happens off the main thread.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub fn session_create(
+pub async fn session_create(
     project_id: String,
     agent: String,
     title: String,
@@ -66,9 +78,58 @@ pub fn session_create(
     profile_id: Option<String>,
     notes: Option<String>,
     view: Option<String>,
+    knowledge: Option<Vec<KnowledgeItem>>,
     workspace: State<'_, Workspace>,
 ) -> Result<String, String> {
     let agent = Agent::parse(&agent).ok_or("Unknown agent.")?;
+    let storage = workspace.storage.clone();
+    let knowledge = knowledge.unwrap_or_default();
+
+    // What to read, resolved against the workspace for sessions.
+    let (sources, homes) = if knowledge.is_empty() {
+        (Vec::new(), Vec::new())
+    } else {
+        workspace.act(|core| {
+            let mut sources: Vec<(String, Agent, String)> = Vec::new();
+            for item in &knowledge {
+                match &item.session_id {
+                    Some(id) => {
+                        let session = core.session(id)?;
+                        sources.push((
+                            session.title.clone(),
+                            session.agent,
+                            session.provider_id.clone(),
+                        ));
+                    }
+                    None => {
+                        if let (Some(agent), Some(provider_id)) = (item.agent, &item.provider_id) {
+                            let title = item.title.clone().unwrap_or_else(|| provider_id.clone());
+                            sources.push((title, agent, provider_id.clone()));
+                        }
+                    }
+                }
+            }
+            Ok((sources, agent_homes(core, &storage)?))
+        })?
+    };
+    let digest = if sources.is_empty() {
+        None
+    } else {
+        let digest = tauri::async_runtime::spawn_blocking(move || {
+            let sources: Vec<_> = sources
+                .into_iter()
+                .filter_map(|(title, agent, provider_id)| {
+                    transcript_file(&homes, agent, &provider_id)
+                        .map(|file| convoy_core::provider::knowledge::Source { title, agent, file })
+                })
+                .collect();
+            (!sources.is_empty()).then(|| convoy_core::provider::knowledge::digest(&sources))
+        })
+        .await
+        .map_err(|error| error.to_string())?;
+        Some(digest.ok_or("The picked conversations could not be found on this computer.")?)
+    };
+
     workspace.act(|workspace| {
         let mut input = NewSession::new(project_id, agent, title);
         input.prompt = prompt;
@@ -82,6 +143,29 @@ pub fn session_create(
             .last()
             .map(|session| session.id.clone())
             .unwrap_or_default();
+        if let Some(digest) = digest {
+            let folder = storage.knowledge();
+            let file = folder.join(format!("{id}.md"));
+            let written =
+                std::fs::create_dir_all(&folder).and_then(|_| std::fs::write(&file, digest));
+            if let Err(error) = written {
+                workspace.remove_sessions(std::slice::from_ref(&id))?;
+                return Err(convoy_core::ConvoyError::message(format!(
+                    "Could not write the earlier conversations: {error}"
+                )));
+            }
+            let note = convoy_core::provider::knowledge::note(&file);
+            workspace.update(|state| {
+                if let Some(session) = state.sessions.iter_mut().find(|session| session.id == id) {
+                    session.prompt = if session.prompt.trim().is_empty() {
+                        format!("{note} Wait for the person's request.")
+                    } else {
+                        format!("{note}\n\n{}", session.prompt)
+                    };
+                }
+                Ok(())
+            })?;
+        }
         if let Some(notes) = notes.filter(|notes| !notes.trim().is_empty()) {
             workspace.edit_session(
                 &id,
@@ -796,7 +880,6 @@ pub async fn sessions_delete(
     // (session id, agent, provider id), resolved against the workspace so a
     // session's conversation is the one Convoy recorded, not what was sent.
     let (targets, homes) = workspace.act(|core| {
-        let state = core.state();
         let mut targets: Vec<(Option<String>, Agent, String)> = Vec::new();
         for item in &items {
             match &item.session_id {
@@ -815,33 +898,7 @@ pub async fn sessions_delete(
                 }
             }
         }
-        let environment = convoy_core::provider::launch::current_environment();
-        let mut homes: Vec<(Agent, std::path::PathBuf)> = Vec::new();
-        for agent in [Agent::Claude, Agent::Codex] {
-            let mut probe = convoy_core::model::Session::new(String::new(), agent, "delete");
-            let profiles = std::iter::once(None).chain(
-                state
-                    .profiles
-                    .iter()
-                    .filter(|p| p.agent == agent)
-                    .map(|p| Some(p.id.clone())),
-            );
-            for profile in profiles {
-                probe.profile_id = profile;
-                let account = convoy_core::accounts::account_environment(
-                    &probe,
-                    &state.profiles,
-                    &storage.accounts(),
-                    &environment,
-                )?;
-                if !homes
-                    .iter()
-                    .any(|(kind, home)| *kind == agent && *home == account.home)
-                {
-                    homes.push((agent, account.home));
-                }
-            }
-        }
+        let homes = agent_homes(core, &storage)?;
         Ok((targets, homes))
     })?;
 
@@ -923,4 +980,58 @@ fn trash_all(files: &[std::path::PathBuf]) -> Result<(), trash::Error> {
         context.set_delete_method(DeleteMethod::NsFileManager);
     }
     context.delete_all(files)
+}
+
+/// Every home a conversation can be saved under: each agent's system login
+/// and every account's, once each.
+fn agent_homes(
+    core: &convoy_core::Workspace,
+    storage: &convoy_core::Storage,
+) -> convoy_core::Result<Vec<(Agent, std::path::PathBuf)>> {
+    let state = core.state();
+    let environment = convoy_core::provider::launch::current_environment();
+    let mut homes: Vec<(Agent, std::path::PathBuf)> = Vec::new();
+    for agent in [Agent::Claude, Agent::Codex] {
+        let mut probe = convoy_core::model::Session::new(String::new(), agent, "homes");
+        let profiles = std::iter::once(None).chain(
+            state
+                .profiles
+                .iter()
+                .filter(|p| p.agent == agent)
+                .map(|p| Some(p.id.clone())),
+        );
+        for profile in profiles {
+            probe.profile_id = profile;
+            let account = convoy_core::accounts::account_environment(
+                &probe,
+                &state.profiles,
+                &storage.accounts(),
+                &environment,
+            )?;
+            if !homes
+                .iter()
+                .any(|(kind, home)| *kind == agent && *home == account.home)
+            {
+                homes.push((agent, account.home));
+            }
+        }
+    }
+    Ok(homes)
+}
+
+/// The transcript to read for a conversation: the largest copy, since a
+/// conversation copied for a worktree keeps growing only where it resumes.
+fn transcript_file(
+    homes: &[(Agent, std::path::PathBuf)],
+    agent: Agent,
+    provider_id: &str,
+) -> Option<std::path::PathBuf> {
+    homes
+        .iter()
+        .filter(|(kind, _)| *kind == agent)
+        .flat_map(|(_, home)| {
+            convoy_core::provider::sweep::conversation_files(agent, home, provider_id)
+        })
+        .filter(|file| file.extension().is_some_and(|ext| ext == "jsonl"))
+        .max_by_key(|file| std::fs::metadata(file).map(|meta| meta.len()).unwrap_or(0))
 }

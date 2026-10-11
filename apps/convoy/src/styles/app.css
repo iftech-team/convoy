@@ -5481,3 +5481,46 @@ select:disabled {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* New session: earlier conversations picked as background. */
+.knowledge {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.knowledge__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  font-size: 12.5px;
+}
+
+.knowledge__chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge__chip button {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.knowledge__chip button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}

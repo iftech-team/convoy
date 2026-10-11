@@ -89,6 +89,41 @@ function effortSelect(id, agent, profileId, modelId, value) {
 /// As the macOS app's sheet: any project, an optional name, an isolated
 /// worktree from a chosen ref, the agent and its account, and a first
 /// message. Creating it starts it.
+/// Earlier conversations picked as background for a new session: chips for
+/// those picked, and a menu of this project's sessions, its saved
+/// conversations and other projects' sessions.
+function knowledgeField(dialog) {
+  const picked = dialog.knowledge ?? [];
+  const taken = new Set(picked.map((item) => item.key));
+  const names = new Map(state.projects.map((item) => [item.id, item.title]));
+  const sessions = state.allSessions.filter((item) => !taken.has(`s:${item.id}`));
+  const option = (key, label) => `<option value="${escape(key)}">${escape(label)}</option>`;
+  const group = (label, options) => (options.length ? `<optgroup label="${escape(label)}">${options.join("")}</optgroup>` : "");
+  const here = sessions.filter((item) => item.project_id === dialog.projectId).map((item) => option(`s:${item.id}`, item.title));
+  const saved = (dialog.saved ?? [])
+    .filter((entry) => !taken.has(`c:${entry.agent}:${entry.provider_id}`))
+    .map((entry) => option(`c:${entry.agent}:${entry.provider_id}`, entry.title || t("Untitled conversation")));
+  const elsewhere = sessions
+    .filter((item) => item.project_id !== dialog.projectId)
+    .map((item) => option(`s:${item.id}`, `${names.get(item.project_id) ?? ""} · ${item.title}`));
+  const chips = picked
+    .map(
+      (item) => `<span class="knowledge__chip">${agentIcon(item.agent, 13)}<span>${escape(item.title)}</span>
+        <button type="button" data-knowledge-remove="${escape(item.key)}" aria-label="${escape(t("Remove {name}", { name: item.title }))}">×</button></span>`,
+    )
+    .join("");
+  const choices = here.length + saved.length + elsewhere.length;
+  return field(
+    t("Knowledge from earlier sessions (optional)"),
+    `${chips ? `<div class="knowledge">${chips}</div>` : ""}
+     <select id="draft-knowledge" class="field__select"${choices ? "" : " disabled"}>
+       <option value="">${escape(choices ? t("Add a conversation…") : t("No earlier conversations"))}</option>
+       ${group(t("This project"), here)}${group(t("Not in Convoy yet"), saved)}${group(t("Other projects"), elsewhere)}
+     </select>
+     <span class="field__note">${escape(t("What was said in them is given to the agent as a file to read when relevant."))}</span>`,
+  );
+}
+
 function newSession(dialog) {
   const target = state.projects.find((item) => item.id === dialog.projectId);
   const refs = dialog.refs ?? [];
@@ -158,6 +193,7 @@ function newSession(dialog) {
         t("First message (optional)"),
         textArea("draft-prompt", dialog.prompt, t("Sent once, when the agent starts. Resuming never replays it.")),
       )}
+      ${knowledgeField(dialog)}
       <button class="sheet-disclosure" data-toggle="advanced" aria-expanded="${!!dialog.advanced}">
         ${dialog.advanced ? "▾" : "▸"} ${escape(t("Advanced"))}
       </button>

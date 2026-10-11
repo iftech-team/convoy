@@ -264,7 +264,7 @@ pub(crate) fn title(agent: Agent, records: &[Value], id: &str) -> String {
 /// A message with the agents' `<tag>…</tag>` blocks removed and its
 /// whitespace folded; empty when nothing a person wrote is left, or when what
 /// is left still starts with markup.
-fn without_markup(raw: &str) -> String {
+pub(crate) fn without_markup(raw: &str) -> String {
     let mut text = raw.to_string();
     while let Some(open) = text.find('<') {
         let Some(close) = text[open..].find('>').map(|at| open + at) else {
