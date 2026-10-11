@@ -59,13 +59,12 @@ fn unix_spec(agent: Agent, args: &[String], env: &BTreeMap<String, String>) -> L
         .chain(args.iter().cloned())
         .map(|arg| quote(&arg))
         .collect();
-    LaunchSpec {
-        file: "/bin/bash".into(),
-        args: vec![
-            "-ilc".into(),
-            format!("exec env {} {}", bindings.join(" "), command.join(" ")),
-        ],
-    }
+    let (file, args) = launch::shell_command(format!(
+        "exec env {} {}",
+        bindings.join(" "),
+        command.join(" ")
+    ));
+    LaunchSpec { file, args }
 }
 
 /// `sessionSpec()` — the launch used when the installed CLI supports model and

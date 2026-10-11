@@ -191,12 +191,10 @@ fn locate(tool: &str) -> (Option<String>, Option<String>) {
     let output = if cfg!(windows) {
         std::process::Command::new("where").arg(tool).output()
     } else {
-        std::process::Command::new("/bin/bash")
-            .args([
-                "-lc",
-                &format!("command -v {tool} && {tool} --version 2>/dev/null | head -1"),
-            ])
-            .output()
+        let (shell, args) = convoy_core::provider::launch::shell_command(format!(
+            "command -v {tool} && {tool} --version 2>/dev/null | head -1"
+        ));
+        std::process::Command::new(shell).args(args).output()
     };
     let Ok(output) = output else {
         return (None, None);
@@ -205,7 +203,13 @@ fn locate(tool: &str) -> (Option<String>, Option<String>) {
         return (None, None);
     }
     let text = String::from_utf8_lossy(&output.stdout);
-    let mut lines = text.lines().map(str::trim).filter(|line| !line.is_empty());
+    // An interactive shell may print a greeting first; the path is the first
+    // line that is one.
+    let mut lines = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .skip_while(|line| !cfg!(windows) && !line.starts_with('/'));
     let path = lines.next().map(str::to_string);
     let version = if cfg!(windows) {
         path.as_ref().and_then(|found| {
@@ -285,9 +289,8 @@ fn shell(command: &str) -> (bool, String) {
             .args(["/C", command])
             .output()
     } else {
-        std::process::Command::new("/bin/bash")
-            .args(["-lc", command])
-            .output()
+        let (shell, args) = convoy_core::provider::launch::shell_command(command);
+        std::process::Command::new(shell).args(args).output()
     };
     match output {
         Ok(output) => (

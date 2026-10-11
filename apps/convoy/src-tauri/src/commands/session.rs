@@ -675,13 +675,11 @@ pub fn account_login(
         args.extend(login.iter().map(|arg| arg.to_string()));
         (resolved.file, args)
     } else {
-        (
-            "/bin/bash".to_string(),
-            vec![
-                "-ilc".to_string(),
-                format!("exec {} {}", agent.as_str(), login.join(" ")),
-            ],
-        )
+        convoy_core::provider::launch::shell_command(format!(
+            "exec {} {}",
+            agent.as_str(),
+            login.join(" ")
+        ))
     };
 
     let id = login_terminal(&profile_id);

@@ -90,6 +90,17 @@ pub fn login_shell(shell: Option<&str>) -> String {
     }
 }
 
+/// A command run the way the user's terminal would run it: their login
+/// shell, interactive too, because zsh reads `.zshrc` — where nvm and most
+/// PATH additions live — only then. Every agent, login, tool check and
+/// setup command goes through this, so they all see the same PATH.
+pub fn shell_command(command: impl Into<String>) -> (String, Vec<String>) {
+    (
+        login_shell(std::env::var("SHELL").ok().as_deref()),
+        vec!["-ilc".into(), command.into()],
+    )
+}
+
 /// `launchSpec()` — a login shell is used so the agent sees the same PATH and
 /// provider configuration the user gets in a terminal.
 pub fn launch_spec(session: &Session, resume: bool, bindings: &Bindings) -> LaunchSpec {
@@ -112,10 +123,8 @@ pub fn launch_spec(session: &Session, resume: bool, bindings: &Bindings) -> Laun
         .map(|arg| quote(arg))
         .collect::<Vec<_>>()
         .join(" ");
-    LaunchSpec {
-        file: login_shell(std::env::var("SHELL").ok().as_deref()),
-        args: vec!["-ilc".into(), format!("exec {prefix}{command}")],
-    }
+    let (file, args) = shell_command(format!("exec {prefix}{command}"));
+    LaunchSpec { file, args }
 }
 
 /// `agentEnvironment()` — removes the markers that identify *this* process's

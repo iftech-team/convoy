@@ -99,7 +99,7 @@ fn shell_program() -> String {
     if crate::Platform::current().is_windows() {
         crate::telemetry::powershell()
     } else {
-        "/bin/bash".to_string()
+        crate::provider::launch::shell_command("").0
     }
 }
 
@@ -112,7 +112,7 @@ fn shell_arguments(command: &str) -> Vec<String> {
             command.to_string(),
         ]
     } else {
-        vec!["-lc".into(), command.to_string()]
+        crate::provider::launch::shell_command(command).1
     }
 }
 
