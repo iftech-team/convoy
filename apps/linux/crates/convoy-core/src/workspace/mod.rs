@@ -663,6 +663,25 @@ impl Workspace {
         })
     }
 
+    /// Forgets sessions. A task they were building goes back to having no
+    /// session, and their activity goes with them. Their saved conversations
+    /// are the caller's to remove.
+    pub fn remove_sessions(&mut self, ids: &[String]) -> Result<&State> {
+        let ids = ids.to_vec();
+        self.update(move |state| {
+            state.sessions.retain(|session| !ids.contains(&session.id));
+            for task in state.tasks.iter_mut() {
+                if task.session_id.as_ref().is_some_and(|id| ids.contains(id)) {
+                    task.session_id = None;
+                }
+            }
+            state
+                .activity
+                .retain(|event| !ids.contains(&event.session_id));
+            Ok(())
+        })
+    }
+
     // ---- settings and quick commands -----------------------------------
 
     pub fn save_settings(&mut self, patch: SettingsPatch) -> Result<&State> {

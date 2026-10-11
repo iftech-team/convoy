@@ -49,19 +49,38 @@ export function unlinkedConversations() {
   return history.entries.filter((entry) => !entry.session_id);
 }
 
+/// The saved conversations the list shows: the session filter narrows them,
+/// and a folded section shows none.
+export function shownConversations() {
+  if (historyCollapsed()) return [];
+  const needle = state.filter.trim().toLowerCase();
+  return unlinkedConversations().filter(
+    (entry) => !needle || `${entry.title} ${entry.provider_id}`.toLowerCase().includes(needle),
+  );
+}
+
+/// How a saved conversation is picked for deleting, beside `s:<id>` for a session.
+export const conversationKey = (entry) => `c:${entry.agent}:${entry.provider_id}`;
+
+/// A row's checkbox while picking rows to delete.
+export const pickBox = (key, label, disabled = false) =>
+  `<input class="row__pick" type="checkbox" data-pick="${escape(key)}" aria-label="${escape(label)}"
+          ${state.picked?.has(key) ? " checked" : ""}${disabled ? " disabled" : ""} />`;
+
 /// The "Not in Convoy yet" section under the sessions; empty when there is
 /// nothing to resume. The session filter narrows it too.
 export function historySection() {
   const entries = unlinkedConversations();
   if (!entries.length) return "";
-  const needle = state.filter.trim().toLowerCase();
   const root = project()?.path ?? "";
-  const shown = entries.filter((entry) => !needle || `${entry.title} ${entry.provider_id}`.toLowerCase().includes(needle));
+  const shown = shownConversations();
   const collapsed = historyCollapsed();
+  const picking = !!state.picked;
   const rows = shown
     .map(
       (entry) => `
-        <div class="row row--saved">
+        <div class="row row--saved${picking ? " row--picking" : ""}"${picking ? ` data-pick-row="${escape(conversationKey(entry))}"` : ""}>
+          ${picking ? pickBox(conversationKey(entry), entry.title || t("Untitled conversation")) : ""}
           <span class="row__mark">${agentIcon(entry.agent, 16)}</span>
           <div class="row__body">
             <div class="row__title">${escape(entry.title || t("Untitled conversation"))}</div>
@@ -77,10 +96,15 @@ export function historySection() {
               )}
             </div>
           </div>
-          <div class="row__actions">
+          ${
+            picking
+              ? ""
+              : `<div class="row__actions">
             ${button({ icon: "copy", kind: "quiet", title: t("Copy ID"), data: { "history-copy": entry.provider_id } })}
+            ${button({ icon: "trash", kind: "quiet", title: t("Delete…"), data: { "history-delete": conversationKey(entry) } })}
             ${button({ label: t("Resume"), icon: "play", kind: "quiet", data: { "history-resume": entry.provider_id } })}
-          </div>
+          </div>`
+          }
         </div>`,
     )
     .join("");

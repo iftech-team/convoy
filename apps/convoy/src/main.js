@@ -41,6 +41,7 @@ import {
   quickMenu,
   reviewsView,
   sessionMenu,
+  pickableKeys,
   sessionsView,
   sidebar,
   contextMenu,
@@ -410,6 +411,7 @@ async function selectProject(id) {
   if (state.projectId === id) return;
   state.projectId = id;
   state.sessionId = null;
+  state.picked = null;
   state.files = null;
   state.planning = null;
   await loadSessions();
@@ -760,6 +762,23 @@ const ACTIONS = {
   },
   refresh: () => loadWorkspace(),
   "macos-import": () => offerMacImport(false),
+  "pick-start": () => {
+    state.picked = new Set();
+    render();
+  },
+  "pick-all": () => {
+    for (const key of pickableKeys()) state.picked.add(key);
+    render();
+  },
+  "pick-none": () => {
+    state.picked = new Set();
+    render();
+  },
+  "pick-done": () => {
+    state.picked = null;
+    render();
+  },
+  "pick-delete": () => confirmDelete([...state.picked]),
   "history-fold": () => {
     toggleHistoryCollapsed();
     render();
@@ -1124,7 +1143,7 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-inbox-answer],[data-inbox-open],[data-inbox-expand],[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
+      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -1429,6 +1448,12 @@ app.addEventListener("click", async (event) => {
     return toast(t("Conversation ID copied"));
   }
   if (data.historyResume) return resumeHistory(data.historyResume);
+  if (data.historyDelete) return confirmDelete([data.historyDelete]);
+  // The checkbox itself is handled as a change; the rest of the row toggles it.
+  if (data.pickRow && state.picked && !event.target.matches("[data-pick]")) {
+    togglePick(data.pickRow, !state.picked.has(data.pickRow));
+    return render();
+  }
   if (data.sweepGroup && state.dialog?.kind === "history-sweep") {
     const dialog = state.dialog;
     const key = data.sweepGroup === "-" ? "" : data.sweepGroup;
@@ -1580,6 +1605,10 @@ app.addEventListener("change", async (event) => {
     return;
   }
   if (event.target.id === "spec-filter" || event.target.id === "sweep-filter") return;
+  if (event.target.dataset?.pick && state.picked) {
+    togglePick(event.target.dataset.pick, event.target.checked);
+    return render();
+  }
   if (state.dialog?.kind === "history-sweep") {
     const { sweepCheck, sweepPick } = event.target.dataset ?? {};
     if (sweepCheck) state.dialog.checked[sweepCheck] = event.target.checked;
@@ -1792,6 +1821,59 @@ function ensureHistory() {
   loadHistory().finally(() => {
     if (historyLoading === key) historyLoading = null;
   });
+}
+
+function togglePick(key, on) {
+  if (on) state.picked.add(key);
+  else state.picked.delete(key);
+}
+
+/// Asks first, then deletes sessions and saved conversations: each
+/// conversation goes to the Trash and its session leaves Convoy.
+function confirmDelete(keys) {
+  if (!keys.length) return;
+  const items = keys.map((key) => {
+    if (key.startsWith("s:")) return { session_id: key.slice(2) };
+    const [, agent, provider_id] = key.split(":");
+    return { agent, provider_id };
+  });
+  const [key] = keys;
+  const name =
+    keys.length !== 1
+      ? null
+      : key.startsWith("s:")
+        ? state.sessions.find((item) => item.id === key.slice(2))?.title
+        : state.history?.entries.find((entry) => `c:${entry.agent}:${entry.provider_id}` === key)?.title;
+  openModal({
+    kind: "confirm",
+    title: name
+      ? t('Delete "{name}"?', { name })
+      : t("Delete {count}?", { count: plural(keys.length, "conversation") }),
+    body: t("The saved conversation moves to the Trash and leaves Convoy. You can put it back from the Trash."),
+    confirmLabel: t("Delete"),
+    danger: true,
+    run: () => deleteConversations(items),
+  });
+}
+
+async function deleteConversations(items) {
+  const report = await call("sessions_delete", { items });
+  if (!report) return render();
+  const gone = new Set(items.map((item) => item.session_id).filter(Boolean));
+  for (const id of gone) {
+    if (!anySession(id)) continue;
+    if (state.tabs.includes(id)) closeTab(id);
+  }
+  if (gone.has(state.sessionId)) state.sessionId = null;
+  if (state.picked) state.picked = new Set();
+  await loadWorkspace();
+  await loadSessions();
+  await loadHistory();
+  const notes = [
+    report.running ? t("{count} running — stop first", { count: plural(report.running, "session") }) : "",
+    report.failed ? t("{count} could not be moved to the Trash", { count: plural(report.failed, "conversation") }) : "",
+  ].filter(Boolean);
+  toast([t("Deleted {count}", { count: plural(report.deleted, "conversation") }), ...notes].join(" · "));
 }
 
 /// Opens the conversation's session, recording one first when there is none,
@@ -2406,6 +2488,8 @@ async function runMenu(act) {
         await loadSessions();
       }
       return render();
+    case "delete":
+      return confirmDelete([`s:${target.id}`]);
     case "reveal-worktree":
       render();
       return call("path_reveal", { path: target.working_directory });

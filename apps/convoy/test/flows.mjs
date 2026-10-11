@@ -127,6 +127,7 @@ try {
           { agent: "claude", provider_id: "0199aaaa-0000-4000-8000-000000000013", title: "Look around", at: Date.now() - 172800000, place: "~", project_id: null, reason: "none", votes: 0, suggestions: ["alpha"] },
         ];
       }
+      if (cmd === "sessions_delete") return { deleted: args.items.length, running: 0, failed: 0 };
       if (cmd === "history_sweep_import") return { imported: args.choices.length, failed: 0 };
       if (cmd === "plugin:event|listen") { (listeners[args.event] ??= []).push(args.handler); return args.handler; }
       if (cmd === "limits_read") {
@@ -466,6 +467,30 @@ try {
     { provider_id: "0199aaaa-0000-4000-8000-000000000013", project_id: "alpha" },
   ]);
   assert.equal(await page.locator(".scrim").count(), 0);
+  // Deleting: Select shows a checkbox on every row, sessions and saved
+  // conversations alike; a running session cannot be picked. Delete asks
+  // first, then sends what was picked.
+  await page.locator('[data-action="pick-start"]').click();
+  await page.locator('[data-action="pick-all"]').click();
+  if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/sessions-pick.png` });
+  const picked = await page.locator("[data-pick]:checked").count();
+  assert.ok(picked >= 2, `picked ${picked}`);
+  for (const box of await page.locator("[data-pick]:disabled").all()) assert.equal(await box.isChecked(), false);
+  await page.locator('[data-action="pick-none"]').click();
+  assert.equal(await page.locator("[data-pick]:checked").count(), 0);
+  await page.locator('[data-pick-row="c:claude:0199aaaa-0000-4000-8000-000000000001"] .row__title').click();
+  await page.locator(".pick__count", { hasText: "1 selected" }).waitFor();
+  await page.locator('[data-action="pick-delete"]').click();
+  await page.locator(".modal", { hasText: "Fix flaky login" }).waitFor();
+  await page.locator('.modal [data-action="confirm-generic"]').click();
+  await page.locator(".toast", { hasText: "Deleted 1 conversation" }).waitFor();
+  assert.deepEqual(await page.evaluate(() => window.checkCalls.findLast((c) => c.cmd === "sessions_delete").args.items), [
+    { agent: "claude", provider_id: "0199aaaa-0000-4000-8000-000000000001" },
+  ]);
+  await page.locator('[data-action="pick-done"]').click();
+  await page.locator('[data-history-delete="c:claude:0199aaaa-0000-4000-8000-000000000001"]').click();
+  await page.locator('.modal [data-action="confirm-generic"]').click();
+  await page.waitForFunction(() => window.checkCalls.filter((c) => c.cmd === "sessions_delete").length === 2);
   await page.locator('[data-tab="tasks"]').click();
   // Files & Changes: ahead and behind its upstream, a conflict marked
   // resolved, everything unstaged, and Commit & Push in one go.
