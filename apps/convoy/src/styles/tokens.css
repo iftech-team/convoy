@@ -103,6 +103,16 @@
   }
 }
 
+/* The theme chosen in Convoy, not the system's, decides how native parts of
+   controls are drawn: field text, scrollbars, autofill. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
 :root[data-theme="dark"] {
   --bg: #131316;
   --bg-subtle: #171719;

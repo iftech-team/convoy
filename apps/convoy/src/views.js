@@ -17,7 +17,7 @@ import { language, t } from "./i18n.js";
 import { activeAccount, anySession, isRunning, project, session, state, visibleSessions } from "./state.js";
 import { TASK_STATUSES, runnable } from "./views-planning.js";
 import { missingConversation } from "./terminal.js";
-import { viewOf } from "./views-chat.js";
+import { shownAsTranscript, viewOf } from "./views-chat.js";
 import { approvalsButton, approvalsPanel, inboxItems } from "./views-inbox.js";
 import { helperActivity, helpersButton, helpersMenu, helpersSummary } from "./views-helpers.js";
 
@@ -655,12 +655,20 @@ export function workbench() {
                </div>
                ${button({ label: t("Start fresh"), action: "start-fresh", kind: "primary" })}
              </div>`
-          : !current.running && current.started && view === "terminal"
-            ? `<div class="session-banner">${icons.history} ${escape(t("Saved output · read-only. Resume to reconnect to the agent."))}</div>`
+          : shownAsTranscript(current)
+            ? `<div class="session-banner">${icons.history} ${escape(t("Saved conversation · read-only. Resume to reconnect to the agent."))}</div>`
             : ""
       }
       ${state.find ? findBar() : ""}
-      ${state.layout > 1 ? panesView() : view === "chat" ? '<div class="chat-slot" id="chat-host"></div>' : '<div class="term" id="terminal-host"></div>'}
+      ${
+        state.layout > 1
+          ? panesView()
+          : view === "chat"
+            ? '<div class="chat-slot" id="chat-host"></div>'
+            : shownAsTranscript(current)
+              ? '<div class="chat-slot chat-slot--readonly" id="chat-host"></div>'
+              : '<div class="term" id="terminal-host"></div>'
+      }
     </div>`;
 }
 
@@ -758,7 +766,9 @@ function panesView() {
         ${
           viewOf(anySession(id) ?? info) === "chat"
             ? `<div class="chat-slot" id="chat-host-${index}"></div>`
-            : `<div class="term" id="terminal-host-${index}"></div>`
+            : shownAsTranscript(anySession(id) ?? info)
+              ? `<div class="chat-slot chat-slot--readonly" id="chat-host-${index}"></div>`
+              : `<div class="term" id="terminal-host-${index}"></div>`
         }
       </div>`;
   }).join("");
@@ -1133,9 +1143,9 @@ function tabMenu(menu) {
     </div>`;
 }
 
-/// Whether the computer is being kept awake right now, not just allowed to be.
-export const awakeActive = () =>
-  state.settings.keep_awake === "always" || (state.settings.keep_awake === "sessions" && state.running.length > 0);
+/// Whether the computer is being kept awake right now, as the system
+/// answered, not just what the setting asks for.
+export const awakeActive = () => state.awake === true;
 
 /// "N need you": what waits for an answer, in any project. One opens its
 /// session; more open the approvals inbox.

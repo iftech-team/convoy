@@ -16,6 +16,7 @@ import { t } from "./i18n.js";
 import { icon, icons } from "./icons.js";
 import { highlight, markdown } from "./views-files.js";
 import { helperCards, helperOf } from "./views-helpers.js";
+import { missingConversation } from "./terminal.js";
 
 // ------------------------------------------------------------------ views --
 
@@ -26,6 +27,21 @@ export const VIEWS = ["chat", "terminal"];
 export function viewOf(item) {
   const view = item?.view ?? state.settings.default_view;
   return view === "chat" ? "chat" : "terminal";
+}
+
+/// A stopped terminal session shows its conversation, read from the agent's
+/// own transcript, rather than the last screen it left: Claude clears the
+/// screen on exit, so that screen is little more than a resume hint. A
+/// conversation the agent could not find keeps the terminal and its warning.
+export function shownAsTranscript(item) {
+  return !!item && viewOf(item) === "terminal" && !!item.started && !isRunning(item.id) && !missingConversation(item.id);
+}
+
+/// The conversation is read again the next time it is shown: a terminal run
+/// added to it without the chat seeing.
+export function historyChanged(id) {
+  const chat = state.chats.get(id);
+  if (chat) chat.loaded = false;
 }
 
 // ------------------------------------------------------------------ state --

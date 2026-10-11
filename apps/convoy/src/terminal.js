@@ -220,6 +220,7 @@ export async function wire() {
   await listen("terminal:data", ({ payload }) => {
     const entry = terminalFor(payload.id);
     entry.restored = true;
+    entry.live = true;
     entry.terminal.write(payload.data);
     if (!entry.missing && MISSING.test(payload.data)) {
       entry.missing = true;
@@ -262,6 +263,10 @@ export function restore(id, text) {
 }
 
 export const missingConversation = (id) => !!terminals.get(id)?.missing;
+
+/// Whether the session printed to a terminal since the window opened; a chat
+/// never does.
+export const ranInTerminal = (id) => !!terminals.get(id)?.live;
 
 /// Keeps what a terminal shows, as rendered, so reviews, the saved output and
 /// the next launch have it. Only when it changed.

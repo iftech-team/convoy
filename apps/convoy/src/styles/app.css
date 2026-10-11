@@ -34,9 +34,19 @@ button {
   cursor: pointer;
 }
 
-input {
+/* Every text field takes the theme's text: a textarea otherwise keeps the
+   system's field colour, dark on a dark theme. */
+input,
+textarea {
   font: inherit;
   color: inherit;
+  caret-color: var(--accent);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-faint);
+  opacity: 1;
 }
 
 /* Selects drawn like the text fields beside them. The system control is
@@ -5719,4 +5729,9 @@ select:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A stopped terminal session's conversation: read, not written to. */
+.chat-slot--readonly .chat__composer {
+  display: none;
 }

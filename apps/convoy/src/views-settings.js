@@ -164,7 +164,7 @@ function general(settings) {
       t("Keep computer awake"),
       row(
         t("Mode"),
-        t("Prevents idle sleep, not closing the lid."),
+        t("Keeps the computer and the screen awake. Closing the lid still sleeps it."),
         segmented(
           "keep_awake",
           [

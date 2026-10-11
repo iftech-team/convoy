@@ -187,7 +187,8 @@ try {
       if (cmd === "session_edit") return null;
       if (cmd === "session_view") { sessions.find((item) => item.id === args.id).view = args.view; return null; }
       if (cmd === "session_start") { sessions.find((item) => item.id === args.id).running = true; return null; }
-      if (["keep_awake", "terminal_resize", "terminal_write", "terminal_paste"].includes(cmd)) return null;
+      if (cmd === "keep_awake") return args.wanted;
+      if (["terminal_resize", "terminal_write", "terminal_paste"].includes(cmd)) return null;
       throw new Error(`Unmocked IPC: ${cmd}`);
     } };
   });
@@ -519,6 +520,18 @@ try {
   await page.locator('[data-action="unstage-all"]').click();
   await page.locator('[data-action="file-open"]').click();
   await page.locator("#commit-message").fill("Resolve the merge");
+  // Text fields read in either theme: the commit message is written in the
+  // page's text colour, not the system's dark field text.
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate((value) => document.documentElement.setAttribute("data-theme", value), theme);
+    const [field, text] = await page.evaluate(() => [
+      getComputedStyle(document.querySelector("#commit-message")).color,
+      getComputedStyle(document.body).color,
+    ]);
+    assert.equal(field, text, `commit message text in ${theme}`);
+    if (process.env.CONVOY_TEST_SHOTS) await page.locator(".commit-bar").screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/commit-${theme}.png` });
+  }
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "light"));
   await page.locator('[data-action="commit-push"]').click();
   await page.waitForFunction(() => window.checkCalls.filter((c) => c.cmd === "files_mutate").map((c) => c.args.mutation.action).join().startsWith("stage,unstageAll,commit,push"));
   assert.deepEqual(await page.evaluate(() => window.checkCalls.find((c) => c.cmd === "files_open").args), { id: "project", path: "src/app.js", reveal: false });
@@ -1019,7 +1032,20 @@ try {
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "session_start" && c.args.id === "chatty"));
   const switched = await page.evaluate(() => window.checkCalls.filter((c) => ["session_stop", "session_view", "session_start"].includes(c.cmd) && c.args.id === "chatty").map((c) => [c.cmd, c.args.view]));
   assert.deepEqual(switched, [["session_stop", undefined], ["session_view", "terminal"], ["session_start", undefined]]);
-  assert.equal(await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "chat_history").length), 1, "history is read once");
+  assert.equal(await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "chat_history" && c.args.id === "chatty").length), 1, "history is read once");
+  // Stopped in the terminal, it shows its conversation read back from the
+  // transcript, without a composer, instead of the screen Claude cleared on
+  // exit; what the terminal run added is read again.
+  await page.evaluate(() => window.emitTauri("terminal:data", { id: "chatty", data: "working…" }));
+  await page.evaluate(() => {
+    window.mockSessions.find((item) => item.id === "chatty").running = false;
+    window.emitTauri("terminal:exit", { id: "chatty", cause: "stopped", code: 0 });
+  });
+  await page.locator(".session-banner", { hasText: "Saved conversation · read-only" }).waitFor();
+  await page.locator(".chat-slot--readonly .chat").waitFor();
+  assert.equal(await page.locator(".chat-slot--readonly .chat__composer").isVisible(), false);
+  assert.equal(await page.locator("#terminal-host").count(), 0);
+  await page.waitForFunction(() => window.checkCalls.filter((c) => c.cmd === "chat_history" && c.args.id === "chatty").length === 2);
 
   // ---------------------------------------------------------- approvals inbox --
   // Two chat sessions ask — one never opened in this window — and a terminal

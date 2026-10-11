@@ -34,7 +34,7 @@ import { setLanguage, t } from "./i18n.js";
 import { SHORTCUTS, binding, capture, label, matches } from "./shortcuts.js";
 import { dialogView, effortLevels, sweepChoices, sweepGroups, sweepProject, sweepVisible } from "./dialogs.js";
 import * as terminal from "./terminal.js";
-import { adoptApprovals, answer, chatEvent, chatExited, chatSnapshot, chatText, insertDraft, mountChat, sendText, viewOf, waitingFor } from "./views-chat.js";
+import { adoptApprovals, answer, chatEvent, chatExited, chatSnapshot, chatText, historyChanged, insertDraft, mountChat, sendText, shownAsTranscript, viewOf, waitingFor } from "./views-chat.js";
 import { inboxItems } from "./views-inbox.js";
 import {
   header,
@@ -370,7 +370,9 @@ function render() {
   if (state.sessionId && !state.files && state.page !== "settings" && state.page !== "project") {
     // A pane shows its session as a chat or as a terminal.
     const place = (id, suffix) =>
-      viewOf(anySession(id)) === "chat" ? mountChat(id, `#chat-host${suffix}`) : terminal.mount(id, `#terminal-host${suffix}`);
+      viewOf(anySession(id)) === "chat" || shownAsTranscript(anySession(id))
+        ? mountChat(id, `#chat-host${suffix}`)
+        : terminal.mount(id, `#terminal-host${suffix}`);
     if (state.layout > 1) {
       state.panes.forEach((id, index) => id && index < state.layout && place(id, `-${index}`));
     } else {
@@ -3680,16 +3682,30 @@ function openLimits() {
   if (!state.limits?.codexAt || Date.now() - state.limits.codexAt > 5 * 60 * 1000) refreshLimits(true);
 }
 
+/// Asks for the machine to stay awake when the setting wants it, and keeps
+/// what the system answered: the status bar shows Awake only when it is.
 async function applyKeepAwake() {
-  await call("keep_awake", {
-    wanted:
-      state.settings.keep_awake === "always" ||
-      (state.settings.keep_awake === "sessions" && state.running.length > 0),
-  });
+  const wanted =
+    state.settings.keep_awake === "always" ||
+    (state.settings.keep_awake === "sessions" && state.running.length > 0);
+  const held = await call("keep_awake", { wanted });
+  if (held === undefined) return;
+  const failed = wanted && !held;
+  if (failed && !state.awakeFailed) toast(t("Could not keep the computer awake."));
+  state.awakeFailed = failed;
+  if (state.awake !== held) {
+    state.awake = held;
+    render();
+  }
 }
 
 terminal.onExit(async (exit) => {
   chatExited(exit.id, exit);
+  // The conversation now shown in its place has more in it than was read.
+  if (terminal.ranInTerminal(exit.id)) {
+    historyChanged(exit.id);
+    render();
+  }
   state.waitingSince.delete(exit.id);
   updateBadge();
   if (state.menu?.kind === "approvals") render();
