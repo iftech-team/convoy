@@ -230,6 +230,17 @@ const editSession = (dialog) =>
     foot: foot(t("Save"), "save-session"),
   });
 
+/// Just the name, selected, so typing replaces it and Enter saves.
+const renameSession = (dialog) =>
+  modal({
+    title: t("Rename session"),
+    body: field(
+      t("Name"),
+      `<input id="rename-title" value="${escape(dialog.title)}" maxlength="200" spellcheck="false" autocomplete="off" />`,
+    ),
+    foot: foot(t("Rename"), "rename-session"),
+  });
+
 const startReview = (dialog) =>
   modal({
     title: t("Start review"),
@@ -983,6 +994,7 @@ const VIEWS = {
   quit: quitting,
   session: newSession,
   "edit-session": editSession,
+  rename: renameSession,
   review: startReview,
   feedback: sendFeedback,
   output: savedOutput,

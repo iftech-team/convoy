@@ -357,6 +357,7 @@ export function contextMenu(menu) {
             enabled: !target.archived && !target.worktree_removed,
           }),
       divider,
+      item(t("Rename…"), "rename", { icon: "edit" }),
       item(t("Edit name & notes…"), "edit", { icon: "edit" }),
       item(t("Start review…"), "review", { icon: "review" }),
       item(target.archived ? t("Restore") : t("Archive"), "archive", {
@@ -781,6 +782,7 @@ export function sessionMenu() {
         ${busy ? item("Stop session…", "stop-session") : item(current.started ? "Resume" : "Start", "start-session", !current.archived && !current.worktree_removed)}
         ${busy ? item("Sleep", "sleep-session", true, "keeps the conversation") : ""}
         <div class="menu__divider"></div>
+        ${item("Rename…", "rename-current")}
         ${item("Edit session…", "edit-session")}
         ${item(current.pinned ? "Unpin" : "Pin", "pin-session")}
         ${item(current.archived ? "Restore" : "Archive", "archive-session", !busy, busy ? "stop it first" : "")}

@@ -184,6 +184,7 @@ try {
       if (cmd === "chat_approvals") return [{ id: "chat-c", at: Date.now() - 5 * 60000 - 1000, event: { type: "approval", request: "r30", kind: "command", title: "Run `./deploy staging`", detail: "./deploy staging", always: false } }];
       if (cmd === "chat_set_model") { sessions.find((item) => item.id === args.id).model = args.model ?? ""; return null; }
       if (cmd === "chat_set_effort") { sessions.find((item) => item.id === args.id).effort = args.effort ?? ""; return null; }
+      if (cmd === "session_edit") return null;
       if (cmd === "session_view") { sessions.find((item) => item.id === args.id).view = args.view; return null; }
       if (cmd === "session_start") { sessions.find((item) => item.id === args.id).running = true; return null; }
       if (["keep_awake", "terminal_resize", "terminal_write", "terminal_paste"].includes(cmd)) return null;
@@ -602,6 +603,24 @@ try {
   await page.locator('.side-session[data-menu-session="builder"]').click({ button: "right" });
   await page.locator('[data-menu-act="stop"]').waitFor();
   await page.keyboard.press("Escape");
+  // Rename: from the menu, the name selected, Enter saves; a double-click on
+  // a name opens the same sheet, and Escape leaves it unchanged.
+  await page.locator('.side-session[data-menu-session="builder"]').click({ button: "right" });
+  await page.locator('[data-menu-act="rename"]').click();
+  assert.equal(await page.evaluate(() => { const box = document.querySelector("#rename-title"); return document.activeElement === box && box.selectionEnd - box.selectionStart === box.value.length; }), true, "the name is selected");
+  await page.keyboard.type("Payments builder");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "session_edit" && c.args.id === "builder" && c.args.input.title === "Payments builder"));
+  await page.locator("#rename-title").waitFor({ state: "detached" });
+  await page.locator('.side-session[data-menu-session="builder"] .side-session__title').dblclick();
+  await page.locator("#rename-title").waitFor();
+  await page.keyboard.press("Escape");
+  await page.locator("#rename-title").waitFor({ state: "detached" });
+  await page.locator(".crumb--session").click();
+  await page.locator('.menu--session [data-action="rename-current"]').click();
+  await page.locator("#rename-title").waitFor();
+  await page.keyboard.press("Escape");
+  await page.locator("#rename-title").waitFor({ state: "detached" });
 
   // A click inside an open dialog re-renders it, and must not replay its
   // entrance: the whole modal blinked on every toggle.

@@ -34,6 +34,7 @@ export const SHORTCUTS = [
   ["stop", "mod+.", "Stop session", "Sessions"],
   ["sleep", "mod+alt+z", "Sleep session", "Sessions"],
   ["pin", "mod+alt+p", "Pin or unpin session", "Sessions"],
+  ["rename", "mod+alt+e", "Rename session", "Sessions"],
   ["edit", "mod+i", "Edit name and notes", "Sessions"],
   ["review", "mod+alt+r", "Start review", "Sessions"],
   ["feedback", "mod+shift+b", "Send feedback to builder", "Sessions"],

@@ -531,6 +531,7 @@ const openModal = (dialog) => {
 /// A dialog's text fields and the draft key each one fills.
 const DRAFT_FIELDS = {
   "draft-title": "title",
+  "rename-title": "title",
   "draft-model": "model",
   "draft-effort": "effort",
   "draft-prompt": "prompt",
@@ -706,7 +707,9 @@ const ACTIONS = {
   "new-session": () => openNewSession(state.projectId),
   "create-session": createSession,
   "edit-session": openEditSession,
+  "rename-current": () => withSession((current) => openRename(current.id)),
   "save-session": saveSession,
+  "rename-session": renameSessionNow,
   "pin-session": async () => {
     const current = session();
     state.menu = null;
@@ -1051,6 +1054,7 @@ const SHORTCUT_ACTIONS = {
     ),
   sleep: () => withSession((current) => current.running && done("session_hibernate", { id: current.id })),
   pin: () => withSession(() => ACTIONS["pin-session"]()),
+  rename: () => withSession((current) => openRename(current.id)),
   edit: () => withSession(() => openEditSession()),
   review: () => withSession(() => openReview()),
   feedback: () => withSession((current) => current.review_of && ACTIONS["send-feedback"]()),
@@ -1153,6 +1157,17 @@ app.addEventListener("click", async (event) => {
   );
   if (!target) return;
   const data = target.dataset;
+  // A double click on a session's name renames it, in the sidebar and the
+  // Sessions list (the header's menu has Rename). Counted from the click itself, since the
+  // first click redraws the list and a dblclick never reaches the new row.
+  if (event.detail === 2 && !state.picked) {
+    const rename = target.classList.contains("side-session")
+      ? data.open
+      : target.matches(".row[data-open]") && event.target.closest(".row__title")
+        ? data.open
+        : null;
+    if (rename) return openRename(rename);
+  }
   if (data.issueSource) return done("issue_open", { id: data.issueSource });
   if (data.action === "edit-task-model") {
     await imports.loadTasks();
@@ -2236,6 +2251,27 @@ async function createSession() {
   await startSession(id, { background: draft.keepOpen });
 }
 
+/// The rename sheet, with the name selected so typing replaces it.
+function openRename(id) {
+  const target = anySession(id);
+  if (!target) return;
+  openModal({ kind: "rename", id, title: target.title });
+  document.querySelector("#rename-title")?.select();
+}
+
+async function renameSessionNow() {
+  captureDraft();
+  const dialog = state.dialog;
+  if (dialog?.kind !== "rename") return;
+  const title = dialog.title.trim();
+  if (!title) return toast(t("Give the session a name."));
+  if (!(await done("session_edit", { id: dialog.id, input: { title } }))) return;
+  closeDialog();
+  await loadWorkspace();
+  await loadSessions();
+  render();
+}
+
 async function openEditSession() {
   const current = session();
   const detail = await call("session_detail", { id: current.id });
@@ -2546,6 +2582,8 @@ async function runMenu(act) {
         danger: true,
         run: () => terminal.stop(target.id),
       });
+    case "rename":
+      return openRename(target.id);
     case "edit":
       state.sessionId = target.id;
       return openEditSession();
