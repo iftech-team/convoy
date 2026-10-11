@@ -6,13 +6,16 @@ export SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/ModuleCache"
 swift build -c release --disable-sandbox --cache-path .build/cache --config-path .build/config --security-path .build/security
 # SwiftPM puts dependency resources at the bundle root. A signed macOS app
 # requires them in Contents/Resources, so adjust the generated release accessor.
+# Xcode 27's build system (swiftbuild) writes an accessor that already looks
+# there first, and puts it elsewhere; only the native build system's needs it.
 python3 - <<'PY'
 from pathlib import Path
 p = Path('.build/release/SwiftTerm.build/DerivedSources/resource_bundle_accessor.swift')
-s = p.read_text()
-updated = s.replace('Bundle.main.bundleURL.appendingPathComponent', '(Bundle.main.resourceURL ?? Bundle.main.bundleURL).appendingPathComponent')
-if updated != s:
-    p.write_text(updated)
+if p.exists():
+    s = p.read_text()
+    updated = s.replace('Bundle.main.bundleURL.appendingPathComponent', '(Bundle.main.resourceURL ?? Bundle.main.bundleURL).appendingPathComponent')
+    if updated != s:
+        p.write_text(updated)
 PY
 swift build -c release --disable-sandbox --cache-path .build/cache --config-path .build/config --security-path .build/security
 app="dist/Convoy.app"
