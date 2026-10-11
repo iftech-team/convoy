@@ -93,7 +93,10 @@ pub fn project_reconnect(
 /// provider's own conversations stay where they are.
 #[tauri::command]
 pub fn project_remove(id: String, workspace: State<'_, Workspace>) -> Result<(), String> {
-    workspace.act(|workspace| workspace.remove_project(&id).map(|_| ()))
+    workspace.act(|workspace| workspace.remove_project(&id).map(|_| ()))?;
+    // Its automations go with it; they live in a file of their own.
+    crate::automations::forget_project(&workspace.storage, &id);
+    Ok(())
 }
 
 /// Forgets every project and its saved sessions at once. Refused while an
@@ -117,7 +120,9 @@ pub fn projects_remove_all(
             "Stop the running sessions first ({running} running)."
         ));
     }
-    workspace.act(|workspace| workspace.remove_all_projects().map(|_| ()))
+    workspace.act(|workspace| workspace.remove_all_projects().map(|_| ()))?;
+    crate::automations::forget_all(&workspace.storage);
+    Ok(())
 }
 
 /// Everything the project settings form needs.

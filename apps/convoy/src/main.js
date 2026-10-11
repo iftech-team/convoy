@@ -58,11 +58,21 @@ import { runnable, specsView, tasksView } from "./views-planning.js";
 import { dashboardView, homeView } from "./views-home.js";
 import { toggleHistoryCollapsed } from "./views-history.js";
 import { PROJECT_DOC, docsView } from "./views-docs.js";
+import { installAutomations } from "./automations.js";
+import { automationsView } from "./views-automations.js";
 
 const app = document.querySelector("#app");
 const imports = installTasks({ state, escape, icons, call, callDone: done, toast, render,
   loadWorkspace: async () => { await loadWorkspace(); await loadPlanning(); },
   start: (id) => startSession(id), launch: (id) => startSession(id, { background: true }) });
+// Wrapped: the dialog helpers are defined further down.
+const automations = installAutomations({
+  render: () => render(),
+  openModal: (dialog) => openModal(dialog),
+  closeDialog: () => closeDialog(),
+  selectProject: (id) => selectProject(id),
+  loadWorkspace: () => loadWorkspace(),
+});
 const isImportDialog = () => ["import", "integrations", "connection", "task-model"].includes(state.dialog?.kind);
 
 // A thrown error used to leave a black window and no clue about it. Painting
@@ -109,6 +119,8 @@ function content() {
       return tasksView();
     case "docs":
       return docsView();
+    case "automations":
+      return automationsView();
     default:
       return sessionsView();
   }
@@ -1005,6 +1017,8 @@ const ACTIONS = {
     if (state.page === "project") return saveProjectField({ review_template: text });
     return savePref({ review_template: text });
   },
+  // Enter in the automation editor's fields.
+  "automation-save": () => automations.onClick({ dataset: { action: "automation-save" } }),
   "confirm-generic": async () => {
     const run = state.dialog.run;
     closeDialog();
@@ -1111,7 +1125,7 @@ const SHORTCUT_ACTIONS = {
   limitsRefresh: () => refreshLimits(true),
 };
 
-const TAB_ORDER = ["sessions", "reviews", "specs", "tasks", "docs"];
+const TAB_ORDER = ["sessions", "reviews", "specs", "tasks", "docs", "automations"];
 
 const withSession = (run) => (session() ? run(session()) : undefined);
 const withProject = (run) => (project() ? run(project()) : undefined);
@@ -1125,6 +1139,7 @@ async function showTab(tab) {
   render();
   if (tab === "specs" || tab === "tasks") await loadPlanning();
   if (tab === "docs") await loadDocs();
+  if (tab === "automations") await automations.reload();
 }
 
 function stepTab(step) {
@@ -1155,10 +1170,11 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-inbox-answer],[data-inbox-open],[data-inbox-expand],[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source]",
+      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day]",
   );
   if (!target) return;
   const data = target.dataset;
+  if (await automations.onClick(target)) return;
   // A double click on a session's name renames it, in the sidebar and the
   // Sessions list (the header's menu has Rename). Counted from the click itself, since the
   // first click redraws the list and a dblclick never reaches the new row.
@@ -1319,6 +1335,7 @@ app.addEventListener("click", async (event) => {
     render();
     if (data.tab === "specs" || data.tab === "tasks") await loadPlanning();
     if (data.tab === "docs") await loadDocs();
+    if (data.tab === "automations") await automations.reload();
     return;
   }
   if (data.start) {
@@ -1562,6 +1579,7 @@ app.addEventListener("input", (event) => {
   const draftKey = DRAFT_FIELDS[field.id];
   if (draftKey && state.dialog && !isImportDialog() && field.closest(".modal")) state.dialog[draftKey] = field.value;
   if (isImportDialog() && imports.onInput(field)) return;
+  if (automations.onInput(field)) return;
   if (field.id === "session-filter") {
     state.filter = field.value;
     return render();
@@ -1624,6 +1642,7 @@ app.addEventListener("input", (event) => {
 });
 
 app.addEventListener("change", async (event) => {
+  if (automations.onChange(event.target)) return;
   if (event.target.dataset?.linkTask && event.target.value) {
     const id = event.target.dataset.linkTask;
     if (await done("task_link_session", { id, sessionId: event.target.value })) {
@@ -3321,6 +3340,8 @@ function paletteEntries() {
     ["Project settings", "", openProjectSettings],
     ["Import provider history", "Conversations the agent already has for this folder", openTranscripts],
     ["Import all history…", "Every Claude Code and Codex conversation on this computer", openHistorySweep],
+    ["New automation…", "Run a prompt on a schedule in the current project", () => withProject(() => automations.open(null))],
+    ["Automations", "The current project's scheduled prompts", () => withProject(() => automations.openTab())],
     ["Remove all projects…", "Clear the project list; nothing on disk is touched", ACTIONS["remove-all-projects"]],
     ["Git: Commit…", "The commit composer in Files & Changes", inFiles(() => showFilesView("changes"))],
     ["Git: Push", "", inFiles(() => ACTIONS.push())],
@@ -3583,6 +3604,34 @@ async function notify(entry) {
   notified = { id: entry.id, state: entry.state };
 }
 
+/// An automation's run ended. In front of the window it is a toast; behind
+/// it, a desktop notification when notifications are on.
+async function notifyAutomation(run) {
+  const finished = run?.status === "done";
+  const title = finished
+    ? t("Automation finished: {title}", { title: run.title })
+    : t("Automation failed: {title}", { title: run.title });
+  const prefs = state.settings;
+  if (document.hasFocus() && !prefs.notify_when_focused) {
+    toast(title, finished ? "info" : "error");
+    return;
+  }
+  if (!prefs.notifications || prefs.notify_done === false) return;
+  const { isPermissionGranted, requestPermission, sendNotification } = await import(
+    "@tauri-apps/plugin-notification"
+  );
+  let granted = await isPermissionGranted();
+  if (!granted) granted = (await requestPermission()) === "granted";
+  if (!granted) return;
+  const project = state.projects.find((item) => item.id === run.project_id)?.title ?? "";
+  sendNotification({
+    title,
+    body: [project, run.note ? t(run.note) : ""].filter(Boolean).join(" · "),
+    ...(prefs.notification_sound === "none" ? {} : { sound: prefs.notification_sound || "default" }),
+  });
+  if (run.session_id) notified = { id: run.session_id, state: "done" };
+}
+
 /// The session the last notification was about. Desktop notifications give
 /// no click callback, but clicking one brings the window forward: coming back
 /// while that session still waits opens it, as clicking does on macOS.
@@ -3843,6 +3892,15 @@ try {
   // The backend found a Codex id or a pull request in an agent's output.
   // A manager started a helper from its shell: a new session, already running.
   await listen("session:spawned", () => loadWorkspace());
+  // An automation ran, was skipped or finished: its list is redrawn, and a
+  // finished run is told as a notification.
+  await automations.load();
+  await listen("automation:changed", () => automations.reload());
+  await listen("automation:finished", async ({ payload }) => {
+    notifyAutomation(payload);
+    await loadWorkspace();
+    await automations.reload();
+  });
   await listen("session:changed", async () => {
     await loadSessions();
     if (state.tab === "tasks") await loadPlanning();

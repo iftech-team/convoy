@@ -189,6 +189,30 @@ try {
       if (cmd === "session_start") { sessions.find((item) => item.id === args.id).running = true; return null; }
       if (cmd === "keep_awake") return args.wanted;
       if (["terminal_resize", "terminal_write", "terminal_paste"].includes(cmd)) return null;
+      // Automations: kept here as the backend keeps them; the times are an
+      // hour, a day and two days on, whatever the schedule.
+      window.automations ??= [];
+      const soon = () => Math.floor(Date.now() / 1000) + 3600;
+      if (cmd === "automations_list") return window.automations.filter((item) => !args.projectId || item.project_id === args.projectId).map((item) => ({ ...item, next_run: item.enabled ? soon() : null }));
+      if (cmd === "automation_preview") {
+        if (args.schedule.kind === "weekdays" && !args.schedule.days.length) throw "Pick at least one day.";
+        return [soon(), soon() + 86400, soon() + 2 * 86400];
+      }
+      if (cmd === "automation_save") {
+        const existing = window.automations.find((item) => item.id === args.input.id);
+        if (existing) { Object.assign(existing, args.input, { profile_id: args.input.profile_id }); return existing.id; }
+        const id = `auto${window.automations.length + 1}`;
+        window.automations.push({ ...args.input, id, created: Date.now() / 1000, history: [], last_run: null, running: false });
+        return id;
+      }
+      if (cmd === "automation_enable") { window.automations.find((item) => item.id === args.id).enabled = args.enabled; return null; }
+      if (cmd === "automation_delete") { window.automations = window.automations.filter((item) => item.id !== args.id); return null; }
+      if (cmd === "automation_run_now") {
+        const item = window.automations.find((entry) => entry.id === args.id);
+        item.last_run = { at: Math.floor(Date.now() / 1000), session_id: "builder", status: "started", manual: true };
+        item.running = true;
+        return "builder";
+      }
       throw new Error(`Unmocked IPC: ${cmd}`);
     } };
   });
@@ -1249,11 +1273,154 @@ try {
   assert.deepEqual(helperKeys.filter((key) => !(key in ru)), [], "untranslated helper strings");
   assert("helper" in (await import("../src/locales/ru.js")).default.plurals, "helper has its Russian plural");
 
+  // ---------------------------------------------------------- automations --
+  // A project's Automations tab: empty, then one made in the editor, listed
+  // with its schedule, next and last run; switched off and on, run now,
+  // edited and deleted.
+  await page.locator('[data-project="project"]').first().click();
+  await page.locator('[data-tab="automations"]').click();
+  const autoEmpty = page.locator(".auto-empty");
+  await autoEmpty.getByText("No automations yet").waitFor();
+  if (shots) await page.screenshot({ path: `${shots}/automations-empty.png` });
+  await autoEmpty.locator('[data-auto="new"]').click();
+  const editor = page.locator('.modal[aria-label="New automation"]');
+  await editor.waitFor();
+  // Weekdays at nine until told otherwise, with the next runs shown.
+  assert.equal(await editor.locator('[data-set="auto-kind"][data-value="weekdays"]').getAttribute("aria-pressed"), "true");
+  await editor.locator(".auto-preview li").nth(2).waitFor();
+  await editor.locator("#auto-title").fill("Morning triage");
+  await editor.locator("#auto-prompt").fill("Triage the new issues and summarise them.");
+  await editor.locator('[data-auto-day="sat"]').click();
+  assert.equal(await editor.locator('[data-auto-day="sat"]').getAttribute("aria-pressed"), "true");
+  assert.equal(await editor.locator("#auto-title").inputValue(), "Morning triage", "a click keeps what was typed");
+  await editor.locator("#auto-at").fill("07:30");
+  // No day at all is refused, live.
+  for (const day of ["mon", "tue", "wed", "thu", "fri", "sat"]) await editor.locator(`[data-auto-day="${day}"]`).click();
+  await editor.locator(".auto-preview__error", { hasText: "Pick at least one day." }).waitFor();
+  for (const day of ["mon", "tue", "wed", "thu", "fri", "sat"]) await editor.locator(`[data-auto-day="${day}"]`).click();
+  await editor.locator(".auto-preview li").nth(2).waitFor();
+  await editor.locator('[data-toggle="auto-worktree"]').click();
+  assert.equal(await editor.locator('[data-toggle="auto-catchup"]').getAttribute("aria-pressed"), "true", "catch-up is on by default");
+  if (shots) {
+    // Tall enough to show the whole sheet.
+    await page.setViewportSize({ width: 1280, height: 1080 });
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate((value) => document.documentElement.setAttribute("data-theme", value), theme);
+      await page.waitForTimeout(150);
+      await page.screenshot({ path: `${shots}/automation-editor-${theme}.png` });
+    }
+    await page.evaluate(() => document.documentElement.setAttribute("data-theme", "light"));
+    await page.setViewportSize({ width: 1280, height: 840 });
+  }
+  await editor.locator('[data-action="automation-save"]').click();
+  await editor.waitFor({ state: "detached" });
+  const created = await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "automation_save").at(-1).args.input);
+  assert.deepEqual(
+    { ...created, model: undefined, effort: undefined },
+    {
+      id: null, project_id: "project", title: "Morning triage", prompt: "Triage the new issues and summarise them.",
+      agent: "claude", model: undefined, effort: undefined, profile_id: null, view: "chat", worktree: true,
+      schedule: { kind: "weekdays", at: "07:30", days: ["mon", "tue", "wed", "thu", "fri", "sat"] },
+      enabled: true, catch_up: true,
+    },
+  );
+  const autoRow = page.locator('.auto-row[data-automation="auto1"]');
+  await autoRow.waitFor();
+  assert.equal((await autoRow.locator(".row__title").textContent()).replace(/\s+/g, " ").trim(), "Morning triage worktree");
+  const scheduleLine = (await autoRow.locator(".auto-row__schedule").textContent()).replace(/\s+/g, " ").trim();
+  assert.match(scheduleLine, /^Mon, Tue, Wed, Thu, Fri, Sat at 07:30.*·next in 1 h$/);
+  assert.match(await autoRow.locator(".auto-row__schedule span[title]").getAttribute("title"), /\d/, "the exact time on hover");
+  await autoRow.locator(".auto-last", { hasText: "Never run" }).waitFor();
+  // A run finished: its result, and a link to its session.
+  await page.evaluate(() => {
+    window.automations[0].last_run = { at: Math.floor(Date.now() / 1000) - 600, session_id: "builder", status: "done" };
+    window.emitTauri("automation:changed", "auto1");
+  });
+  await autoRow.locator(".auto-last__chip", { hasText: "Done" }).waitFor();
+  // Switched off: paused, no next run; and on again.
+  await autoRow.locator('[data-toggle="auto-enabled:auto1"]').click();
+  await page.locator(".auto-row--off", { hasText: "paused" }).waitFor();
+  assert(await page.evaluate(() => window.checkCalls.some((c) => c.cmd === "automation_enable" && c.args.id === "auto1" && c.args.enabled === false)));
+  await page.locator('[data-toggle="auto-enabled:auto1"]').click();
+  await page.locator('.auto-row:not(.auto-row--off)[data-automation="auto1"]').waitFor();
+  // Run now: a toast, and the row says it is running until it is not.
+  await autoRow.locator('[data-auto="run"]').click();
+  await page.locator(".toast", { hasText: "Started Morning triage" }).waitFor();
+  await autoRow.locator('[data-auto="run"][disabled]', { hasText: "Running…" }).waitFor();
+  await page.evaluate(() => {
+    Object.assign(window.automations[0], { running: false, last_run: { ...window.automations[0].last_run, status: "done" } });
+    window.emitTauri("automation:finished", { id: "auto1", title: "Morning triage", project_id: "project", session_id: "builder", status: "done", note: "" });
+  });
+  await page.locator(".toast", { hasText: "Automation finished: Morning triage" }).waitFor();
+  await autoRow.locator('[data-auto="run"]:not([disabled])').waitFor();
+  // Two more, for the list's look.
+  await page.evaluate(() => {
+    window.automations.push(
+      { id: "auto2", project_id: "project", title: "Dependency check", prompt: "Look for outdated dependencies and open a PR.", agent: "codex", model: "", effort: "", profile_id: null, view: "terminal", worktree: true, schedule: { kind: "every", hours: 6, from: "09:00" }, enabled: true, catch_up: false, history: [], last_run: { at: Math.floor(Date.now() / 1000) - 7200, session_id: "nowhere", status: "failed", note: "Stopped before it finished." }, running: false },
+      { id: "auto3", project_id: "project", title: "Weekly release notes", prompt: "Draft release notes from this week's merged PRs.", agent: "claude", model: "", effort: "", profile_id: null, view: "chat", worktree: false, schedule: { kind: "weekdays", at: "17:00", days: ["fri"] }, enabled: false, catch_up: true, history: [], last_run: { at: Math.floor(Date.now() / 1000) - 86400 * 3, session_id: "builder", status: "skipped", note: "Still running" }, running: false },
+    );
+    window.emitTauri("automation:changed", "");
+  });
+  await page.locator('.auto-row[data-automation="auto3"]').waitFor();
+  assert.match((await page.locator('.auto-row[data-automation="auto2"] .auto-row__schedule').textContent()).replace(/\s+/g, " "), /Every 6 hours from 09:00/);
+  assert.match((await page.locator('.auto-row[data-automation="auto3"] .auto-row__schedule').textContent()).replace(/\s+/g, " "), /Fri at 05:00 PM|Fri at 17:00/);
+  if (shots) {
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate((value) => document.documentElement.setAttribute("data-theme", value), theme);
+      await page.waitForTimeout(150);
+      await page.screenshot({ path: `${shots}/automations-${theme}.png` });
+    }
+    await page.evaluate(() => document.documentElement.setAttribute("data-theme", "light"));
+  }
+  // Edit: the editor opens filled in; a new schedule is sent as one.
+  await page.locator('.auto-row[data-automation="auto1"] [data-auto="edit"]').click();
+  const editEditor = page.locator('.modal[aria-label="Edit automation"]');
+  await editEditor.waitFor();
+  assert.equal(await editEditor.locator("#auto-title").inputValue(), "Morning triage");
+  assert.equal(await editEditor.locator('[data-toggle="auto-worktree"]').getAttribute("aria-pressed"), "true");
+  await editEditor.locator('[data-set="auto-kind"][data-value="every"]').click();
+  await editEditor.locator("#auto-hours").selectOption("6");
+  await editEditor.locator('[data-set="auto-agent"][data-value="codex"]').click();
+  await editEditor.locator('[data-action="automation-save"]').click();
+  await editEditor.waitFor({ state: "detached" });
+  const edited = await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "automation_save").at(-1).args.input);
+  assert.deepEqual([edited.id, edited.agent, edited.schedule], ["auto1", "codex", { kind: "every", hours: 6, from: "09:00" }]);
+  // The palette has both.
+  await page.keyboard.press(`${primary}+k`);
+  await page.locator("#palette-input").fill("New automation");
+  await page.locator(".palette__row", { hasText: "New automation…" }).first().waitFor();
+  await page.keyboard.press("Enter");
+  await page.locator('.modal[aria-label="New automation"]').waitFor();
+  await page.keyboard.press("Escape");
+  // Home names the next one.
+  await page.locator('[data-action="home"]').first().click();
+  await page.locator(".home__next", { hasText: "Next automation:" }).waitFor();
+  await page.locator(".home__next").click();
+  await page.locator('[data-tab="automations"][aria-selected="true"]').waitFor();
+  // Delete asks first; the rows go.
+  for (const id of ["auto1", "auto2", "auto3"]) {
+    await page.locator(`.auto-row[data-automation="${id}"] [data-auto="delete"]`).click();
+    await page.locator(".modal", { hasText: "Sessions it already started stay." }).locator('[data-action="confirm-generic"]').click();
+    await page.locator(`.auto-row[data-automation="${id}"]`).waitFor({ state: "detached" });
+  }
+  await autoEmpty.waitFor();
+  // Every string the automations show has its Russian.
+  const autoSources = await Promise.all(["../src/views-automations.js", "../src/automations.js"].map((path) => readFile(new URL(path, import.meta.url), "utf8")));
+  const autoKeys = autoSources.flatMap((source) => [...source.matchAll(/\bt\("((?:[^"\\]|\\.)*)"/g)].map((match) => match[1]));
+  autoKeys.push("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "Running", "Done", "Failed", "Skipped", "Automations",
+    "New automation…", "Run a prompt on a schedule in the current project", "The current project's scheduled prompts",
+    "Automation finished: {title}", "Automation failed: {title}", "Next automation: {title}, {when}",
+    "automation started", "automation finished", "automation failed",
+    "Still running", "Stopped before it finished.", "Convoy closed while it ran.", "Its last run is still going.",
+    "Pick at least one day.", "Pick a time as HH:MM.", "Pick between 1 and 24 hours.", "Give the automation a title.", "Write the prompt the agent runs.");
+  assert(autoKeys.length > 60, "the automations' strings were found");
+  assert.deepEqual(autoKeys.filter((key) => !(key in ru)), [], "untranslated automation strings");
+
   assert.equal(await page.locator(".toast--error").count(), 0);
   assert.deepEqual(errors, []);
   assert.equal(await page.locator(".toast--error").count(), 0);
   if (process.env.CONVOY_TEST_SCREENSHOT) await page.screenshot({ path: process.env.CONVOY_TEST_SCREENSHOT });
-  console.log("PASS: folder → builder → review → feedback; Linear MCP import → per-task model; sidebar menus; settled dialogs; settings page saves; chat session events, approval, composer and view switch; approvals inbox across sessions; manager sessions with nested helpers, live helper cards and the helpers menu; no browser errors. IPC mocked.");
+  console.log("PASS: folder → builder → review → feedback; Linear MCP import → per-task model; sidebar menus; settled dialogs; settings page saves; chat session events, approval, composer and view switch; approvals inbox across sessions; manager sessions with nested helpers, live helper cards and the helpers menu; automations: editor, list, switch, run now, edit, delete; no browser errors. IPC mocked.");
 } finally {
   await browser?.close();
   await server.close();

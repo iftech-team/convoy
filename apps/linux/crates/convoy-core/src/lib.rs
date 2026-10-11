@@ -8,6 +8,7 @@
 
 pub mod accounts;
 pub mod ansi;
+pub mod automations;
 pub mod chat;
 pub mod docs;
 pub mod error;

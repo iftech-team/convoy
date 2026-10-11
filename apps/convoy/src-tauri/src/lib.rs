@@ -5,6 +5,7 @@
 //! replaced without touching them. This crate is the thin layer between that
 //! core and a web view — commands in, events out.
 
+mod automations;
 mod chat;
 mod commands;
 mod helpers;
@@ -97,8 +98,10 @@ pub fn run() {
         .manage(monitor::Reports::default())
         .manage(commands::sweep::Sweep::default())
         .manage(helpers::Helpers::default())
+        .manage(automations::Automations::default())
         .setup(|app| {
             helpers::start_poller(app.handle().clone());
+            automations::start_scheduler(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -216,6 +219,12 @@ pub fn run() {
             commands::macos::macos_import_run,
             monitor::monitor_tick,
             power::keep_awake,
+            automations::automations_list,
+            automations::automation_save,
+            automations::automation_delete,
+            automations::automation_enable,
+            automations::automation_preview,
+            automations::automation_run_now,
             quit_now,
         ])
         .build(tauri::generate_context!())

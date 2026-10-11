@@ -6,6 +6,7 @@ import { button, escape, plural } from "./ui.js";
 import { isRunning, state } from "./state.js";
 import { limitsBlock } from "./views.js";
 import { t } from "./i18n.js";
+import { exact, nextAutomation, relative } from "./views-automations.js";
 
 const ownerOf = (item) => state.projects.find((entry) => entry.id === item.project_id);
 const reported = (item) => (isRunning(item.id) ? state.agentState.get(item.id) : null);
@@ -67,6 +68,7 @@ export function homeView() {
     (state.setupChecks ?? []).filter((check) => check.status !== "ok" && !(noGh && check.id === "gh")).length;
   const limits = state.limits ?? {};
   const activity = (state.activity ?? []).slice(0, 6);
+  const upcoming = nextAutomation();
 
   return `
     <div class="home" data-scroll="home">
@@ -75,6 +77,7 @@ export function homeView() {
         <div class="home__summary">
           ${escape(t("{agents} running", { agents: plural(running.length + needs.length, "agent") }))}${needs.length ? ` · <strong>${escape(plural(needs.length, "needs you", "need you"))}</strong>` : ""}
           ${missing ? `<button class="chip chip--warn" data-settings-open="Setup">${icons.warn} ${escape(plural(missing, "setup problem"))}</button>` : ""}
+          ${upcoming ? `<button class="home__next" data-auto="tab" data-auto-project="${escape(upcoming.project_id)}" title="${escape(exact(upcoming.next_run))}">${icons.clock}<span>${escape(t("Next automation: {title}, {when}", { title: upcoming.title, when: relative(upcoming.next_run) }))}</span></button>` : ""}
         </div>
         <span class="section__spacer"></span>
         ${button({ label: t("Agent Dashboard"), icon: "board", action: "dashboard" })}

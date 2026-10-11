@@ -1,0 +1,325 @@
+/* The Automations tab, its editor, and Home's "next automation". Colours come
+ * from tokens.css only, so light and dark follow the rest of the window. */
+
+.auto-row--off .row__mark,
+.auto-row--off .row__body {
+  opacity: 0.55;
+}
+
+.auto-row__tag {
+  gap: 4px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 6px;
+  font-size: 10.5px;
+  vertical-align: 1px;
+}
+
+.auto-row__tag svg {
+  width: 11px;
+  height: 11px;
+}
+
+.auto-row__schedule {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  color: var(--text);
+}
+
+.auto-row__schedule svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--text-faint);
+}
+
+.auto-row__schedule span[title] {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.auto-row__schedule [aria-hidden] {
+  color: var(--text-faint);
+}
+
+.auto-row__prompt {
+  max-width: 62ch;
+  color: var(--text-faint);
+}
+
+.auto-row__last {
+  flex: none;
+  width: 190px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.auto-last {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.auto-last--none {
+  color: var(--text-faint);
+}
+
+.auto-last__chip {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  font-size: 11.5px;
+  font-weight: 550;
+  color: var(--text);
+}
+
+.auto-last__open {
+  padding: 2px 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--accent-text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.auto-last__open:hover {
+  background: var(--accent-soft);
+}
+
+.auto-last__when {
+  font-variant-numeric: tabular-nums;
+}
+
+.auto-row .row__actions .switch {
+  margin-right: 4px;
+}
+
+.auto-empty {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 6px;
+  padding: 48px 32px;
+  text-align: center;
+}
+
+.auto-empty__mark {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  margin-bottom: 14px;
+  border-radius: 18px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.auto-empty__mark svg {
+  width: 30px;
+  height: 30px;
+}
+
+.auto-empty__title {
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.auto-empty__text {
+  max-width: 46ch;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+.auto-empty__text--faint {
+  max-width: 50ch;
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.auto-empty .centre-action {
+  margin-top: 14px;
+}
+
+/* ---------------------------------------------------------------- editor -- */
+
+.field-row--three {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+@media (max-width: 560px) {
+  .field-row--three {
+    grid-template-columns: 1fr;
+  }
+}
+
+.auto-schedule {
+  gap: 12px;
+  padding: 12px 14px 14px;
+}
+
+.auto-schedule__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.auto-schedule__head .choice button {
+  flex: none;
+  padding: 6px 12px;
+  background: var(--bg);
+}
+
+.auto-schedule__head .choice button[aria-pressed="true"] {
+  background: var(--accent-soft);
+}
+
+.auto-schedule__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 640px) {
+  .auto-schedule__body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.auto-schedule__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.auto-schedule__fields input[type="time"] {
+  max-width: 140px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The clock button inside the field follows the app's theme, not only the
+   system's. */
+:root[data-theme="dark"] .auto-schedule__fields input[type="time"] {
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] .auto-schedule__fields input[type="time"] {
+  color-scheme: light;
+}
+
+.auto-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.auto-day {
+  min-width: 44px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.auto-day:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.auto-day[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.auto-day:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.auto-preview {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  font-size: 12.5px;
+}
+
+.auto-preview__label {
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.auto-preview ol {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.auto-preview li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.auto-preview__in {
+  color: var(--text-faint);
+}
+
+.auto-preview__error {
+  color: var(--state-failed);
+}
+
+.auto-preview__none {
+  color: var(--text-faint);
+}
+
+/* ------------------------------------------------------------------ home -- */
+
+.home__next {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.home__next:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.home__next svg {
+  width: 13px;
+  height: 13px;
+  color: var(--accent);
+}
