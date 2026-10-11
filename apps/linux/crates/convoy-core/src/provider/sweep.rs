@@ -366,6 +366,43 @@ fn modified(file: &Path) -> f64 {
         .unwrap_or(0.0)
 }
 
+/// Everything an agent saved for one conversation under its home: Claude's
+/// `<id>.jsonl` and its `<id>/` folder in every project folder, Codex's
+/// rollout. Empty for an id that is not a UUID, so nothing else can match.
+pub fn conversation_files(agent: Agent, home: &Path, id: &str) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    if !is_uuid(id) {
+        return found;
+    }
+    match agent {
+        Agent::Claude => {
+            let Ok(folders) = fs::read_dir(home.join("projects")) else {
+                return found;
+            };
+            for folder in folders.flatten() {
+                for path in [
+                    folder.path().join(format!("{id}.jsonl")),
+                    folder.path().join(id),
+                ] {
+                    if fs::symlink_metadata(&path).is_ok() {
+                        found.push(path);
+                    }
+                }
+            }
+        }
+        Agent::Codex => {
+            let mut files = Vec::new();
+            rollouts(&home.join("sessions"), 0, &mut files);
+            let suffix = format!("-{}.jsonl", id.to_lowercase());
+            found.extend(files.into_iter().filter(|file| {
+                file.file_name()
+                    .is_some_and(|name| name.to_string_lossy().to_lowercase().ends_with(&suffix))
+            }));
+        }
+    }
+    found
+}
+
 pub(crate) fn rollouts(folder: &Path, depth: u32, files: &mut Vec<PathBuf>) {
     if depth > 8 {
         return;
@@ -1080,5 +1117,56 @@ mod tests {
             .iter()
             .all(|s| s.started && s.agent_home.is_some()));
         assert_eq!(record(&mut state, vec![import(&A.to_uppercase(), 4.0)]), 0);
+    }
+
+    #[test]
+    fn a_conversations_files_are_found_by_id_and_nothing_else() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let id = "0199aaaa-0000-4000-8000-0000000000aa";
+        for folder in ["-a", "-b"] {
+            fs::create_dir_all(home.join("projects").join(folder)).unwrap();
+            fs::write(
+                home.join("projects")
+                    .join(folder)
+                    .join(format!("{id}.jsonl")),
+                "{}",
+            )
+            .unwrap();
+        }
+        fs::create_dir_all(home.join("projects/-a").join(id).join("subagents")).unwrap();
+        fs::write(
+            home.join("projects/-a/0199aaaa-0000-4000-8000-0000000000bb.jsonl"),
+            "{}",
+        )
+        .unwrap();
+        let mut claude = conversation_files(Agent::Claude, home, id);
+        claude.sort();
+        assert_eq!(
+            claude,
+            vec![
+                home.join("projects/-a").join(id),
+                home.join("projects/-a").join(format!("{id}.jsonl")),
+                home.join("projects/-b").join(format!("{id}.jsonl")),
+            ]
+        );
+
+        let day = home.join("sessions/2026/10/11");
+        fs::create_dir_all(&day).unwrap();
+        fs::write(
+            day.join(format!("rollout-2026-10-11T10-00-00-{id}.jsonl")),
+            "{}",
+        )
+        .unwrap();
+        fs::write(
+            day.join("rollout-2026-10-11T10-00-00-0199aaaa-0000-4000-8000-0000000000bb.jsonl"),
+            "{}",
+        )
+        .unwrap();
+        assert_eq!(
+            conversation_files(Agent::Codex, home, &id.to_uppercase()),
+            vec![day.join(format!("rollout-2026-10-11T10-00-00-{id}.jsonl"))]
+        );
+        assert!(conversation_files(Agent::Claude, home, "../projects").is_empty());
     }
 }

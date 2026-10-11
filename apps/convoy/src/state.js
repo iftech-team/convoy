@@ -74,6 +74,9 @@ export const state = {
   })(),
   // Sessions picked with ⌘-click (Ctrl-click elsewhere) in the sidebar.
   selected: new Set(),
+  /// Rows picked to delete on the Sessions list (`s:<id>`, `c:<agent>:<id>`);
+  /// null when not picking.
+  picked: null,
   // Open terminal tabs, in the order shown, and what each one displays.
   tabs: [],
   tabInfo: {},

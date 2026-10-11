@@ -5122,3 +5122,20 @@ select:disabled {
 .pane .composer__hint {
   display: none;
 }
+
+/* Sessions list: picking rows to delete. */
+.row--picking {
+  cursor: default;
+}
+
+.row__pick {
+  flex: none;
+  width: auto;
+  margin: 0 2px 0 0;
+}
+
+.pick__count {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}

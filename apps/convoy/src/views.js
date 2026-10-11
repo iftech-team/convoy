@@ -1,6 +1,6 @@
 // Every screen. Markup built from state; nothing here calls the backend.
 
-import { historySection, lastActive, when } from "./views-history.js";
+import { conversationKey, historySection, lastActive, pickBox, shownConversations, when } from "./views-history.js";
 import { agentIcon, appMark, icons, projectIcon, projectTint } from "./icons.js";
 import {
   button,
@@ -335,6 +335,12 @@ export function contextMenu(menu) {
         enabled: !running,
         hint: running ? "stop it first" : "",
       }),
+      item(t("Delete…"), "delete", {
+        icon: "trash",
+        danger: true,
+        enabled: !running,
+        hint: running ? "stop it first" : "",
+      }),
       ...(target.working_directory
         ? [
             divider,
@@ -394,7 +400,14 @@ export function header() {
 
 const agentName = (agent) => (agent === "claude" ? "Claude Code" : "Codex");
 
-function sessionRow(item) {
+/// Every row the Sessions list shows that can be deleted: its sessions that
+/// are not running, then its saved conversations.
+export const pickableKeys = () => [
+  ...visibleSessions().filter((item) => !item.running).map((item) => `s:${item.id}`),
+  ...shownConversations().map(conversationKey),
+];
+
+function sessionRow(item, { picking = false } = {}) {
   const reported = state.agentState.get(item.id);
   // What a person needs at a glance: is it running, which agent, where, and
   // when it was last used. The provider ID is in the tooltip.
@@ -412,8 +425,13 @@ function sessionRow(item) {
     .filter(Boolean)
     .join(" · ");
 
+  const key = `s:${item.id}`;
+  const opener = picking
+    ? `class="row row--picking"${item.running ? "" : ` data-pick-row="${escape(key)}"`}`
+    : `class="row" data-open="${escape(item.id)}"`;
   return `
-    <div class="row" data-open="${escape(item.id)}" title="${escape(item.provider_id)}">
+    <div ${opener} title="${escape(item.running && picking ? t("Stop it to delete it") : item.provider_id)}">
+      ${picking ? pickBox(key, item.title, item.running) : ""}
       <span class="row__mark">${agentIcon(item.agent, 16)}</span>
       <div class="row__body">
         <div class="row__title">
@@ -421,7 +439,7 @@ function sessionRow(item) {
         </div>
         <div class="row__meta">${status}${meta}</div>
       </div>
-      <div class="row__actions">
+      ${picking ? "" : `<div class="row__actions">
         ${
           item.running
             ? button({ label: t("Stop"), icon: "stop", kind: "danger", data: { stop: item.id } })
@@ -433,33 +451,56 @@ function sessionRow(item) {
                 disabled: item.archived || item.worktree_removed,
               })
         }
-      </div>
+      </div>`}
     </div>`;
+}
+
+/// The bar that replaces the list's buttons while rows are picked to delete.
+function pickBar() {
+  const keys = pickableKeys();
+  const count = state.picked.size;
+  return `
+      <span class="pick__count">${escape(t("{count} selected", { count }))}</span>
+      ${button({ label: t("Select all"), kind: "quiet", action: "pick-all", disabled: !keys.length || keys.every((key) => state.picked.has(key)) })}
+      ${button({ label: t("Deselect all"), kind: "quiet", action: "pick-none", disabled: !count })}
+      ${button({ label: t("Delete…"), icon: "trash", kind: "danger", action: "pick-delete", disabled: !count })}
+      ${button({ label: t("Done"), action: "pick-done" })}`;
 }
 
 export function sessionsView() {
   const saved = historySection();
   if (!state.sessions.length && !state.showArchived) {
+    // New session stays where it always is, even with nothing listed yet.
     if (!saved) {
-      return empty(
-        "review",
-        t("No sessions yet"),
-        t("Start one to run Claude Code or Codex in this folder."),
-      );
+      return `
+      <div class="section">
+        <span class="section__spacer"></span>
+        ${button({ label: t("Import all history…"), icon: "history", action: "import-all-history" })}
+        ${button({ label: t("New session"), icon: "plus", action: "new-session", kind: "primary" })}
+      </div>
+      ${empty("review", t("No sessions yet"), t("Start one to run Claude Code or Codex in this folder."))}`;
     }
     return `
       <div class="section">
         <h2 class="section__title">${escape(t("No sessions yet"))}</h2>
         <span class="section__spacer"></span>
+        ${
+          state.picked
+            ? pickBar()
+            : `${button({ label: t("Select"), icon: "check", action: "pick-start", title: t("Select conversations to delete") })}
         ${button({ label: t("Import all history…"), icon: "history", action: "import-all-history" })}
-        ${button({ label: t("New session"), icon: "plus", action: "new-session", kind: "primary" })}
+        ${button({ label: t("New session"), icon: "plus", action: "new-session", kind: "primary" })}`
+        }
       </div>
       <p class="section__hint">${escape(t("Resume a conversation below or start a new session."))}</p>
       <div class="stack" data-scroll="sessions">${saved}</div>`;
   }
   // Running ones first: they are what someone comes back to.
   const shown = visibleSessions();
-  const rows = [...shown.filter((item) => item.running), ...shown.filter((item) => !item.running)].map(sessionRow).join("");
+  const picking = !!state.picked;
+  const rows = [...shown.filter((item) => item.running), ...shown.filter((item) => !item.running)]
+    .map((item) => sessionRow(item, { picking }))
+    .join("");
   return `
     <div class="section">
       <h2 class="section__title">${escape(t("Sessions"))}
@@ -471,14 +512,19 @@ export function sessionsView() {
         <input id="session-filter" type="search" placeholder="${escape(t("Filter by name or ID"))}"
                value="${escape(state.filter)}" spellcheck="false" />
       </div>
-      ${button({ icon: "refresh", action: "refresh", kind: "icon", title: t("Refresh") })}
+      ${
+        picking
+          ? pickBar()
+          : `${button({ icon: "refresh", action: "refresh", kind: "icon", title: t("Refresh") })}
       <label class="check">
         <input type="checkbox" data-toggle-state="showArchived"
                ${state.showArchived ? "checked" : ""} />
         ${escape(t("Archived"))}
       </label>
+      ${button({ label: t("Select"), icon: "check", action: "pick-start", title: t("Select sessions to delete") })}
       ${button({ label: t("Import all history…"), icon: "history", action: "import-all-history", title: t("Every Claude Code and Codex conversation on this computer") })}
-      ${button({ label: t("New session"), icon: "plus", action: "new-session", kind: "primary" })}
+      ${button({ label: t("New session"), icon: "plus", action: "new-session", kind: "primary" })}`
+      }
     </div>
     <div class="stack" data-scroll="sessions">
       <div class="list">

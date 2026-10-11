@@ -761,3 +761,135 @@ pub fn account_login(
     )?;
     Ok(id)
 }
+
+/// One row to delete: a session, or a saved conversation no session holds.
+#[derive(Deserialize)]
+pub struct DeleteItem {
+    pub session_id: Option<String>,
+    pub agent: Option<Agent>,
+    pub provider_id: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct DeleteReport {
+    pub deleted: usize,
+    /// Sessions left alone because they are running.
+    pub running: usize,
+    /// Rows whose conversation could not be moved to the Trash; kept.
+    pub failed: usize,
+}
+
+/// Deletes sessions and saved conversations: each conversation's files go to
+/// the Trash from every home it could be in (the system login and every
+/// account), then its session, if any, is forgotten. A running session is
+/// skipped, and one whose files could not be trashed is kept, so a failure
+/// never leaves a session pointing at nothing.
+#[tauri::command]
+pub async fn sessions_delete(
+    items: Vec<DeleteItem>,
+    workspace: State<'_, Workspace>,
+    terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<Chats>>,
+) -> Result<DeleteReport, String> {
+    let storage = workspace.storage.clone();
+    let mut running = 0;
+    // (session id, agent, provider id), resolved against the workspace so a
+    // session's conversation is the one Convoy recorded, not what was sent.
+    let (targets, homes) = workspace.act(|core| {
+        let state = core.state();
+        let mut targets: Vec<(Option<String>, Agent, String)> = Vec::new();
+        for item in &items {
+            match &item.session_id {
+                Some(id) => {
+                    if is_running(&terminals, &chats, id) {
+                        running += 1;
+                        continue;
+                    }
+                    let session = core.session(id)?;
+                    targets.push((Some(id.clone()), session.agent, session.provider_id.clone()));
+                }
+                None => {
+                    if let (Some(agent), Some(provider_id)) = (item.agent, &item.provider_id) {
+                        targets.push((None, agent, provider_id.clone()));
+                    }
+                }
+            }
+        }
+        let environment = convoy_core::provider::launch::current_environment();
+        let mut homes: Vec<(Agent, std::path::PathBuf)> = Vec::new();
+        for agent in [Agent::Claude, Agent::Codex] {
+            let mut probe = convoy_core::model::Session::new(String::new(), agent, "delete");
+            let profiles = std::iter::once(None).chain(
+                state
+                    .profiles
+                    .iter()
+                    .filter(|p| p.agent == agent)
+                    .map(|p| Some(p.id.clone())),
+            );
+            for profile in profiles {
+                probe.profile_id = profile;
+                let account = convoy_core::accounts::account_environment(
+                    &probe,
+                    &state.profiles,
+                    &storage.accounts(),
+                    &environment,
+                )?;
+                if !homes
+                    .iter()
+                    .any(|(kind, home)| *kind == agent && *home == account.home)
+                {
+                    homes.push((agent, account.home));
+                }
+            }
+        }
+        Ok((targets, homes))
+    })?;
+
+    let (removed, deleted, failed) = tauri::async_runtime::spawn_blocking(move || {
+        let (mut removed, mut deleted, mut failed) = (Vec::new(), 0, 0);
+        for (session_id, agent, provider_id) in targets {
+            let files: Vec<_> = homes
+                .iter()
+                .filter(|(kind, _)| *kind == agent)
+                .flat_map(|(_, home)| {
+                    convoy_core::provider::sweep::conversation_files(agent, home, &provider_id)
+                })
+                .collect();
+            if !files.is_empty() && trash_all(&files).is_err() {
+                failed += 1;
+                continue;
+            }
+            deleted += 1;
+            removed.extend(session_id);
+        }
+        (removed, deleted, failed)
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+
+    if !removed.is_empty() {
+        workspace.act(|core| core.remove_sessions(&removed).map(|_| ()))?;
+        let history = convoy_core::history::History::new(storage.history());
+        for id in &removed {
+            history.remove(id);
+        }
+    }
+    Ok(DeleteReport {
+        deleted,
+        running,
+        failed,
+    })
+}
+
+/// To the Trash, recoverable. On macOS through the file manager rather than
+/// Finder, which would ask to let Convoy control it.
+fn trash_all(files: &[std::path::PathBuf]) -> Result<(), trash::Error> {
+    #[allow(unused_mut)]
+    let mut context = trash::TrashContext::default();
+    #[cfg(target_os = "macos")]
+    {
+        use trash::macos::{DeleteMethod, TrashContextExtMacos};
+        context.set_delete_method(DeleteMethod::NsFileManager);
+    }
+    context.delete_all(files)
+}
