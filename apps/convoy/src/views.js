@@ -20,6 +20,7 @@ import { missingConversation } from "./terminal.js";
 import { viewOf } from "./views-chat.js";
 import { approvalsButton, approvalsPanel, inboxItems } from "./views-inbox.js";
 import { helperActivity, helpersButton, helpersMenu, helpersSummary } from "./views-helpers.js";
+import { automationActivity } from "./views-automations.js";
 
 const TABS = [
   ["sessions", "Sessions"],
@@ -27,6 +28,7 @@ const TABS = [
   ["specs", "Specs"],
   ["tasks", "Tasks"],
   ["docs", "Docs"],
+  ["automations", "Automations"],
 ];
 
 // ---------------------------------------------------------------- sidebar --
@@ -990,10 +992,14 @@ function activityPanel() {
   }
   const row = (event) => {
     const helper = helperActivity(event.detail);
+    const automation = helper ? null : automationActivity(event.detail);
     const [label, glyph, tone] = helper
       ? [helper[0], "helpers", event.kind === "done" ? "activity--done" : ""]
-      : (ACTIVITY[event.kind] ?? [event.kind, "clock", ""]);
+      : automation
+        ? [automation[0], "clock", event.kind === "done" ? "activity--done" : ""]
+        : (ACTIVITY[event.kind] ?? [event.kind, "clock", ""]);
     if (helper) event = { ...event, detail: helper[1] };
+    if (automation) event = { ...event, detail: automation[1] };
     const time = new Date(event.at).toLocaleTimeString(language(), { hour: "numeric", minute: "2-digit" });
     return `
       <button class="activity ${tone}" data-activity-open="${escape(event.session_id)}"

@@ -34,7 +34,10 @@ button {
   cursor: pointer;
 }
 
-input {
+/* A text area too: without it, dark mode chosen in the app while the system
+   is light left typed text in the system's dark ink. */
+input,
+textarea {
   font: inherit;
   color: inherit;
 }

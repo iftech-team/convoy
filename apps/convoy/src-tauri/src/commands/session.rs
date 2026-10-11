@@ -297,23 +297,53 @@ pub fn session_start(
     chats: State<'_, Arc<Chats>>,
     helpers: State<'_, crate::helpers::Helpers>,
 ) -> Result<(), String> {
+    start_terminal(
+        &app,
+        &id,
+        cols,
+        rows,
+        &workspace,
+        &terminals,
+        &chats,
+        Some(&helpers),
+    )
+}
+
+/// Starts a session's agent in a terminal: the window's start, and an
+/// automation's when it runs as one.
+#[allow(clippy::too_many_arguments)]
+pub fn start_terminal<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    id: &str,
+    cols: u16,
+    rows: u16,
+    workspace: &Workspace,
+    terminals: &Arc<Terminals>,
+    chats: &Chats,
+    helpers: Option<&crate::helpers::Helpers>,
+) -> Result<(), String> {
     // One process per session: the chat's goes before the terminal's starts.
-    if chats.running(&id) {
+    if chats.running(id) {
         return Err("This session is running in the chat. Stop it first.".into());
     }
+    let revoke = || {
+        if let Some(helpers) = helpers {
+            helpers.revoke(id);
+        }
+    };
     let executable = std::env::current_exe().map_err(|error| error.to_string())?;
     let storage = workspace.storage.clone();
-    let manager = helpers.launch_for(&workspace, &id);
+    let manager = helpers.and_then(|helpers| helpers.launch_for(workspace, id));
     let plan = workspace
-        .act(|workspace| plan_launch_with(workspace, &storage, &id, &executable, manager.as_ref()))
-        .inspect_err(|_| helpers.revoke(&id))?;
+        .act(|workspace| plan_launch_with(workspace, &storage, id, &executable, manager.as_ref()))
+        .inspect_err(|_| revoke())?;
 
     let env: Vec<(String, String)> = plan.env.clone().into_iter().collect();
     crate::pty::start(
-        &terminals,
-        &app,
+        terminals,
+        app,
         Launch {
-            id: &id,
+            id,
             program: &plan.spec.file,
             args: &plan.spec.args,
             cwd: &plan.directory,
@@ -322,13 +352,13 @@ pub fn session_start(
             rows,
         },
     )
-    .inspect_err(|_| helpers.revoke(&id))?;
+    .inspect_err(|_| revoke())?;
 
     // Recorded only once the process exists, and stopped if recording fails:
     // an agent the workspace does not know about would be invisible and
     // unstoppable.
     if let Err(error) = workspace.act(|workspace| mark_started(workspace, &plan)) {
-        terminals.stop(&id);
+        terminals.stop(id);
         return Err(error);
     }
     Ok(())

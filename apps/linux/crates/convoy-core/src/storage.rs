@@ -157,6 +157,12 @@ impl Storage {
         self.root.join("integrations.json")
     }
 
+    /// Scheduled automations, kept apart from the workspace file, which the
+    /// macOS app rewrites without them.
+    pub fn automations(&self) -> PathBuf {
+        self.root.join("automations.json")
+    }
+
     pub fn worktrees(&self) -> PathBuf {
         self.root.join("worktrees")
     }

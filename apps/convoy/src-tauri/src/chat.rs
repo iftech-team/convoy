@@ -610,6 +610,7 @@ impl<R: Runtime> ChatSink for Window<R> {
         let _ = self.app.emit("chat:event", Payload { id, event });
         self.record(id, event);
         crate::helpers::chat_event(&self.app, id, event);
+        crate::automations::chat_event(&self.app, id, event);
     }
 
     fn ended(&self, id: &str, how: Ended) {

@@ -334,7 +334,7 @@ fn spawn_helper<R: Runtime>(
 
 /// The helper's own checkout, made as the New session sheet makes one; the
 /// shared files are copied, the setup command is not run unattended.
-fn make_worktree<R: Runtime>(
+pub(crate) fn make_worktree<R: Runtime>(
     app: &AppHandle<R>,
     workspace: &Workspace,
     id: &str,

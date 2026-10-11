@@ -18,6 +18,7 @@ import { when } from "./views-history.js";
 import { state, project, session } from "./state.js";
 import { agentIcon } from "./icons.js";
 import { t } from "./i18n.js";
+import { automationEditor } from "./views-automations.js";
 
 const AGENTS = [
   ["claude", "Claude Code", agentIcon("claude", 15)],
@@ -38,7 +39,7 @@ const foot = (confirmLabel, action, kind = "primary") => `
 // ---------------------------------------------------------------- sessions --
 
 /// The account a new session signs in with: the system login or a profile.
-const accountOptions = (agent) => [
+export const accountOptions = (agent) => [
   ["", t("System login")],
   ...(state.profiles ?? []).filter((item) => item.agent === agent).map((item) => [item.id, item.label]),
 ];
@@ -80,7 +81,7 @@ export function effortLevels(agent, profileId, modelId) {
     .filter((level, index, all) => all.indexOf(level) === index);
 }
 
-function effortSelect(id, agent, profileId, modelId, value) {
+export function effortSelect(id, agent, profileId, modelId, value) {
   const levels = effortLevels(agent, profileId, modelId);
   const options = [["", t("Default")], ...levels.map((level) => [level, EFFORT_NAMES[level] ? t(EFFORT_NAMES[level]) : level])];
   return select(id, options, levels.includes(value) ? value : "", levels.length === 0);
@@ -1016,6 +1017,7 @@ const VIEWS = {
   confirm: confirmAction,
   palette,
   markdown: markdownPreview,
+  automation: automationEditor,
 };
 
 export { session, project };
