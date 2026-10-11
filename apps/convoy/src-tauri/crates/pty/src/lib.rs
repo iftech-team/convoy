@@ -14,6 +14,42 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
+/// Text from a read, with a character the read cut in half kept back for the
+/// next one. A read ends wherever the pty's buffer did, often in the middle
+/// of a `─` or a Cyrillic letter, and decoding each read on its own drew
+/// those as `�`. Bytes that can never be text still are.
+pub fn decode(pending: &mut Vec<u8>, chunk: &[u8]) -> String {
+    pending.extend_from_slice(chunk);
+    let mut text = String::new();
+    let mut rest: &[u8] = pending;
+    loop {
+        match std::str::from_utf8(rest) {
+            Ok(valid) => {
+                text.push_str(valid);
+                rest = &[];
+                break;
+            }
+            Err(error) => {
+                let (valid, after) = rest.split_at(error.valid_up_to());
+                text.push_str(std::str::from_utf8(valid).unwrap_or_default());
+                match error.error_len() {
+                    // Cut off at the end: wait for the rest of it.
+                    None => {
+                        rest = after;
+                        break;
+                    }
+                    Some(bad) => {
+                        text.push(char::REPLACEMENT_CHARACTER);
+                        rest = &after[bad..];
+                    }
+                }
+            }
+        }
+    }
+    *pending = rest.to_vec();
+    text
+}
+
 /// How a session ended. The three are not interchangeable: a stop is a
 /// failure, hibernation is not, and only an exit carries a code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -140,13 +176,20 @@ impl Terminals {
         let reading_id = session_id.clone();
         std::thread::spawn(move || {
             let mut buffer = [0u8; 16 * 1024];
+            let mut pending = Vec::new();
             loop {
                 match reader.read(&mut buffer) {
                     Ok(0) | Err(_) => break,
                     Ok(read) => {
-                        reading.data(&reading_id, &String::from_utf8_lossy(&buffer[..read]))
+                        let text = decode(&mut pending, &buffer[..read]);
+                        if !text.is_empty() {
+                            reading.data(&reading_id, &text);
+                        }
                     }
                 }
+            }
+            if !pending.is_empty() {
+                reading.data(&reading_id, &String::from_utf8_lossy(&pending));
             }
         });
 
@@ -314,4 +357,29 @@ fn insist(pid: u32) {
         .stderr(Stdio::null())
         .creation_flags(CREATE_NO_WINDOW)
         .status();
+}
+
+#[cfg(test)]
+mod decoding {
+    use super::decode;
+
+    #[test]
+    fn a_character_split_across_reads_comes_out_whole() {
+        let line = "──── Привет 🙂".as_bytes();
+        for cut in 0..=line.len() {
+            let mut pending = Vec::new();
+            let mut text = decode(&mut pending, &line[..cut]);
+            text += &decode(&mut pending, &line[cut..]);
+            assert_eq!(text, "──── Привет 🙂", "cut at {cut}");
+            assert!(pending.is_empty());
+        }
+    }
+
+    #[test]
+    fn bytes_that_are_never_text_are_replaced_and_reading_goes_on() {
+        let mut pending = Vec::new();
+        assert_eq!(decode(&mut pending, b"a\xffb"), "a\u{FFFD}b");
+        assert_eq!(decode(&mut pending, b"\xe2\x94"), "");
+        assert_eq!(decode(&mut pending, b"\x80!"), "─!");
+    }
 }
