@@ -321,3 +321,48 @@ fn publication_and_review_choices_are_explicit_and_changing_them_invalidates_the
         .prompt
         .contains("Do not publish"));
 }
+
+/// The system login names no home, as the macOS app does: Claude Code keys its
+/// Keychain entry by CLAUDE_CONFIG_DIR when it is set, so naming the default
+/// ~/.claude would ask for a second login. A home the user exported, or a
+/// session's recorded custom home, is still passed on.
+#[test]
+fn the_system_login_leaves_the_agents_home_unset() {
+    let fixture = fixture();
+    let (mut workspace, project) = fixture.with_project();
+    for agent in [Agent::Claude, Agent::Codex] {
+        workspace
+            .add_session(new_session(&project, agent, "Plain"))
+            .unwrap();
+    }
+    let source: BTreeMap<String, String> = [("HOME".to_string(), "/home/u".to_string())]
+        .into_iter()
+        .collect();
+    let root = fixture.path().join("accounts");
+    for (index, key, folder) in [
+        (0, "CLAUDE_CONFIG_DIR", ".claude"),
+        (1, "CODEX_HOME", ".codex"),
+    ] {
+        let mut session = workspace.state().sessions[index].clone();
+        let account = account_environment(&session, &[], &root, &source).unwrap();
+        assert_eq!(account.home, std::path::Path::new("/home/u").join(folder));
+        assert_eq!(account.env.get(key), None, "{key}");
+
+        // A session that already ran there, the same.
+        session.agent_home = Some(account.home.clone());
+        let resumed = account_environment(&session, &[], &root, &source).unwrap();
+        assert_eq!(resumed.env.get(key), None, "{key} on resume");
+
+        // A home somewhere else is named.
+        session.agent_home = Some("/elsewhere".into());
+        let custom = account_environment(&session, &[], &root, &source).unwrap();
+        assert_eq!(custom.env.get(key).map(String::as_str), Some("/elsewhere"));
+
+        // One the user exported is kept, even when it is the default.
+        session.agent_home = None;
+        let mut exported = source.clone();
+        exported.insert(key.into(), format!("/home/u/{folder}"));
+        let kept = account_environment(&session, &[], &root, &exported).unwrap();
+        assert_eq!(kept.env.get(key), Some(&format!("/home/u/{folder}")));
+    }
+}

@@ -1,7 +1,7 @@
 //! Port of `accounts.cjs`: isolated provider homes.
 //!
 //! A session bound to a profile gets its own `CLAUDE_CONFIG_DIR` / `CODEX_HOME`
-//! named by the SHA-256 of the profile id, and loses any API-key variables so
+//! named by the SHA-256 of the profile id (the system login gets neither), and loses any API-key variables so
 //! the profile's own sign-in is the only credential in play. A session that has
 //! already run keeps the home recorded at launch, even if the root moves.
 
@@ -72,7 +72,18 @@ pub fn account_environment(
         },
     };
     let mut env = agent_environment(source);
-    env.insert(key.to_string(), home.to_string_lossy().into_owned());
+    // The system login is left to find its own home, as the macOS app does:
+    // Claude Code names its Keychain entry after CLAUDE_CONFIG_DIR when the
+    // variable is set, so pointing it at the default ~/.claude reads a
+    // different entry and asks for a login the terminal never needed. Only a
+    // managed or custom home is named; one the user exported stays as it is.
+    let standard = default_home_root(source).join(match session.agent {
+        Agent::Claude => ".claude",
+        Agent::Codex => ".codex",
+    });
+    if profile.is_some() || home != standard || source.contains_key(key) {
+        env.insert(key.to_string(), home.to_string_lossy().into_owned());
+    }
     if profile.is_some() {
         for name in KEY_VARIABLES {
             env.remove(name);
