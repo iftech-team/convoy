@@ -167,7 +167,11 @@ fn a_unix_launch_still_goes_through_a_login_shell() {
         Platform::Unix,
     )
     .expect("spec");
-    assert_eq!(spec.file, "/bin/bash");
+    assert!(
+        ["bash", "zsh"].iter().any(|name| spec.file.ends_with(name)),
+        "{}",
+        spec.file
+    );
     assert_eq!(spec.args[0], "-ilc");
 }
 

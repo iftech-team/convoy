@@ -5,6 +5,7 @@
 
 use crate::workspace::model::{Agent, Session};
 use std::collections::BTreeMap;
+use std::path::Path;
 
 /// A program and its argument vector, ready for `vte::Terminal::spawn_async`
 /// or [`crate::process::ProcessSpec`].
@@ -69,9 +70,28 @@ pub fn agent_args(session: &Session, resume: bool) -> Vec<String> {
     args
 }
 
+/// The login shell agents start in. It has to be the user's own: on macOS
+/// zsh is the default and PATH additions such as `~/.local/bin` or nvm live
+/// in `.zprofile`/`.zshrc`, which bash never reads, so a bash launch from the
+/// Dock cannot find `claude`. Only zsh and bash are taken from `$SHELL`; fish
+/// and others cannot execute the POSIX command line, so they fall back to the
+/// platform's default.
+pub fn login_shell(shell: Option<&str>) -> String {
+    if let Some(shell) = shell.filter(|shell| shell.starts_with('/')) {
+        let name = Path::new(shell).file_name().and_then(|name| name.to_str());
+        if matches!(name, Some("zsh" | "bash")) && Path::new(shell).exists() {
+            return shell.to_string();
+        }
+    }
+    if cfg!(target_os = "macos") {
+        "/bin/zsh".into()
+    } else {
+        "/bin/bash".into()
+    }
+}
+
 /// `launchSpec()` — a login shell is used so the agent sees the same PATH and
-/// provider configuration the user gets in a terminal. `$SHELL` is not used:
-/// it may be fish, which cannot execute POSIX syntax.
+/// provider configuration the user gets in a terminal.
 pub fn launch_spec(session: &Session, resume: bool, bindings: &Bindings) -> LaunchSpec {
     let args = agent_args(session, resume);
     let bound = bindings.pairs();
@@ -93,7 +113,7 @@ pub fn launch_spec(session: &Session, resume: bool, bindings: &Bindings) -> Laun
         .collect::<Vec<_>>()
         .join(" ");
     LaunchSpec {
-        file: "/bin/bash".into(),
+        file: login_shell(std::env::var("SHELL").ok().as_deref()),
         args: vec!["-ilc".into(), format!("exec {prefix}{command}")],
     }
 }

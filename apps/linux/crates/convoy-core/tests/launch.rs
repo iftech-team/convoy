@@ -6,7 +6,9 @@
 
 mod common;
 
-use convoy_core::provider::launch::{agent_args, agent_environment, launch_spec, Bindings};
+use convoy_core::provider::launch::{
+    agent_args, agent_environment, launch_spec, login_shell, Bindings,
+};
 use convoy_core::provider::session_spec;
 use convoy_core::workspace::model::{Agent, Session};
 use std::collections::BTreeMap;
@@ -48,20 +50,47 @@ fn posix_launch_preserves_shell_metacharacters_as_literal_arguments() {
     let prompt = "quotes ' \" `echo injected` $(echo injected) ; & | %PATH%\nПривет";
     let session = session(Agent::Claude, "123", prompt);
     let spec = launch_spec(&session, false, &Bindings::default());
-    assert_eq!(spec.file, "/bin/bash");
+    assert_eq!(
+        spec.file,
+        login_shell(std::env::var("SHELL").ok().as_deref())
+    );
 
     // Replace the exec with a printf that reports the argument vector the
-    // shell actually built.
+    // shell actually built, in each shell an agent can be started in.
     let script = spec.args[1].replacen("exec ", "printf '%s\\0' ", 1);
-    let output = Command::new("/bin/bash")
-        .args(["-c", &script])
-        .output()
-        .expect("bash");
-    assert!(output.status.success());
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let mut parts: Vec<&str> = stdout.split('\0').collect();
-    parts.pop();
-    assert_eq!(parts, agent_args(&session, false));
+    for shell in ["/bin/bash", "/bin/zsh"] {
+        if !std::path::Path::new(shell).exists() {
+            continue;
+        }
+        let output = Command::new(shell)
+            .args(["-c", &script])
+            .output()
+            .expect(shell);
+        assert!(output.status.success(), "{shell}");
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        let mut parts: Vec<&str> = stdout.split('\0').collect();
+        parts.pop();
+        assert_eq!(parts, agent_args(&session, false), "{shell}");
+    }
+}
+
+#[test]
+fn agents_start_in_the_users_login_shell_when_it_can_run_the_command() {
+    let fallback = if cfg!(target_os = "macos") {
+        "/bin/zsh"
+    } else {
+        "/bin/bash"
+    };
+    assert_eq!(login_shell(Some("/bin/bash")), "/bin/bash");
+    if std::path::Path::new("/bin/zsh").exists() {
+        assert_eq!(login_shell(Some("/bin/zsh")), "/bin/zsh");
+    }
+    // fish cannot run the POSIX command line; a missing or relative shell is
+    // not trusted either.
+    assert_eq!(login_shell(Some("/opt/homebrew/bin/fish")), fallback);
+    assert_eq!(login_shell(Some("/nowhere/zsh")), fallback);
+    assert_eq!(login_shell(Some("zsh")), fallback);
+    assert_eq!(login_shell(None), fallback);
 }
 
 #[test]
