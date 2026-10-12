@@ -163,6 +163,12 @@ impl Storage {
         self.root.join("automations.json")
     }
 
+    /// The skills library, kept apart from the workspace file for the same
+    /// reason as the automations.
+    pub fn skills(&self) -> PathBuf {
+        self.root.join("skills.json")
+    }
+
     pub fn worktrees(&self) -> PathBuf {
         self.root.join("worktrees")
     }

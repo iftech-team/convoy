@@ -94,6 +94,9 @@ pub struct Spawn {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     pub prompt: String,
+    /// Skills to attach, by name, on top of the automatic ones.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<String>,
 }
 
 /// One request file.
@@ -815,7 +818,7 @@ pub fn instructions(platform: crate::Platform) -> String {
     };
     format!(
         "You are a manager session in Convoy. You can hand work to helper sessions: other coding agents working in this same project, each with its own conversation. Run these from your shell:\n\
-         - {bin} --session spawn --agent codex|claude --prompt \"<task>\" [--title <t>] [--model <m>] [--effort <e>] [--worktree-auto | --worktree <branch>]  → prints the helper's id. --prompt @file reads the prompt from a file. --worktree-auto gives the helper its own git worktree and branch, so parallel helpers never edit the same files.\n\
+         - {bin} --session spawn --agent codex|claude --prompt \"<task>\" [--title <t>] [--model <m>] [--effort <e>] [--worktree-auto | --worktree <branch>] [--skill <name>]  → prints the helper's id. --prompt @file reads the prompt from a file. --worktree-auto gives the helper its own git worktree and branch, so parallel helpers never edit the same files. --skill attaches a skill from Convoy's library by name.\n\
          - {bin} --session wait <id> [<id>…] [--timeout 90]  → blocks until each helper finishes its turn; prints one JSON line per helper with status done, failed, stopped or timeout. On timeout, run it again.\n\
          - {bin} --session output <id>  → prints the helper's final answer.\n\
          - {bin} --session list  → your helpers and their status.\n\

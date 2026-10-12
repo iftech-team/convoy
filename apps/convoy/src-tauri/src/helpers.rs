@@ -296,6 +296,17 @@ fn spawn_helper<R: Runtime>(
             .count();
         plan_spawn(core, caller, spawn, running)
     })?;
+    // The automatic skills, and any the manager named.
+    let mut plan = plan;
+    plan.session.skills = crate::skills::with_skills(&workspace.storage, |store| {
+        let mut ids = store.defaults(&caller.project_id, Some(plan.session.agent));
+        for id in store.named(&caller.project_id, plan.session.agent, &spawn.skills)? {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+        Ok(ids)
+    })?;
     let id = workspace.act(|core| create_helper(core, &plan))?;
 
     if let Some(branch) = &plan.branch {

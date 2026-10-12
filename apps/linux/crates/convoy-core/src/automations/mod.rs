@@ -112,6 +112,9 @@ pub struct Automation {
     /// Newest first, at most [`HISTORY`].
     #[serde(default)]
     pub history: Vec<Run>,
+    /// Skills each run's session starts with, by id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills: Option<Vec<String>>,
     #[serde(flatten)]
     pub unknown: Map<String, Value>,
 }
@@ -178,6 +181,10 @@ pub struct AutomationInput {
     pub enabled: bool,
     #[serde(default = "yes")]
     pub catch_up: bool,
+    /// Skills its runs start with. None leaves an existing automation's as
+    /// they are; a new one then has none.
+    #[serde(default)]
+    pub skills: Option<Vec<String>>,
 }
 
 /// Checks what the editor sent against the workspace it will run in.
@@ -479,6 +486,9 @@ impl Store {
                 automation.schedule = input.schedule.clone();
                 automation.enabled = input.enabled;
                 automation.catch_up = input.catch_up;
+                if let Some(skills) = input.skills.clone() {
+                    automation.skills = crate::planning::attached(skills);
+                }
                 // A new schedule owes nothing from before it.
                 if timing {
                     automation.updated = now;
@@ -505,6 +515,7 @@ impl Store {
                     updated: now,
                     last_slot: None,
                     history: Vec::new(),
+                    skills: crate::planning::attached(input.skills.clone().unwrap_or_default()),
                     unknown: Map::new(),
                 };
                 self.update(move |file| {
@@ -521,6 +532,30 @@ impl Store {
         let id = id.to_string();
         self.update(move |file| {
             file.automations.retain(|automation| automation.id != id);
+            Ok(())
+        })
+    }
+
+    /// Skills that no longer exist come off every automation.
+    pub fn detach_skills(&mut self, ids: &[String]) -> Result<()> {
+        let holds = |automation: &Automation| {
+            automation
+                .skills
+                .as_ref()
+                .is_some_and(|list| list.iter().any(|id| ids.contains(id)))
+        };
+        if !self.state.automations.iter().any(holds) {
+            return Ok(());
+        }
+        let ids = ids.to_vec();
+        self.update(move |file| {
+            for automation in file.automations.iter_mut() {
+                if let Some(kept) = automation.skills.take() {
+                    automation.skills = crate::planning::attached(
+                        kept.into_iter().filter(|id| !ids.contains(id)).collect(),
+                    );
+                }
+            }
             Ok(())
         })
     }

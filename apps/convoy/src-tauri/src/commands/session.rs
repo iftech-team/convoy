@@ -80,10 +80,13 @@ pub async fn session_create(
     view: Option<String>,
     knowledge: Option<Vec<KnowledgeItem>>,
     manager: Option<bool>,
+    skills: Option<Vec<String>>,
     workspace: State<'_, Workspace>,
 ) -> Result<String, String> {
     let agent = Agent::parse(&agent).ok_or("Unknown agent.")?;
     let storage = workspace.storage.clone();
+    // The skills picked, or the automatic ones when none were asked about.
+    let skills = crate::skills::resolve(&storage, &project_id, Some(agent), skills.as_deref())?;
     let knowledge = knowledge.unwrap_or_default();
 
     // What to read, resolved against the workspace for sessions.
@@ -138,6 +141,7 @@ pub async fn session_create(
         input.effort = effort.unwrap_or_default();
         // The account it signs in with; none means the system login.
         input.profile_id = profile_id.filter(|id| !id.is_empty());
+        input.skills = skills;
         let state = workspace.add_session(input)?;
         let id = state
             .sessions
@@ -487,11 +491,23 @@ pub fn review_create(
         Some(name) => Some(Agent::parse(name).ok_or("Unknown agent.")?),
         None => None,
     };
+    let storage = workspace.storage.clone();
+    let (project, reviewer) = workspace.act(|workspace| {
+        let builder = workspace.session(&id)?;
+        let reviewer = agent.unwrap_or(match builder.agent {
+            Agent::Claude => Agent::Codex,
+            Agent::Codex => Agent::Claude,
+        });
+        Ok((builder.project_id.clone(), reviewer))
+    })?;
+    // A reviewer is a new session: it gets the automatic skills.
+    let skills = crate::skills::resolve(&storage, &project, Some(reviewer), None)?;
     workspace.act(|workspace| {
         let mut input = convoy_core::review::handoff(workspace, &id, prompt)?;
         if let Some(agent) = agent {
             input.agent = agent;
         }
+        input.skills = skills;
         input.model = model.unwrap_or_default();
         input.effort = effort.unwrap_or_default();
         input.profile_id = profile_id.filter(|id| !id.is_empty());

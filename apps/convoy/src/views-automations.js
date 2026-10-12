@@ -8,6 +8,7 @@ import { agentIcon, icons } from "./icons.js";
 import { language, t } from "./i18n.js";
 import { state } from "./state.js";
 import { accountOptions, effortSelect, modelSelect } from "./dialogs.js";
+import { skillPicker } from "./views-skills.js";
 
 export const DAYS = [
   ["mon", "Mon"],
@@ -197,6 +198,7 @@ export function automationEditor(dialog) {
         ${field(t("Model"), modelSelect("auto-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}
         ${field(t("Effort"), effortSelect("auto-effort", dialog.agent, dialog.account ?? "", dialog.model ?? "", dialog.effort ?? ""))}
       </div>
+      ${skillPicker(dialog.skills ?? [], dialog.agent, dialog.project_id)}
       <div class="sheet-box auto-schedule">
         <div class="auto-schedule__head">
           <span class="field__label">${escape(t("Schedule"))}</span>

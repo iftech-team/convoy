@@ -60,6 +60,7 @@ import { toggleHistoryCollapsed } from "./views-history.js";
 import { PROJECT_DOC, docsView } from "./views-docs.js";
 import { installAutomations } from "./automations.js";
 import { automationsView } from "./views-automations.js";
+import { fitSkills, installSkills } from "./skills.js";
 
 const app = document.querySelector("#app");
 const imports = installTasks({ state, escape, icons, call, callDone: done, toast, render,
@@ -71,6 +72,13 @@ const automations = installAutomations({
   openModal: (dialog) => openModal(dialog),
   closeDialog: () => closeDialog(),
   selectProject: (id) => selectProject(id),
+  loadWorkspace: () => loadWorkspace(),
+});
+const skills = installSkills({
+  render: () => render(),
+  openModal: (dialog) => openModal(dialog),
+  closeDialog: () => closeDialog(),
+  openSettings: (section) => openSettings(section),
   loadWorkspace: () => loadWorkspace(),
 });
 const isImportDialog = () => ["import", "integrations", "connection", "task-model"].includes(state.dialog?.kind);
@@ -825,6 +833,11 @@ const ACTIONS = {
     state.menu = "quick";
     render();
   },
+  "skills-menu": () => {
+    const id = state.actionData?.skillsSession ?? state.sessionId;
+    state.menu = state.menu?.kind === "skills" && state.menu.id === id ? null : { kind: "skills", id };
+    render();
+  },
   "helpers-menu": () => {
     state.menu = state.menu?.kind === "helpers" ? null : { kind: "helpers", id: state.sessionId };
     render();
@@ -1170,11 +1183,12 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-inbox-answer],[data-inbox-open],[data-inbox-expand],[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day]",
+      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day],[data-skill],[data-skill-pick],[data-skill-toggle]",
   );
   if (!target) return;
   const data = target.dataset;
   if (await automations.onClick(target)) return;
+  if (await skills.onClick(target)) return;
   // A double click on a session's name renames it, in the sidebar and the
   // Sessions list (the header's menu has Rename). Counted from the click itself, since the
   // first click redraws the list and a dblclick never reaches the new row.
@@ -1400,6 +1414,10 @@ app.addEventListener("click", async (event) => {
       state.dialog.account = activeAccount(data.value);
       Object.assign(state.dialog, lastChoice(data.value));
     }
+    // The skills offered follow the agent.
+    if (data.set === "agent" && Array.isArray(state.dialog.skills)) {
+      fitSkills(state.dialog, data.value, state.dialog.projectId ?? state.dialog.project_id ?? state.projectId);
+    }
     // An account and a model belong to one agent; switching lets them go.
     if (state.dialog.kind === "task" && data.set === "agent") {
       const own = (state.profiles ?? []).some((item) => item.id === state.dialog.profile_id && item.agent === data.value);
@@ -1580,6 +1598,7 @@ app.addEventListener("input", (event) => {
   if (draftKey && state.dialog && !isImportDialog() && field.closest(".modal")) state.dialog[draftKey] = field.value;
   if (isImportDialog() && imports.onInput(field)) return;
   if (automations.onInput(field)) return;
+  if (skills.onInput(field)) return;
   if (field.id === "session-filter") {
     state.filter = field.value;
     return render();
@@ -1643,6 +1662,7 @@ app.addEventListener("input", (event) => {
 
 app.addEventListener("change", async (event) => {
   if (automations.onChange(event.target)) return;
+  if (skills.onChange(event.target)) return;
   if (event.target.dataset?.linkTask && event.target.value) {
     const id = event.target.dataset.linkTask;
     if (await done("task_link_session", { id, sessionId: event.target.value })) {
@@ -2194,6 +2214,7 @@ async function sessionProject(draft, projectId) {
   draft.base = "";
   draft.saved = [];
   draft.knowledge ??= [];
+  fitSkills(draft, draft.agent, projectId);
   render();
   const [refs, detail, history] = await Promise.all([
     call("git_refs", { projectId }),
@@ -2236,6 +2257,7 @@ async function createSession() {
       return { agent, provider_id, title: item.title };
     }),
     manager: !!draft.manager,
+    skills: draft.skills ?? null,
   });
   draft.busy = false;
   if (!id) return render();
@@ -2927,7 +2949,7 @@ async function exportSpec(id) {
 function openTask(id) {
   const task = state.planning?.tasks.find((item) => item.id === id);
   if (!task) return;
-  openModal({ kind: "task", ...task });
+  openModal({ kind: "task", ...task, skills: task.skills ?? [], skillsTouched: true });
 }
 
 /// Saves the form; with `run`, starts the task straight away, as the macOS
@@ -2946,6 +2968,7 @@ async function saveTask(run = false) {
       agent: dialog.agent,
       mode: dialog.mode,
       auto_review: dialog.auto_review,
+      skills: Array.isArray(dialog.skills) ? dialog.skills : null,
     },
   });
   if (!id) return;
@@ -3340,6 +3363,8 @@ function paletteEntries() {
     ["Project settings", "", openProjectSettings],
     ["Import provider history", "Conversations the agent already has for this folder", openTranscripts],
     ["Import all history…", "Every Claude Code and Codex conversation on this computer", openHistorySweep],
+    ["Skills…", "Instructions you attach to sessions, tasks and automations", () => openSettings("Skills")],
+    ["New skill…", "Write instructions once and attach them to sessions", () => skills.open(null)],
     ["New automation…", "Run a prompt on a schedule in the current project", () => withProject(() => automations.open(null))],
     ["Automations", "The current project's scheduled prompts", () => withProject(() => automations.openTab())],
     ["Remove all projects…", "Clear the project list; nothing on disk is touched", ACTIONS["remove-all-projects"]],
@@ -3896,6 +3921,8 @@ try {
   // finished run is told as a notification.
   await automations.load();
   await listen("automation:changed", () => automations.reload());
+  await skills.load();
+  await listen("skills:changed", () => skills.reload());
   await listen("automation:finished", async ({ payload }) => {
     notifyAutomation(payload);
     await loadWorkspace();

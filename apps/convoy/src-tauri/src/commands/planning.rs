@@ -52,6 +52,8 @@ pub struct TaskView {
     pub profile_id: Option<String>,
     /// The titles of the tasks it still waits for.
     pub blocked_by: Vec<String>,
+    /// Skills its session starts with, by id.
+    pub skills: Vec<String>,
 }
 
 fn task_view(state: &convoy_core::model::State, task: &convoy_core::model::Task) -> TaskView {
@@ -74,6 +76,7 @@ fn task_view(state: &convoy_core::model::State, task: &convoy_core::model::Task)
         pr_url: task.pr_url.clone(),
         depends_on: task.depends_on.clone(),
         profile_id: task.profile_id.clone(),
+        skills: task.skills.clone().unwrap_or_default(),
         blocked_by: convoy_core::queue::blocked_by(state, task)
             .into_iter()
             .map(|other| other.title.clone())
@@ -253,6 +256,10 @@ pub struct TaskFormInput {
     pub agent: String,
     pub mode: String,
     pub auto_review: bool,
+    /// Skills its session starts with. None keeps an existing task's; a new
+    /// task then gets the automatic ones.
+    #[serde(default)]
+    pub skills: Option<Vec<String>>,
 }
 
 #[tauri::command]
@@ -266,8 +273,18 @@ pub fn task_save(input: TaskFormInput, workspace: State<'_, Workspace>) -> Resul
         other => return Err(format!("Unknown publication mode: {other}")),
     };
     let existing = input.id.clone().filter(|id| !id.is_empty());
+    let skills = match (&input.skills, &existing) {
+        (None, Some(_)) => None,
+        (asked, _) => Some(crate::skills::resolve(
+            &workspace.storage,
+            &input.project_id,
+            None,
+            asked.as_deref(),
+        )?),
+    };
     workspace.act(|workspace| {
         let state = workspace.save_task(TaskInput {
+            skills,
             id: input.id,
             project_id: input.project_id,
             spec_id: input.spec_id,
@@ -412,6 +429,7 @@ mod tests {
         core.add_project(&project).unwrap();
         let project_id = core.state().projects[0].id.clone();
         core.save_task(TaskInput {
+            skills: None,
             id: None,
             project_id,
             spec_id: None,

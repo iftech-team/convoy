@@ -7,6 +7,7 @@ import { icons } from "./icons.js";
 import { button, escape, shorten } from "./ui.js";
 import { state } from "./state.js";
 import { t } from "./i18n.js";
+import { projectSkills } from "./views-skills.js";
 
 /// The macOS app's palette and emoji choices, in its order.
 export const COLORS = ["#5E6AD2", "#4CAF83", "#E5A54B", "#D65C5C", "#3FA7D6", "#B067C9", "#8A8F98", "#E07C4C"];
@@ -183,6 +184,7 @@ export function projectSettingsPage() {
              </div>
            </div>`,
         )}
+        ${projectSkills(project.id)}
         ${groupBox(
           t("Quick commands for this project"),
           (commands.length

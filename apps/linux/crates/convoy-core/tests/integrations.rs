@@ -273,6 +273,7 @@ fn import_creates_tasks_with_per_issue_models_and_skips_duplicates() {
         (Agent::Codex, "gpt-5-codex".to_string()),
     );
     let options = ImportOptions {
+        skills: Vec::new(),
         agent: Agent::Claude,
         model: "sonnet".into(),
         mode: PublishMode::Push,
@@ -319,6 +320,7 @@ fn import_creates_tasks_with_per_issue_models_and_skips_duplicates() {
     assert_eq!(workspace.state().tasks.len(), 2);
 
     let bad = ImportOptions {
+        skills: Vec::new(),
         model: "no spaces allowed".into(),
         ..options.clone()
     };
@@ -426,6 +428,7 @@ fn the_same_key_on_two_sites_is_two_issues() {
     );
     assert_eq!(from_one[0].origin.as_deref(), Some("one.atlassian.net"));
     let options = ImportOptions {
+        skills: Vec::new(),
         agent: Agent::Claude,
         model: String::new(),
         mode: PublishMode::Pr,
@@ -481,6 +484,7 @@ fn editing_an_imported_task_keeps_its_model_until_the_agent_changes() {
     let fixture = fixture();
     let (mut workspace, project) = fixture.with_project();
     let options = ImportOptions {
+        skills: Vec::new(),
         agent: Agent::Claude,
         model: "sonnet".into(),
         mode: PublishMode::None,
@@ -497,6 +501,7 @@ fn editing_an_imported_task_keeps_its_model_until_the_agent_changes() {
         .unwrap();
     let task = workspace.state().tasks[0].clone();
     let mut input = convoy_core::planning::TaskInput {
+        skills: None,
         id: Some(task.id.clone()),
         project_id: project,
         spec_id: None,

@@ -162,8 +162,8 @@ try {
       if (cmd === "profiles_read") return [{ id: "work", label: "Work", agent: "codex", sessions: 0 }];
       if (cmd === "session_create") {
         // A manager gets an id of its own, and keeps its view so it runs as one.
-        const id = args.manager ? "lead" : "fresh";
-        sessions.push({ id, project_id: args.projectId, title: args.title, agent: args.agent, provider_id: "", started: false, running: false, pinned: false, review_of: null, manager: !!args.manager, ...(args.manager ? { view: args.view } : {}) });
+        const id = args.manager ? "lead" : sessions.some((item) => item.id === "fresh") ? `fresh${sessions.length}` : "fresh";
+        sessions.push({ id, project_id: args.projectId, title: args.title, agent: args.agent, provider_id: "", started: false, running: false, pinned: false, review_of: null, manager: !!args.manager, skills: args.skills ?? [], ...(args.manager ? { view: args.view } : {}) });
         return id;
       }
       if (cmd === "worktree_create") return { branch: args.branch, shared_paths: [], setup_command: null, directory: "/fixture/worktrees/x" };
@@ -213,6 +213,25 @@ try {
         item.running = true;
         return "builder";
       }
+      // Skills: kept here as the backend keeps them.
+      window.skills ??= [];
+      if (cmd === "skills_list") return window.skills.map((item) => ({ ...item }));
+      if (cmd === "skill_save") {
+        const input = args.input;
+        if (!input.name.trim()) throw "Give the skill a name.";
+        const existing = window.skills.find((item) => item.id === input.id);
+        const record = { name: input.name.trim(), description: input.description.trim(), body: input.body.trim(), project_id: input.project_id || null, agents: input.agents, auto: !!input.auto };
+        if (existing) { Object.assign(existing, record); return existing.id; }
+        const id = `skill${window.skills.length + 1}`;
+        window.skills.push({ id, ...record, created: 1, updated: 1 });
+        return id;
+      }
+      if (cmd === "skill_delete") {
+        window.skills = window.skills.filter((item) => item.id !== args.id);
+        for (const item of sessions) if (item.skills) item.skills = item.skills.filter((id) => id !== args.id);
+        return null;
+      }
+      if (cmd === "session_skills") { sessions.find((item) => item.id === args.id).skills = args.skills; return null; }
       throw new Error(`Unmocked IPC: ${cmd}`);
     } };
   });
@@ -1321,7 +1340,7 @@ try {
       id: null, project_id: "project", title: "Morning triage", prompt: "Triage the new issues and summarise them.",
       agent: "claude", model: undefined, effort: undefined, profile_id: null, view: "chat", worktree: true,
       schedule: { kind: "weekdays", at: "07:30", days: ["mon", "tue", "wed", "thu", "fri", "sat"] },
-      enabled: true, catch_up: true,
+      enabled: true, catch_up: true, skills: [],
     },
   );
   const autoRow = page.locator('.auto-row[data-automation="auto1"]');
@@ -1416,11 +1435,155 @@ try {
   assert(autoKeys.length > 60, "the automations' strings were found");
   assert.deepEqual(autoKeys.filter((key) => !(key in ru)), [], "untranslated automation strings");
 
+  // --------------------------------------------------------------- skills --
+  // Settings → Skills: empty with three templates, one added with a click,
+  // one written in the editor (with a Markdown preview) and set automatic.
+  // The New session sheet offers those that suit the agent, the automatic
+  // one already picked, and sends what was picked; a chat's chip switches
+  // a session's skills; deleting one asks first.
+  const bothThemes = async (name) => {
+    if (!shots) return;
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate((value) => document.documentElement.setAttribute("data-theme", value), theme);
+      await page.waitForTimeout(150);
+      await page.screenshot({ path: `${shots}/${name}-${theme}.png` });
+    }
+    await page.evaluate(() => document.documentElement.setAttribute("data-theme", "light"));
+  };
+  await page.locator('[data-action="settings"]').first().click();
+  // The search may still hold what an earlier step typed.
+  await page.locator("#settings-search").fill("skill");
+  await page.locator('[data-settings-section="Skills"]').click();
+  await page.locator("#settings-search").fill("");
+  await page.locator(".skill-empty", { hasText: "No skills yet" }).waitFor();
+  assert.equal(await page.locator(".skill-template").count(), 3);
+  await bothThemes("skills-empty");
+  await page.locator('.skill-template[data-skill-template="tests"]').click();
+  await page.locator(".skill-row", { hasText: "Write tests first" }).waitFor();
+  const fromTemplate = await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "skill_save").at(-1).args.input);
+  assert.equal(fromTemplate.name, "Write tests first");
+  assert.match(fromTemplate.body, /a test that fails/);
+  assert.equal(await page.locator(".skill-template").count(), 2, "an added template is no longer offered");
+
+  await page.locator('[data-skill="new"]').first().click();
+  const skillEditor = page.locator('.modal[aria-label="New skill"]');
+  await skillEditor.waitFor();
+  await skillEditor.locator("#skill-name").fill("Pineapple sign-off");
+  await skillEditor.locator("#skill-description").fill("A visible check that skills reach the agent");
+  await skillEditor.locator("#skill-body").fill("Always end your reply with the word **PINEAPPLE**.");
+  await skillEditor.locator('[data-toggle="skill-auto"]').click();
+  await skillEditor.locator('[data-skill="preview"]').click();
+  await skillEditor.locator(".skill-preview strong", { hasText: "PINEAPPLE" }).waitFor();
+  await skillEditor.locator('[data-skill="write"]').click();
+  assert.equal(await skillEditor.locator("#skill-body").inputValue(), "Always end your reply with the word **PINEAPPLE**.", "the preview keeps what was written");
+  await bothThemes("skill-editor");
+  await skillEditor.locator('[data-skill="save"]').click();
+  await skillEditor.waitFor({ state: "detached" });
+  const written = await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "skill_save").at(-1).args.input);
+  assert.deepEqual(written, { id: null, name: "Pineapple sign-off", description: "A visible check that skills reach the agent", body: "Always end your reply with the word **PINEAPPLE**.", project_id: null, agents: "both", auto: true });
+  // A Codex-only one in this project, for the agent filter.
+  await page.locator('[data-skill="new"]').first().click();
+  await page.locator("#skill-name").fill("Codex review style");
+  await page.locator("#skill-body").fill("Review like a senior engineer.");
+  await page.locator('[data-set="skill-agents"][data-value="codex"]').click();
+  await page.locator("#skill-project").selectOption("project");
+  await page.locator('[data-skill="save"]').click();
+  await page.locator(".skill-row", { hasText: "Codex review style" }).waitFor();
+  const codexOnly = await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "skill_save").at(-1).args.input);
+  assert.deepEqual([codexOnly.agents, codexOnly.project_id, codexOnly.auto], ["codex", "project", false]);
+  await page.locator(".skill-row", { hasText: "Pineapple sign-off" }).locator(".skill-tag--auto").waitFor();
+  await page.locator(".skill-row", { hasText: "Codex review style" }).locator(".skill-tag", { hasText: "Example" }).waitFor();
+  await bothThemes("skills-settings");
+  const ids = await page.evaluate(() => Object.fromEntries(window.skills.map((item) => [item.name, item.id])));
+  await page.locator('[data-action="close-settings"]').click();
+
+  // New session: the automatic skill is picked already; Codex's own only
+  // shows for Codex; what is picked is sent.
+  await page.locator('[data-project="project"]').first().click();
+  await page.locator('.tabbar [data-action="new-session"]').click();
+  const sheet = page.locator('.modal[aria-label="New session"]');
+  await sheet.locator(".skill-picker").waitFor();
+  await sheet.locator('.choice [data-value="claude"]').click();
+  const chip = (name) => sheet.locator(`.skill-chip[data-skill-pick="${ids[name]}"]`);
+  assert.equal(await chip("Pineapple sign-off").getAttribute("aria-pressed"), "true", "automatic skills are preselected");
+  assert.equal(await chip("Write tests first").getAttribute("aria-pressed"), "false");
+  assert.equal(await chip("Codex review style").count(), 0, "a Codex skill is not offered for Claude");
+  await chip("Write tests first").click();
+  await sheet.locator('.choice [data-value="codex"]').click();
+  await chip("Codex review style").waitFor();
+  assert.equal(await chip("Write tests first").getAttribute("aria-pressed"), "true", "a pick survives a change of agent when it still applies");
+  await sheet.locator('.choice [data-value="claude"]').click();
+  await chip("Codex review style").waitFor({ state: "detached" });
+  await sheet.locator("#draft-title").fill("Skilled session");
+  await bothThemes("new-session-skills");
+  await page.locator('[data-action="create-session"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "session_create" && c.args.title === "Skilled session"));
+  const createdWith = await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "session_create").at(-1).args.skills);
+  assert.deepEqual(createdWith, [ids["Pineapple sign-off"], ids["Write tests first"]]);
+  // Its terminal's header says how many.
+  await page.locator(".workbench__bar .skills-chip", { hasText: "2 skills" }).waitFor();
+
+  // A chat's chip: the session's skills, switched on and off from the menu.
+  await page.evaluate(() => {
+    window.chatHistory["pairing"] = [{ type: "user", id: "k1", text: "Pair with me on the parser." }, { type: "text_done", id: "k2", text: "Sure — where should we start?" }];
+    window.mockSessions.push({ id: "pairing", project_id: "project", title: "Pair on the parser", agent: "claude", provider_id: "p7", started: true, running: false, pinned: false, review_of: null, view: "chat", skills: [] });
+  });
+  await page.locator('[data-action="home"]').first().click();
+  await page.locator('[data-open="pairing"]').first().click();
+  const chatChip = page.locator('.chat[data-chat="pairing"] .skills-chip');
+  await chatChip.waitFor();
+  assert.equal((await chatChip.textContent()).trim(), "0 skills");
+  await chatChip.click();
+  const skillsMenu = page.locator(".skills-menu");
+  await skillsMenu.waitFor();
+  assert.equal(await skillsMenu.locator(".skills-menu__item").count(), 2, "only Claude's and both agents' skills");
+  await skillsMenu.locator(".skills-menu__note", { hasText: "next starts" }).waitFor();
+  await skillsMenu.locator(`[data-skill-toggle="${ids["Pineapple sign-off"]}"]`).click();
+  await page.waitForFunction((id) => window.checkCalls.some((c) => c.cmd === "session_skills" && c.args.id === "pairing" && c.args.skills.join() === id), ids["Pineapple sign-off"]);
+  assert.equal(await skillsMenu.locator(`[data-skill-toggle="${ids["Pineapple sign-off"]}"]`).getAttribute("aria-checked"), "true");
+  await page.waitForFunction(() => document.querySelector('.chat[data-chat="pairing"] .skills-chip')?.textContent.includes("1 skill"));
+  await bothThemes("chat-skills-menu");
+  await skillsMenu.locator(`[data-skill-toggle="${ids["Pineapple sign-off"]}"]`).click();
+  await page.waitForFunction(() => window.checkCalls.filter((c) => c.cmd === "session_skills").at(-1).args.skills.length === 0);
+  await page.keyboard.press("Escape");
+  if (await skillsMenu.count()) await page.mouse.click(5, 5);
+
+  // The palette reaches both; delete asks first and the row goes.
+  await page.keyboard.press(`${primary}+k`);
+  await page.locator("#palette-input").fill("New skill");
+  await page.locator(".palette__row", { hasText: "New skill…" }).first().waitFor();
+  await page.keyboard.press("Enter");
+  await page.locator('.modal[aria-label="New skill"]').waitFor();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press(`${primary}+k`);
+  await page.locator("#palette-input").fill("Skills…");
+  await page.locator(".palette__row", { hasText: "Skills…" }).first().click();
+  await page.locator(".skill-row", { hasText: "Codex review style" }).waitFor();
+  await page.locator(".skill-row", { hasText: "Codex review style" }).locator('[data-skill="delete"]').click();
+  await page.locator(".modal", { hasText: "It comes off every session" }).locator('[data-action="confirm-generic"]').click();
+  await page.locator(".skill-row", { hasText: "Codex review style" }).waitFor({ state: "detached" });
+  assert(await page.evaluate(() => window.checkCalls.some((c) => c.cmd === "skill_delete")));
+  await page.locator('[data-action="close-settings"]').click();
+
+  // Every string the skills show has its Russian.
+  const skillSources = await Promise.all(["../src/views-skills.js", "../src/skills.js"].map((path) => readFile(new URL(path, import.meta.url), "utf8")));
+  const skillKeys = skillSources.flatMap((source) => [...source.matchAll(/\bt\("((?:[^"\\]|\\.)*)"/g)].map((match) => match[1]));
+  // The starter templates' names, descriptions and bodies, as written.
+  const templateBlock = skillSources[0].slice(skillSources[0].indexOf("export const TEMPLATES"), skillSources[0].indexOf("];", skillSources[0].indexOf("export const TEMPLATES")));
+  const templateTexts = [...templateBlock.matchAll(/(?:name|description|body): "((?:[^"\\]|\\.)*)"/g)].map((match) => JSON.parse(`"${match[1]}"`));
+  assert.equal(templateTexts.length, 9, "three templates, each with a name, description and body");
+  skillKeys.push("Skills", "Skills…", "New skill…", "Instructions you attach to sessions, tasks and automations", "Write instructions once and attach them to sessions",
+    "Both agents", "Give the skill a name.", "Write what the skill tells the agent.", "A skill with this name already exists.", "Pick Claude, Codex or both.");
+  skillKeys.push(...templateTexts);
+  assert(skillKeys.length > 50, "the skills' strings were found");
+  assert.deepEqual(skillKeys.filter((key) => !(key.replace(/\\n/g, "\n") in ru)), [], "untranslated skill strings");
+  assert(ru.skill === undefined && (await import("../src/locales/ru.js")).default.plurals.skill, "the count has its Russian forms");
+
   assert.equal(await page.locator(".toast--error").count(), 0);
   assert.deepEqual(errors, []);
   assert.equal(await page.locator(".toast--error").count(), 0);
   if (process.env.CONVOY_TEST_SCREENSHOT) await page.screenshot({ path: process.env.CONVOY_TEST_SCREENSHOT });
-  console.log("PASS: folder → builder → review → feedback; Linear MCP import → per-task model; sidebar menus; settled dialogs; settings page saves; chat session events, approval, composer and view switch; approvals inbox across sessions; manager sessions with nested helpers, live helper cards and the helpers menu; automations: editor, list, switch, run now, edit, delete; no browser errors. IPC mocked.");
+  console.log("PASS: folder → builder → review → feedback; Linear MCP import → per-task model; sidebar menus; settled dialogs; settings page saves; chat session events, approval, composer and view switch; approvals inbox across sessions; manager sessions with nested helpers, live helper cards and the helpers menu; automations: editor, list, switch, run now, edit, delete; skills: templates, editor and preview, picker in New session, chat chip menu, delete; no browser errors. IPC mocked.");
 } finally {
   await browser?.close();
   await server.close();

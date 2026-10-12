@@ -7,6 +7,7 @@ import { button, escape, plural, shorten } from "./ui.js";
 import { activeAccount, state } from "./state.js";
 import { SHORTCUTS, SHORTCUT_GROUPS, label } from "./shortcuts.js";
 import { LANGUAGES, languageChoice, t } from "./i18n.js";
+import { skillsSection } from "./views-skills.js";
 
 /// The macOS app's sections, in its order.
 export const SECTIONS = [
@@ -18,6 +19,7 @@ export const SECTIONS = [
   ["Accounts", "person", ["account", "profile", "login", "sign in", "claude", "codex"]],
   ["Linear & Jira", "link", ["linear", "jira", "atlassian", "issues", "import", "api key", "token", "mcp", "integrations"]],
   ["Quick Commands", "bolt", ["prompt", "command", "snippet", "quick"]],
+  ["Skills", "book", ["skill", "skills", "instructions", "system prompt", "template", "markdown", "навык"]],
   ["Git", "git", ["branch", "worktree", "setup", "shared", "location"]],
   ["Notifications", "bell", ["notify", "sound", "waiting", "finished", "done", "focus"]],
   ["AI Limits", "limits", ["usage", "limits", "codex", "claude", "quota", "status line"]],
@@ -514,6 +516,7 @@ const PAGES = {
   Accounts: accounts,
   "Linear & Jira": integrations,
   "Quick Commands": quickCommands,
+  Skills: skillsSection,
   Shortcuts: shortcuts,
 };
 

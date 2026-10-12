@@ -865,6 +865,7 @@ mod tests {
         core.add_project(project).unwrap();
         let project_id = core.state().projects[0].id.clone();
         core.save_task(TaskInput {
+            skills: None,
             id: None,
             project_id,
             spec_id: None,

@@ -377,7 +377,7 @@ fn stale_requests_are_cleaned_up_and_the_heartbeat_says_who_is_there() {
 fn the_command_line_parses_and_fails_clearly() {
     let args = |text: &str| -> Vec<String> { text.split(' ').map(str::to_string).collect() };
     let Parsed::Spawn(spawn) = cli::parse(&args(
-        "spawn --agent codex --model gpt-5 --effort high --worktree-auto --title T --prompt hello",
+        "spawn --agent codex --model gpt-5 --effort high --worktree-auto --title T --prompt hello --skill Tests --skill Small",
     ))
     .unwrap() else {
         panic!()
@@ -386,6 +386,7 @@ fn the_command_line_parses_and_fails_clearly() {
     assert_eq!(spawn.model.as_deref(), Some("gpt-5"));
     assert!(spawn.worktree_auto);
     assert_eq!(spawn.prompt, "hello");
+    assert_eq!(spawn.skills, ["Tests", "Small"]);
 
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("prompt.md");
@@ -418,6 +419,7 @@ fn the_command_line_parses_and_fails_clearly() {
         "spawn --prompt x",
         "spawn --agent codex",
         "spawn --agent codex --prompt x --worktree b --worktree-auto",
+        "spawn --agent codex --prompt x --skill",
         "spawn --agent",
         "wait",
         "wait a --timeout soon",

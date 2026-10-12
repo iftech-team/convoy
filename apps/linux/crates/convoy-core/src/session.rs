@@ -35,8 +35,9 @@ pub struct LaunchPlan {
     /// starting one. Decides the activity record and whether the first prompt
     /// is passed at all.
     pub resume: bool,
-    /// A manager's instructions about its helpers, when it is one. Already
-    /// in `spec` for a terminal; a chat passes them its own way.
+    /// What the agent is told beyond its prompt, as one value: a manager's
+    /// instructions about its helpers, then the session's skills. Already in
+    /// `spec` for a terminal; a chat passes them its own way.
     pub instructions: Option<String>,
 }
 
@@ -128,10 +129,14 @@ pub fn plan_launch_with(
         account.env.remove(key);
     }
     let manager = manager.filter(|_| session.is_manager() && session.parent_id.is_none());
-    let instructions = manager.map(|launch| {
+    let managing = manager.map(|launch| {
         account.env.extend(launch.env(&session.id));
         helpers::instructions(crate::Platform::current())
     });
+    // One value: Claude takes one appended system prompt and Codex one set
+    // of developer instructions; a second flag would replace the first.
+    let instructions =
+        crate::skills::combine(&[managing, crate::skills::for_session(storage, &session)?]);
     let settings = workspace.settings();
     let settings_file = match session.agent {
         Agent::Claude if settings.status_hooks || settings.claude_usage => {

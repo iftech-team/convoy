@@ -90,6 +90,8 @@ pub struct NewSession {
     /// A level [`crate::provider::valid_effort`] accepts for the agent, or
     /// empty for its default.
     pub effort: String,
+    /// Skills attached, by id; checked against the skills file by the caller.
+    pub skills: Vec<String>,
 }
 
 impl NewSession {
@@ -103,6 +105,7 @@ impl NewSession {
             profile_id: None,
             model: String::new(),
             effort: String::new(),
+            skills: Vec::new(),
         }
     }
 }
@@ -552,6 +555,7 @@ impl Workspace {
                 view: None,
                 parent_id: None,
                 manager: None,
+                skills: crate::planning::attached(input.skills),
                 unknown: Default::default(),
             });
             Ok(())
@@ -621,6 +625,53 @@ impl Workspace {
             find_session_mut(state, &id)?.manager = manager.then_some(true);
             Ok(())
         })
+    }
+
+    /// The skills a session starts with, by id, in order. Allowed while it
+    /// runs: they apply when it next starts. The caller checks the ids
+    /// against the skills file.
+    pub fn set_session_skills(&mut self, id: &str, skills: Vec<String>) -> Result<&State> {
+        ensure!(
+            skills.len() <= crate::skills::MAX_ATTACHED,
+            "Too many skills attached."
+        );
+        self.session(id)?;
+        let id = id.to_string();
+        self.update(move |state| {
+            find_session_mut(state, &id)?.skills = crate::planning::attached(skills);
+            Ok(())
+        })
+    }
+
+    /// Skills that no longer exist come off every session and task.
+    pub fn detach_skills(&mut self, ids: &[String]) -> Result<()> {
+        let holds = |list: &Option<Vec<String>>| {
+            list.as_ref()
+                .is_some_and(|list| list.iter().any(|id| ids.contains(id)))
+        };
+        let wanted = self.state.sessions.iter().any(|s| holds(&s.skills))
+            || self.state.tasks.iter().any(|t| holds(&t.skills));
+        if !wanted {
+            return Ok(());
+        }
+        let ids = ids.to_vec();
+        let strip = move |list: &mut Option<Vec<String>>| {
+            if let Some(kept) = list.take() {
+                *list = crate::planning::attached(
+                    kept.into_iter().filter(|id| !ids.contains(id)).collect(),
+                );
+            }
+        };
+        self.update(move |state| {
+            for session in state.sessions.iter_mut() {
+                strip(&mut session.skills);
+            }
+            for task in state.tasks.iter_mut() {
+                strip(&mut task.skills);
+            }
+            Ok(())
+        })?;
+        Ok(())
     }
 
     /// The model the session asks for from its next turn or launch; none is

@@ -688,6 +688,7 @@ async fn planning_checks(app: &Rc<convoy_gtk::state::App>) {
         let mut workspace = app.workspace.borrow_mut();
         workspace
             .save_task(TaskInput {
+                skills: None,
                 id: None,
                 project_id: project.clone(),
                 spec_id: Some(spec.id.clone()),

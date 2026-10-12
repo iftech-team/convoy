@@ -238,6 +238,7 @@ fn automation(schedule: Schedule, created: Instant) -> Automation {
         updated: created,
         last_slot: None,
         history: Vec::new(),
+        skills: None,
         unknown: Default::default(),
     }
 }
@@ -390,6 +391,7 @@ fn world() -> World {
 
 fn input(project: &str) -> AutomationInput {
     AutomationInput {
+        skills: None,
         id: None,
         project_id: project.into(),
         title: "Morning triage".into(),

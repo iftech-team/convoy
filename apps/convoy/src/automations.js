@@ -5,6 +5,8 @@
 import { attempt, done, ensureModels, activeAccount, lastChoice, state, toast } from "./state.js";
 import { t } from "./i18n.js";
 import { DAYS, draftSchedule, previewBlock } from "./views-automations.js";
+import { fitSkills } from "./skills.js";
+import { autoSkills } from "./views-skills.js";
 
 const FIELDS = {
   "auto-title": "title",
@@ -77,6 +79,9 @@ export function installAutomations({ render, openModal, closeDialog, selectProje
       from: schedule.from ?? "09:00",
       preview: null,
       previewError: null,
+      // A new one starts with the automatic skills.
+      skills: item ? (item.skills ?? []) : autoSkills(agent, item?.project_id ?? state.projectId),
+      skillsTouched: !!item,
     });
     ensureModels(agent, state.dialog.account);
     refreshPreview();
@@ -99,6 +104,7 @@ export function installAutomations({ render, openModal, closeDialog, selectProje
       schedule: draftSchedule(dialog),
       enabled: dialog.enabled !== false,
       catch_up: !!dialog.catch_up,
+      skills: dialog.skills ?? [],
     };
     dialog.busy = true;
     render();
@@ -187,6 +193,7 @@ export function installAutomations({ render, openModal, closeDialog, selectProje
         dialog.account = activeAccount(data.value);
         Object.assign(dialog, lastChoice(data.value));
         ensureModels(dialog.agent, dialog.account);
+        fitSkills(dialog, data.value, dialog.project_id);
       }
       render();
       return true;

@@ -13,6 +13,7 @@ use convoy_core::workspace::Workspace;
 
 fn task(project: &str, title: &str, mode: PublishMode, auto_review: bool) -> TaskInput {
     TaskInput {
+        skills: None,
         id: None,
         project_id: project.to_string(),
         spec_id: None,

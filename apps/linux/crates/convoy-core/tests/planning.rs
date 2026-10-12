@@ -32,6 +32,7 @@ fn planned() -> Planned {
     let spec = workspace.state().specs[0].id.clone();
     workspace
         .save_task(TaskInput {
+            skills: None,
             id: None,
             project_id: project.clone(),
             spec_id: Some(spec.clone()),
@@ -69,6 +70,7 @@ fn spec_input(spec: &Spec) -> SpecInput {
 
 fn task_input(task: &Task) -> TaskInput {
     TaskInput {
+        skills: None,
         id: Some(task.id.clone()),
         project_id: task.project_id.clone(),
         spec_id: task.spec_id.clone(),
@@ -289,6 +291,7 @@ fn publication_and_review_choices_are_explicit_and_changing_them_invalidates_the
     let (mut workspace, project) = fixture.with_project();
     workspace
         .save_task(TaskInput {
+            skills: None,
             id: None,
             project_id: project.clone(),
             spec_id: None,

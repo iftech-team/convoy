@@ -352,6 +352,7 @@ fn launch<R: Runtime>(
         input.model = automation.model.clone();
         input.effort = automation.effort.clone();
         input.profile_id = automation.profile_id.clone();
+        input.skills = automation.skills.clone().unwrap_or_default();
         core.add_session(input)?;
         let id = core
             .state()
@@ -570,10 +571,20 @@ pub fn automations_list(
 /// Creates or edits one. Returns its id.
 #[tauri::command]
 pub fn automation_save(
-    input: AutomationInput,
+    mut input: AutomationInput,
     workspace: State<'_, Workspace>,
 ) -> Result<String, String> {
     let storage = workspace.storage.clone();
+    // Checked against the library; a new one asked about none gets the
+    // automatic ones.
+    if input.skills.is_some() || input.id.is_none() {
+        input.skills = Some(crate::skills::resolve(
+            &storage,
+            &input.project_id,
+            convoy_core::model::Agent::parse(&input.agent),
+            input.skills.as_deref(),
+        )?);
+    }
     workspace.with(|core| with_store(&storage, |store| store.save(input, core, now())))
 }
 
@@ -720,6 +731,7 @@ mod tests {
                 with_store(&world.storage, |store| {
                     store.save(
                         AutomationInput {
+                            skills: None,
                             id: None,
                             project_id: world.project.clone(),
                             title: title.into(),
@@ -985,6 +997,7 @@ mod tests {
                 with_store(&storage, |store| {
                     store.save(
                         AutomationInput {
+                            skills: None,
                             id: None,
                             project_id: project.clone(),
                             title: "Say ok".into(),

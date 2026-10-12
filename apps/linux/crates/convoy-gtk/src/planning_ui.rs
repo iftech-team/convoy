@@ -580,6 +580,7 @@ fn task_page(
         let existing = existing.clone();
         move |_| {
             let input = TaskInput {
+                skills: None,
                 id: existing.as_ref().map(|task| task.id.clone()),
                 project_id: project_id.clone(),
                 spec_id: match spec_row.selected() {

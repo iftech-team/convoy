@@ -18,6 +18,7 @@ import { activeAccount, anySession, isRunning, project, session, state, visibleS
 import { TASK_STATUSES, runnable } from "./views-planning.js";
 import { missingConversation } from "./terminal.js";
 import { shownAsTranscript, viewOf } from "./views-chat.js";
+import { skillsChip, skillsMenu } from "./views-skills.js";
 import { approvalsButton, approvalsPanel, inboxItems } from "./views-inbox.js";
 import { helperActivity, helpersButton, helpersMenu, helpersSummary } from "./views-helpers.js";
 import { automationActivity } from "./views-automations.js";
@@ -286,6 +287,7 @@ export function sidebar() {
 export function contextMenu(menu) {
   if (menu.kind === "workspace") return workspaceMenu();
   if (menu.kind === "helpers") return helpersMenu(menu.id, anchorStyle());
+  if (menu.kind === "skills") return skillsMenu(menu.id, anchorStyle());
   if (menu.kind === "account") return accountMenu(menu.agent);
   if (menu.kind === "limits") return limitsPanel();
   if (menu.kind === "awake") return awakeMenu();
@@ -631,6 +633,7 @@ export function workbench() {
             : ""
         }
         ${view === "terminal" ? helpersButton(current.id) : ""}
+        ${view === "terminal" ? skillsChip(current.id) : ""}
         ${viewToggle(view)}
         <span class="bar-agent">${current.agent === "claude" ? "Claude Code" : "Codex"}</span>
         <span class="state ${tone}"><span class="state__dot"></span>${escape(label.replace(/^./, (c) => c.toUpperCase()))}</span>

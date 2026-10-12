@@ -278,7 +278,9 @@ pub fn issues_import(
             ),
         );
     }
+    let skills = crate::skills::resolve(&workspace.storage, &project_id, None, None)?;
     let options = ImportOptions {
+        skills,
         agent: Agent::parse(&options.agent).ok_or("Unknown agent.")?,
         model: options.model,
         mode: mode(&options.mode)?,

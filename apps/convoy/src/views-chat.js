@@ -16,6 +16,7 @@ import { t } from "./i18n.js";
 import { icon, icons } from "./icons.js";
 import { highlight, markdown } from "./views-files.js";
 import { helperCards, helperOf } from "./views-helpers.js";
+import { skillsChip } from "./views-skills.js";
 import { missingConversation } from "./terminal.js";
 
 // ------------------------------------------------------------------ views --
@@ -600,6 +601,7 @@ function composerBar(id) {
     <button class="composer__tool" data-chat-attach title="${escape(t("Attach images"))}" ${blocked ? "disabled" : ""}>${glyphs.image}</button>
     <button class="composer__tool" data-action="quick-menu" title="${escape(t("Quick commands"))}">${icons.bolt}</button>
     ${chips(id, blocked)}
+    ${skillsChip(id, "composer")}
     <span class="composer__hint">${escape(t("Enter to send · Shift+Enter for a new line"))}</span>
     <span class="composer__spacer"></span>
     ${

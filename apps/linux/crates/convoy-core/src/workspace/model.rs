@@ -282,6 +282,10 @@ pub struct Session {
     /// never managers themselves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub manager: Option<bool>,
+    /// Skills attached, by id, in the order they were picked. They become
+    /// the agent's instructions when it next starts; see [`crate::skills`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills: Option<Vec<String>>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }
@@ -291,6 +295,11 @@ pub struct Session {
 pub const VIEWS: &[&str] = &["chat", "terminal"];
 
 impl Session {
+    /// The skills attached, in order; none is empty.
+    pub fn skill_ids(&self) -> &[String] {
+        self.skills.as_deref().unwrap_or(&[])
+    }
+
     /// A minimal session record. `Workspace::add_session` is the normal way to
     /// create one; this exists for callers that need a value before it is
     /// stored, such as a launch preview or a test.
@@ -319,6 +328,7 @@ impl Session {
             view: None,
             parent_id: None,
             manager: None,
+            skills: None,
             unknown: Map::new(),
         }
     }
@@ -426,6 +436,9 @@ pub struct Task {
     /// The account its session signs in with; none is the system login.
     #[serde(rename = "profileID", default, skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,
+    /// Skills its session is started with, by id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills: Option<Vec<String>>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }

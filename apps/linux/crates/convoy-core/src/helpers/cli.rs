@@ -21,8 +21,9 @@ pub const USAGE: &str = "\
 usage: convoy --session <command>
 
   spawn --agent claude|codex --prompt <text|@file> [--title <t>] [--model <m>]
-        [--effort <e>] [--worktree <branch> | --worktree-auto]
-        Start a helper session in this project; prints its id.
+        [--effort <e>] [--worktree <branch> | --worktree-auto] [--skill <name>]...
+        Start a helper session in this project; prints its id. --skill attaches
+        a skill from Convoy's library by name, on top of the automatic ones.
   wait <id>... [--timeout <seconds>]
         Wait until each helper finishes its turn; one JSON line per helper:
         {\"id\",\"status\":\"done|failed|stopped|timeout\",\"title\"}.
@@ -187,6 +188,7 @@ pub fn parse(args: &[String]) -> Result<Parsed, Failure> {
                     "--title" => spawn.title = Some(value()?),
                     "--worktree" => spawn.worktree = Some(value()?),
                     "--worktree-auto" => spawn.worktree_auto = true,
+                    "--skill" => spawn.skills.push(value()?),
                     "--prompt" => prompt = Some(prompt_text(&value()?)?),
                     other => return Err(usage(&format!("unknown option {other}"))),
                 }

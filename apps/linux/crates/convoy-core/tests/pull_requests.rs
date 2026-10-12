@@ -63,6 +63,7 @@ fn a_task_whose_session_opens_a_pull_request_awaits_it() {
     let project = workspace.state().projects[0].id.clone();
     workspace
         .save_task(TaskInput {
+            skills: None,
             id: None,
             project_id: project.clone(),
             spec_id: None,
@@ -105,6 +106,7 @@ fn a_task_can_be_deleted_unless_its_agent_runs() {
     let project = workspace.state().projects[0].id.clone();
     workspace
         .save_task(TaskInput {
+            skills: None,
             id: None,
             project_id: project,
             spec_id: None,
@@ -157,6 +159,7 @@ fn projects_keep_the_order_they_are_moved_into() {
 fn task(workspace: &mut Workspace, project: &str, title: &str) -> String {
     workspace
         .save_task(TaskInput {
+            skills: None,
             id: None,
             project_id: project.to_string(),
             spec_id: None,

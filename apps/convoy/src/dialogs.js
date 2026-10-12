@@ -19,6 +19,7 @@ import { state, project, session } from "./state.js";
 import { agentIcon } from "./icons.js";
 import { t } from "./i18n.js";
 import { automationEditor } from "./views-automations.js";
+import { autoSkills, skillEditor, skillPicker } from "./views-skills.js";
 
 const AGENTS = [
   ["claude", "Claude Code", agentIcon("claude", 15)],
@@ -185,6 +186,7 @@ function newSession(dialog) {
       ${worktree}
       ${field(t("Agent"), choice("agent", AGENTS, dialog.agent))}
       ${field(t("Open in"), choice("view", [["chat", t("Chat")], ["terminal", t("Terminal")]], dialog.view ?? "terminal"))}
+      ${skillPicker(dialog.skills ?? [], dialog.agent, dialog.projectId)}
       <div class="sheet-box sheet-box--manager">
         ${setting(
           t("Manager — can start helper sessions"),
@@ -582,6 +584,9 @@ function blockedBy(dialog) {
 
 const taskForm = (dialog) => {
   const specs = state.planning?.specs ?? [];
+  const projectId = dialog.project_id ?? state.projectId;
+  // A new task starts with the automatic skills.
+  if (!Array.isArray(dialog.skills)) dialog.skills = autoSkills(dialog.agent, projectId);
   return modal({
     title: dialog.id ? t("Task") : t("New task"),
     hint: dialog.id ? `${t(dialog.status)}${dialog.last_error ? ` · ${dialog.last_error}` : ""}` : "",
@@ -589,6 +594,7 @@ const taskForm = (dialog) => {
     body: `
       ${field(t("Title"), textInput("task-title", dialog.title))}
       ${field(t("Agent"), choice("agent", AGENTS, dialog.agent))}
+      ${skillPicker(dialog.skills, dialog.agent, projectId)}
       ${
         // A list, not a row of buttons: a project may have a hundred specs.
         specs.length
@@ -1018,6 +1024,7 @@ const VIEWS = {
   palette,
   markdown: markdownPreview,
   automation: automationEditor,
+  skill: skillEditor,
 };
 
 export { session, project };

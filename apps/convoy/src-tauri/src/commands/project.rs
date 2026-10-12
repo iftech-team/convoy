@@ -96,6 +96,8 @@ pub fn project_remove(id: String, workspace: State<'_, Workspace>) -> Result<(),
     workspace.act(|workspace| workspace.remove_project(&id).map(|_| ()))?;
     // Its automations go with it; they live in a file of their own.
     crate::automations::forget_project(&workspace.storage, &id);
+    // So do its own skills.
+    crate::skills::forget_project(&workspace, &id);
     Ok(())
 }
 
@@ -122,6 +124,7 @@ pub fn projects_remove_all(
     }
     workspace.act(|workspace| workspace.remove_all_projects().map(|_| ()))?;
     crate::automations::forget_all(&workspace.storage);
+    crate::skills::forget_all(&workspace);
     Ok(())
 }
 

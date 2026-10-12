@@ -12,6 +12,7 @@ mod helpers;
 mod monitor;
 mod power;
 mod pty;
+mod skills;
 mod tasks;
 
 use std::sync::Arc;
@@ -225,6 +226,10 @@ pub fn run() {
             automations::automation_enable,
             automations::automation_preview,
             automations::automation_run_now,
+            skills::skills_list,
+            skills::skill_save,
+            skills::skill_delete,
+            skills::session_skills,
             quit_now,
         ])
         .build(tauri::generate_context!())

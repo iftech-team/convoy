@@ -46,6 +46,20 @@ pub struct TaskInput {
     pub agent: Agent,
     pub mode: PublishMode,
     pub auto_review: bool,
+    /// Skills its session starts with. None leaves an existing task's as
+    /// they are; a new task then has none.
+    pub skills: Option<Vec<String>>,
+}
+
+/// An attachment list as stored: none when empty, without repeats.
+pub(crate) fn attached(ids: Vec<String>) -> Option<Vec<String>> {
+    let mut unique: Vec<String> = Vec::new();
+    for id in ids {
+        if !id.is_empty() && !unique.contains(&id) {
+            unique.push(id);
+        }
+    }
+    (!unique.is_empty()).then_some(unique)
 }
 
 /// Options for [`Workspace::import_issues`]. `overrides` replaces the agent
@@ -57,6 +71,8 @@ pub struct ImportOptions {
     pub mode: PublishMode,
     pub auto_review: bool,
     pub overrides: BTreeMap<String, (Agent, String)>,
+    /// Skills every imported task starts with.
+    pub skills: Vec<String>,
 }
 
 /// The origin of an imported task, as the agent reads it in its brief.
@@ -205,6 +221,20 @@ impl Workspace {
                     task.agent = input.agent;
                     task.mode = input.mode;
                     task.auto_review = input.auto_review;
+                    // Skills apply when its session next starts: a session
+                    // already prepared takes them too.
+                    if let Some(skills) = input.skills.clone() {
+                        let skills = attached(skills);
+                        task.skills = skills.clone();
+                        if let Some(session_id) = task.session_id.clone() {
+                            if let Some(session) =
+                                state.sessions.iter_mut().find(|s| s.id == session_id)
+                            {
+                                session.skills = skills;
+                            }
+                        }
+                    }
+                    let task = &mut state.tasks[index];
                     if changed {
                         task.status = TaskStatus::Queued;
                         task.session_id = None;
@@ -231,6 +261,7 @@ impl Workspace {
                     pr_url: None,
                     depends_on: Vec::new(),
                     profile_id: None,
+                    skills: attached(input.skills.clone().unwrap_or_default()),
                     unknown: Default::default(),
                 }),
             }
@@ -466,6 +497,7 @@ impl Workspace {
                 view: None,
                 parent_id: None,
                 manager: None,
+                skills: task.skills.clone(),
                 unknown: Default::default(),
             };
             let session_id = session.id.clone();
@@ -557,6 +589,7 @@ impl Workspace {
                     pr_url: None,
                     depends_on: Vec::new(),
                     profile_id: None,
+                    skills: attached(options.skills.clone()),
                     unknown: Default::default(),
                 });
             }

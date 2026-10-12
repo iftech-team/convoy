@@ -166,6 +166,8 @@ pub struct SessionView {
     pub parent_id: Option<String>,
     /// Whether it can start helpers.
     pub manager: bool,
+    /// Skills it starts with, by id.
+    pub skills: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -209,6 +211,7 @@ pub fn view_of(
         view: session.shown_as(settings).to_string(),
         parent_id: session.parent_id.clone(),
         manager: session.is_manager(),
+        skills: session.skill_ids().to_vec(),
     }
 }
 
@@ -541,6 +544,7 @@ mod migration_tests {
             Some("high".into()),
             None,
             Some("Where I left off".into()),
+            None,
             None,
             None,
             None,
