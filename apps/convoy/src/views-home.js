@@ -80,6 +80,7 @@ export function homeView() {
           ${upcoming ? `<button class="home__next" data-auto="tab" data-auto-project="${escape(upcoming.project_id)}" title="${escape(exact(upcoming.next_run))}">${icons.clock}<span>${escape(t("Next automation: {title}, {when}", { title: upcoming.title, when: relative(upcoming.next_run) }))}</span></button>` : ""}
         </div>
         <span class="section__spacer"></span>
+        ${button({ label: t("Usage"), icon: "limits", action: "usage-page" })}
         ${button({ label: t("Agent Dashboard"), icon: "board", action: "dashboard" })}
         ${button({ label: t("New session"), icon: "plus", action: "new-session", kind: "primary" })}
       </div>

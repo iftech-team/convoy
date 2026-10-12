@@ -213,6 +213,49 @@ try {
         item.running = true;
         return "builder";
       }
+      // Usage: a report shaped as the backend's, built from the arguments so
+      // a range or filter change shows; prices kept here as the file would.
+      if (cmd === "usage_stats") {
+        const pad = (n) => String(n).padStart(2, "0");
+        const iso = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+        const today = new Date();
+        const back = (n) => new Date(today.getFullYear(), today.getMonth(), today.getDate() - n);
+        const wave = (n, seed) => Math.max(0, Math.round((Math.sin(n * 1.7 + seed) + 1.1) * ((n + today.getDay()) % 7 === 0 || (n + today.getDay()) % 7 === 1 ? 0.2 : 1) * 9e6));
+        const empty = !!window.usageEmpty;
+        const wantClaude = args.agent !== "codex", wantCodex = args.agent !== "claude";
+        const share = args.projectId === "other" ? 0.2 : args.projectId ? 0.6 : 1;
+        const days = Array.from({ length: args.days }, (_, i) => {
+          const n = args.days - 1 - i;
+          const claude = empty || !wantClaude ? 0 : Math.round(wave(n, 0) * share);
+          const codex = empty || !wantCodex ? 0 : Math.round(wave(n, 2) * 0.35 * share);
+          return { day: iso(back(n)), claude, codex, cost: (claude * 0.6) / 1e6 };
+        });
+        const heatmap = Array.from({ length: 84 }, (_, i) => ({ day: iso(back(83 - i)), total: empty ? 0 : (wantClaude ? wave(83 - i, 0) : 0) + (wantCodex ? Math.round(wave(83 - i, 2) * 0.35) : 0) }));
+        const sum = (key) => days.reduce((total, day) => total + day[key], 0);
+        const claude = sum("claude"), codex = sum("codex");
+        const split = (total, cost, agent, model) => ({ agent, model, total, cost,
+          tokens: { input: Math.round(total * 0.01), output: Math.round(total * 0.03), cache_read: Math.round(total * 0.9), cache_write: Math.round(total * 0.06), cache_write_1h: Math.round(total * 0.06), reasoning: Math.round(total * 0.01), requests: Math.round(total / 9e4) } });
+        const models = [
+          wantClaude && split(Math.round(claude * 0.8), (claude * 0.8 * 0.7) / 1e6, "claude", "claude-opus-5-5"),
+          wantCodex && split(codex, null, "codex", "gpt-6-astra"),
+          wantClaude && split(Math.round(claude * 0.2), (claude * 0.2 * 0.2) / 1e6, "claude", "claude-sonnet-5-5"),
+        ].filter((row) => row && row.total > 0).sort((a, b) => b.total - a.total);
+        const total = claude + codex;
+        const cost = models.reduce((value, row) => value + (row.cost ?? 0), 0);
+        const projectRow = (project_id, part, partial) => ({ project_id, total: Math.round(total * part), claude: Math.round(claude * part), codex: Math.round(codex * part), cost: cost * part, partial, tokens: models[0]?.tokens });
+        const projects = total ? (args.projectId ? [projectRow(args.projectId, 1, wantCodex)] : [projectRow("project", 0.6, true), projectRow("other", 0.25, false), projectRow(null, 0.15, true)]) : [];
+        const tokens = models.reduce((acc, row) => { for (const key in row.tokens) acc[key] += row.tokens[key]; return acc; }, { input: 0, output: 0, cache_read: 0, cache_write: 0, cache_write_1h: 0, reasoning: 0, requests: 0 });
+        return { days, heatmap, models, projects, tokens, total, cost, unpriced: models.filter((row) => row.cost === null).map((row) => row.model),
+                 active_days: days.filter((day) => day.claude + day.codex > 0).length, top_model: models[0]?.model ?? null, files: 550,
+                 scanning: !!window.usageScanning, stale: empty, prices_error: null };
+      }
+      window.prices ??= [
+        { model: "claude-opus-5-5", input: 4, output: 20, cache_read: 0.2, cache_write: 5, cache_write_1h: 8 },
+        { model: "claude-sonnet-5-5", input: 2, output: 10, cache_read: 0.2, cache_write: 2.5, cache_write_1h: 4 },
+      ];
+      if (cmd === "usage_prices") return { prices: window.prices, defaults: [] };
+      if (cmd === "usage_prices_save") { window.prices = args.prices.map((row) => ({ ...row, model: row.model.trim().toLowerCase() })); return window.prices; }
+      if (cmd === "usage_prices_reset") { window.prices = [{ model: "claude-opus-5-5", input: 4, output: 20, cache_read: 0.2, cache_write: 5, cache_write_1h: 8 }]; return window.prices; }
       throw new Error(`Unmocked IPC: ${cmd}`);
     } };
   });
@@ -1416,11 +1459,139 @@ try {
   assert(autoKeys.length > 60, "the automations' strings were found");
   assert.deepEqual(autoKeys.filter((key) => !(key in ru)), [], "untranslated automation strings");
 
+  // ---------------------------------------------------------------- usage
+  // While the first scan runs the page says so; the numbers arrive with the
+  // event that follows it.
+  await page.evaluate(() => { window.usageEmpty = true; window.usageScanning = true; document.querySelectorAll(".toast").forEach((node) => node.remove()); });
+  await page.locator('[data-action="home"]').first().click();
+  await page.locator('[data-action="usage-page"]').click();
+  await page.locator(".usage-empty", { hasText: "Reading transcripts" }).waitFor();
+  await page.locator(".usage-status", { hasText: "Reading new transcript lines" }).waitFor();
+  await page.evaluate(() => { window.usageEmpty = false; window.usageScanning = false; window.emitTauri("usage:updated", null); });
+  await page.locator(".usage-tile").first().waitFor();
+  assert.equal(await page.locator(".usage-tile").count(), 4);
+  const lastUsage = () => page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "usage_stats").at(-1).args);
+  assert.equal((await lastUsage()).days, 30);
+  assert.equal(await page.locator(".usage-col").count(), 30);
+  assert(await page.locator(".usage-bar--claude").count() > 20);
+  assert(await page.locator(".usage-bar--codex").count() > 10);
+  assert.equal(await page.locator("rect.usage-heat").count(), 84);
+  assert.equal(await page.locator(".usage-legend__item").count(), 2);
+  assert.match(await page.locator(".usage-tile", { hasText: "Estimated cost" }).textContent(), /estimate/);
+  await page.locator(".usage-notice", { hasText: "gpt-6-astra" }).waitFor();
+  const usageModels = page.locator(".usage-card", { hasText: "By model" }).locator("tbody tr");
+  assert.equal(await usageModels.count(), 3);
+  assert.equal((await usageModels.filter({ hasText: "gpt-6-astra" }).locator("td").last().textContent()).trim(), "—");
+  const usageProjects = page.locator(".usage-card", { hasText: "By project" }).locator("tbody tr");
+  assert.deepEqual((await usageProjects.locator(".usage-table__name").allTextContents()).map((text) => text.trim()), ["Example", "Other", "No project"]);
+  // A tooltip on hover, and on the heatmap too.
+  await page.locator(".usage-col").nth(25).hover();
+  const usageTip = page.locator(".usage-tip");
+  await usageTip.waitFor({ state: "visible" });
+  assert.match(await usageTip.textContent(), /Claude/);
+  assert.match(await usageTip.textContent(), /Estimated cost/);
+  await page.locator("rect.usage-heat").nth(80).hover();
+  assert.match(await usageTip.textContent(), /tokens/);
+  if (shots) {
+    await page.setViewportSize({ width: 1280, height: 1240 });
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate((value) => document.documentElement.setAttribute("data-theme", value), theme);
+      await page.waitForTimeout(150);
+      await page.locator(".usage-col").nth(22).hover();
+      await page.waitForTimeout(150);
+      await page.screenshot({ path: `${shots}/usage-${theme}.png` });
+      await page.locator('[data-scroll="usage"]').evaluate((node) => (node.scrollTop = node.scrollHeight));
+      await page.mouse.move(5, 5);
+      await page.waitForTimeout(100);
+      await page.screenshot({ path: `${shots}/usage-tables-${theme}.png` });
+      await page.locator('[data-scroll="usage"]').evaluate((node) => (node.scrollTop = 0));
+    }
+    await page.evaluate(() => document.documentElement.setAttribute("data-theme", "light"));
+    await page.setViewportSize({ width: 1280, height: 840 });
+  }
+  await page.mouse.move(5, 5);
+  // Range, project and agent each ask again.
+  await page.locator('[data-usage-days="7"]').click();
+  await page.waitForFunction(() => window.checkCalls.filter((c) => c.cmd === "usage_stats").at(-1).args.days === 7);
+  await page.locator(".usage-col").nth(6).waitFor();
+  assert.equal(await page.locator(".usage-col").count(), 7);
+  await page.locator("#usage-project").selectOption("other");
+  await page.waitForFunction(() => window.checkCalls.filter((c) => c.cmd === "usage_stats").at(-1).args.projectId === "other");
+  await page.locator('[data-usage-agent="codex"]').click();
+  await page.waitForFunction(() => window.checkCalls.filter((c) => c.cmd === "usage_stats").at(-1).args.agent === "codex");
+  assert.deepEqual(await lastUsage(), { days: 7, projectId: "other", agent: "codex" });
+  // One series: no legend box, and the colour stays Codex's.
+  await page.locator('[data-usage-agent="codex"][aria-pressed="true"]').waitFor();
+  await page.waitForFunction(() => !document.querySelector(".usage--refreshing"));
+  assert.equal(await page.locator(".usage-legend").count(), 0);
+  assert.equal(await page.locator(".usage-bar--claude").count(), 0);
+  assert(await page.locator(".usage-bar--codex").count() > 0);
+  // The chart's table twin.
+  await page.locator("[data-usage-table]").click();
+  assert.equal(await page.locator(".usage-card", { hasText: "Tokens per day" }).locator("tbody tr").count(), 7);
+  await page.locator("[data-usage-table]").click();
+  await page.locator('[data-usage-agent=""]').click();
+  await page.locator("#usage-project").selectOption("");
+  await page.locator('[data-usage-days="30"]').click();
+  await page.waitForFunction(() => { const a = window.checkCalls.filter((c) => c.cmd === "usage_stats").at(-1).args; return a.days === 30 && !a.projectId && !a.agent; });
+  // The palette has it.
+  await page.locator('[data-action="home"]').first().click();
+  await page.keyboard.press(`${primary}+k`);
+  await page.locator("#palette-input").fill("Usage");
+  await page.locator(".palette__row", { hasText: "Tokens and estimated cost" }).first().click();
+  await page.locator(".usage-tile").first().waitFor();
+  // Prices: from the notice to the editor; an edit saves, a model seen with
+  // no price is one click to add, and the defaults come back.
+  await page.locator(".usage-notice [data-settings-open]").click();
+  await page.getByRole("heading", { name: "Usage prices" }).waitFor();
+  await page.locator("#settings-search").fill("");
+  await page.locator('.prefs__item[data-settings-section="Usage prices"][aria-current="true"]').waitFor();
+  const priceRows = page.locator(".usage-prices__table tbody tr");
+  await priceRows.nth(1).waitFor();
+  assert.equal(await priceRows.count(), 2);
+  assert.equal(await page.locator("#price-0-input").inputValue(), "4");
+  assert(await page.locator('[data-price-save="1"][disabled]').count());
+  await page.locator("#price-0-input").fill("4.5");
+  await page.locator(".usage-prices__dirty").waitFor();
+  await page.locator('.usage-chip[data-price-add="gpt-6-astra"]').click();
+  assert.equal(await priceRows.count(), 3);
+  assert.equal(await page.locator("#price-2-model").inputValue(), "gpt-6-astra");
+  await page.locator("#price-2-input").fill("1.25");
+  await page.locator("#price-2-output").fill("10");
+  if (shots) {
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate((value) => document.documentElement.setAttribute("data-theme", value), theme);
+      await page.waitForTimeout(150);
+      await page.screenshot({ path: `${shots}/usage-prices-${theme}.png` });
+    }
+    await page.evaluate(() => document.documentElement.setAttribute("data-theme", "light"));
+  }
+  await page.locator('[data-price-save="1"]').click();
+  await page.locator(".toast", { hasText: "Prices saved" }).waitFor();
+  const savedPrices = await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "usage_prices_save").at(-1).args.prices);
+  assert.equal(savedPrices.length, 3);
+  assert.equal(savedPrices[0].input, 4.5);
+  assert.deepEqual([savedPrices[2].model, savedPrices[2].input, savedPrices[2].output, savedPrices[2].cache_read], ["gpt-6-astra", 1.25, 10, null]);
+  await page.locator('[data-price-save="1"][disabled]').waitFor();
+  await page.locator('[data-price-remove="2"]').click();
+  assert.equal(await priceRows.count(), 2);
+  await page.locator('[data-price-reset="1"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "usage_prices_reset"));
+  await page.waitForFunction(() => document.querySelectorAll(".usage-prices__table tbody tr").length === 1);
+  await page.locator('[data-action="close-settings"]').click();
+  // Every string the Usage page and the price editor show has its Russian.
+  const usageSources = await Promise.all(["../src/views-usage.js", "../src/usage.js"].map((path) => readFile(new URL(path, import.meta.url), "utf8")));
+  const usageKeys = usageSources.flatMap((source) => [...source.matchAll(/\bt\("((?:[^"\\]|\\.)*)"/g)].map((match) => match[1]));
+  usageKeys.push("Usage", "Usage prices", "Tokens and estimated cost by day, model and project", "Model", "Input", "Output", "Cache read", "Cache write", "Reasoning", "Total", "Estimated cost", "Cache write 5m", "Cache write 1h");
+  assert(usageKeys.length > 50, "the usage strings were found");
+  assert.deepEqual(usageKeys.filter((key) => !(key in ru)), [], "untranslated usage strings");
+  for (const word of ["model", "request"]) assert(word in (await import("../src/locales/ru.js")).default.plurals, `${word} has its Russian plural`);
+
   assert.equal(await page.locator(".toast--error").count(), 0);
   assert.deepEqual(errors, []);
   assert.equal(await page.locator(".toast--error").count(), 0);
   if (process.env.CONVOY_TEST_SCREENSHOT) await page.screenshot({ path: process.env.CONVOY_TEST_SCREENSHOT });
-  console.log("PASS: folder → builder → review → feedback; Linear MCP import → per-task model; sidebar menus; settled dialogs; settings page saves; chat session events, approval, composer and view switch; approvals inbox across sessions; manager sessions with nested helpers, live helper cards and the helpers menu; automations: editor, list, switch, run now, edit, delete; no browser errors. IPC mocked.");
+  console.log("PASS: folder → builder → review → feedback; Linear MCP import → per-task model; sidebar menus; settled dialogs; settings page saves; chat session events, approval, composer and view switch; approvals inbox across sessions; manager sessions with nested helpers, live helper cards and the helpers menu; automations: editor, list, switch, run now, edit, delete; usage page: tiles, charts, tables, filters, tooltips, prices editor; no browser errors. IPC mocked.");
 } finally {
   await browser?.close();
   await server.close();

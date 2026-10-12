@@ -1093,7 +1093,7 @@ export function tabBar() {
         </div>`;
     })
     .join("");
-  const home = state.page === "home" || state.page === "dashboard";
+  const home = ["home", "dashboard", "usage"].includes(state.page);
   return `
     <div class="tabbar">
       <button class="tabbar__home${state.sidebarHidden ? "" : " tabbar__home--on"}" data-action="toggle-sidebar"

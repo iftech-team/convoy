@@ -14,6 +14,7 @@ pub mod planning;
 pub mod project;
 pub mod session;
 pub mod sweep;
+pub mod usage;
 
 use convoy_core::model::Session;
 use convoy_core::{Storage, Workspace as CoreWorkspace};

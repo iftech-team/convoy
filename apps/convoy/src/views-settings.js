@@ -7,6 +7,7 @@ import { button, escape, plural, shorten } from "./ui.js";
 import { activeAccount, state } from "./state.js";
 import { SHORTCUTS, SHORTCUT_GROUPS, label } from "./shortcuts.js";
 import { LANGUAGES, languageChoice, t } from "./i18n.js";
+import { pricesSection } from "./views-usage.js";
 
 /// The macOS app's sections, in its order.
 export const SECTIONS = [
@@ -21,6 +22,7 @@ export const SECTIONS = [
   ["Git", "git", ["branch", "worktree", "setup", "shared", "location"]],
   ["Notifications", "bell", ["notify", "sound", "waiting", "finished", "done", "focus"]],
   ["AI Limits", "limits", ["usage", "limits", "codex", "claude", "quota", "status line"]],
+  ["Usage prices", "limits", ["price", "prices", "cost", "usage", "tokens", "model", "estimate", "dollars", "цены", "стоимость"]],
   ["Shortcuts", "keyboard", ["keyboard", "keys", "bindings", "palette"]],
 ];
 
@@ -508,6 +510,7 @@ const PAGES = {
   Git: git,
   Notifications: notifications,
   "AI Limits": limits,
+  "Usage prices": pricesSection,
   Appearance: appearance,
   Terminal: terminalSection,
   Agents: agents,
