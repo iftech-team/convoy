@@ -98,6 +98,7 @@ pub fn run() {
         .manage(power::KeepAwake::default())
         .manage(monitor::Reports::default())
         .manage(commands::sweep::Sweep::default())
+        .manage(Arc::new(commands::usage::Usage::default()))
         .manage(helpers::Helpers::default())
         .manage(automations::Automations::default())
         .setup(|app| {
@@ -208,6 +209,10 @@ pub fn run() {
             commands::docs::spec_create,
             commands::docs::doc_prompts,
             commands::integrations::usage_read,
+            commands::usage::usage_stats,
+            commands::usage::usage_prices,
+            commands::usage::usage_prices_save,
+            commands::usage::usage_prices_reset,
             commands::limits::limits_read,
             commands::limits::diagnostics_run,
             commands::limits::setup_checks,

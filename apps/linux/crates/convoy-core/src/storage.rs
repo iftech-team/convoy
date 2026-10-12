@@ -173,6 +173,17 @@ impl Storage {
         self.root.join("worktrees")
     }
 
+    /// Token counts read from the agents' transcripts, per file, so a rescan
+    /// reads only what was added. Safe to delete: it is rebuilt.
+    pub fn usage_cache(&self) -> PathBuf {
+        self.root.join("usage-cache.json")
+    }
+
+    /// The editable price table the Usage page estimates cost from.
+    pub fn usage_prices(&self) -> PathBuf {
+        self.root.join("usage-prices.json")
+    }
+
     /// Earlier conversations written out for a session to read, one
     /// `<session id>.md` each.
     pub fn knowledge(&self) -> PathBuf {

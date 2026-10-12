@@ -37,6 +37,7 @@ pub mod storage;
 pub mod telemetry;
 pub mod time;
 pub mod trust;
+pub mod usage;
 pub mod workspace;
 pub mod worktree;
 

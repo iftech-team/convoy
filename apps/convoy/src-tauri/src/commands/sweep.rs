@@ -49,7 +49,7 @@ pub struct SweepReport {
 
 /// The system login's homes for both agents, honouring `CLAUDE_CONFIG_DIR`
 /// and `CODEX_HOME` as a launch would.
-fn roots(
+pub(crate) fn roots(
     core: &convoy_core::Workspace,
     storage: &convoy_core::Storage,
 ) -> convoy_core::Result<Roots> {

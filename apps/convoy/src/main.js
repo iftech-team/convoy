@@ -61,6 +61,8 @@ import { PROJECT_DOC, docsView } from "./views-docs.js";
 import { installAutomations } from "./automations.js";
 import { automationsView } from "./views-automations.js";
 import { fitSkills, installSkills } from "./skills.js";
+import { installUsage } from "./usage.js";
+import { usageView } from "./views-usage.js";
 
 const app = document.querySelector("#app");
 const imports = installTasks({ state, escape, icons, call, callDone: done, toast, render,
@@ -81,6 +83,7 @@ const skills = installSkills({
   openSettings: (section) => openSettings(section),
   loadWorkspace: () => loadWorkspace(),
 });
+const usage = installUsage({ render: () => render() });
 const isImportDialog = () => ["import", "integrations", "connection", "task-model"].includes(state.dialog?.kind);
 
 // A thrown error used to leave a black window and no clue about it. Painting
@@ -108,6 +111,7 @@ window.addEventListener("unhandledrejection", (event) =>
 function content() {
   if (state.page === "home") return homeView();
   if (state.page === "dashboard") return dashboardView();
+  if (state.page === "usage") return usageView();
   if (state.files) return filesView();
   if (!project()) {
     return `<div class="empty">
@@ -421,6 +425,7 @@ function render() {
     const active = document.activeElement;
     if (!active || active === document.body) document.querySelector(".inbox")?.focus();
   }
+  usage.afterRender();
 }
 
 observe(render);
@@ -479,6 +484,7 @@ async function openHome(page = "home") {
   state.files = null;
   state.menu = null;
   render();
+  if (page === "usage") usage.load();
   await Promise.all([
     loadWorkspace(),
     loadAllTasks(),
@@ -488,7 +494,7 @@ async function openHome(page = "home") {
 }
 
 function openSession(id) {
-  if (state.page === "home" || state.page === "dashboard") state.page = null;
+  if (["home", "dashboard", "usage"].includes(state.page)) state.page = null;
   showSaved(id);
   const seen = recent.indexOf(id);
   if (seen >= 0) recent.splice(seen, 1);
@@ -688,6 +694,7 @@ const ACTIONS = {
   // is a click on the project.
   home: () => openHome(),
   dashboard: () => openHome("dashboard"),
+  "usage-page": () => openHome("usage"),
   "remove-project": () =>
     openModal({
       kind: "remove-project",
@@ -1065,6 +1072,7 @@ const SHORTCUT_ACTIONS = {
   projectRefresh: () => withProject(() => refreshProjects(state.projectId)),
   home: () => openHome(),
   dashboard: () => (state.page === "dashboard" ? openHome() : openHome("dashboard")),
+  usagePage: () => openHome("usage"),
   reopenTab: () => reopenTab(),
 
   // sessions — each acts on the open session, and does nothing without one
@@ -1183,12 +1191,13 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-inbox-answer],[data-inbox-open],[data-inbox-expand],[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day],[data-skill],[data-skill-pick],[data-skill-toggle]",
+      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day],[data-skill],[data-skill-pick],[data-skill-toggle],[data-usage-days],[data-usage-agent],[data-usage-table],[data-price-add],[data-price-remove],[data-price-reset],[data-price-save]",
   );
   if (!target) return;
   const data = target.dataset;
   if (await automations.onClick(target)) return;
   if (await skills.onClick(target)) return;
+  if (usage.onClick(target)) return;
   // A double click on a session's name renames it, in the sidebar and the
   // Sessions list (the header's menu has Rename). Counted from the click itself, since the
   // first click redraws the list and a dblclick never reaches the new row.
@@ -1280,6 +1289,7 @@ app.addEventListener("click", async (event) => {
       state.settingsSection = data.settingsSection;
       state.capturing = null;
       render();
+      if (data.settingsSection === "Usage prices") usage.loadPrices();
       if (data.settingsSection === "Setup" && !state.diagnostics) await runDiagnostics();
       if (data.settingsSection === "Setup") checkMacImport().then(render);
       return;
@@ -1323,7 +1333,7 @@ app.addEventListener("click", async (event) => {
     return;
   }
   if (data.project) {
-    if (state.page === "home" || state.page === "dashboard") state.page = null;
+    if (["home", "dashboard", "usage"].includes(state.page)) state.page = null;
     // As on macOS, a click on the project shows the project, not its session.
     if (state.projectId === data.project) {
       state.sessionId = null;
@@ -1590,6 +1600,7 @@ const fieldFor = (key) =>
 
 app.addEventListener("input", (event) => {
   const field = event.target;
+  if (usage.onInput(field)) return;
   // Anything re-renders — an agent reporting, the activity feed — and a
   // dialog is rebuilt from its state, so what is typed goes into that state
   // as it is typed. Reading the fields back at render time instead would undo
@@ -1663,6 +1674,7 @@ app.addEventListener("input", (event) => {
 app.addEventListener("change", async (event) => {
   if (automations.onChange(event.target)) return;
   if (skills.onChange(event.target)) return;
+  if (usage.onChange(event.target)) return;
   if (event.target.dataset?.linkTask && event.target.value) {
     const id = event.target.dataset.linkTask;
     if (await done("task_link_session", { id, sessionId: event.target.value })) {
@@ -2089,7 +2101,7 @@ async function openFolder() {
   if (added > 1) toast(t("Added {count}", { count: plural(added, "project") }));
   await loadWorkspace();
   // The folder just opened is what to show next.
-  if (state.page === "home" || state.page === "dashboard") state.page = null;
+  if (["home", "dashboard", "usage"].includes(state.page)) state.page = null;
   render();
 }
 
@@ -2446,6 +2458,7 @@ async function openSettings(section) {
   ]);
   render();
   if (state.settingsSection === "Setup") runDiagnostics();
+  if (state.settingsSection === "Usage prices") usage.loadPrices();
   checkMacImport().then(render);
 }
 
@@ -3316,6 +3329,7 @@ function paletteEntries() {
   const actions = [
     ["Home", "Every project at once", "home"],
     ["Agent Dashboard", "Every session by what its agent is doing", "dashboard"],
+    ["Usage", "Tokens and estimated cost by day, model and project", "usagePage"],
     ["New session", "Creates a Claude Code or Codex session", "newSession"],
     ["Open folder…", "Add a repository or a folder of projects", "openFolder"],
     ["Resume current session", "Reconnect to the selected agent", "resume"],
@@ -3923,6 +3937,8 @@ try {
   await listen("automation:changed", () => automations.reload());
   await skills.load();
   await listen("skills:changed", () => skills.reload());
+  // Fresher usage numbers, after a scan or a change of prices.
+  await listen("usage:updated", () => state.page === "usage" && usage.load());
   await listen("automation:finished", async ({ payload }) => {
     notifyAutomation(payload);
     await loadWorkspace();
