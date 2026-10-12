@@ -1753,8 +1753,7 @@ try {
   assert.deepEqual(errors, []);
   assert.equal(await page.locator(".toast--error").count(), 0);
   if (process.env.CONVOY_TEST_SCREENSHOT) await page.screenshot({ path: process.env.CONVOY_TEST_SCREENSHOT });
-  console.log("PASS: folder → builder → review → feedback; Linear MCP import → per-task model; sidebar menus; settled dialogs; settings page saves; chat session events, approval, composer and view switch; approvals inbox across sessions; manager sessions with nested helpers, live helper cards and the helpers menu; automations: editor, list, switch, run now, edit, delete; skills: templates, editor and preview, picker in New session, chat chip menu, delete; no browser errors. IPC mocked.");
-  console.log("PASS: folder → builder → review → feedback; Linear MCP import → per-task model; sidebar menus; settled dialogs; settings page saves; chat session events, approval, composer and view switch; approvals inbox across sessions; manager sessions with nested helpers, live helper cards and the helpers menu; automations: editor, list, switch, run now, edit, delete; usage page: tiles, charts, tables, filters, tooltips, prices editor; no browser errors. IPC mocked.");
+  console.log("PASS: folder → builder → review → feedback; Linear MCP import → per-task model; sidebar menus; settled dialogs; settings page saves; chat session events, approval, composer and view switch; approvals inbox across sessions; manager sessions with nested helpers, live helper cards and the helpers menu; automations: editor, list, switch, run now, edit, delete; skills: templates, editor and preview, picker in New session, chat chip menu, delete; usage page: tiles, charts, tables, filters, tooltips, prices editor; no browser errors. IPC mocked.");
 } finally {
   await browser?.close();
   await server.close();
