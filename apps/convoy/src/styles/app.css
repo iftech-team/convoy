@@ -393,6 +393,13 @@ select:disabled {
   padding: 16px 28px 0;
 }
 
+/* A header row with no hint under it still needs room before the list's
+   border, or its buttons sit on the first row. */
+.section + .list,
+.section + .stack {
+  margin-top: 14px;
+}
+
 .section__title {
   display: flex;
   align-items: baseline;
