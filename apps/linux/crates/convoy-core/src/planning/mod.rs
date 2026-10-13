@@ -269,6 +269,7 @@ impl Workspace {
                     profile_id: None,
                     skills: attached(input.skills.clone().unwrap_or_default()),
                     sync: None,
+                    qa: None,
                     unknown: Default::default(),
                 }),
             }
@@ -470,8 +471,14 @@ impl Workspace {
                 .map(|spec| markdown(spec, &state.tasks))
                 .unwrap_or_default();
             let origin = task.source.as_ref().map(source_note).unwrap_or_default();
+            // Sent back by QA or a review: what to fix comes with the task.
+            let findings = if task.status == TaskStatus::Changes && !task.findings.trim().is_empty() {
+                format!("\n\n## Findings to address\n{}", task.findings.trim())
+            } else {
+                String::new()
+            };
             let prompt = format!(
-                "{preamble}\n## Current task\n{}\n\n{}{origin}\n\nVerify the changes and report your results. {publication}",
+                "{preamble}\n## Current task\n{}\n\n{}{origin}{findings}\n\nVerify the changes and report your results. {publication}",
                 task.title, task.details
             );
             ensure!(
@@ -497,6 +504,8 @@ impl Workspace {
                 owns_worktree: None,
                 worktree_removed: None,
                 review_of: None,
+                qa_of: None,
+                resume_prompt: None,
                 task_id: Some(task.id.clone()),
                 profile_id: profile_id
                     .clone()
@@ -599,6 +608,7 @@ impl Workspace {
                     profile_id: None,
                     skills: attached(options.skills.clone()),
                     sync: None,
+                    qa: None,
                     unknown: Default::default(),
                 });
             }

@@ -47,11 +47,18 @@ pub struct ProjectPatch {
     pub branch_prefix: Option<String>,
     pub task_mode: Option<String>,
     pub auto_run_tasks: Option<bool>,
+    pub test_commands: Option<String>,
+    /// `Some("")` turns the QA agent off.
+    pub qa_agent: Option<String>,
+    pub qa_auto: Option<bool>,
+    pub qa_timeout: Option<u32>,
 }
 
 impl ProjectPatch {
-    fn values(&self) -> [Option<&String>; 12] {
+    fn values(&self) -> [Option<&String>; 14] {
         [
+            self.test_commands.as_ref(),
+            self.qa_agent.as_ref(),
             self.default_agent.as_ref(),
             self.base_ref.as_ref(),
             self.branch_prefix.as_ref(),
@@ -85,6 +92,11 @@ pub struct NewSession {
     pub title: String,
     pub prompt: String,
     pub review_of: Option<String>,
+    /// The task a QA session tests.
+    pub qa_of: Option<String>,
+    /// A session whose folder and branch a new one shares without reviewing
+    /// it, as a QA run shares its builder's.
+    pub directory_of: Option<String>,
     pub profile_id: Option<String>,
     pub model: String,
     /// A level [`crate::provider::valid_effort`] accepts for the agent, or
@@ -102,6 +114,8 @@ impl NewSession {
             title: title.into(),
             prompt: String::new(),
             review_of: None,
+            qa_of: None,
+            directory_of: None,
             profile_id: None,
             model: String::new(),
             effort: String::new(),
@@ -250,6 +264,10 @@ impl Workspace {
                     branch_prefix: None,
                     task_mode: None,
                     auto_run_tasks: None,
+                    test_commands: None,
+                    qa_agent: None,
+                    qa_auto: None,
+                    qa_timeout: None,
                     unknown: Default::default(),
                 });
             }
@@ -275,6 +293,19 @@ impl Workspace {
                     && color.starts_with('#')
                     && color[1..].chars().all(|c| c.is_ascii_hexdigit()),
                 "Enter a colour as #RRGGBB."
+            );
+        }
+        let qa_agent = match patch.qa_agent.as_deref() {
+            None => None,
+            Some("") => Some(None),
+            Some(value) => Some(Some(
+                Agent::parse(value).ok_or_else(|| ConvoyError::message("Unknown agent."))?,
+            )),
+        };
+        if let Some(minutes) = patch.qa_timeout {
+            ensure!(
+                (1..=240).contains(&minutes),
+                "QA checks may take 1 to 240 minutes."
             );
         }
         let default_agent = match patch.default_agent.as_deref() {
@@ -366,6 +397,18 @@ impl Workspace {
             if let Some(value) = patch.auto_run_tasks {
                 project.auto_run_tasks = Some(value);
             }
+            if let Some(value) = patch.test_commands {
+                project.test_commands = Some(value).filter(|value| !value.trim().is_empty());
+            }
+            if let Some(value) = qa_agent {
+                project.qa_agent = value;
+            }
+            if let Some(value) = patch.qa_auto {
+                project.qa_auto = Some(value);
+            }
+            if let Some(value) = patch.qa_timeout {
+                project.qa_timeout = Some(value);
+            }
             Ok(())
         })
     }
@@ -454,6 +497,10 @@ impl Workspace {
                     branch_prefix: None,
                     task_mode: None,
                     auto_run_tasks: None,
+                    test_commands: None,
+                    qa_agent: None,
+                    qa_auto: None,
+                    qa_timeout: None,
                     unknown: Default::default(),
                 });
                 ids.push(id);
@@ -521,7 +568,7 @@ impl Workspace {
             "Invalid effort."
         );
         self.update(move |state| {
-            let source = match &input.review_of {
+            let source = match input.review_of.as_ref().or(input.directory_of.as_ref()) {
                 Some(id) => Some(find_session(state, id)?.clone()),
                 None => None,
             };
@@ -551,7 +598,9 @@ impl Workspace {
                 agent_home: None,
                 owns_worktree: None,
                 worktree_removed: None,
-                review_of: source.as_ref().map(|_| input.review_of.clone().unwrap()),
+                review_of: input.review_of.clone().filter(|_| source.is_some()),
+                qa_of: input.qa_of.clone(),
+                resume_prompt: None,
                 task_id: None,
                 profile_id: input.profile_id,
                 view: None,

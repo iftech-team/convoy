@@ -95,7 +95,7 @@ pub fn setup(
     Ok(())
 }
 
-fn shell_program() -> String {
+pub(crate) fn shell_program() -> String {
     if crate::Platform::current().is_windows() {
         crate::telemetry::powershell()
     } else {
@@ -103,7 +103,7 @@ fn shell_program() -> String {
     }
 }
 
-fn shell_arguments(command: &str) -> Vec<String> {
+pub(crate) fn shell_arguments(command: &str) -> Vec<String> {
     if crate::Platform::current().is_windows() {
         vec![
             "-NoLogo".into(),

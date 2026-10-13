@@ -594,6 +594,7 @@ const taskForm = (dialog) => {
     wide: true,
     body: `
       ${syncNotice(dialog)}
+      ${qaPanel(dialog)}
       ${field(t("Title"), textInput("task-title", dialog.title))}
       ${field(t("Agent"), choice("agent", AGENTS, dialog.agent))}
       ${skillPicker(dialog.skills, dialog.agent, projectId)}
@@ -644,6 +645,51 @@ const taskForm = (dialog) => {
       ${button({ label: t("Save"), action: "save-task", kind: "primary" })}`,
   });
 };
+
+const QA_HEADLINES = {
+  checking: ["Running the project's checks…", "running"],
+  testing: ["Checks passed. A QA agent is testing.", "running"],
+  passed: ["QA passed", "done"],
+  failed: ["QA failed", "failed"],
+  no_verdict: ["The QA agent ended without a verdict", "idle"],
+};
+
+/// The task's latest QA run: each check with its output, what the QA agent
+/// found, and what to do next.
+function qaPanel(task) {
+  const run = task.qa;
+  if (!run) return "";
+  const [headline, tone] = QA_HEADLINES[run.status] ?? [run.status, "idle"];
+  const busy = run.status === "checking" || run.status === "testing";
+  const checks = (run.checks ?? [])
+    .map(
+      (check) => `
+        <li class="qa-check${check.ok ? "" : " qa-check--failed"}">
+          <div class="qa-check__line">
+            <span class="qa-check__mark" aria-label="${escape(check.ok ? t("Passed") : t("Failed"))}">${check.ok ? "✓" : "✗"}</span>
+            <code class="qa-check__command">${escape(check.command)}</code>
+            <span class="qa-check__time">${escape(t("{seconds} s", { seconds: check.seconds }))}</span>
+          </div>
+          ${check.output ? `<details${check.ok ? "" : " open"}><summary>${escape(t("Output"))}</summary><pre class="qa-check__output">${escape(check.output)}</pre></details>` : ""}
+        </li>`,
+    )
+    .join("");
+  const actions = [
+    run.status === "passed" && task.status !== "done" ? button({ label: t("Mark done"), icon: "check", action: "task-mark-done", kind: "primary" }) : "",
+    run.session_id ? button({ label: t("Open QA session"), icon: "terminal", action: "task-qa-open" }) : "",
+    busy ? "" : button({ label: t("Run QA again"), icon: "refresh", action: "task-qa-run", kind: "quiet" }),
+  ].join("");
+  return `
+    <section class="qa-panel qa-panel--${tone}" aria-live="polite">
+      <div class="qa-panel__head">
+        <span class="state__dot state__dot--${tone}"></span>
+        <span class="qa-panel__title">${escape(t(headline))}</span>
+      </div>
+      ${checks ? `<ul class="qa-panel__checks">${checks}</ul>` : ""}
+      ${run.findings ? `<div class="qa-panel__findings">${escape(run.findings)}</div>` : ""}
+      ${actions ? `<div class="qa-panel__actions">${actions}</div>` : ""}
+    </section>`;
+}
 
 /// How the task's tracker heard of it last, and Retry when it did not.
 function syncNotice(task) {

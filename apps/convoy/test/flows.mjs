@@ -164,9 +164,18 @@ try {
       if (cmd === "project_detail") {
         const p = projects.find((item) => item.id === args.id);
         return { id: p.id, title: p.title, path: p.path, group: "", icon: p.icon ?? "", setup_command: "", shared_paths: "", review_template: "",
-                 color: p.color ?? "", default_agent: p.default_agent ?? "", base_ref: "", branch_prefix: "", task_mode: "", auto_run_tasks: false };
+                 color: p.color ?? "", default_agent: p.default_agent ?? "", base_ref: "", branch_prefix: "", task_mode: "", auto_run_tasks: false,
+                 test_commands: p.test_commands ?? "", qa_agent: p.qa_agent ?? "", qa_auto: !!p.qa_auto, qa_timeout: p.qa_timeout ?? 15 };
       }
-      if (cmd === "project_edit") { Object.assign(projects.find((item) => item.id === args.id), args.input); return null; }
+      if (cmd === "project_edit") {
+        const p = projects.find((item) => item.id === args.id);
+        Object.assign(p, args.input);
+        p.qa = !!(p.test_commands || p.qa_agent);
+        return null;
+      }
+      if (cmd === "qa_suggest_commands") return ["npm test", "npm run lint"];
+      if (cmd === "qa_start") return window.qaStart(args.taskId);
+      if (cmd === "qa_after_exit") return window.qaExit?.(args.id) ?? null;
       if (cmd === "project_git") return { branch: "main", changed_files: 2 };
       if (cmd === "git_refs") return args.projectId === "project" ? ["main", "feature/x", "origin/main", "tag:v1.0"] : [];
       if (cmd === "profiles_read") return [{ id: "work", label: "Work", agent: "codex", sessions: 0 }];
@@ -917,6 +926,91 @@ try {
     window.emitTauri("task:sync", "synced");
   });
   await page.locator('[data-task="synced"] .sync-chip--ok').waitFor();
+
+  // ------------------------------------------------------------------ QA --
+  // The project's QA: commands found in its files, an agent, automatic runs.
+  await page.locator('[data-menu-project="project"]').click({ button: "right" });
+  await page.locator('[data-menu-act="project-settings"]').click();
+  await page.locator('[data-action="qa-detect"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.test_commands === "npm test\nnpm run lint"));
+  await page.locator('[data-proj-select="qa_agent"]').selectOption("codex");
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.qa_agent === "codex"));
+  await page.locator('[data-proj-select="qa_timeout"]').selectOption("30");
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.qa_timeout === 30));
+  await page.locator('[data-proj-toggle="qa_auto"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.qa_auto === true));
+  if (shots) {
+    await page.locator('[data-action="qa-detect"]').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `${shots}/qa-settings.png` });
+  }
+  await page.locator('[data-action="close-project-settings"]').click();
+  await page.locator('[data-tab="tasks"]').click();
+
+  // A failing check sends the task back, and the findings go straight to
+  // a builder that is running.
+  await page.evaluate(() => {
+    const task = window.mockTasks.find((item) => item.id === "synced");
+    task.session_id = "builder";
+    window.qaStart = (id) => {
+      Object.assign(window.mockTasks.find((item) => item.id === id), {
+        status: "changes",
+        findings: "The check `npm run lint` failed with exit code 1.",
+        qa: { id: "r1", status: "failed", started: new Date().toISOString(), findings: "The check `npm run lint` failed with exit code 1.",
+              checks: [
+                { command: "npm test", ok: true, code: 0, seconds: 41, output: "42 passed" },
+                { command: "npm run lint", ok: false, code: 1, seconds: 3, output: "src/login.ts: unused variable" },
+              ] },
+      });
+      return { kind: "failed", delivery: { builder: "builder", feedback: "QA found problems with this task." } };
+    };
+  });
+  await page.locator('[data-task="synced"]').first().click({ button: "right" });
+  await page.locator('[data-menu-act="task-qa"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "terminal_paste" && c.args.id === "builder" && c.args.text === "QA found problems with this task." && c.args.submit === true));
+  await page.locator(".toast", { hasText: "QA failed: the findings went to the builder" }).waitFor();
+  await page.locator('[data-task="synced"] .qa-badge--failed', { hasText: "QA failed" }).waitFor();
+
+  // The task form shows each check, the failed one's output open.
+  await page.locator('[data-task="synced"] [data-task-more="synced"]').click();
+  await page.locator('[data-menu-act="task-edit"]').click();
+  await page.locator(".qa-panel", { hasText: "QA failed" }).waitFor();
+  assert.deepEqual(await page.locator(".qa-check__command").allTextContents(), ["npm test", "npm run lint"]);
+  await page.locator(".qa-check--failed details[open] .qa-check__output", { hasText: "unused variable" }).waitFor();
+  if (shots) {
+    await page.waitForTimeout(300); // past the opening animation
+    await page.screenshot({ path: `${shots}/qa-failed.png` });
+  }
+
+  // Run again, it passes: the task waits in testing to be marked done.
+  await page.evaluate(() => {
+    window.qaStart = (id) => {
+      Object.assign(window.mockTasks.find((item) => item.id === id), {
+        status: "testing",
+        qa: { id: "r2", status: "passed", started: new Date().toISOString(), checks: [
+          { command: "npm test", ok: true, code: 0, seconds: 40, output: "" },
+          { command: "npm run lint", ok: true, code: 0, seconds: 3, output: "" },
+        ] },
+      });
+      return { kind: "passed" };
+    };
+  });
+  await page.locator('.modal [data-action="task-qa-run"]').click();
+  await page.locator(".qa-panel", { hasText: "QA passed" }).waitFor();
+  await page.locator('.modal [data-action="task-mark-done"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_status" && c.args.id === "synced" && c.args.status === "done"));
+  await page.locator(".modal").waitFor({ state: "detached" });
+
+  // A QA agent's verdict, when its session ends: a failure with no running
+  // builder waits for the builder's next resume.
+  await page.evaluate(() => {
+    window.mockSessions.push({ id: "qa1", project_id: "project", title: "QA: Sync me", agent: "codex", provider_id: "pq", started: true, running: false, pinned: false, review_of: null, qa_of: "synced" });
+    window.qaExit = (id) => (id === "qa1" ? { task: "synced", passed: false, findings: "1. Logout keeps the session.", delivery: null } : null);
+  });
+  await page.locator('[data-action="home"]').first().click();
+  await page.evaluate(() => window.emitTauri("terminal:exit", { id: "qa1", cause: "exited", code: 0 }));
+  await page.locator(".toast", { hasText: "Its builder gets the findings when it resumes" }).waitFor();
+  await page.locator('.project-row [data-project="project"]').click();
+  await page.locator(".header").waitFor();
   if (shots) await page.screenshot({ path: `${shots}/sync-chips.png` });
 
   // Activity: a bell with the unread count; opening the feed reads it.
@@ -1153,7 +1247,7 @@ try {
   assert(calls.some(c => c.cmd === "terminal_paste" && c.args.id === "builder" && c.args.text === "Fix the error path before shipping." && c.args.submit === false));
   assert(calls.some(c => c.cmd === "issues_import" && c.args.options.model === "sonnet"));
   assert(calls.some(c => c.cmd === "task_agent" && c.args.model === "opus"));
-  assert.deepEqual(calls.filter((c) => c.cmd === "task_status").map((c) => c.args.status), ["review", "changes", "queued"]);
+  assert.deepEqual(calls.filter((c) => c.cmd === "task_status").map((c) => c.args.status), ["review", "changes", "queued", "done"]);
   // Remove all projects is in the sidebar's ⋯ menu, and waits while an agent runs.
   await page.locator('[data-action="workspace-menu"]').click();
   await page.locator('[data-action="remove-all-projects"]').click();
@@ -1704,14 +1798,14 @@ try {
   await page.locator('[data-settings-section="Skills"]').click();
   await page.locator("#settings-search").fill("");
   await page.locator(".skill-empty", { hasText: "No skills yet" }).waitFor();
-  assert.equal(await page.locator(".skill-template").count(), 3);
+  assert.equal(await page.locator(".skill-template").count(), 4);
   await bothThemes("skills-empty");
   await page.locator('.skill-template[data-skill-template="tests"]').click();
   await page.locator(".skill-row", { hasText: "Write tests first" }).waitFor();
   const fromTemplate = await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "skill_save").at(-1).args.input);
   assert.equal(fromTemplate.name, "Write tests first");
   assert.match(fromTemplate.body, /a test that fails/);
-  assert.equal(await page.locator(".skill-template").count(), 2, "an added template is no longer offered");
+  assert.equal(await page.locator(".skill-template").count(), 3, "an added template is no longer offered");
 
   await page.locator('[data-skill="new"]').first().click();
   const skillEditor = page.locator('.modal[aria-label="New skill"]');
@@ -1819,7 +1913,7 @@ try {
   // The starter templates' names, descriptions and bodies, as written.
   const templateBlock = skillSources[0].slice(skillSources[0].indexOf("export const TEMPLATES"), skillSources[0].indexOf("];", skillSources[0].indexOf("export const TEMPLATES")));
   const templateTexts = [...templateBlock.matchAll(/(?:name|description|body): "((?:[^"\\]|\\.)*)"/g)].map((match) => JSON.parse(`"${match[1]}"`));
-  assert.equal(templateTexts.length, 9, "three templates, each with a name, description and body");
+  assert.equal(templateTexts.length, 12, "four templates, each with a name, description and body");
   skillKeys.push("Skills", "Skills…", "New skill…", "Instructions you attach to sessions, tasks and automations", "Write instructions once and attach them to sessions",
     "Both agents", "Give the skill a name.", "Write what the skill tells the agent.", "A skill with this name already exists.", "Pick Claude, Codex or both.");
   skillKeys.push(...templateTexts);

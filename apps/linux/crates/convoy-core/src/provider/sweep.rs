@@ -1093,6 +1093,10 @@ mod tests {
             branch_prefix: None,
             task_mode: None,
             auto_run_tasks: None,
+            test_commands: None,
+            qa_agent: None,
+            qa_auto: None,
+            qa_timeout: None,
             unknown: Default::default(),
         });
         let import = |id: &str, at: f64| Import {

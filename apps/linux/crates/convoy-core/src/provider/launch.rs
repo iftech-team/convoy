@@ -67,6 +67,15 @@ pub fn agent_args(session: &Session, resume: bool) -> Vec<String> {
         args.push("--".into());
         args.push(session.prompt.clone());
     }
+    // Something waiting for a resumed conversation, such as QA's findings.
+    if let Some(prompt) = session
+        .resume_prompt
+        .as_ref()
+        .filter(|prompt| resume && !prompt.is_empty())
+    {
+        args.push("--".into());
+        args.push(prompt.clone());
+    }
     args
 }
 

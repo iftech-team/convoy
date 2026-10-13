@@ -47,6 +47,7 @@ pub struct TaskView {
     /// The pull request its session opened.
     pub pr_url: Option<String>,
     pub sync: Option<convoy_core::integrations::sync::SyncState>,
+    pub qa: Option<convoy_core::qa::QaRun>,
     /// The session reviewing its work, when there is one.
     pub review_session_id: Option<String>,
     pub depends_on: Vec<String>,
@@ -76,6 +77,7 @@ fn task_view(state: &convoy_core::model::State, task: &convoy_core::model::Task)
         last_error: task.last_error.clone(),
         pr_url: task.pr_url.clone(),
         sync: task.sync.clone(),
+        qa: task.qa.clone(),
         depends_on: task.depends_on.clone(),
         profile_id: task.profile_id.clone(),
         skills: task.skills.clone().unwrap_or_default(),
@@ -361,6 +363,12 @@ pub enum AfterExit {
     Continue,
     /// A review session was created and is waiting to be started.
     Review { session: String },
+    /// The project tests its tasks by itself: QA starts for `task`, with a
+    /// review session to start as well when one was due.
+    Test {
+        task: String,
+        review: Option<String>,
+    },
 }
 
 #[tauri::command]
@@ -399,6 +407,17 @@ pub fn after_exit(workspace: &Workspace, id: &str, clean: bool) -> Result<AfterE
                     .map(|session| session.id.clone())
                     .unwrap_or_default();
                 Ok(AfterExit::Review { session })
+            }
+            Completion::Test { task, review } => {
+                let review = match review {
+                    Some(handoff) => core
+                        .add_session(*handoff)?
+                        .sessions
+                        .last()
+                        .map(|session| session.id.clone()),
+                    None => None,
+                };
+                Ok(AfterExit::Test { task, review })
             }
         }
     })

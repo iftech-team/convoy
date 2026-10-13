@@ -134,6 +134,8 @@ pub struct ProjectView {
     pub branch_prefix: Option<String>,
     pub task_mode: Option<String>,
     pub auto_run_tasks: bool,
+    /// Test commands or a QA agent are set up, so a task moved to testing is tested.
+    pub qa: bool,
     pub sessions: usize,
     pub running: usize,
 }
@@ -160,6 +162,8 @@ pub struct SessionView {
     pub owns_worktree: bool,
     pub worktree_removed: bool,
     pub review_of: Option<String>,
+    /// The task this session tests, for a QA run.
+    pub qa_of: Option<String>,
     pub task_id: Option<String>,
     /// `chat` or `terminal`: the session's choice, or the settings default.
     pub view: String,
@@ -208,6 +212,7 @@ pub fn view_of(
         owns_worktree: session.owns_worktree(),
         worktree_removed: session.worktree_removed(),
         review_of: session.review_of.clone(),
+        qa_of: session.qa_of.clone(),
         task_id: session.task_id.clone(),
         view: session.shown_as(settings).to_string(),
         parent_id: session.parent_id.clone(),
@@ -254,6 +259,7 @@ pub fn workspace_read(
                     branch_prefix: project.branch_prefix.clone(),
                     task_mode: project.task_mode.clone(),
                     auto_run_tasks: project.auto_run_tasks == Some(true),
+                    qa: convoy_core::qa::configured(project),
                     sessions: own.iter().filter(|session| !session.is_archived()).count(),
                     running: own
                         .iter()

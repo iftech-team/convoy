@@ -216,6 +216,23 @@ pub struct Project {
         skip_serializing_if = "Option::is_none"
     )]
     pub auto_run_tasks: Option<bool>,
+    /// The project's own checks for QA, one shell command per line.
+    #[serde(
+        rename = "testCommands",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub test_commands: Option<String>,
+    /// The agent that tests a task end to end after the checks; `None` runs
+    /// the checks only.
+    #[serde(rename = "qaAgent", default, skip_serializing_if = "Option::is_none")]
+    pub qa_agent: Option<Agent>,
+    /// Start QA when a task's builder finishes cleanly.
+    #[serde(rename = "qaAuto", default, skip_serializing_if = "Option::is_none")]
+    pub qa_auto: Option<bool>,
+    /// Minutes each check may take; 15 when unset.
+    #[serde(rename = "qaTimeout", default, skip_serializing_if = "Option::is_none")]
+    pub qa_timeout: Option<u32>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }
@@ -267,6 +284,17 @@ pub struct Session {
     pub worktree_removed: Option<bool>,
     #[serde(rename = "reviewOf", default, skip_serializing_if = "Option::is_none")]
     pub review_of: Option<String>,
+    /// The task this session tests, when it is a QA run; see `crate::qa`.
+    #[serde(rename = "qaOf", default, skip_serializing_if = "Option::is_none")]
+    pub qa_of: Option<String>,
+    /// Sent once when the session is next resumed, then cleared: QA's
+    /// findings for a builder that was not running when they came.
+    #[serde(
+        rename = "resumePrompt",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub resume_prompt: Option<String>,
     #[serde(rename = "taskID", default, skip_serializing_if = "Option::is_none")]
     pub task_id: Option<String>,
     #[serde(rename = "profileID", default, skip_serializing_if = "Option::is_none")]
@@ -326,6 +354,8 @@ impl Session {
             owns_worktree: None,
             worktree_removed: None,
             review_of: None,
+            qa_of: None,
+            resume_prompt: None,
             task_id: None,
             profile_id: None,
             view: None,
@@ -445,6 +475,9 @@ pub struct Task {
     /// What its tracker still has to hear, and how the last push went.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sync: Option<crate::integrations::sync::SyncState>,
+    /// Its latest QA run: the checks, then the QA agent's verdict.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qa: Option<crate::qa::QaRun>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }

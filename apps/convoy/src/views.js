@@ -336,6 +336,9 @@ export function contextMenu(menu) {
       task.pr_url ? item(t("Open pull request"), "task-pr", { icon: "open" }) : "",
       task.source?.url ? item(t("Open {key}", { key: task.source.key }), "task-issue", { icon: "open" }) : "",
       item(t("Edit…"), "task-edit", { icon: "edit" }),
+      state.projects.find((entry) => entry.id === task.project_id)?.qa
+        ? item(t("Test now"), "task-qa", { icon: "checkCircle", enabled: !building && !["checking", "testing"].includes(task.qa?.status) })
+        : "",
       task.sync?.failed ? item(t("Retry tracker sync"), "task-sync-retry", { icon: "refresh" }) : "",
       divider,
       ...TASK_STATUSES.filter(([key]) => key !== "building" && key !== task.status).map(([key, label]) =>

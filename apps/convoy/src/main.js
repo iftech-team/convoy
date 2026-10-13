@@ -632,6 +632,32 @@ const ACTIONS = {
     const link = state.projectDraft?.link;
     if (link?.sync && state.syncChoices?.suggested) return saveProjectLink({ ...link, sync: { ...link.sync, map: state.syncChoices.suggested } });
   },
+  "task-qa-open": () => {
+    const session = state.dialog?.qa?.session_id;
+    if (!session) return;
+    closeDialog();
+    return openAnywhere(session);
+  },
+  "task-qa-run": () => {
+    const id = state.dialog?.id;
+    if (id) return startQa(id);
+  },
+  "task-mark-done": async () => {
+    const id = state.dialog?.id;
+    if (id && (await done("task_status", { id, status: "done" }))) {
+      closeDialog();
+      await reloadTasks();
+      render();
+    }
+  },
+  "qa-detect": async () => {
+    const id = state.projectDraft?.id;
+    const found = id ? await call("qa_suggest_commands", { projectId: id }) : null;
+    if (!found) return;
+    if (!found.length) return toast(t("No test commands found in this project's files."));
+    await saveProjectField({ test_commands: found.join("\n") });
+    toast(t("Found {commands}", { commands: found.join(", ") }));
+  },
   "task-sync-retry": async () => {
     const id = state.dialog?.id;
     if (id && (await done("task_sync_retry", { id }))) {
@@ -1776,7 +1802,7 @@ app.addEventListener("change", async (event) => {
     return render();
   }
   const projectKey = event.target.dataset?.projText ?? event.target.dataset?.projSelect;
-  if (projectKey) return saveProjectField({ [projectKey]: event.target.value });
+  if (projectKey) return saveProjectField({ [projectKey]: projectKey === "qa_timeout" ? Number(event.target.value) : event.target.value });
   const choiceKey = event.target.dataset?.prefSelect;
   if (choiceKey) return savePref({ [choiceKey]: event.target.value });
   const textKey = event.target.dataset?.prefText;
@@ -3204,7 +3230,56 @@ async function moveTask(id, status) {
   const task = findTask(id);
   if (!task || task.status === status) return;
   if (status === "building") return runnable(task) ? runTask(id) : toast(t("Only a queued, failed or returned task can run."));
+  // Into testing where the project tests its tasks: that is a QA run.
+  if (status === "testing" && state.projects.find((item) => item.id === task.project_id)?.qa) return startQa(id);
   if (await done("task_status", { id, status })) await reloadTasks();
+}
+
+// --------------------------------------------------------------------- QA --
+
+/// Tests a task: the project's checks, then its QA agent. The run shows
+/// itself on the task as it goes; this starts the agent and passes findings
+/// on to the builder.
+async function startQa(id) {
+  const title = findTask(id)?.title ?? "";
+  toast(t("Testing “{task}”…", { task: title }));
+  const result = await call("qa_start", { taskId: id });
+  await reloadTasks();
+  if (!result) return render();
+  if (result.kind === "agent") {
+    await loadSessions();
+    await startSession(result.session, { background: true });
+    toast(t("Checks passed. A QA agent is testing “{task}”.", { task: title }));
+  } else if (result.kind === "passed") {
+    toast(t("QA passed: “{task}” is ready to mark done.", { task: title }));
+  } else {
+    await qaFailed(title, result.delivery);
+  }
+  refreshTaskDialog(id);
+  render();
+}
+
+/// Findings sent to a running builder, or left for its next resume.
+async function qaFailed(title, delivery) {
+  if (delivery) {
+    const { builder, feedback } = delivery;
+    if (viewOf(anySession(builder)) === "chat") await sendText(builder, feedback);
+    else await terminal.paste(builder, feedback, true);
+  }
+  toast(
+    delivery
+      ? t("QA failed: the findings went to the builder, and “{task}” is back in Needs changes.", { task: title })
+      : t("QA failed: “{task}” is back in Needs changes. Its builder gets the findings when it resumes.", { task: title }),
+    "bad",
+  );
+}
+
+/// A task form left open follows its task's QA run.
+function refreshTaskDialog(id) {
+  const task = findTask(id);
+  if (state.dialog?.kind === "task" && state.dialog.id === id && task) {
+    Object.assign(state.dialog, { qa: task.qa, status: task.status, findings: task.findings, sync: task.sync });
+  }
 }
 
 async function runTaskMenu(act, id) {
@@ -3224,6 +3299,9 @@ async function runTaskMenu(act, id) {
     case "task-issue":
       render();
       return done("issue_open", { id });
+    case "task-qa":
+      render();
+      return startQa(id);
     case "task-sync-retry":
       render();
       if (await done("task_sync_retry", { id })) await reloadTasks();
@@ -3967,6 +4045,19 @@ terminal.onExit(async (exit) => {
     return;
   }
   await applyKeepAwake();
+  // A QA agent ending, cleanly or not: its verdict decides the task.
+  if (anySession(exit.id)?.qa_of) {
+    const verdict = await call("qa_after_exit", { id: exit.id });
+    await reloadTasks();
+    if (verdict) {
+      const title = findTask(verdict.task)?.title ?? "";
+      if (verdict.passed === true) toast(t("QA passed: “{task}” is ready to mark done.", { task: title }));
+      else if (verdict.passed === false) await qaFailed(title, verdict.delivery);
+      else toast(t("The QA agent ended without a verdict for “{task}”. Open its session to see why.", { task: title }), "bad");
+      refreshTaskDialog(verdict.task);
+    }
+    return render();
+  }
   const projectId =
     state.sessions.find((item) => item.id === exit.id)?.project_id ?? state.projectId;
   // "Auto-run task queue": the queue carries on by itself in this project.
@@ -3999,6 +4090,14 @@ terminal.onExit(async (exit) => {
   if (step.kind === "review") {
     await loadSessions();
     await startSession(step.session);
+  }
+  if (step.kind === "test") {
+    if (step.review) {
+      await loadSessions();
+      await startSession(step.review);
+    }
+    // Not awaited: the checks can take minutes, and the queue carries on.
+    startQa(step.task);
   }
   if (queued && step.kind !== "nothing") await advanceQueue(projectId);
 });
@@ -4110,6 +4209,14 @@ try {
     await loadSessions();
     if (state.tab === "tasks") await loadPlanning();
   });
+  // A QA run moved on: a check ended, or the run started or settled.
+  for (const name of ["task:qa", "task:qa-check"]) {
+    await listen(name, async ({ payload }) => {
+      await reloadTasks();
+      refreshTaskDialog(Array.isArray(payload) ? payload[0] : payload);
+      render();
+    });
+  }
   // A push to a tracker finished: the task's sync chip changes.
   await listen("task:sync", async () => {
     if (state.tab === "tasks" || state.taskScope === "all") await reloadTasks();

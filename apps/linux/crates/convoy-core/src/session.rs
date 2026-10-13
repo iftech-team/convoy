@@ -309,8 +309,14 @@ pub fn plan_chat_launch_with(
         &launch.env,
         crate::Platform::current(),
     )?;
-    let first_prompt =
-        (!launch.resume && !session.prompt.is_empty()).then(|| session.prompt.clone());
+    let first_prompt = if launch.resume {
+        session
+            .resume_prompt
+            .clone()
+            .filter(|prompt| !prompt.is_empty())
+    } else {
+        (!session.prompt.is_empty()).then(|| session.prompt.clone())
+    };
     Ok(ChatPlan {
         launch,
         driver,
@@ -356,6 +362,8 @@ pub fn mark_started(workspace: &mut Workspace, plan: &LaunchPlan) -> Result<()> 
         };
         session.started = true;
         session.agent_home = Some(home);
+        // Handed to the agent by this launch.
+        session.resume_prompt = None;
         let task_id = session.task_id.clone();
         if let Some(task) =
             task_id.and_then(|task_id| state.tasks.iter_mut().find(|task| task.id == task_id))

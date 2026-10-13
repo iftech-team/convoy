@@ -6113,3 +6113,153 @@ select:disabled {
   width: 20px;
   padding: 0;
 }
+
+/* A task's latest QA run, on its card and in the list. */
+.qa-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.qa-badge .state__dot {
+  width: 6px;
+  height: 6px;
+}
+
+.qa-badge--running .state__dot {
+  animation: qa-pulse 1.2s ease-in-out infinite;
+}
+
+.qa-badge--done { color: var(--state-done); }
+.qa-badge--failed { color: var(--state-failed); }
+
+@keyframes qa-pulse {
+  50% { opacity: 0.3; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qa-badge--running .state__dot { animation: none; }
+}
+
+/* The task form's QA run: a headline, each check, the findings, next steps. */
+.qa-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+}
+
+.qa-panel--failed {
+  border-color: color-mix(in srgb, var(--state-failed) 40%, var(--border));
+}
+
+.qa-panel--done {
+  border-color: color-mix(in srgb, var(--state-done) 40%, var(--border));
+}
+
+.qa-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.qa-panel__title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.qa-panel__checks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.qa-check__line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.qa-check__mark {
+  width: 14px;
+  color: var(--state-done);
+  font-weight: 700;
+  text-align: center;
+}
+
+.qa-check--failed .qa-check__mark {
+  color: var(--state-failed);
+}
+
+.qa-check__command {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qa-check__time {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.qa-check details {
+  margin: 4px 0 0 22px;
+}
+
+.qa-check summary {
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.qa-check__output {
+  max-height: 220px;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.qa-panel__findings {
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.qa-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pref-area--mono {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}

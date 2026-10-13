@@ -30,6 +30,12 @@ export const TEMPLATES = [
     body: "Before changing behaviour, write a test that fails for the right reason.\n\n1. Add or extend a test that shows the bug or the missing feature.\n2. Run it and confirm it fails.\n3. Make the smallest change that makes it pass, then run the whole suite.",
   },
   {
+    key: "qa",
+    name: "QA tester",
+    description: "Test the change like a user and report reproducible findings.",
+    body: "Test the change end to end rather than reading the code.\n\n1. Run the project's tests and note any failure with its output.\n2. If there is a user interface or an API, use it the way a user would: the happy path, empty and wrong input, slow or failing network.\n3. Check what sits next to the change for regressions.\n4. Do not edit, commit or push anything.\n5. Report numbered findings, each with steps to reproduce, what happened and what you expected, then a verdict: pass or fail.",
+  },
+  {
     key: "explain",
     name: "Explain before editing",
     description: "Say what will change and why before touching files.",

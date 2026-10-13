@@ -157,6 +157,11 @@ impl Storage {
         self.root.join("integrations.json")
     }
 
+    /// QA verdicts the QA agents write, one file per run.
+    pub fn qa(&self) -> PathBuf {
+        self.root.join("qa")
+    }
+
     /// Which workspace and project each project imports from.
     pub fn integration_links(&self) -> PathBuf {
         self.root.join("integration-links.json")

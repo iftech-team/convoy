@@ -201,8 +201,16 @@ pub fn after_exit(app: &Rc<App>, session_id: &str, cause: ExitCause) {
             stop(app, &project_id);
             app.sync();
         }
-        Ok(Completion::Continue) => advance(app, &project_id),
-        Ok(Completion::Review(handoff)) => {
+        // QA runs in the desktop client; here a task due for it carries on,
+        // reviewed first when that is also due.
+        Ok(Completion::Continue) | Ok(Completion::Test { review: None, .. }) => {
+            advance(app, &project_id)
+        }
+        Ok(Completion::Review(handoff))
+        | Ok(Completion::Test {
+            review: Some(handoff),
+            ..
+        }) => {
             let created = {
                 let mut workspace = app.workspace.borrow_mut();
                 workspace.add_session(*handoff).map(|state| {

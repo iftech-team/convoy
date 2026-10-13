@@ -12,6 +12,7 @@ mod helpers;
 mod monitor;
 mod power;
 mod pty;
+mod qa;
 mod skills;
 mod sync;
 mod tasks;
@@ -118,6 +119,9 @@ pub fn run() {
             tasks::project_link_save,
             sync::tracker_statuses,
             sync::task_sync_retry,
+            qa::qa_start,
+            qa::qa_after_exit,
+            qa::qa_suggest_commands,
             tasks::issues_parse_keys,
             tasks::issues_import,
             tasks::tasks_for,

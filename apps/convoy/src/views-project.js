@@ -46,6 +46,54 @@ const select = (key, options, selected) =>
 
 const TRACKERS = { linear: "Linear", jira: "Jira", peshbar: "Peshbar", notion: "Notion" };
 
+/// How this project's tasks are tested when they move to In testing: its
+/// own checks first, then a QA agent.
+function testing(project) {
+  const agent = project.qa_agent ?? "";
+  const timeouts = [5, 10, 15, 30, 60, 120];
+  if (!timeouts.includes(project.qa_timeout)) timeouts.push(project.qa_timeout);
+  return groupBox(
+    t("Testing & QA"),
+    `<div class="pref-block pref-stack">
+       <div class="pref-row__title">${escape(t("Test commands (one per line)"))}</div>
+       <textarea class="pref-area pref-area--mono" data-proj-text="test_commands" rows="3" spellcheck="false"
+                 placeholder="npm test&#10;npm run lint">${escape(project.test_commands ?? "")}</textarea>
+       <div class="pref-inline pref-inline--flush">
+         ${button({ label: t("Detect from the project"), icon: "sparkles", action: "qa-detect", kind: "quiet" })}
+         <span class="pref-row__detail">${escape(t("Run in the task's own checkout, in order; the first failure ends the run."))}</span>
+       </div>
+     </div>
+     ${row(
+       t("Then test with an agent"),
+       t("Tests the change end to end against the task and reports a verdict. It does not edit code."),
+       select(
+         "qa_agent",
+         [
+           ["", t("No agent")],
+           ["claude", "Claude Code"],
+           ["codex", "Codex"],
+         ],
+         agent,
+       ),
+     )}
+     ${row(
+       t("Test tasks when they finish"),
+       t("A task whose builder finishes cleanly moves to In testing by itself."),
+       `<button class="switch" data-proj-toggle="qa_auto" aria-pressed="${!!project.qa_auto}" aria-label="${escape(t("Test tasks when they finish"))}"></button>`,
+     )}
+     ${row(
+       t("Time limit per check"),
+       "",
+       select(
+         "qa_timeout",
+         timeouts.sort((a, b) => a - b).map((minutes) => [String(minutes), t("{minutes} min", { minutes })]),
+         String(project.qa_timeout ?? 15),
+       ),
+     )}`,
+    t("Moving a task to In testing starts its QA. A failure sends it back to Needs changes with the findings for its builder; a pass waits for you to mark it done."),
+  );
+}
+
 /// One level's picker: what the tracker listed, the saved choice even when
 /// the list could not be read, and "Any" for not narrowing.
 function levelPicker(id, level, chosen, any) {
@@ -318,6 +366,7 @@ export function projectSettingsPage() {
              </div>
            </div>`,
         )}
+        ${testing(project)}
         ${integration(project)}
         ${projectSkills(project.id)}
         ${groupBox(

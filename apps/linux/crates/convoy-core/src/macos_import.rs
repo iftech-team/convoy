@@ -290,6 +290,10 @@ impl Merge<'_> {
                 // The macOS app finishes tasks with a pull request unless told otherwise.
                 task_mode: Some(text(project, "taskMode").unwrap_or_else(|| "pr".into())),
                 auto_run_tasks: flag(project, "autoRunTasks"),
+                test_commands: None,
+                qa_agent: None,
+                qa_auto: None,
+                qa_timeout: None,
                 unknown: Default::default(),
             });
             ids.insert(id, state.projects.last().expect("pushed").id.clone());
@@ -498,6 +502,7 @@ impl Merge<'_> {
                         profile_id: None,
                         skills: None,
                         sync: None,
+                        qa: None,
                         unknown: Default::default(),
                     });
                     self.report.tasks += 1;
@@ -588,6 +593,7 @@ impl Merge<'_> {
                 profile_id: None,
                 skills: None,
                 sync: None,
+                qa: None,
                 unknown: Default::default(),
             });
             self.report.tasks += 1;

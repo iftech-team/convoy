@@ -53,6 +53,24 @@ export function syncSummary(task) {
   }
 }
 
+// --------------------------------------------------------------------- QA --
+
+const QA_BADGES = {
+  checking: ["QA: running checks", "running"],
+  testing: ["QA: agent testing", "running"],
+  passed: ["QA passed", "done"],
+  failed: ["QA failed", "failed"],
+  no_verdict: ["QA: no verdict", "idle"],
+};
+
+/// How the task's latest QA run stands, as a badge.
+export function qaBadge(task) {
+  const badge = QA_BADGES[task.qa?.status];
+  if (!badge) return "";
+  const [label, tone] = badge;
+  return `<span class="qa-badge qa-badge--${tone}"><span class="state__dot state__dot--${tone}"></span>${escape(t(label))}</span>`;
+}
+
 /// The issue key, marked with how its last push went; `compact` drops the
 /// key where the row already shows it.
 export function syncChip(task, { compact = false } = {}) {
@@ -172,6 +190,7 @@ function taskRow(task, tone) {
   const owner = projectName(task);
   const key = task.source?.key ?? "";
   const tags = [
+    qaBadge(task),
     syncChip(task, { compact: true }),
     owner ? `<span class="badge badge--muted">${escape(owner)}</span>` : "",
     task.blocked_by?.length
@@ -245,6 +264,7 @@ function board(tasks) {
                   ${projectName(task) ? `<div class="card__project">${escape(projectName(task))}</div>` : ""}
                   ${task.details ? `<div class="card__body">${escape(task.details)}</div>` : ""}
                   <div class="card__foot">
+                    ${qaBadge(task)}
                     ${syncChip(task)}
                     <span class="badge--muted badge">${escape(t(MODES[task.mode] ?? task.mode))}</span>
                     ${task.auto_review ? `<span class="badge--muted badge">${escape(t("auto review"))}</span>` : ""}
