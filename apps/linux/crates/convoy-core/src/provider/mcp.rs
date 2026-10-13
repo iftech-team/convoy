@@ -306,6 +306,7 @@ mod tests {
                 key: None,
             }),
             project: None,
+            sync: None,
         }
     }
 

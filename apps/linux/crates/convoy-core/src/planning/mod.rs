@@ -268,6 +268,7 @@ impl Workspace {
                     depends_on: Vec::new(),
                     profile_id: None,
                     skills: attached(input.skills.clone().unwrap_or_default()),
+                    sync: None,
                     unknown: Default::default(),
                 }),
             }
@@ -597,6 +598,7 @@ impl Workspace {
                     depends_on: Vec::new(),
                     profile_id: None,
                     skills: attached(options.skills.clone()),
+                    sync: None,
                     unknown: Default::default(),
                 });
             }

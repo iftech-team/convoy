@@ -36,6 +36,7 @@ fn link(workspace: Option<Scope>, project: Option<Scope>) -> ProjectLink {
         connection_id: "c1".into(),
         workspace,
         project,
+        sync: None,
     }
 }
 

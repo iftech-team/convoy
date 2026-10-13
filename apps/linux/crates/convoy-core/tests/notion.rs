@@ -32,6 +32,7 @@ fn linked() -> ProjectLink {
             key: None,
         }),
         project: None,
+        sync: None,
     }
 }
 

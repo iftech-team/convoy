@@ -33,6 +33,9 @@ pub struct ProjectLink {
     /// Peshbar or Linear project, inside [`ProjectLink::workspace`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<Scope>,
+    /// Pushing task status back to the tracker; see [`super::sync`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync: Option<super::sync::StatusSync>,
 }
 
 impl TrackerKind {

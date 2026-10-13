@@ -184,6 +184,8 @@ impl Workspace {
     {
         let mut next = self.state.clone();
         change(&mut next)?;
+        // Any status change, whoever made it, is noted for the tracker here.
+        crate::integrations::sync::mark_changes(&self.state, &mut next);
         let value = serde_json::to_value(&next)?;
         validate(&value)?;
         if let Some(parent) = self.file.parent() {

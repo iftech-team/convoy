@@ -45,7 +45,7 @@ impl Agent {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskStatus {
     Queued,
@@ -442,6 +442,9 @@ pub struct Task {
     /// Skills its session is started with, by id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skills: Option<Vec<String>>,
+    /// What its tracker still has to hear, and how the last push went.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync: Option<crate::integrations::sync::SyncState>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }

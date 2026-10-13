@@ -497,6 +497,7 @@ impl Merge<'_> {
                         depends_on: Vec::new(),
                         profile_id: None,
                         skills: None,
+                        sync: None,
                         unknown: Default::default(),
                     });
                     self.report.tasks += 1;
@@ -586,6 +587,7 @@ impl Merge<'_> {
                 depends_on: strings(task, "dependsOn"),
                 profile_id: None,
                 skills: None,
+                sync: None,
                 unknown: Default::default(),
             });
             self.report.tasks += 1;
