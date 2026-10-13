@@ -73,7 +73,7 @@ fn task(kind: TrackerKind, key: &str, url: Option<&str>, pending: PendingSync) -
     let mut task: Task = serde_json::from_value(value).unwrap();
     task.sync = Some(SyncState {
         pending: Some(pending),
-        last: None,
+        ..SyncState::default()
     });
     task
 }
@@ -606,4 +606,46 @@ fn nothing_is_pushed_when_sync_is_off_or_the_status_is_not_mapped() {
         .call(request))
     .is_none());
     assert!(fake.sent.is_empty());
+}
+
+#[test]
+fn a_failed_push_waits_for_retry_and_a_newer_change_is_not_lost() {
+    use convoy_core::integrations::sync::SyncResult;
+    let sent = pending(Some(TaskStatus::Pr), true);
+    let failure = || SyncResult {
+        ok: false,
+        message: "Peshbar rejected the credentials".into(),
+        at: "now".into(),
+        status: None,
+    };
+
+    let mut state = SyncState {
+        pending: Some(sent.clone()),
+        ..SyncState::default()
+    };
+    state.settle(&sent, Some(failure()));
+    assert_eq!(state.pending, None, "not tried again on its own");
+    assert_eq!(state.failed, Some(sent.clone()));
+    assert!(state.retry());
+    assert_eq!(state.pending, Some(sent.clone()));
+    assert_eq!(state.failed, None);
+
+    // The task moved on while the push was out: the newer change stays.
+    let newer = pending(Some(TaskStatus::Done), false);
+    let mut state = SyncState {
+        pending: Some(newer.clone()),
+        ..SyncState::default()
+    };
+    state.settle(
+        &sent,
+        Some(SyncResult {
+            ok: true,
+            message: "Set to In Review".into(),
+            at: "now".into(),
+            status: Some("In Review".into()),
+        }),
+    );
+    assert_eq!(state.pending, Some(newer));
+    assert!(state.last.as_ref().unwrap().ok);
+    assert!(!state.retry(), "nothing failed");
 }

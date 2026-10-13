@@ -40,7 +40,7 @@ impl Trackers {
         action(guard.as_mut().expect("just loaded"))
     }
 
-    fn with_links<T>(
+    pub(crate) fn with_links<T>(
         &self,
         workspace: &Workspace,
         action: impl FnOnce(&mut ProjectLinks) -> Result<T, String>,
@@ -170,7 +170,7 @@ pub fn integration_remove(
 
 /// Sends a request and returns the body of a successful answer; a failed
 /// one is read as the tracker's own error message.
-fn send(connection: &Connection, request: &HttpRequest) -> Result<String, String> {
+pub(crate) fn send(connection: &Connection, request: &HttpRequest) -> Result<String, String> {
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(30))
         .build();
@@ -243,7 +243,11 @@ pub async fn issues_search(
     .map_err(|error| error.to_string())?
 }
 
-fn connection(trackers: &Trackers, workspace: &Workspace, id: &str) -> Result<Connection, String> {
+pub(crate) fn connection(
+    trackers: &Trackers,
+    workspace: &Workspace,
+    id: &str,
+) -> Result<Connection, String> {
     trackers.with(workspace, |integrations| {
         integrations
             .get(id)

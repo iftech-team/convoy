@@ -336,6 +336,7 @@ export function contextMenu(menu) {
       task.pr_url ? item(t("Open pull request"), "task-pr", { icon: "open" }) : "",
       task.source?.url ? item(t("Open {key}", { key: task.source.key }), "task-issue", { icon: "open" }) : "",
       item(t("Edit…"), "task-edit", { icon: "edit" }),
+      task.sync?.failed ? item(t("Retry tracker sync"), "task-sync-retry", { icon: "refresh" }) : "",
       divider,
       ...TASK_STATUSES.filter(([key]) => key !== "building" && key !== task.status).map(([key, label]) =>
         item(t("Set status: {status}", { status: t(label) }), `task-status:${key}`, {

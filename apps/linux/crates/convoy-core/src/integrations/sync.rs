@@ -62,6 +62,40 @@ pub struct SyncState {
     pub pending: Option<PendingSync>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last: Option<SyncResult>,
+    /// What the last push failed to deliver, kept for Retry: a failed push is
+    /// not tried again on its own, so a broken token does not hammer the API.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed: Option<PendingSync>,
+}
+
+impl SyncState {
+    /// Records a push of `sent`: it is no longer pending, unless the task
+    /// changed again meanwhile, and a failure keeps it for Retry.
+    pub fn settle(&mut self, sent: &PendingSync, result: Option<SyncResult>) {
+        if self.pending.as_ref() == Some(sent) {
+            self.pending = None;
+        }
+        match result {
+            Some(result) => {
+                self.failed = (!result.ok).then(|| sent.clone());
+                self.last = Some(result);
+            }
+            None => self.failed = None,
+        }
+    }
+
+    /// Puts what failed back in line.
+    pub fn retry(&mut self) -> bool {
+        let Some(failed) = self.failed.take() else {
+            return false;
+        };
+        let pending = self.pending.get_or_insert_with(PendingSync::default);
+        if pending.status.is_none() {
+            pending.status = failed.status;
+        }
+        pending.pr |= failed.pr;
+        true
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]

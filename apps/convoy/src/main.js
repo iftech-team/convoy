@@ -628,6 +628,19 @@ const ACTIONS = {
   "import-all-history": openHistorySweep,
   "history-sweep-run": runHistorySweep,
   "project-settings": openProjectSettings,
+  "sync-suggest": () => {
+    const link = state.projectDraft?.link;
+    if (link?.sync && state.syncChoices?.suggested) return saveProjectLink({ ...link, sync: { ...link.sync, map: state.syncChoices.suggested } });
+  },
+  "task-sync-retry": async () => {
+    const id = state.dialog?.id;
+    if (id && (await done("task_sync_retry", { id }))) {
+      toast(t("Sending to the tracker again…"));
+      await reloadTasks();
+      if (state.dialog?.id === id) Object.assign(state.dialog, { sync: findTask(id)?.sync });
+      render();
+    }
+  },
   "close-project-settings": closeProjectSettings,
   "layout-1": () => setLayout(1),
   "layout-2": () => setLayout(2),
@@ -1213,7 +1226,7 @@ app.addEventListener("click", async (event) => {
       "[data-approve],[data-export],[data-prepare],[data-remove-profile]," +
       "[data-remove-command],[data-import],[data-task-view],[data-palette],[data-split],"
       + "[data-capture],[data-expand],[data-project-more],[data-menu-act],[data-settings-section]," +
-      "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
+      "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon],[data-sync-toggle]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-inbox-answer],[data-inbox-open],[data-inbox-expand],[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
       "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day],[data-skill],[data-skill-pick],[data-skill-toggle],[data-usage-days],[data-usage-agent],[data-usage-table],[data-price-add],[data-price-remove],[data-price-reset],[data-price-save]",
@@ -1296,6 +1309,7 @@ app.addEventListener("click", async (event) => {
     if (data.projColor !== undefined) return saveProjectField({ color: data.projColor });
     if (data.projIcon !== undefined) return saveProjectField({ icon: data.projIcon });
     if (data.projToggle) return saveProjectField({ [data.projToggle]: !state.projectDraft[data.projToggle] });
+    if (data.syncToggle) return toggleSync(data.syncToggle);
     if (data.projClear) return saveProjectField({ [data.projClear]: "" });
     if (data.iconSource) return setProjectImage(data.iconSource);
   }
@@ -1692,7 +1706,7 @@ app.addEventListener("input", (event) => {
 });
 
 app.addEventListener("change", async (event) => {
-  if (state.page === "project" && onLinkChange(event.target)) return;
+  if (state.page === "project" && (onLinkChange(event.target) || onSyncChange(event.target))) return;
   if (automations.onChange(event.target)) return;
   if (skills.onChange(event.target)) return;
   if (usage.onChange(event.target)) return;
@@ -2205,6 +2219,50 @@ async function loadLinkLevels() {
   await read("workspaces", connection.id, null);
   if (link.workspace && connection.levels[1]) await read("projects", `${connection.id}:${link.workspace.id}`, link.workspace);
   render();
+  if (link.sync?.enabled) await loadSyncChoices();
+}
+
+// ------------------------------------------------------------ status sync --
+
+/// The tracker's statuses for the mapping, read again whenever the link
+/// points somewhere else.
+async function loadSyncChoices() {
+  const link = state.projectDraft?.link;
+  if (!link) return;
+  const key = [link.connection_id, link.workspace?.id, link.project?.id].join("/");
+  if (state.syncChoices?.for === key && !state.syncChoices.error) return;
+  state.syncChoices = { for: key, loading: true, statuses: [], suggested: {} };
+  render();
+  const answer = await attempt("tracker_statuses", { projectId: state.projectDraft.id });
+  if (state.syncChoices?.for !== key) return;
+  state.syncChoices = answer.ok ? { for: key, ...answer.value } : { for: key, statuses: [], suggested: {}, error: answer.error };
+  // A sync switched on before the statuses were read starts from the suggestion.
+  const sync = state.projectDraft?.link?.sync;
+  if (answer.ok && sync?.enabled && !Object.keys(sync.map ?? {}).length && Object.keys(answer.value.suggested).length) {
+    return saveProjectLink({ ...state.projectDraft.link, sync: { ...sync, map: answer.value.suggested } });
+  }
+  render();
+}
+
+function toggleSync(field) {
+  const link = state.projectDraft?.link;
+  if (!link) return;
+  const sync = link.sync ?? { enabled: false, map: {}, link_pr: true };
+  const next = { ...sync, [field]: !sync[field] };
+  if (field === "enabled" && next.enabled && !Object.keys(next.map ?? {}).length) next.map = state.syncChoices?.suggested ?? {};
+  return saveProjectLink({ ...link, sync: next });
+}
+
+function onSyncChange(field) {
+  if (!field.dataset?.syncStatus) return false;
+  const link = state.projectDraft?.link;
+  if (!link?.sync) return false;
+  const map = { ...link.sync.map };
+  const picked = state.syncChoices?.statuses.find((status) => status.name === field.value);
+  if (picked) map[field.dataset.syncStatus] = picked;
+  else delete map[field.dataset.syncStatus];
+  saveProjectLink({ ...link, sync: { ...link.sync, map } });
+  return true;
 }
 
 async function saveProjectLink(link) {
@@ -3166,6 +3224,10 @@ async function runTaskMenu(act, id) {
     case "task-issue":
       render();
       return done("issue_open", { id });
+    case "task-sync-retry":
+      render();
+      if (await done("task_sync_retry", { id })) await reloadTasks();
+      return render();
     case "task-edit":
       return openModal({ kind: "task", ...task });
     case "task-delete":
@@ -4047,6 +4109,11 @@ try {
   await listen("session:changed", async () => {
     await loadSessions();
     if (state.tab === "tasks") await loadPlanning();
+  });
+  // A push to a tracker finished: the task's sync chip changes.
+  await listen("task:sync", async () => {
+    if (state.tab === "tasks" || state.taskScope === "all") await reloadTasks();
+    render();
   });
   let offered = false;
   try {

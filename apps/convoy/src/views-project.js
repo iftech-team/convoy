@@ -58,6 +58,85 @@ function levelPicker(id, level, chosen, any) {
     </select>`;
 }
 
+/// The Convoy statuses a tracker can follow, in the order a task moves.
+const SYNCED = [
+  ["building", "Running", "running"],
+  ["review", "Needs review", "review"],
+  ["pr", "Pull request", "review"],
+  ["testing", "In testing", "testing"],
+  ["changes", "Needs changes", "open"],
+  ["done", "Done", "done"],
+  ["failed", "Failed", "failed"],
+  ["queued", "Queued", "idle"],
+];
+
+/// What the tracker cannot do that a person would expect it to.
+const SYNC_NOTES = {
+  jira: "Jira moves an issue only along its workflow: a status it cannot reach from where the issue is shows as a failed sync on the task.",
+  notion: "The integration needs Update content to set the status, and Insert comments when the database has no PR link property.",
+  linear: "If Linear's GitHub integration also moves issues, let one of them do it, or they will race.",
+  peshbar: "Statuses are matched by name in each task's own Peshbar project.",
+};
+
+/// Pushing task status back: a switch, then which tracker status each
+/// Convoy status becomes, read from the tracker and suggested by name.
+function statusSync(link, connection) {
+  const tracker = TRACKERS[connection.kind] ?? connection.kind;
+  const sync = link.sync ?? { enabled: false, map: {}, link_pr: true };
+  const toggle = (key, on, label) =>
+    `<button class="switch" data-sync-toggle="${key}" aria-pressed="${!!on}" aria-label="${escape(label)}"></button>`;
+  const head = row(
+    t("Update {tracker} when a task changes", { tracker }),
+    t("Sets the issue's status as the task moves in Convoy."),
+    toggle("enabled", sync.enabled, t("Update {tracker} when a task changes", { tracker })),
+  );
+  if (!sync.enabled) return head;
+  if (connection.kind === "notion" && !link.workspace) {
+    return head + `<div class="pref-block"><div class="pref-row__detail">${escape(t("Pick the database above; its status property holds the choices."))}</div></div>`;
+  }
+  const choices = state.syncChoices;
+  let table;
+  if (!choices || choices.loading) {
+    table = `<div class="pref-row__detail">${escape(t("Reading {tracker}'s statuses…", { tracker }))}</div>`;
+  } else if (choices.error) {
+    table = `<div class="pref-row__detail pref-row__detail--error">${escape(choices.error)}</div>`;
+  } else {
+    const names = choices.statuses.map((status) => status.name);
+    table = `
+      <div class="sync-map" role="table" aria-label="${escape(t("Status mapping"))}">
+        <div class="sync-map__head" role="row">
+          <span role="columnheader">${escape(t("When a task is"))}</span>
+          <span role="columnheader">${escape(t("Set {tracker} to", { tracker }))}</span>
+        </div>
+        ${SYNCED.map(([key, label, tone]) => {
+          const chosen = sync.map?.[key]?.name ?? "";
+          const options = [["", t("Don't change")], ...names.map((name) => [name, name])];
+          if (chosen && !names.includes(chosen)) options.push([chosen, t("{name} (not found)", { name: chosen })]);
+          return `
+            <div class="sync-map__row" role="row">
+              <span class="sync-map__status" role="cell"><span class="state__dot state__dot--${tone}"></span>${escape(t(label))}</span>
+              <span role="cell">
+                <select class="pref-select${chosen ? "" : " pref-select--quiet"}" data-sync-status="${key}" aria-label="${escape(t(label))}">
+                  ${options.map(([value, name]) => `<option value="${escape(value)}"${value === chosen ? " selected" : ""}>${escape(name)}</option>`).join("")}
+                </select>
+              </span>
+            </div>`;
+        }).join("")}
+        <div class="sync-map__foot">
+          <button class="link-button" data-action="sync-suggest">${escape(t("Use suggested"))}</button>
+        </div>
+      </div>`;
+  }
+  return `${head}
+    <div class="pref-block">${table}</div>
+    ${row(
+      t("Add the pull request to the issue"),
+      { linear: t("As an attachment, once the pull request opens."), jira: t("As a remote link, once the pull request opens."), peshbar: t("As a comment, once the pull request opens."), notion: t("In a PR URL property, or as a comment.") }[connection.kind] ?? "",
+      toggle("link_pr", sync.link_pr, t("Add the pull request to the issue")),
+    )}
+    ${SYNC_NOTES[connection.kind] ? `<div class="pref-block"><div class="pref-row__detail">${escape(t(SYNC_NOTES[connection.kind]))}</div></div>` : ""}`;
+}
+
 /// Where this project imports tasks from: a connection, and in it a
 /// workspace and a project. The import searches only there.
 function integration(project) {
@@ -90,6 +169,7 @@ function integration(project) {
     rows.push(row(t(first), "", levelPicker("link-workspace", levels.workspaces, link.workspace, t("Any"))));
     if (second && link.workspace) rows.push(row(t(second), "", levelPicker("link-project", levels.projects, link.project, t("Any"))));
     if (failure) rows.push(`<div class="pref-block"><div class="pref-row__detail pref-row__detail--error">${escape(failure)}</div></div>`);
+    rows.push(statusSync(link, current));
   }
   return groupBox(
     t("Integration"),

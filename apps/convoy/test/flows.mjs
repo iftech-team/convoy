@@ -26,6 +26,7 @@ try {
     const calls = [];
     window.checkCalls = calls;
     window.mockSessions = sessions;
+    window.mockTasks = tasks;
     // Events the backend would send, delivered to what the page listens for.
     const callbacks = new Map();
     const listeners = {};
@@ -71,6 +72,11 @@ try {
       if (cmd === "review_builder") return "builder";
       if (cmd === "integrations_list") return [{ id: "linear", kind: "linear", auth: "mcp", name: "Linear MCP", has_secret: false, levels: ["Team", "Project"] }, { id: "peshbar", kind: "peshbar", auth: "apiKey", name: "Peshbar", has_secret: true, levels: ["Workspace", "Project"] }, { id: "notion", kind: "notion", auth: "apiKey", name: "Notion", has_secret: true, levels: ["Database", null] }];
       if (cmd === "project_link_get") return window.links?.[args.projectId] ?? null;
+      if (cmd === "tracker_statuses") return {
+        statuses: [{ name: "To do", group: "todo" }, { name: "In progress", group: "started" }, { name: "In review", group: "started" }, { name: "QA", group: "started" }, { name: "Done", group: "done" }],
+        suggested: { building: { name: "In progress" }, review: { name: "In review" }, pr: { name: "In review" }, testing: { name: "QA" }, changes: { name: "In progress" }, done: { name: "Done" } },
+      };
+      if (cmd === "task_sync_retry") { const task = tasks.find((item) => item.id === args.id); task.sync = { pending: task.sync.failed, last: task.sync.last }; return null; }
       if (cmd === "project_link_save") { (window.links ??= {})[args.projectId] = args.link; return null; }
       if (cmd === "integration_scopes") return args.parent ? [{ id: "3", name: "Amir cargo", key: "AMR" }] : [{ id: "9", name: "Tojiron" }, { id: "4", name: "Peshbar" }, { id: "5", name: "Logistics" }];
       if (cmd === "issues_search") return [{ key: "AMR-1", title: "Weigh parcels at intake", details: "", origin: "management-api.peshbar.com", status: "To do" }];
@@ -845,8 +851,20 @@ try {
     workspace: { id: "4", name: "Peshbar" },
     project: { id: "3", name: "Amir cargo", key: "AMR" },
   });
+  // Status sync: switched on, the mapping starts from the suggestion and
+  // every change is saved with the link.
+  await page.locator('[data-sync-toggle="enabled"]').click();
+  await page.locator('[data-sync-status="testing"]').waitFor();
+  await page.waitForFunction(() => window.links?.project?.sync?.map?.testing?.name === "QA");
+  assert.equal(await page.locator('[data-sync-status="building"]').inputValue(), "In progress");
+  assert.equal(await page.locator('[data-sync-status="failed"]').inputValue(), "");
+  await page.locator('[data-sync-status="failed"]').selectOption("To do");
+  await page.waitForFunction(() => window.links.project.sync.map.failed?.name === "To do");
+  await page.locator('[data-sync-toggle="link_pr"]').click();
+  await page.waitForFunction(() => window.links.project.sync.link_pr === false);
+  await page.getByText("Statuses are matched by name").waitFor();
   if (shots) {
-    await page.locator("#link-connection").scrollIntoViewIfNeeded();
+    await page.locator(".sync-map").scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${shots}/project-link.png` });
   }
   await page.locator('[data-action="close-project-settings"]').click();
@@ -877,6 +895,29 @@ try {
   await page.locator(".modal--catalog").waitFor({ state: "detached" });
   // Unlinked again, the import is back to the whole connection.
   await page.evaluate(() => { window.links = {}; });
+  // A task whose push failed says so on its card, and Retry sends it again;
+  // once it goes through, the chip turns to a tick.
+  await page.evaluate(() => {
+    window.mockTasks.push({
+      id: "synced", project_id: "project", title: "ENG-8: Sync me", details: "", findings: "", agent: "claude", status: "pr", mode: "pr",
+      auto_review: false, depends_on: [], blocked_by: [], source: { tracker: "linear", key: "ENG-8" },
+      sync: { failed: { status: "pr" }, last: { ok: false, message: "Linear rejected the credentials (HTTP 401).", at: new Date().toISOString() } },
+    });
+  });
+  await page.locator('[data-tab="tasks"]').click();
+  const syncChip = page.locator('[data-task="synced"] .sync-chip--failed');
+  await syncChip.waitFor();
+  assert.match(await syncChip.getAttribute("aria-label"), /Linear ENG-8 · not updated: Linear rejected the credentials/);
+  await page.locator('[data-task="synced"]').first().click({ button: "right" });
+  await page.locator('[data-menu-act="task-sync-retry"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_sync_retry" && c.args.id === "synced"));
+  await page.locator('[data-task="synced"] .sync-chip--pending').waitFor();
+  await page.evaluate(() => {
+    window.mockTasks.find((item) => item.id === "synced").sync = { last: { ok: true, message: "Set to In review", at: new Date().toISOString(), status: "In review" } };
+    window.emitTauri("task:sync", "synced");
+  });
+  await page.locator('[data-task="synced"] .sync-chip--ok').waitFor();
+  if (shots) await page.screenshot({ path: `${shots}/sync-chips.png` });
 
   // Activity: a bell with the unread count; opening the feed reads it.
   await page.locator(".bell__badge", { hasText: "2" }).waitFor();

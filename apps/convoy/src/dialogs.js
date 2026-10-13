@@ -14,6 +14,7 @@ import {
   toggle,
 } from "./ui.js";
 import { markdown } from "./views-files.js";
+import { syncState, syncSummary } from "./views-planning.js";
 import { when } from "./views-history.js";
 import { state, project, session } from "./state.js";
 import { agentIcon } from "./icons.js";
@@ -592,6 +593,7 @@ const taskForm = (dialog) => {
     hint: dialog.id ? `${t(dialog.status)}${dialog.last_error ? ` · ${dialog.last_error}` : ""}` : "",
     wide: true,
     body: `
+      ${syncNotice(dialog)}
       ${field(t("Title"), textInput("task-title", dialog.title))}
       ${field(t("Agent"), choice("agent", AGENTS, dialog.agent))}
       ${skillPicker(dialog.skills, dialog.agent, projectId)}
@@ -642,6 +644,16 @@ const taskForm = (dialog) => {
       ${button({ label: t("Save"), action: "save-task", kind: "primary" })}`,
   });
 };
+
+/// How the task's tracker heard of it last, and Retry when it did not.
+function syncNotice(task) {
+  const kind = syncState(task);
+  if (!kind) return "";
+  return `<div class="sync-notice sync-notice--${kind}">
+      <span class="sync-notice__text">${escape(syncSummary(task))}</span>
+      ${kind === "failed" ? button({ label: t("Retry"), icon: "refresh", action: "task-sync-retry", kind: "quiet" }) : ""}
+    </div>`;
+}
 
 const queueConfirm = (dialog) =>
   modal({

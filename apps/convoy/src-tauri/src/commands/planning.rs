@@ -46,6 +46,7 @@ pub struct TaskView {
     pub last_error: Option<String>,
     /// The pull request its session opened.
     pub pr_url: Option<String>,
+    pub sync: Option<convoy_core::integrations::sync::SyncState>,
     /// The session reviewing its work, when there is one.
     pub review_session_id: Option<String>,
     pub depends_on: Vec<String>,
@@ -74,6 +75,7 @@ fn task_view(state: &convoy_core::model::State, task: &convoy_core::model::Task)
         session_id: task.session_id.clone(),
         last_error: task.last_error.clone(),
         pr_url: task.pr_url.clone(),
+        sync: task.sync.clone(),
         depends_on: task.depends_on.clone(),
         profile_id: task.profile_id.clone(),
         skills: task.skills.clone().unwrap_or_default(),

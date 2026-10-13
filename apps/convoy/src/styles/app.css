@@ -6010,3 +6010,106 @@ select:disabled {
   font-family: var(--font-mono);
   font-size: 11.5px;
 }
+
+/* A task's tracker key, marked with how its last status push went. */
+.sync-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sync-chip__mark {
+  font-weight: 700;
+}
+
+.sync-chip--ok .sync-chip__mark { color: var(--state-done); }
+.sync-chip--pending .sync-chip__mark { color: var(--text-faint); }
+
+.sync-chip--failed {
+  border-color: color-mix(in srgb, var(--state-failed) 45%, var(--border));
+  color: var(--state-failed);
+}
+
+.sync-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.sync-notice__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.sync-notice--failed {
+  border-color: color-mix(in srgb, var(--state-failed) 40%, var(--border));
+  color: var(--state-failed);
+}
+
+/* Status mapping: a Convoy status on the left, the tracker's on the right. */
+.sync-map {
+  display: grid;
+  gap: 2px;
+}
+
+.sync-map__head,
+.sync-map__row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(180px, 1.4fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.sync-map__head {
+  padding-bottom: 4px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.sync-map__row {
+  min-height: 34px;
+}
+
+.sync-map__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.sync-map__row .pref-select {
+  width: 100%;
+}
+
+.pref-select--quiet {
+  color: var(--text-faint);
+}
+
+.sync-map__foot {
+  padding-top: 6px;
+  font-size: 12px;
+}
+
+.sync-chip--compact {
+  justify-content: center;
+  width: 20px;
+  padding: 0;
+}

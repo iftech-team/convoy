@@ -8,6 +8,7 @@ import { button, empty, escape, plural } from "./ui.js";
 import { state } from "./state.js";
 import { agentIcon, icons } from "./icons.js";
 import { t } from "./i18n.js";
+import { when } from "./views-history.js";
 
 const COLUMNS = [
   ["queued", "Queued", "idle"],
@@ -21,6 +22,46 @@ const COLUMNS = [
 ];
 
 const MODES = { none: "no publishing", pr: "pull request", push: "push" };
+
+// ------------------------------------------------------------ tracker sync --
+
+const TRACKERS = { linear: "Linear", jira: "Jira", peshbar: "Peshbar", notion: "Notion" };
+
+/// Where a task stands with its tracker: sending, failed, sent, or null when
+/// nothing was ever pushed.
+export function syncState(task) {
+  const sync = task.source ? task.sync : null;
+  if (!sync) return null;
+  if (sync.pending) return "pending";
+  if (sync.failed) return "failed";
+  return sync.last?.ok ? "ok" : null;
+}
+
+/// One line on it: "Peshbar MOB-4 · Set to In review, 14:02".
+export function syncSummary(task) {
+  const issue = `${TRACKERS[task.source?.tracker] ?? ""} ${task.source?.key ?? ""}`.trim();
+  const last = task.sync?.last;
+  switch (syncState(task)) {
+    case "pending":
+      return t("{issue} · sending to the tracker…", { issue });
+    case "failed":
+      return t("{issue} · not updated: {reason}", { issue, reason: last?.message ?? "" });
+    case "ok":
+      return t("{issue} · {what}, {when}", { issue, what: last.message, when: when(Date.parse(last.at)) });
+    default:
+      return "";
+  }
+}
+
+/// The issue key, marked with how its last push went; `compact` drops the
+/// key where the row already shows it.
+export function syncChip(task, { compact = false } = {}) {
+  const kind = syncState(task);
+  if (!kind) return "";
+  const mark = { pending: "…", failed: "!", ok: "✓" }[kind];
+  const summary = escape(syncSummary(task));
+  return `<span class="sync-chip sync-chip--${kind}${compact ? " sync-chip--compact" : ""}" title="${summary}" aria-label="${summary}">${compact ? "" : escape(task.source.key)}<span class="sync-chip__mark" aria-hidden="true">${mark}</span></span>`;
+}
 
 export function specsView() {
   const planning = state.planning;
@@ -131,6 +172,7 @@ function taskRow(task, tone) {
   const owner = projectName(task);
   const key = task.source?.key ?? "";
   const tags = [
+    syncChip(task, { compact: true }),
     owner ? `<span class="badge badge--muted">${escape(owner)}</span>` : "",
     task.blocked_by?.length
       ? `<span class="badge task-blocked" title="${escape(t("Waits for {tasks}", { tasks: task.blocked_by.join(", ") }))}">${escape(t("blocked"))}</span>`
@@ -203,6 +245,7 @@ function board(tasks) {
                   ${projectName(task) ? `<div class="card__project">${escape(projectName(task))}</div>` : ""}
                   ${task.details ? `<div class="card__body">${escape(task.details)}</div>` : ""}
                   <div class="card__foot">
+                    ${syncChip(task)}
                     <span class="badge--muted badge">${escape(t(MODES[task.mode] ?? task.mode))}</span>
                     ${task.auto_review ? `<span class="badge--muted badge">${escape(t("auto review"))}</span>` : ""}
                     ${task.pr_url ? '<span class="badge--muted badge">PR</span>' : ""}

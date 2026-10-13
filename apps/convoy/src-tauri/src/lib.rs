@@ -13,6 +13,7 @@ mod monitor;
 mod power;
 mod pty;
 mod skills;
+mod sync;
 mod tasks;
 
 use std::sync::Arc;
@@ -104,6 +105,7 @@ pub fn run() {
         .setup(|app| {
             helpers::start_poller(app.handle().clone());
             automations::start_scheduler(app.handle().clone());
+            sync::start_worker(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -114,6 +116,8 @@ pub fn run() {
             tasks::integration_scopes,
             tasks::project_link_get,
             tasks::project_link_save,
+            sync::tracker_statuses,
+            sync::task_sync_retry,
             tasks::issues_parse_keys,
             tasks::issues_import,
             tasks::tasks_for,
