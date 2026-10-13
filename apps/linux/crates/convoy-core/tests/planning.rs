@@ -338,8 +338,12 @@ fn the_system_login_leaves_the_agents_home_unset() {
             .add_session(new_session(&project, agent, "Plain"))
             .unwrap();
     }
-    let source: BTreeMap<String, String> = [("HOME".to_string(), "/home/u".to_string())]
+    // The home is HOME on Unix and USERPROFILE on Windows, and must be an
+    // absolute path on both: `/home/u` has no drive, so Windows resolves it.
+    let user_home = fixture.path().join("home");
+    let source: BTreeMap<String, String> = ["HOME", "USERPROFILE"]
         .into_iter()
+        .map(|name| (name.to_string(), user_home.to_string_lossy().into_owned()))
         .collect();
     let root = fixture.path().join("accounts");
     for (index, key, folder) in [
@@ -348,7 +352,7 @@ fn the_system_login_leaves_the_agents_home_unset() {
     ] {
         let mut session = workspace.state().sessions[index].clone();
         let account = account_environment(&session, &[], &root, &source).unwrap();
-        assert_eq!(account.home, std::path::Path::new("/home/u").join(folder));
+        assert_eq!(account.home, user_home.join(folder));
         assert_eq!(account.env.get(key), None, "{key}");
 
         // A session that already ran there, the same.
@@ -364,8 +368,9 @@ fn the_system_login_leaves_the_agents_home_unset() {
         // One the user exported is kept, even when it is the default.
         session.agent_home = None;
         let mut exported = source.clone();
-        exported.insert(key.into(), format!("/home/u/{folder}"));
+        let default = user_home.join(folder).to_string_lossy().into_owned();
+        exported.insert(key.into(), default.clone());
         let kept = account_environment(&session, &[], &root, &exported).unwrap();
-        assert_eq!(kept.env.get(key), Some(&format!("/home/u/{folder}")));
+        assert_eq!(kept.env.get(key), Some(&default));
     }
 }
