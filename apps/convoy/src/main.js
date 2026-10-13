@@ -445,6 +445,22 @@ async function selectProject(id) {
   if (state.tab === "specs" || state.tab === "tasks") await loadPlanning();
 }
 
+/// Shows a project's own page, from the sidebar or the palette: off Home,
+/// the Dashboard, Usage or Settings, and, as on macOS, out of its session or
+/// files when it is already the selected one.
+async function showProject(id) {
+  if (state.page && state.page !== "project") {
+    state.page = null;
+    state.capturing = null;
+  }
+  if (state.projectId === id) {
+    state.sessionId = null;
+    state.files = null;
+  }
+  await selectProject(id);
+  render();
+}
+
 /// Opens a session of any project, selecting its project first.
 async function openAnywhere(id) {
   const target = anySession(id);
@@ -1332,16 +1348,7 @@ app.addEventListener("click", async (event) => {
     if (handler) return handler();
     return;
   }
-  if (data.project) {
-    if (["home", "dashboard", "usage"].includes(state.page)) state.page = null;
-    // As on macOS, a click on the project shows the project, not its session.
-    if (state.projectId === data.project) {
-      state.sessionId = null;
-      state.files = null;
-    }
-    await selectProject(data.project);
-    return render();
-  }
+  if (data.project) return showProject(data.project);
   if (data.settingsOpen) return openSettings(data.settingsOpen);
   if (data.homeTasks) {
     state.page = null;
@@ -3316,7 +3323,7 @@ function paletteEntries() {
     });
   }
   for (const item of state.projects) {
-    entries.push({ kind: "Project", title: item.title, subtitle: item.path, run: () => selectProject(item.id).then(render) });
+    entries.push({ kind: "Project", title: item.title, subtitle: item.path, run: () => showProject(item.id) });
   }
   const bound = (action) => label(binding(action));
   const inFiles = (then) => async () => {

@@ -938,6 +938,30 @@ try {
   await page.locator('[data-action="workspace-menu"]').click();
   await page.locator('[data-workspace-option="sort"]').click();
   await page.waitForFunction(() => window.savedSettings.sort_projects === false);
+  // A project found by the search opens on a click, as it does unfiltered.
+  await page.locator("#project-search").fill("alp");
+  await page.locator('[data-project="other"]').waitFor({ state: "detached" });
+  await page.locator('[data-project="alpha"]').click();
+  await page.locator(".header__name", { hasText: "Alpha" }).waitFor({ timeout: 5000 });
+  await page.locator('.project-row--current [data-project="alpha"]').waitFor();
+  await page.locator("#project-search").fill("");
+  // So does one picked in ⌘K: from Home it leaves Home, and from inside one
+  // of its sessions it shows the project rather than staying put.
+  const pickProject = async (path) => {
+    await page.keyboard.press(`${primary}+k`);
+    await page.locator("#palette-input").fill(path);
+    await page.locator(".palette__row", { hasText: path }).click();
+  };
+  await page.keyboard.press(`${primary}+k`);
+  await page.locator("#palette-input").fill("Home");
+  await page.locator(".palette__row", { hasText: "Every project at once" }).click();
+  await page.locator(".home__greeting").waitFor();
+  await pickProject("/fixture/Other");
+  await page.locator(".header__name", { hasText: "Other" }).waitFor({ timeout: 5000 });
+  await page.locator('.project-row__sessions [data-open="notes"]').first().click();
+  await page.locator('.tab-item--selected[data-tab-open="notes"]').waitFor();
+  await pickProject("/fixture/Other");
+  await page.locator(".header__name", { hasText: "Other" }).waitFor({ timeout: 5000 });
   // ⌘-click picks sessions; the picked ones are archived together.
   await page.locator('.side-session[data-open="review"]').click({ modifiers: [primary] });
   await page.locator(".sidebar__selection", { hasText: "1 selected" }).waitFor();
