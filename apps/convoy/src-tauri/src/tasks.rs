@@ -1,11 +1,12 @@
-//! Tasks and the Linear/Jira import that feeds them.
+//! Tasks and the import from Linear, Jira and Peshbar that feeds them.
 //!
 //! As with the rest of the commands, the rules live in `convoy-core`: which
 //! request to send, how to read the answer, how an issue becomes a task. The
 //! only thing done here is the HTTP call itself, off the main thread.
 
 use convoy_core::integrations::{
-    self, Connection, Integrations, Issue, IssueSource, TrackerAuth, TrackerKind,
+    self, Connection, HttpRequest, Integrations, Issue, IssueSource, ProjectLink, ProjectLinks,
+    Scope, TrackerAuth, TrackerKind,
 };
 use convoy_core::planning::ImportOptions;
 use convoy_core::workspace::model::{Agent, PublishMode};
@@ -21,6 +22,7 @@ use crate::commands::Workspace;
 #[derive(Default)]
 pub struct Trackers {
     inner: Mutex<Option<Integrations>>,
+    links: Mutex<Option<ProjectLinks>>,
 }
 
 impl Trackers {
@@ -38,9 +40,26 @@ impl Trackers {
         action(guard.as_mut().expect("just loaded"))
     }
 
-    /// Drops the cached copy, so the next call reads what is on disk now.
+    fn with_links<T>(
+        &self,
+        workspace: &Workspace,
+        action: impl FnOnce(&mut ProjectLinks) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let mut guard = self.links.lock().map_err(|_| "Integrations unavailable.")?;
+        if guard.is_none() {
+            let loaded = ProjectLinks::load(workspace.storage.integration_links())
+                .map_err(|error| error.to_string())?;
+            *guard = Some(loaded);
+        }
+        action(guard.as_mut().expect("just loaded"))
+    }
+
+    /// Drops the cached copies, so the next call reads what is on disk now.
     pub fn forget(&self) {
         if let Ok(mut guard) = self.inner.lock() {
+            *guard = None;
+        }
+        if let Ok(mut guard) = self.links.lock() {
             *guard = None;
         }
     }
@@ -56,6 +75,8 @@ pub struct ConnectionView {
     site: Option<String>,
     username: Option<String>,
     has_secret: bool,
+    /// What its workspace and project levels are called (`TrackerKind::levels`).
+    levels: (&'static str, Option<&'static str>),
 }
 
 impl From<&Connection> for ConnectionView {
@@ -68,6 +89,7 @@ impl From<&Connection> for ConnectionView {
             site: connection.site.clone(),
             username: connection.username.clone(),
             has_secret: !connection.secret.is_empty(),
+            levels: connection.kind.levels(),
         }
     }
 }
@@ -138,17 +160,17 @@ pub fn integration_remove(
 ) -> Result<(), String> {
     trackers.with(&workspace, |integrations| {
         integrations.remove(&id).map_err(|error| error.to_string())
+    })?;
+    trackers.with_links(&workspace, |links| {
+        links
+            .forget_connection(&id)
+            .map_err(|error| error.to_string())
     })
 }
 
-fn fetch(
-    connection: &Connection,
-    query: &str,
-    mine_only: bool,
-    raw_jql: bool,
-) -> Result<Vec<Issue>, String> {
-    let request = integrations::search_request(connection, query, mine_only, raw_jql)
-        .map_err(|error| error.to_string())?;
+/// Sends a request and returns the body of a successful answer; a failed
+/// one is read as the tracker's own error message.
+fn send(connection: &Connection, request: &HttpRequest) -> Result<String, String> {
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(30))
         .build();
@@ -161,12 +183,7 @@ fn fetch(
         None => call.call(),
     };
     match answer {
-        Ok(response) => {
-            let body = response.into_string().map_err(|error| error.to_string())?;
-            integrations::parse_issues(connection.kind, &body, connection.site_url().as_deref())
-                .map(|issues| integrations::with_origins(issues, connection))
-                .map_err(|error| error.to_string())
-        }
+        Ok(response) => response.into_string().map_err(|error| error.to_string()),
         Err(ureq::Error::Status(status, response)) => {
             let body = response.into_string().unwrap_or_default();
             Err(integrations::http_error(connection, status, &body).to_string())
@@ -178,26 +195,110 @@ fn fetch(
     }
 }
 
+fn fetch(
+    connection: &Connection,
+    link: Option<&ProjectLink>,
+    query: &str,
+    mine_only: bool,
+    raw_jql: bool,
+) -> Result<Vec<Issue>, String> {
+    let request = integrations::search_request_in(connection, link, query, mine_only, raw_jql)
+        .map_err(|error| error.to_string())?;
+    let body = send(connection, &request)?;
+    integrations::parse_issues(connection.kind, &body, connection.site_url().as_deref())
+        .map(|issues| integrations::narrow(connection.kind, issues, link))
+        .map(|issues| integrations::with_origins(issues, connection))
+        .map_err(|error| error.to_string())
+}
+
 /// Searches a connection: free text, an issue key or link, or Jira JQL;
 /// `raw_jql` sends the query to Jira as written.
+/// Searching from a project that is linked to this connection stays inside
+/// the linked workspace and project.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn issues_search(
     connection_id: String,
     query: String,
     mine_only: bool,
     raw_jql: bool,
+    project_id: Option<String>,
     trackers: State<'_, Trackers>,
     workspace: State<'_, Workspace>,
 ) -> Result<Vec<Issue>, String> {
-    let connection = trackers.with(&workspace, |integrations| {
+    let connection = connection(&trackers, &workspace, &connection_id)?;
+    let link = match project_id {
+        Some(project_id) => trackers.with_links(&workspace, |links| {
+            Ok(links
+                .get(&project_id)
+                .filter(|link| link.connection_id == connection_id)
+                .cloned())
+        })?,
+        None => None,
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        fetch(&connection, link.as_ref(), &query, mine_only, raw_jql)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn connection(trackers: &Trackers, workspace: &Workspace, id: &str) -> Result<Connection, String> {
+    trackers.with(workspace, |integrations| {
         integrations
-            .get(&connection_id)
+            .get(id)
             .cloned()
             .map_err(|error| error.to_string())
-    })?;
-    tauri::async_runtime::spawn_blocking(move || fetch(&connection, &query, mine_only, raw_jql))
-        .await
-        .map_err(|error| error.to_string())?
+    })
+}
+
+/// A connection's workspaces, or with `parent` the projects inside one.
+#[tauri::command]
+pub async fn integration_scopes(
+    connection_id: String,
+    parent: Option<Scope>,
+    trackers: State<'_, Trackers>,
+    workspace: State<'_, Workspace>,
+) -> Result<Vec<Scope>, String> {
+    let connection = connection(&trackers, &workspace, &connection_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let request = integrations::scopes_request(&connection, parent.as_ref())
+            .map_err(|error| error.to_string())?;
+        let body = send(&connection, &request)?;
+        integrations::parse_scopes(connection.kind, parent.is_some(), &body)
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+/// Where a project imports from, if it is linked.
+#[tauri::command]
+pub fn project_link_get(
+    project_id: String,
+    trackers: State<'_, Trackers>,
+    workspace: State<'_, Workspace>,
+) -> Result<Option<ProjectLink>, String> {
+    trackers.with_links(&workspace, |links| Ok(links.get(&project_id).cloned()))
+}
+
+/// Links a project to a connection and, optionally, a workspace and project
+/// in it; `None` unlinks it.
+#[tauri::command]
+pub fn project_link_save(
+    project_id: String,
+    link: Option<ProjectLink>,
+    trackers: State<'_, Trackers>,
+    workspace: State<'_, Workspace>,
+) -> Result<(), String> {
+    if let Some(link) = &link {
+        connection(&trackers, &workspace, &link.connection_id)?;
+    }
+    trackers.with_links(&workspace, |links| {
+        links
+            .set(&project_id, link)
+            .map_err(|error| error.to_string())
+    })
 }
 
 /// Keys and links typed for an MCP connection, parsed by the core rules.

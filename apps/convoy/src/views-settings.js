@@ -18,7 +18,7 @@ export const SECTIONS = [
   ["Terminal", "terminal", ["font", "size", "scrollback", "lines"]],
   ["Agents", "sparkles", ["claude", "codex", "default agent", "chat", "terminal", "view", "yolo", "permissions", "skip", "review", "template", "brief", "hibernate", "idle", "sleep"]],
   ["Accounts", "person", ["account", "profile", "login", "sign in", "claude", "codex"]],
-  ["Linear & Jira", "link", ["linear", "jira", "atlassian", "peshbar", "issues", "import", "api key", "token", "mcp", "integrations"]],
+  ["Integrations", "link", ["linear", "jira", "atlassian", "peshbar", "issues", "import", "api key", "token", "mcp", "integrations"]],
   ["Quick Commands", "bolt", ["prompt", "command", "snippet", "quick"]],
   ["Skills", "book", ["skill", "skills", "instructions", "system prompt", "template", "markdown", "навык"]],
   ["Git", "git", ["branch", "worktree", "setup", "shared", "location"]],
@@ -448,7 +448,7 @@ function integrations() {
     ${groupBox(
       t("Connections"),
       rows,
-      t("Import issues as tasks from a project's Tasks tab. MCP connections store nothing: the agent fetches each issue with its own MCP server."),
+      t("Import tasks from a project's Tasks tab; link a project to a workspace in its settings. MCP connections store nothing: the agent fetches each task with its own MCP server."),
     )}
     <div class="pref-actions">
       ${button({ label: t("Add {name}", { name: "Linear" }), icon: "plus", data: { "conn-add": "linear" } })}
@@ -518,7 +518,7 @@ const PAGES = {
   Terminal: terminalSection,
   Agents: agents,
   Accounts: accounts,
-  "Linear & Jira": integrations,
+  "Integrations": integrations,
   "Quick Commands": quickCommands,
   Skills: skillsSection,
   Shortcuts: shortcuts,

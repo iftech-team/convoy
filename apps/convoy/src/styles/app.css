@@ -2393,6 +2393,10 @@ select:disabled {
   color: var(--text-muted);
 }
 
+.pref-row__detail--error {
+  color: var(--state-failed);
+}
+
 .pref-row__control {
   flex: none;
   display: flex;
@@ -5874,4 +5878,18 @@ select:disabled {
 /* A stopped terminal session's conversation: read, not written to. */
 .chat-slot--readonly .chat__composer {
   display: none;
+}
+
+/* A button that reads as a link, inside a line of text. */
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  text-decoration: underline;
 }

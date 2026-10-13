@@ -106,8 +106,8 @@ export function tasksView() {
         kind: running ? "danger" : "",
         disabled: !running && planning.queued === 0,
       })}
-      ${button({ label: t("Import issues"), action: "import" })}
-      ${button({ label: t("Linear & Jira"), action: "integrations" })}
+      ${button({ label: t("Import tasks"), action: "import" })}
+      ${button({ label: t("Integrations"), action: "integrations" })}
       ${button({ label: t("New task"), icon: "plus", action: "new-task", kind: "primary" })}
     </div>`;
 

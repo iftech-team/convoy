@@ -1,4 +1,4 @@
-// The Tasks tab, and importing Linear, Jira and Peshbar issues into it.
+// The Tasks tab, and importing tasks into it from Linear, Jira and Peshbar.
 //
 // Every rule — the request, the parsing, dedupe, the task brief — lives in
 // convoy-core. This file draws state and passes input back, as main.js does.
@@ -124,6 +124,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         query: draft.query,
         mineOnly: draft.mineOnly,
         rawJql: current.kind === "jira" && draft.rawJql,
+        projectId: state.projectId ?? null,
       });
     } catch (error) {
       if (seq !== searchSeq || state.dialog !== draft || draft.connectionId !== connectionId) return;
@@ -136,7 +137,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
     draft.loading = false;
     const taken = importedKeys();
     draft.selected = new Set(issues.map((issue) => issue.key).filter((key) => !taken.has(key)));
-    draft.message = issues.length ? null : t("No matching open issues.");
+    draft.message = issues.length ? null : t("No matching open tasks.");
     render();
   }
 
@@ -151,10 +152,16 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
   }
 
   async function openImport() {
-    await Promise.all([loadIntegrations(), loadTasks()]);
-    const first = state.integrations[0];
+    const [link] = await Promise.all([
+      state.projectId ? call("project_link_get", { projectId: state.projectId }) : null,
+      loadIntegrations(),
+      loadTasks(),
+    ]);
+    // A linked project opens on its own connection.
+    const first = state.integrations.find((item) => item.id === link?.connection_id) ?? state.integrations[0];
     state.dialog = {
       kind: "import",
+      link: link ?? null,
       connectionId: first?.id ?? null,
       query: "",
       mineOnly: true,
@@ -292,18 +299,30 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         <h2 class="section__title">${escape(t("Tasks"))} <span class="section__count">${state.tasks.length}</span></h2>
         <span class="section__spacer"></span>
         <button class="button button--icon" data-action="tasks-refresh" title="${escape(t("Refresh"))}">${icons.refresh}</button>
-        <button class="button" data-action="integrations">${escape(t("Linear & Jira…"))}</button>
-        <button class="button button--primary" data-action="import">${icons.plus} ${escape(t("Import issues"))}</button>
+        <button class="button" data-action="integrations">${escape(t("Integrations…"))}</button>
+        <button class="button button--primary" data-action="import">${icons.plus} ${escape(t("Import tasks"))}</button>
       </div>
       <p class="section__hint">
-        ${escape(t("Import Linear or Jira issues, choose the agent and model for all of them or per issue, then run each in its own session."))}
+        ${escape(t("Import tasks from Linear, Jira or Peshbar, choose the agent and model for all of them or per task, then run each in its own session."))}
       </p>
       <div class="list">${
         rows ||
         `<div class="empty"><h2 class="empty__title">${escape(t("No tasks yet"))}</h2>
-           <p class="empty__text">${escape(t("Import issues from Linear or Jira to start."))}</p></div>`
+           <p class="empty__text">${escape(t("Import tasks from an integration to start."))}</p></div>`
       }</div>`;
   }
+
+  /// Where the search runs: the project's linked workspace and project, or
+  /// the whole connection.
+  const linkNote = (draft, current) => {
+    if (!current || current.auth === "mcp") return "";
+    const link = draft.link?.connection_id === current.id ? draft.link : null;
+    const path = [link?.workspace?.name, link?.project?.name].filter(Boolean).join(" › ");
+    return `<span class="field__note">
+        ${escape(path ? t("Searching in {path}.", { path }) : t("Searching all of {name}.", { name: current.name }))}
+        <button class="link-button" data-action="project-settings">${escape(path ? t("Change") : t("Link this project…"))}</button>
+      </span>`;
+  };
 
   function importDialog() {
     const draft = state.dialog;
@@ -313,10 +332,10 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
     const picked = chosen();
 
     if (!state.integrations.length) {
-      return modal(t("Import issues"), escape(t("In {project}", { project: project()?.title ?? "" })), `
-        <p class="empty__text">${escape(t("Connect Linear or Jira first: an API key, a Jira login, or the agent’s own MCP server."))}</p>`,
+      return modal(t("Import tasks"), escape(t("In {project}", { project: project()?.title ?? "" })), `
+        <p class="empty__text">${escape(t("Add an integration first: an API key or token, a Jira login, or the agent’s own MCP server."))}</p>`,
         `<button class="button" data-dismiss="1">${escape(t("Cancel"))}</button>
-         <button class="button button--primary" data-action="integrations">${escape(t("Connect Linear or Jira"))}</button>`);
+         <button class="button button--primary" data-action="integrations">${escape(t("Add an integration"))}</button>`);
     }
 
     const source = `
@@ -328,6 +347,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
             .join("")}</select>
           <button class="button button--quiet" data-action="integrations">${escape(t("Manage…"))}</button>
         </div>
+        ${linkNote(draft, current)}
       </div>`;
 
     const finder =
@@ -376,12 +396,12 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
       ${source}
       ${finder}
       <div class="field">
-        <span class="field__label">${escape(list.length ? t("Issues · {picked} of {total} selected", { picked: picked.length, total: list.length }) : t("Issues"))}
+        <span class="field__label">${escape(list.length ? t("Tasks · {picked} of {total} selected", { picked: picked.length, total: list.length }) : t("Tasks"))}
           ${allKeys.length ? `<button class="button button--quiet" data-action="import-all">${escape(everything ? t("Select none") : t("Select all"))}</button>` : ""}</span>
         <div class="import__list">${
           rows ||
           `<div class="import__empty${draft.message ? " import__empty--error" : ""}">${escape(
-            draft.message ?? (draft.loading ? t("Loading…") : current?.auth === "mcp" ? t("Paste issue keys or links above.") : t("No issues loaded.")),
+            draft.message ?? (draft.loading ? t("Loading…") : current?.auth === "mcp" ? t("Paste issue keys or links above.") : t("No tasks loaded.")),
           )}</div>`
         }</div>
         ${draft.message && rows ? `<span class="field__note">${escape(draft.message)}</span>` : ""}
@@ -410,7 +430,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
       <button class="button button--primary" data-action="import-run"${picked.length ? "" : " disabled"}>
         ${draft.runNow ? icons.play : ""} ${escape(t("Import"))}${picked.length ? ` ${picked.length}` : ""}
       </button>`;
-    return modal(t("Import issues"), escape(t("In {project}", { project: project()?.title ?? "" })), body, foot, "modal--wide");
+    return modal(t("Import tasks"), escape(t("In {project}", { project: project()?.title ?? "" })), body, foot, "modal--wide");
   }
 
   function integrationsDialog() {
@@ -429,7 +449,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         </div>`,
       )
       .join("");
-    return modal("Linear & Jira", escape(t("Import issues as tasks from the Tasks tab.")), `
+    return modal("Integrations", escape(t("Import tasks from them in a project's Tasks tab.")), `
       <div class="group">
         <div class="group__label">${escape(t("Connections"))}</div>
         ${rows || `<p class="setting__hint">${escape(t("None yet."))}</p>`}

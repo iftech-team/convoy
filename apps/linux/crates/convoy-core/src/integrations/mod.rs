@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
+pub mod scopes;
+pub use scopes::{narrow, parse_scopes, scopes_request, ProjectLink, ProjectLinks, Scope};
+
 pub const PAGE_SIZE: usize = 50;
 
 /// The Peshbar Management API a connection without a site talks to.
@@ -204,28 +207,31 @@ pub fn search_request(
     mine_only: bool,
     raw_jql: bool,
 ) -> Result<HttpRequest> {
+    search_request_in(connection, None, query, mine_only, raw_jql)
+}
+
+/// [`search_request`] kept inside a project's linked workspace and project.
+/// Raw JQL is still sent as written; a Peshbar project is applied to the
+/// answer by [`narrow`].
+pub fn search_request_in(
+    connection: &Connection,
+    link: Option<&ProjectLink>,
+    query: &str,
+    mine_only: bool,
+    raw_jql: bool,
+) -> Result<HttpRequest> {
     ensure!(
         connection.auth != TrackerAuth::Mcp,
         "MCP connections are read by the agent, not searched."
     );
-    ensure!(
-        !connection.secret.is_empty(),
-        "No saved credentials for “{}”.",
-        connection.name
-    );
+    let authorization = authorization(connection)?;
     let query = query.trim();
     match connection.kind {
         TrackerKind::Linear => {
-            let secret = &connection.secret;
-            // Personal keys go in raw; OAuth tokens need the Bearer scheme.
-            let authorization = if secret.starts_with("lin_oauth_") {
-                format!("Bearer {secret}")
-            } else {
-                secret.clone()
-            };
+            let filter = scopes::linear_scoped(linear_filter(query, mine_only), link);
             let body = json!({
                 "query": LINEAR_QUERY,
-                "variables": { "first": PAGE_SIZE, "filter": linear_filter(query, mine_only) },
+                "variables": { "first": PAGE_SIZE, "filter": filter },
             });
             Ok(HttpRequest {
                 method: "POST",
@@ -246,23 +252,15 @@ pub fn search_request(
             } else {
                 "/rest/api/2/search"
             };
+            let jql = if raw_jql && !query.is_empty() {
+                query.to_string()
+            } else {
+                scopes::jira_scoped(jql(query, mine_only), link)
+            };
             let url = format!(
                 "{site}{path}?jql={}&maxResults={PAGE_SIZE}&fields=summary,description,status,priority",
-                percent_encode(&if raw_jql && !query.is_empty() { query.to_string() } else { jql(query, mine_only) })
+                percent_encode(&jql)
             );
-            let user = connection.username.as_deref().unwrap_or("").trim();
-            let authorization = if user.is_empty() {
-                ensure!(
-                    connection.auth == TrackerAuth::ApiKey,
-                    "Enter the Jira username."
-                );
-                format!("Bearer {}", connection.secret) // Data Center personal access token
-            } else {
-                format!(
-                    "Basic {}",
-                    base64(format!("{user}:{}", connection.secret).as_bytes())
-                )
-            };
             Ok(HttpRequest {
                 method: "GET",
                 url,
@@ -278,7 +276,10 @@ pub fn search_request(
             // `MOB-42`; the search needs two characters, so an empty query
             // lists the user's own tasks instead.
             let api = connection.peshbar_api();
-            let url = if query.chars().count() < 2 && issue_key(query).is_none() {
+            let url = if let Some(url) = scopes::peshbar_project_tasks(&api, link, query, mine_only)
+            {
+                url
+            } else if query.chars().count() < 2 && issue_key(query).is_none() {
                 format!("{api}/api/me/tasks")
             } else {
                 let query = issue_key(query)
@@ -286,19 +287,49 @@ pub fn search_request(
                     .unwrap_or_else(|| query.to_string());
                 format!("{api}/api/search?q={}", percent_encode(&query))
             };
+            let mut headers = vec![
+                ("Accept".into(), "application/json".into()),
+                ("Authorization".into(), authorization),
+            ];
+            headers.extend(scopes::peshbar_headers(link));
             Ok(HttpRequest {
                 method: "GET",
                 url,
-                headers: vec![
-                    ("Accept".into(), "application/json".into()),
-                    (
-                        "Authorization".into(),
-                        format!("Bearer {}", connection.secret),
-                    ),
-                ],
+                headers,
                 body: None,
             })
         }
+    }
+}
+
+/// The `Authorization` header a connection sends, whatever it asks for.
+fn authorization(connection: &Connection) -> Result<String> {
+    ensure!(
+        !connection.secret.is_empty(),
+        "No saved credentials for “{}”.",
+        connection.name
+    );
+    let secret = &connection.secret;
+    match connection.kind {
+        // Personal keys go in raw; OAuth tokens need the Bearer scheme.
+        TrackerKind::Linear if secret.starts_with("lin_oauth_") => Ok(format!("Bearer {secret}")),
+        TrackerKind::Linear => Ok(secret.clone()),
+        TrackerKind::Jira => {
+            let user = connection.username.as_deref().unwrap_or("").trim();
+            if user.is_empty() {
+                ensure!(
+                    connection.auth == TrackerAuth::ApiKey,
+                    "Enter the Jira username."
+                );
+                Ok(format!("Bearer {secret}")) // Data Center personal access token
+            } else {
+                Ok(format!(
+                    "Basic {}",
+                    base64(format!("{user}:{secret}").as_bytes())
+                ))
+            }
+        }
+        TrackerKind::Peshbar => Ok(format!("Bearer {secret}")),
     }
 }
 

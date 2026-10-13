@@ -69,7 +69,11 @@ try {
       if (cmd === "review_brief") return "Review the login changes. Tests pass.";
       if (cmd === "review_create") { sessions.push({ id: "review", project_id: "project", title: "Review: Fix login", agent: "codex", provider_id: "", started: false, running: false, review_of: "builder" }); return "review"; }
       if (cmd === "review_builder") return "builder";
-      if (cmd === "integrations_list") return [{ id: "linear", kind: "linear", auth: "mcp", name: "Linear MCP", has_secret: false }, { id: "peshbar", kind: "peshbar", auth: "apiKey", name: "Peshbar", has_secret: true }];
+      if (cmd === "integrations_list") return [{ id: "linear", kind: "linear", auth: "mcp", name: "Linear MCP", has_secret: false, levels: ["Team", "Project"] }, { id: "peshbar", kind: "peshbar", auth: "apiKey", name: "Peshbar", has_secret: true, levels: ["Workspace", "Project"] }];
+      if (cmd === "project_link_get") return window.links?.[args.projectId] ?? null;
+      if (cmd === "project_link_save") { (window.links ??= {})[args.projectId] = args.link; return null; }
+      if (cmd === "integration_scopes") return args.parent ? [{ id: "3", name: "Amir cargo", key: "AMR" }] : [{ id: "9", name: "Tojiron" }, { id: "4", name: "Peshbar" }, { id: "5", name: "Logistics" }];
+      if (cmd === "issues_search") return [{ key: "AMR-1", title: "Weigh parcels at intake", details: "", origin: "management-api.peshbar.com", status: "To do" }];
       if (cmd === "issues_parse_keys") return [{ key: "ENG-7", title: "Test imported task", details: "", origin: "linear:test" }];
       if (cmd === "issues_import") {
         tasks.push({ id: "task", project_id: "project", title: "ENG-7: Test imported task", details: "", findings: "", agent: args.options.agent, model: args.options.model, status: "queued", mode: "none", auto_review: false, source: { tracker: "linear", key: "ENG-7", origin: "linear:test" } });
@@ -818,9 +822,37 @@ try {
   await page.locator('.project-row .project-icon__dot').first().waitFor();
   await page.locator('[data-proj-select="default_agent"]').selectOption("codex");
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.default_agent === "codex"));
-  if (shots) await page.screenshot({ path: `${shots}/project-settings.png`, fullPage: true });
+  // Each project imports from its own workspace and project: the pickers
+  // fill from the connection, each one narrowing the next.
+  await page.locator("#link-connection").selectOption("peshbar");
+  await page.locator('#link-workspace option[value="4"]').waitFor({ state: "attached" });
+  assert.deepEqual(await page.locator(".pref-row__title").filter({ hasText: /^(Workspace|Project)$/ }).allTextContents(), ["Workspace"]);
+  await page.locator("#link-workspace").selectOption("4");
+  await page.locator('#link-project option[value="3"]').waitFor({ state: "attached" });
+  await page.locator("#link-project").selectOption("3");
+  await page.waitForFunction(() => window.links?.project?.project?.name === "Amir cargo");
+  assert.deepEqual(await page.evaluate(() => window.links.project), {
+    connection_id: "peshbar",
+    workspace: { id: "4", name: "Peshbar" },
+    project: { id: "3", name: "Amir cargo", key: "AMR" },
+  });
+  if (shots) {
+    await page.locator("#link-connection").scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `${shots}/project-link.png` });
+  }
   await page.locator('[data-action="close-project-settings"]').click();
   await page.locator(".header").waitFor();
+  // Import tasks opens on the linked connection and searches only there.
+  await page.locator('[data-tab="tasks"]').click();
+  await page.locator('[data-action="import"]').click();
+  await page.locator(".field__note", { hasText: "Searching in Peshbar › Amir cargo." }).waitFor();
+  assert.equal(await page.locator("#imp-connection").inputValue(), "peshbar");
+  await page.locator(".import__row", { hasText: "Weigh parcels at intake" }).waitFor();
+  if (shots) await page.screenshot({ path: `${shots}/import-linked.png` });
+  assert.equal(await page.evaluate(() => window.checkCalls.findLast((c) => c.cmd === "issues_search").args.projectId), "project");
+  await page.keyboard.press("Escape");
+  // Unlinked again, the import is back to the whole connection.
+  await page.evaluate(() => { window.links = {}; });
 
   // Activity: a bell with the unread count; opening the feed reads it.
   await page.locator(".bell__badge", { hasText: "2" }).waitFor();
@@ -930,7 +962,7 @@ try {
   await page.waitForFunction(() => window.savedSettings.notifications === true);
   await page.locator("#settings-search").fill("jira");
   assert.equal(await page.locator(".prefs__item").count(), 1, "search narrows the sections");
-  await page.locator('[data-settings-section="Linear & Jira"]').click();
+  await page.locator('[data-settings-section="Integrations"]').click();
   await page.locator(".pref-row", { hasText: "Linear MCP" }).waitFor();
   // Peshbar sits beside them: a token connection, added with its API URL.
   await page.locator(".pref-row", { hasText: "Peshbar · API token" }).waitFor();

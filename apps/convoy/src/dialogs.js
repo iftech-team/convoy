@@ -798,7 +798,7 @@ function macosImport(dialog) {
     [report.tasks, "task"],
     [report.specs, "spec"],
     [report.quick_commands, "quick command"],
-    [report.connections, "Linear or Jira connection"],
+    [report.connections, "integration"],
     [report.activity, "activity event", "activity events"],
   ]
     .filter(([count]) => count > 0)

@@ -157,6 +157,11 @@ impl Storage {
         self.root.join("integrations.json")
     }
 
+    /// Which workspace and project each project imports from.
+    pub fn integration_links(&self) -> PathBuf {
+        self.root.join("integration-links.json")
+    }
+
     /// Scheduled automations, kept apart from the workspace file, which the
     /// macOS app rewrites without them.
     pub fn automations(&self) -> PathBuf {

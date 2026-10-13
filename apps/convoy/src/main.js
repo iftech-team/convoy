@@ -1691,6 +1691,7 @@ app.addEventListener("input", (event) => {
 });
 
 app.addEventListener("change", async (event) => {
+  if (state.page === "project" && onLinkChange(event.target)) return;
   if (automations.onChange(event.target)) return;
   if (skills.onChange(event.target)) return;
   if (usage.onChange(event.target)) return;
@@ -2146,6 +2147,7 @@ async function reconnectProject() {
 /// Project settings is a page in the main area, as on macOS.
 async function openProjectSettings() {
   if (!(await reloadProjectDraft())) return;
+  await loadProjectLink();
   const icon = state.projectDraft.icon ?? "";
   state.iconTab = icon.startsWith("sf:") ? "symbol" : /^(gh|img):/.test(icon) ? "image" : "emoji";
   state.page = "project";
@@ -2159,7 +2161,75 @@ async function openProjectSettings() {
 async function reloadProjectDraft() {
   const detail = await call("project_detail", { id: state.projectId });
   if (!detail) return false;
-  state.projectDraft = { ...project(), ...detail };
+  // The link is read on its own, so a field saved elsewhere keeps it.
+  const previous = state.projectDraft?.id === state.projectId ? state.projectDraft : null;
+  state.projectDraft = { ...project(), ...detail, connections: previous?.connections, link: previous?.link };
+  return true;
+}
+
+// ------------------------------------------------------- integration link --
+
+/// The connections, the project's link to one of them, and the workspaces
+/// and projects it can narrow to.
+async function loadProjectLink() {
+  const id = state.projectDraft.id;
+  const [connections, link] = await Promise.all([
+    call("integrations_list"),
+    call("project_link_get", { projectId: id }),
+  ]);
+  if (state.projectDraft?.id !== id) return;
+  state.projectDraft.connections = connections ?? [];
+  state.projectDraft.link = link ?? null;
+  state.linkLevels = {};
+  await loadLinkLevels();
+}
+
+const linkConnection = () =>
+  state.projectDraft?.connections?.find((item) => item.id === state.projectDraft.link?.connection_id);
+
+/// Reads whichever level lists the link needs and does not have yet.
+async function loadLinkLevels() {
+  const link = state.projectDraft?.link;
+  const connection = linkConnection();
+  if (!link || !connection || connection.auth === "mcp") return render();
+  const levels = (state.linkLevels ??= {});
+  const read = async (slot, owner, parent) => {
+    if (levels[slot]?.for === owner) return;
+    levels[slot] = { for: owner, loading: true, items: [] };
+    render();
+    const answer = await attempt("integration_scopes", { connectionId: connection.id, parent });
+    if (levels[slot]?.for !== owner) return;
+    levels[slot] = answer.ok ? { for: owner, items: answer.value } : { for: owner, items: [], error: answer.error };
+  };
+  await read("workspaces", connection.id, null);
+  if (link.workspace && connection.levels[1]) await read("projects", `${connection.id}:${link.workspace.id}`, link.workspace);
+  render();
+}
+
+async function saveProjectLink(link) {
+  const projectId = state.projectDraft?.id;
+  if (!projectId || !(await done("project_link_save", { projectId, link }))) return;
+  state.projectDraft.link = link;
+  await loadLinkLevels();
+}
+
+/// The three pickers on the project page: connection, then workspace, then
+/// project, each emptying the ones below it.
+function onLinkChange(field) {
+  const link = state.projectDraft?.link;
+  const pick = (slot) => state.linkLevels?.[slot]?.items.find((item) => item.id === field.value) ?? null;
+  let next;
+  if (field.id === "link-connection") {
+    state.linkLevels = {};
+    next = field.value ? { connection_id: field.value, workspace: null, project: null } : null;
+  } else if (field.id === "link-workspace" && link) {
+    next = { ...link, workspace: pick("workspaces"), project: null };
+  } else if (field.id === "link-project" && link) {
+    next = { ...link, project: pick("projects") };
+  } else {
+    return false;
+  }
+  saveProjectLink(next);
   return true;
 }
 
@@ -3388,7 +3458,7 @@ function paletteEntries() {
     ["Previous section", "", "previousTab"],
     ["New specification", "", "newSpec"],
     ["New task", "Queue work for an agent in the current project", "newTask"],
-    ["Import Linear or Jira issues", "As tasks in the current project", "importIssues"],
+    ["Import tasks", "From an integration into the current project", "importIssues"],
     ["Show project folder", "", "reveal"],
     ["Copy project path", "", "copyPath"],
     ["Toggle keep awake", "", "wake"],

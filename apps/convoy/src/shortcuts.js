@@ -49,7 +49,7 @@ export const SHORTCUTS = [
   ["openFolder", "mod+o", "Open folder", "Project"],
   ["newTask", "mod+shift+n", "New task", "Project"],
   ["newSpec", "mod+alt+n", "New specification", "Project"],
-  ["importIssues", "mod+shift+i", "Import Linear or Jira issues", "Project"],
+  ["importIssues", "mod+shift+i", "Import tasks", "Project"],
   ["sessionsTab", "mod+alt+1", "Sessions", "Project"],
   ["reviewsTab", "mod+alt+2", "Reviews", "Project"],
   ["specsTab", "mod+alt+3", "Specs", "Project"],

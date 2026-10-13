@@ -44,6 +44,60 @@ const select = (key, options, selected) =>
      ${options.map(([value, name]) => `<option value="${escape(value)}"${value === selected ? " selected" : ""}>${escape(name)}</option>`).join("")}
    </select>`;
 
+const TRACKERS = { linear: "Linear", jira: "Jira", peshbar: "Peshbar" };
+
+/// One level's picker: what the tracker listed, the saved choice even when
+/// the list could not be read, and "Any" for not narrowing.
+function levelPicker(id, level, chosen, any) {
+  const items = level?.items ?? [];
+  const options = [["", any], ...items.map((item) => [item.id, item.key ? `${item.name} · ${item.key}` : item.name])];
+  if (chosen && !items.some((item) => item.id === chosen.id)) options.push([chosen.id, chosen.name]);
+  const busy = level?.loading;
+  return `<select class="pref-select" id="${id}"${busy ? " disabled" : ""}>
+      ${busy ? `<option>${escape(t("Loading…"))}</option>` : options.map(([value, name]) => `<option value="${escape(value)}"${value === (chosen?.id ?? "") ? " selected" : ""}>${escape(name)}</option>`).join("")}
+    </select>`;
+}
+
+/// Where this project imports tasks from: a connection, and in it a
+/// workspace and a project. The import searches only there.
+function integration(project) {
+  const connections = project.connections ?? [];
+  const link = project.link;
+  const current = connections.find((item) => item.id === link?.connection_id);
+  const levels = state.linkLevels ?? {};
+  if (!connections.length) {
+    return groupBox(
+      t("Integration"),
+      row(t("No integrations yet"), t("Add Linear, Jira or Peshbar, then link this project to a workspace in it."), button({ label: t("Integrations…"), action: "integrations" })),
+    );
+  }
+  const [first, second] = current?.levels ?? [];
+  const failure = levels.workspaces?.error ?? levels.projects?.error;
+  const rows = [
+    row(
+      t("Import from"),
+      "",
+      `<select class="pref-select" id="link-connection">
+         ${[["", t("Not linked")], ...connections.map((item) => [item.id, `${item.name} · ${TRACKERS[item.kind] ?? item.kind}`])]
+           .map(([value, name]) => `<option value="${escape(value)}"${value === (link?.connection_id ?? "") ? " selected" : ""}>${escape(name)}</option>`)
+           .join("")}
+       </select>`,
+    ),
+  ];
+  if (current?.auth === "mcp") {
+    rows.push(row(t("Read by the agent"), t("An MCP connection is read through the agent's own server; there is nothing to narrow here."), ""));
+  } else if (current) {
+    rows.push(row(t(first), "", levelPicker("link-workspace", levels.workspaces, link.workspace, t("Any"))));
+    if (second && link.workspace) rows.push(row(t(second), "", levelPicker("link-project", levels.projects, link.project, t("Any"))));
+    if (failure) rows.push(`<div class="pref-block"><div class="pref-row__detail pref-row__detail--error">${escape(failure)}</div></div>`);
+  }
+  return groupBox(
+    t("Integration"),
+    rows.join(""),
+    t("Import tasks searches only here, and opens on this connection. Each project keeps its own link."),
+  );
+}
+
 function identity(project) {
   const tab = state.iconTab ?? "emoji";
   const tile = (value, inner, title) => `
@@ -184,6 +238,7 @@ export function projectSettingsPage() {
              </div>
            </div>`,
         )}
+        ${integration(project)}
         ${projectSkills(project.id)}
         ${groupBox(
           t("Quick commands for this project"),
