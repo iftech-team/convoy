@@ -809,7 +809,85 @@ async fn planning_checks(app: &Rc<convoy_gtk::state::App>) {
         "the task was not accepted",
     );
 
+    // Tasks sit in a group per status: every task that is not running drags,
+    // and every group but Running takes a drop.
+    let page = convoy_gtk::planning_ui::overview(
+        app,
+        &adw::Dialog::new(),
+        &adw::NavigationView::new(),
+        &project,
+    );
+    let draggable = app
+        .workspace
+        .borrow()
+        .state()
+        .tasks
+        .iter()
+        .filter(|other| other.project_id == project && other.status != TaskStatus::Building)
+        .count();
+    let sources = controllers::<gtk::DragSource>(page.upcast_ref());
+    check(
+        "each task row can be dragged",
+        sources == draggable,
+        format!("{sources} drag sources for {draggable} tasks"),
+    );
+    let targets = controllers::<gtk::DropTarget>(page.upcast_ref());
+    check(
+        "every status but Running takes a dropped task",
+        targets == 6,
+        format!("{targets} drop targets"),
+    );
+
+    // A drop sets the group's status; onto its own group it does nothing,
+    // and the core still refuses Running.
+    use convoy_gtk::planning_ui::move_task;
+    let status_of = || {
+        app.workspace
+            .borrow()
+            .state()
+            .tasks
+            .iter()
+            .find(|other| other.id == task.id)
+            .map(|other| other.status)
+    };
+    check(
+        "a drop onto the task's own status changes nothing",
+        matches!(move_task(app, &task.id, TaskStatus::Done), Ok(false)),
+        "it reported a change",
+    );
+    let moved = move_task(app, &task.id, TaskStatus::Queued);
+    check(
+        "a drop onto another status moves the task there",
+        matches!(moved, Ok(true)) && status_of() == Some(TaskStatus::Queued),
+        format!("{:?}", status_of()),
+    );
+    check(
+        "a task cannot be dropped into Running",
+        move_task(app, &task.id, TaskStatus::Building).is_err()
+            && status_of() == Some(TaskStatus::Queued),
+        format!("{:?}", status_of()),
+    );
+    move_task(app, &task.id, TaskStatus::Done).expect("back to done");
+
     settle(50).await;
+}
+
+/// How many controllers of one kind `root` and everything under it carry.
+fn controllers<T: IsA<gtk::EventController>>(root: &gtk::Widget) -> usize {
+    let mut count = 0;
+    let mut pending = vec![root.clone()];
+    while let Some(widget) = pending.pop() {
+        let list = widget.observe_controllers();
+        count += (0..list.n_items())
+            .filter(|index| list.item(*index).and_downcast::<T>().is_some())
+            .count();
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            child = current.next_sibling();
+            pending.push(current);
+        }
+    }
+    count
 }
 
 fn queue_ui_running(app: &Rc<convoy_gtk::state::App>, project: &str) -> bool {

@@ -30,7 +30,7 @@ pub fn open(app: &Rc<App>) {
     dialog.present(Some(&app.window));
 }
 
-fn overview(
+pub fn overview(
     app: &Rc<App>,
     dialog: &adw::Dialog,
     navigation: &adw::NavigationView,
@@ -118,45 +118,25 @@ fn overview(
                 .build(),
         );
     }
-    for task in &project_tasks {
-        let row = adw::ActionRow::builder()
-            .title(&task.title)
-            .subtitle(format!(
-                "{} · {}{}",
-                task.status.as_str(),
-                match task.mode {
-                    PublishMode::None => "no publishing",
-                    PublishMode::Pr => "pull request",
-                    PublishMode::Push => "push",
-                },
-                task.last_error
-                    .as_deref()
-                    .map(|error| format!(" · {error}"))
-                    .unwrap_or_default()
-            ))
-            .activatable(true)
-            .build();
-        row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
-        row.connect_activated({
-            let app = app.clone();
-            let navigation = navigation.clone();
-            let dialog = dialog.clone();
-            let task = task.clone();
-            let project_id = project_id.to_string();
-            let specs = project_specs.clone();
-            move |_| {
-                navigation.push(&task_page(
-                    &app,
-                    &dialog,
-                    &navigation,
-                    &project_id,
-                    &specs,
-                    Some(task.clone()),
-                ))
-            }
-        });
-        tasks.add(&row);
-    }
+    let groups: Vec<adw::PreferencesGroup> = if project_tasks.is_empty() {
+        Vec::new()
+    } else {
+        STATUSES
+            .iter()
+            .map(|&(status, label)| {
+                status_group(
+                    app,
+                    dialog,
+                    navigation,
+                    project_id,
+                    &project_specs,
+                    &project_tasks,
+                    status,
+                    label,
+                )
+            })
+            .collect()
+    };
     let new_task = gtk::Button::with_label("New task");
     new_task.connect_clicked({
         let app = app.clone();
@@ -215,6 +195,9 @@ fn overview(
 
     page.add(&specs);
     page.add(&tasks);
+    for group in &groups {
+        page.add(group);
+    }
     page.add(&queue);
 
     let toolbar = adw::ToolbarView::new();
@@ -224,6 +207,170 @@ fn overview(
         .title("Specs & tasks")
         .child(&toolbar)
         .build()
+}
+
+/// The task statuses in board order, as the Tauri client shows them.
+const STATUSES: [(TaskStatus, &str); 7] = [
+    (TaskStatus::Queued, "Queued"),
+    (TaskStatus::Building, "Running"),
+    (TaskStatus::Review, "Needs review"),
+    (TaskStatus::Pr, "Pull request"),
+    (TaskStatus::Changes, "Needs changes"),
+    (TaskStatus::Done, "Done"),
+    (TaskStatus::Failed, "Failed"),
+];
+
+/// One status and its tasks. A task row drags onto another status group to
+/// take that status; Running only fills from the queue or a prepared
+/// session, so it takes no drops, and a running task cannot be dragged.
+#[allow(clippy::too_many_arguments)]
+fn status_group(
+    app: &Rc<App>,
+    dialog: &adw::Dialog,
+    navigation: &adw::NavigationView,
+    project_id: &str,
+    specs: &[Spec],
+    tasks: &[Task],
+    status: TaskStatus,
+    label: &str,
+) -> adw::PreferencesGroup {
+    let members: Vec<&Task> = tasks.iter().filter(|task| task.status == status).collect();
+    let group = adw::PreferencesGroup::builder()
+        .title(format!("{label} · {}", members.len()))
+        .build();
+    if members.is_empty() {
+        let placeholder = adw::ActionRow::builder()
+            .title(if status == TaskStatus::Building {
+                "Nothing running"
+            } else {
+                "Drag a task here"
+            })
+            .build();
+        placeholder.add_css_class("dim-label");
+        group.add(&placeholder);
+    }
+    for task in members {
+        let row = task_row(app, dialog, navigation, project_id, specs, task);
+        group.add(&row);
+    }
+    if status != TaskStatus::Building {
+        let target = gtk::DropTarget::new(glib::Type::STRING, gtk::gdk::DragAction::MOVE);
+        target.connect_drop({
+            let app = app.clone();
+            let dialog = dialog.clone();
+            let navigation = navigation.clone();
+            let project_id = project_id.to_string();
+            move |_, value, _, _| {
+                let Ok(id) = value.get::<String>() else {
+                    return false;
+                };
+                match move_task(&app, &id, status) {
+                    Ok(false) => false,
+                    Ok(true) => {
+                        app.sync();
+                        // Rebuilt once the drop has finished: the page being
+                        // replaced holds the target that is reporting it.
+                        let app = app.clone();
+                        let dialog = dialog.clone();
+                        let navigation = navigation.clone();
+                        let project_id = project_id.clone();
+                        glib::idle_add_local_once(move || {
+                            navigation.replace(&[overview(
+                                &app,
+                                &dialog,
+                                &navigation,
+                                &project_id,
+                            )]);
+                        });
+                        true
+                    }
+                    Err(error) => {
+                        app.error(error);
+                        false
+                    }
+                }
+            }
+        });
+        group.add_controller(target);
+    }
+    group
+}
+
+fn task_row(
+    app: &Rc<App>,
+    dialog: &adw::Dialog,
+    navigation: &adw::NavigationView,
+    project_id: &str,
+    specs: &[Spec],
+    task: &Task,
+) -> adw::ActionRow {
+    let row = adw::ActionRow::builder()
+        .title(&task.title)
+        .subtitle(format!(
+            "{}{}",
+            match task.mode {
+                PublishMode::None => "no publishing",
+                PublishMode::Pr => "pull request",
+                PublishMode::Push => "push",
+            },
+            task.last_error
+                .as_deref()
+                .map(|error| format!(" · {error}"))
+                .unwrap_or_default()
+        ))
+        .activatable(true)
+        .build();
+    row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+    row.connect_activated({
+        let app = app.clone();
+        let navigation = navigation.clone();
+        let dialog = dialog.clone();
+        let task = task.clone();
+        let project_id = project_id.to_string();
+        let specs = specs.to_vec();
+        move |_| {
+            navigation.push(&task_page(
+                &app,
+                &dialog,
+                &navigation,
+                &project_id,
+                &specs,
+                Some(task.clone()),
+            ))
+        }
+    });
+    if task.status != TaskStatus::Building {
+        let source = gtk::DragSource::builder()
+            .actions(gtk::gdk::DragAction::MOVE)
+            .content(&gtk::gdk::ContentProvider::for_value(&task.id.to_value()))
+            .build();
+        // The row itself follows the pointer.
+        source.connect_drag_begin(|source, _| {
+            if let Some(widget) = source.widget() {
+                source.set_icon(Some(&gtk::WidgetPaintable::new(Some(&widget))), 0, 0);
+            }
+        });
+        row.add_controller(source);
+    }
+    row
+}
+
+/// What dropping a task on a status group does: sets that status, or nothing
+/// when the task already has it. Errors are the core's own refusals, such as
+/// accepting a task whose specification is not approved.
+pub fn move_task(app: &App, id: &str, status: TaskStatus) -> convoy_core::Result<bool> {
+    let mut workspace = app.workspace.borrow_mut();
+    let current = workspace
+        .state()
+        .tasks
+        .iter()
+        .find(|task| task.id == id)
+        .map(|task| task.status);
+    if current.is_none_or(|current| current == status) {
+        return Ok(false);
+    }
+    workspace.set_task_status(id, status)?;
+    Ok(true)
 }
 
 fn field(title: &str, value: &str, lines: i32) -> (adw::PreferencesGroup, gtk::TextView) {
