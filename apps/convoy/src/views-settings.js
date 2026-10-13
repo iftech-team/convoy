@@ -18,7 +18,7 @@ export const SECTIONS = [
   ["Terminal", "terminal", ["font", "size", "scrollback", "lines"]],
   ["Agents", "sparkles", ["claude", "codex", "default agent", "chat", "terminal", "view", "yolo", "permissions", "skip", "review", "template", "brief", "hibernate", "idle", "sleep"]],
   ["Accounts", "person", ["account", "profile", "login", "sign in", "claude", "codex"]],
-  ["Linear & Jira", "link", ["linear", "jira", "atlassian", "issues", "import", "api key", "token", "mcp", "integrations"]],
+  ["Linear & Jira", "link", ["linear", "jira", "atlassian", "peshbar", "issues", "import", "api key", "token", "mcp", "integrations"]],
   ["Quick Commands", "bolt", ["prompt", "command", "snippet", "quick"]],
   ["Skills", "book", ["skill", "skills", "instructions", "system prompt", "template", "markdown", "навык"]],
   ["Git", "git", ["branch", "worktree", "setup", "shared", "location"]],
@@ -431,13 +431,13 @@ function accounts() {
 function integrations() {
   const connections = state.integrations ?? [];
   const auth = (item) =>
-    item.auth === "mcp" ? t("Agent MCP server") : item.auth === "password" ? t("Login & password") : item.kind === "jira" ? t("API token") : t("API key");
+    item.auth === "mcp" ? t("Agent MCP server") : item.auth === "password" ? t("Login & password") : item.kind === "linear" ? t("API key") : t("API token");
   const rows = connections.length
     ? connections
         .map((item) =>
           row(
             item.name,
-            [item.kind === "jira" ? "Jira" : "Linear", auth(item), item.site, item.username].filter(Boolean).join(" · "),
+            [{ jira: "Jira", peshbar: "Peshbar" }[item.kind] ?? "Linear", auth(item), item.site, item.username].filter(Boolean).join(" · "),
             `${button({ label: t("Edit"), data: { "conn-edit": item.id } })}
              ${button({ icon: "trash", kind: "quiet", data: { "conn-remove": item.id }, title: t("Remove") })}`,
           ),
@@ -453,6 +453,7 @@ function integrations() {
     <div class="pref-actions">
       ${button({ label: t("Add {name}", { name: "Linear" }), icon: "plus", data: { "conn-add": "linear" } })}
       ${button({ label: t("Add {name}", { name: "Jira" }), icon: "plus", data: { "conn-add": "jira" } })}
+      ${button({ label: t("Add {name}", { name: "Peshbar" }), icon: "plus", data: { "conn-add": "peshbar" } })}
     </div>`;
 }
 

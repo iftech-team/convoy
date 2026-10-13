@@ -472,3 +472,85 @@ fn real_agents_chat_approve_and_finish_a_turn() {
         assert!(written.contains("ok"), "{agent:?} wrote {written:?}");
     }
 }
+
+/// A saved Peshbar connection reaches every launch as an MCP server: Claude
+/// through an owner-only `--mcp-config` file, Codex through `-c` overrides
+/// and an environment variable. The token is never on the command line.
+#[cfg(unix)]
+#[test]
+fn a_peshbar_connection_hands_every_launch_its_mcp_server() {
+    use convoy_core::integrations::{Connection, Integrations, TrackerAuth, TrackerKind};
+    use convoy_core::session::plan_launch;
+
+    for agent in [Agent::Claude, Agent::Codex] {
+        let (fixture, workspace, id) = prepared(agent, false);
+        let storage = Storage::new(fixture.path().join("state"));
+        let exe = std::path::Path::new("/bin/convoy");
+
+        // Nothing saved: nothing added.
+        let bare = plan_launch(&workspace, &storage, &id, exe).unwrap();
+        assert!(bare.mcp_flags.is_empty());
+        assert!(!bare.spec.args[1].contains("mcp"), "{}", bare.spec.args[1]);
+
+        let mut integrations = Integrations::load(storage.integrations()).unwrap();
+        integrations
+            .save(Connection {
+                id: String::new(),
+                kind: TrackerKind::Peshbar,
+                auth: TrackerAuth::ApiKey,
+                name: "Peshbar".into(),
+                site: None,
+                username: None,
+                secret: "7|token-secret".into(),
+            })
+            .unwrap();
+
+        let terminal = plan_launch(&workspace, &storage, &id, exe).unwrap();
+        let chat = plan_chat_launch(&workspace, &storage, &id, exe).unwrap();
+        for command in [&terminal.spec.args[1], &chat.launch.spec.args[1]] {
+            assert!(!command.contains("token-secret"), "{command}");
+        }
+        match agent {
+            Agent::Claude => {
+                let file = storage.telemetry().join(format!("{id}.mcp.json"));
+                let flag = format!("'--mcp-config' '{}'", file.to_string_lossy());
+                assert!(
+                    terminal.spec.args[1].contains(&flag),
+                    "{}",
+                    terminal.spec.args[1]
+                );
+                assert!(
+                    chat.launch.spec.args[1].contains(&flag),
+                    "{}",
+                    chat.launch.spec.args[1]
+                );
+                let config: Value =
+                    serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap();
+                assert_eq!(
+                    config["mcpServers"]["peshbar"]["url"],
+                    "https://management-api.peshbar.com/mcp"
+                );
+            }
+            Agent::Codex => {
+                let url =
+                    "'-c' 'mcp_servers.peshbar.url=\"https://management-api.peshbar.com/mcp\"'";
+                assert!(
+                    terminal.spec.args[1].contains(url),
+                    "{}",
+                    terminal.spec.args[1]
+                );
+                assert!(
+                    chat.launch.spec.args[1].contains(&format!("{url} '-c' 'mcp_servers.peshbar.bearer_token_env_var=\"CONVOY_PESHBAR_TOKEN\"' 'app-server'")),
+                    "{}",
+                    chat.launch.spec.args[1]
+                );
+                for env in [&terminal.env, &chat.launch.env] {
+                    assert_eq!(
+                        env.get("CONVOY_PESHBAR_TOKEN").map(String::as_str),
+                        Some("7|token-secret")
+                    );
+                }
+            }
+        }
+    }
+}

@@ -1,4 +1,4 @@
-// The Tasks tab, and importing Linear and Jira issues into it.
+// The Tasks tab, and importing Linear, Jira and Peshbar issues into it.
 //
 // Every rule — the request, the parsing, dedupe, the task brief — lives in
 // convoy-core. This file draws state and passes input back, as main.js does.
@@ -23,12 +23,14 @@ const STATUS = {
   failed: ["Failed", "state state--failed"],
 };
 const AUTH = {
-  apiKey: { linear: "API key", jira: "API token" },
-  password: { linear: "Login & password", jira: "Login & password" },
-  mcp: { linear: "Agent MCP server", jira: "Agent MCP server" },
+  apiKey: { linear: "API key", jira: "API token", peshbar: "API token" },
+  password: { linear: "Login & password", jira: "Login & password", peshbar: "Login & password" },
+  mcp: { linear: "Agent MCP server", jira: "Agent MCP server", peshbar: "Agent MCP server" },
 };
-const authOptions = (kind) => (kind === "linear" ? ["apiKey", "mcp"] : ["apiKey", "password", "mcp"]);
-const trackerName = (kind) => (kind === "jira" ? "Jira" : "Linear");
+const authOptions = (kind) => (kind === "jira" ? ["apiKey", "password", "mcp"] : ["apiKey", "mcp"]);
+const trackerName = (kind) => ({ jira: "Jira", peshbar: "Peshbar" })[kind] ?? "Linear";
+// The Peshbar API a connection without a site talks to (integrations::PESHBAR_API).
+const PESHBAR_API = "https://management-api.peshbar.com";
 
 export function installTasks({ state, escape, icons, call, callDone, toast, render, loadWorkspace, start, launch }) {
   state.tasks = [];
@@ -337,7 +339,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
            </label>`
         : `<div class="import__search">
              <input id="imp-query" value="${escape(draft.query)}" spellcheck="false"
-                    placeholder="${escape(current?.kind === "jira" ? (draft.rawJql ? t("JQL, e.g. project in (PAY, OPS)") : t("Text, issue key, or JQL")) : t("Title text or issue key, e.g. ENG-123"))}" />
+                    placeholder="${escape(current?.kind === "jira" ? (draft.rawJql ? t("JQL, e.g. project in (PAY, OPS)") : t("Text, issue key, or JQL")) : current?.kind === "peshbar" ? t("Title text or task key, e.g. MOB-42") : t("Title text or issue key, e.g. ENG-123"))}" />
              ${current?.kind === "jira" ? `<label class="import__check"><input type="checkbox" id="imp-jql"${draft.rawJql ? " checked" : ""} /> JQL</label>` : ""}
              <label class="import__check"><input type="checkbox" id="imp-mine"${draft.mineOnly ? " checked" : ""} /> ${escape(t("Assigned to me"))}</label>
              <button class="button" data-action="import-search"${draft.loading ? " disabled" : ""}>${escape(draft.loading ? t("Searching…") : t("Search"))}</button>
@@ -436,6 +438,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         ${t("Keys, tokens and passwords are kept in {file} beside the workspace, readable by your user only. MCP connections store nothing: the agent fetches each issue with its own MCP server.", { file: "<code>integrations.json</code>" })}
       </p>`,
       `<button class="button" data-dismiss="1">${escape(t("Close"))}</button>
+       <button class="button" data-conn-add="peshbar">${icons.plus} Peshbar</button>
        <button class="button" data-conn-add="jira">${icons.plus} Jira</button>
        <button class="button button--primary" data-conn-add="linear">${icons.plus} Linear</button>`);
   }
@@ -445,7 +448,11 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
     const item = draft.connection;
     const needsSecret = item.auth !== "mcp";
     const help =
-      item.auth === "mcp"
+      item.kind === "peshbar"
+        ? item.auth === "mcp"
+          ? t("Add the Peshbar MCP server to your agent, e.g. claude mcp add --transport http peshbar {url} --header \"Authorization: Bearer <token>\", then import by task key.", { url: `${PESHBAR_API}/mcp` })
+          : t("Create a token in Peshbar → Profile → API and MCP tokens. Convoy also connects the peshbar MCP server to every agent it starts, so tasks can be read and updated from the session.")
+        : item.auth === "mcp"
         ? item.kind === "linear"
           ? t("Add Linear’s MCP server to your agent, e.g. claude mcp add --transport http linear https://mcp.linear.app/mcp, then import by issue key or link.")
           : t("Add the Atlassian MCP server to your agent, then import by issue key or link.")
@@ -454,7 +461,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
           : item.auth === "password"
             ? t("Jira Server / Data Center with basic authentication. Jira Cloud needs an API token instead.")
             : t("Jira Cloud: your account email plus an API token from id.atlassian.com. Data Center: leave the email empty and paste a personal access token.");
-    const secretLabel = item.kind === "linear" ? t("Personal API key") : item.auth === "password" ? t("Password") : t("API token or personal access token");
+    const secretLabel = item.kind === "linear" ? t("Personal API key") : item.kind === "peshbar" ? t("API token") : item.auth === "password" ? t("Password") : t("API token or personal access token");
     const body = `
       <label class="field">
         <span class="field__label">${escape(t("Name"))}</span>
@@ -476,7 +483,12 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
                <span class="field__label">${escape(item.auth === "password" ? t("Username") : t("Email"))}</span>
                <input id="conn-user" value="${escape(item.username || "")}" spellcheck="false" />
              </label>`
-          : ""
+          : item.kind === "peshbar" && needsSecret
+            ? `<label class="field">
+                 <span class="field__label">${escape(t("API URL"))}</span>
+                 <input id="conn-site" value="${escape(item.site || "")}" placeholder="${PESHBAR_API}" spellcheck="false" />
+               </label>`
+            : ""
       }
       ${
         needsSecret

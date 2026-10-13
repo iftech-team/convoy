@@ -69,7 +69,7 @@ try {
       if (cmd === "review_brief") return "Review the login changes. Tests pass.";
       if (cmd === "review_create") { sessions.push({ id: "review", project_id: "project", title: "Review: Fix login", agent: "codex", provider_id: "", started: false, running: false, review_of: "builder" }); return "review"; }
       if (cmd === "review_builder") return "builder";
-      if (cmd === "integrations_list") return [{ id: "linear", kind: "linear", auth: "mcp", name: "Linear MCP", has_secret: false }];
+      if (cmd === "integrations_list") return [{ id: "linear", kind: "linear", auth: "mcp", name: "Linear MCP", has_secret: false }, { id: "peshbar", kind: "peshbar", auth: "apiKey", name: "Peshbar", has_secret: true }];
       if (cmd === "issues_parse_keys") return [{ key: "ENG-7", title: "Test imported task", details: "", origin: "linear:test" }];
       if (cmd === "issues_import") {
         tasks.push({ id: "task", project_id: "project", title: "ENG-7: Test imported task", details: "", findings: "", agent: args.options.agent, model: args.options.model, status: "queued", mode: "none", auto_review: false, source: { tracker: "linear", key: "ENG-7", origin: "linear:test" } });
@@ -919,6 +919,18 @@ try {
   assert.equal(await page.locator(".prefs__item").count(), 1, "search narrows the sections");
   await page.locator('[data-settings-section="Linear & Jira"]').click();
   await page.locator(".pref-row", { hasText: "Linear MCP" }).waitFor();
+  // Peshbar sits beside them: a token connection, added with its API URL.
+  await page.locator(".pref-row", { hasText: "Peshbar · API token" }).waitFor();
+  await page.locator('[data-conn-add="peshbar"]').click();
+  await page.locator('#conn-site[placeholder="https://management-api.peshbar.com"]').waitFor();
+  assert.deepEqual(
+    await page.locator("[data-conn-auth]").evaluateAll((items) => items.map((item) => item.dataset.connAuth)),
+    ["apiKey", "mcp"],
+    "Peshbar connects with a token or the agent's MCP server",
+  );
+  await page.getByText("Convoy also connects the peshbar MCP server").waitFor();
+  await page.keyboard.press("Escape");
+  await page.locator("#conn-site").waitFor({ state: "detached" });
   if (shots) await page.screenshot({ path: `${shots}/settings.png` });
   await page.keyboard.press("Escape");
   await page.locator(".sidebar").waitFor();

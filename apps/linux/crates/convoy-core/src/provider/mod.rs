@@ -4,6 +4,7 @@
 pub mod codex;
 pub mod knowledge;
 pub mod launch;
+pub mod mcp;
 pub mod models;
 pub mod sweep;
 pub mod transcripts;

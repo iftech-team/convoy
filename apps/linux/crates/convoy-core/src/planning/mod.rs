@@ -3,7 +3,7 @@
 
 pub mod markdown;
 
-use crate::integrations::{self, Connection, Issue, IssueSource, TrackerAuth};
+use crate::integrations::{self, Connection, Issue, IssueSource, TrackerAuth, TrackerKind};
 use crate::json::utf16_len;
 use crate::patterns::MODEL;
 use crate::workspace::model::{
@@ -92,6 +92,12 @@ fn source_note(source: &IssueSource) -> String {
             "\nFetch the full {} issue (description, acceptance criteria, comments) with your {} MCP tools before changing anything, and treat it as the task definition. If those tools are not available, say so and stop.",
             source.key,
             source.tracker.label()
+        ));
+    } else if source.tracker == TrackerKind::Peshbar {
+        // Convoy connects the peshbar MCP server itself (provider::mcp).
+        note.push_str(&format!(
+            "\nRead the full task with the peshbar MCP tool get_task (task {}) before changing anything. Its add_comment and change_task_status tools are there when you are asked to report back.",
+            source.key
         ));
     }
     note

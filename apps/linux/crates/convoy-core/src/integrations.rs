@@ -1,4 +1,4 @@
-//! Linear and Jira: saved connections, the search request for each, and the
+//! Linear, Jira and Peshbar: saved connections, the search request for each, and the
 //! parsing of what comes back. Port of the macOS `IssueTrackers.swift`.
 //!
 //! Nothing here touches the network. [`search_request`] describes the HTTP
@@ -12,11 +12,15 @@ use std::path::{Path, PathBuf};
 
 pub const PAGE_SIZE: usize = 50;
 
+/// The Peshbar Management API a connection without a site talks to.
+pub const PESHBAR_API: &str = "https://management-api.peshbar.com";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TrackerKind {
     Linear,
     Jira,
+    Peshbar,
 }
 
 impl TrackerKind {
@@ -24,6 +28,7 @@ impl TrackerKind {
         match self {
             TrackerKind::Linear => "Linear",
             TrackerKind::Jira => "Jira",
+            TrackerKind::Peshbar => "Peshbar",
         }
     }
 }
@@ -44,7 +49,8 @@ pub struct Connection {
     pub kind: TrackerKind,
     pub auth: TrackerAuth,
     pub name: String,
-    /// Jira site, e.g. `https://acme.atlassian.net` or `https://jira.acme.com`.
+    /// Jira site, e.g. `https://acme.atlassian.net` or `https://jira.acme.com`;
+    /// for Peshbar the API, [`PESHBAR_API`] when empty.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub site: Option<String>,
     /// Jira Cloud email or Server username. Empty with a token means a bearer PAT.
@@ -70,6 +76,11 @@ impl Connection {
             url.pop();
         }
         Some(url)
+    }
+
+    /// The Peshbar API this connection talks to: its site, or [`PESHBAR_API`].
+    pub fn peshbar_api(&self) -> String {
+        self.site_url().unwrap_or_else(|| PESHBAR_API.to_string())
     }
 
     /// Atlassian Cloud dropped the v2 search; Server and Data Center only have it.
@@ -143,7 +154,14 @@ fn url_origin(url: &str) -> Option<String> {
 
 /// Which site an issue lives on: from its link, else the connection's Jira
 /// site, else the connection itself (a key typed for MCP with no link).
+/// Peshbar task links carry the workspace slug and the task id rather than the
+/// key, so a Peshbar issue always belongs to its connection's API.
 pub fn origin(issue: &Issue, connection: &Connection) -> String {
+    if connection.kind == TrackerKind::Peshbar {
+        if let Some(origin) = url_origin(&connection.peshbar_api()) {
+            return origin;
+        }
+    }
     issue
         .url
         .as_deref()
@@ -251,6 +269,32 @@ pub fn search_request(
                 headers: vec![
                     ("Accept".into(), "application/json".into()),
                     ("Authorization".into(), authorization),
+                ],
+                body: None,
+            })
+        }
+        TrackerKind::Peshbar => {
+            // A key or text goes to the global search, which also matches
+            // `MOB-42`; the search needs two characters, so an empty query
+            // lists the user's own tasks instead.
+            let api = connection.peshbar_api();
+            let url = if query.chars().count() < 2 && issue_key(query).is_none() {
+                format!("{api}/api/me/tasks")
+            } else {
+                let query = issue_key(query)
+                    .map(|(project, number)| format!("{project}-{number}"))
+                    .unwrap_or_else(|| query.to_string());
+                format!("{api}/api/search?q={}", percent_encode(&query))
+            };
+            Ok(HttpRequest {
+                method: "GET",
+                url,
+                headers: vec![
+                    ("Accept".into(), "application/json".into()),
+                    (
+                        "Authorization".into(),
+                        format!("Bearer {}", connection.secret),
+                    ),
                 ],
                 body: None,
             })
@@ -397,7 +441,62 @@ pub fn parse_issues(kind: TrackerKind, body: &str, site: Option<&str>) -> Result
                 })
                 .collect())
         }
+        TrackerKind::Peshbar => {
+            if let Some(message) = json["message"]
+                .as_str()
+                .filter(|_| json.get("tasks").is_none() && json.get("data").is_none())
+            {
+                bail!("{message}");
+            }
+            // `/api/search` answers `{tasks, projects}`, `/api/me/tasks` `{data}`.
+            let tasks = json
+                .get("tasks")
+                .or_else(|| json.get("data"))
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            Ok(tasks
+                .iter()
+                .filter(|task| !task["status"]["is_completed"].as_bool().unwrap_or(false))
+                .filter_map(|task| {
+                    Some(Issue {
+                        key: text(&task["code"])?,
+                        title: text(&task["title"])?,
+                        details: html_text(task["description"].as_str().unwrap_or("")),
+                        url: text(&task["url"]),
+                        status: text(&task["status"]["name"]),
+                        priority: text(&task["priority"]["label"]),
+                        origin: None,
+                    })
+                })
+                .collect())
+        }
     }
+}
+
+/// Plain text from the HTML Peshbar stores descriptions in: block ends become
+/// line breaks, tags go, the common entities are decoded.
+pub fn html_text(html: &str) -> String {
+    static BLOCK: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?i)<br\s*/?>|</(p|div|li|h[1-6]|blockquote|pre)>").unwrap()
+    });
+    static ITEM: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)<li[^>]*>").unwrap());
+    static TAG: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"<[^>]*>").unwrap());
+    static BLANK: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\n{3,}").unwrap());
+    let text = BLOCK.replace_all(html, "\n");
+    let text = ITEM.replace_all(&text, "- ");
+    let text = TAG.replace_all(&text, "");
+    let text = text
+        .replace("&nbsp;", " ")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&");
+    BLANK.replace_all(text.trim(), "\n\n").into_owned()
 }
 
 /// What a failed request tells the user. The body is read first because bad
@@ -597,7 +696,8 @@ impl Integrations {
             } else {
                 ensure!(
                     connection.auth != TrackerAuth::Password,
-                    "Linear has no password login; use an API key."
+                    "{} has no password login; use an API key.",
+                    connection.kind.label()
                 );
             }
         }

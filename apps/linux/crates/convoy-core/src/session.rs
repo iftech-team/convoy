@@ -39,6 +39,9 @@ pub struct LaunchPlan {
     /// instructions about its helpers, then the session's skills. Already in
     /// `spec` for a terminal; a chat passes them its own way.
     pub instructions: Option<String>,
+    /// The flags that hand the agent Convoy's MCP servers (see
+    /// [`crate::provider::mcp`]). Already in `spec` for a terminal.
+    pub mcp_flags: Vec<String>,
 }
 
 /// Why a session's process is no longer running.
@@ -137,6 +140,18 @@ pub fn plan_launch_with(
     // of developer instructions; a second flag would replace the first.
     let instructions =
         crate::skills::combine(&[managing, crate::skills::for_session(storage, &session)?]);
+    // Tracker connections that come with an MCP server. A broken
+    // integrations file must not stop sessions from starting.
+    let connections = crate::integrations::Integrations::load(storage.integrations())
+        .map(|integrations| integrations.connections().to_vec())
+        .unwrap_or_default();
+    let mcp_flags = crate::provider::mcp::flags(
+        session.agent,
+        &crate::provider::mcp::servers(&connections),
+        &storage.telemetry(),
+        &session.id,
+        &mut account.env,
+    )?;
     let settings = workspace.settings();
     let settings_file = match session.agent {
         Agent::Claude if settings.status_hooks || settings.claude_usage => {
@@ -165,6 +180,7 @@ pub fn plan_launch_with(
         &[
             permission_flags(session.agent, workspace.settings()),
             crate::provider::knowledge::flags(session.agent, &storage.knowledge(), &session.id),
+            mcp_flags.clone(),
             instructions
                 .as_deref()
                 .map(|text| helpers::terminal_flags(session.agent, text))
@@ -182,6 +198,7 @@ pub fn plan_launch_with(
         settings_file,
         resume: session.started,
         instructions,
+        mcp_flags,
     })
 }
 
@@ -253,6 +270,7 @@ pub fn plan_chat_launch_with(
                         &storage.knowledge(),
                         &session.id,
                     ),
+                    launch.mcp_flags.clone(),
                     launch
                         .instructions
                         .as_deref()
@@ -265,8 +283,9 @@ pub fn plan_chat_launch_with(
                 claude::ClaudeStream::new(session.provider_id.clone()).with_choice(model, effort),
             ),
         ),
+        // `-c` is a top-level Codex option, so it goes before `app-server`.
         Agent::Codex => (
-            codex::args(),
+            [launch.mcp_flags.clone(), codex::args()].concat(),
             Driver::Codex(codex::CodexClient::new(codex::Options {
                 cwd: launch.directory.to_string_lossy().into_owned(),
                 model: model.map(str::to_string),

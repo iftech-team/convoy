@@ -406,6 +406,32 @@ fn import_creates_tasks_with_per_issue_models_and_skips_duplicates() {
     workspace.prepare_task(&id, None).unwrap();
     let prompt = &workspace.state().sessions.last().unwrap().prompt;
     assert!(prompt.contains("with your Jira MCP tools"));
+
+    // A Peshbar task points the agent at the peshbar server Convoy connects.
+    let peshbar = peshbar("5|abc", None);
+    workspace
+        .import_issues(
+            &project,
+            &peshbar,
+            &manual_issues("MOB-42 Onboarding"),
+            &options,
+        )
+        .unwrap();
+    let id = workspace
+        .state()
+        .tasks
+        .iter()
+        .find(|task| task.title.contains("Onboarding"))
+        .unwrap()
+        .id
+        .clone();
+    workspace.prepare_task(&id, None).unwrap();
+    let prompt = &workspace.state().sessions.last().unwrap().prompt;
+    assert!(prompt.contains("Source issue: Peshbar MOB-42"), "{prompt}");
+    assert!(
+        prompt.contains("peshbar MCP tool get_task (task MOB-42)"),
+        "{prompt}"
+    );
 }
 
 #[test]
@@ -518,4 +544,108 @@ fn editing_an_imported_task_keeps_its_model_until_the_agent_changes() {
     workspace.save_task(input).unwrap();
     assert_eq!(workspace.state().tasks[0].model, None);
     assert_eq!(workspace.state().tasks[0].source, task.source);
+}
+
+fn peshbar(secret: &str, site: Option<&str>) -> Connection {
+    Connection {
+        id: "p".into(),
+        kind: TrackerKind::Peshbar,
+        auth: TrackerAuth::ApiKey,
+        name: "Peshbar".into(),
+        site: site.map(str::to_string),
+        username: None,
+        secret: secret.into(),
+    }
+}
+
+#[test]
+fn peshbar_searches_text_and_keys_and_lists_my_tasks_when_empty() {
+    let connection = peshbar("5|abc", None);
+
+    let text = search_request(&connection, "onboarding screen", false, false).unwrap();
+    assert_eq!(text.method, "GET");
+    assert_eq!(
+        text.url,
+        "https://management-api.peshbar.com/api/search?q=onboarding%20screen"
+    );
+    assert_eq!(text.header("Authorization"), Some("Bearer 5|abc"));
+
+    let key = search_request(&connection, "mob-42", false, false).unwrap();
+    assert!(key.url.ends_with("/api/search?q=MOB-42"), "{}", key.url);
+
+    let empty = search_request(&connection, "", true, false).unwrap();
+    assert_eq!(empty.url, "https://management-api.peshbar.com/api/me/tasks");
+
+    let local = peshbar("5|abc", Some("http://localhost:8000/"));
+    assert_eq!(
+        search_request(&local, "", false, false).unwrap().url,
+        "http://localhost:8000/api/me/tasks"
+    );
+}
+
+#[test]
+fn peshbar_answers_become_open_issues_with_plain_text_details() {
+    let body = r#"{"tasks":[
+        {"code":"MOB-42","title":"Onboarding","description":"<p>Make it <strong>fast</strong> &amp; nice</p><ul><li>one</li><li>two</li></ul>",
+         "url":"https://management.peshbar.com/acme/projects/1/tasks/9","status":{"name":"In progress","is_completed":false},
+         "priority":{"value":"high","label":"High"}},
+        {"code":"MOB-7","title":"Done already","description":null,"status":{"name":"Done","is_completed":true},"priority":{"label":"Low"}}
+    ],"projects":[]}"#;
+    let issues = parse_issues(TrackerKind::Peshbar, body, None).unwrap();
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].key, "MOB-42");
+    assert_eq!(issues[0].details, "Make it fast & nice\n- one\n- two");
+    assert_eq!(issues[0].status.as_deref(), Some("In progress"));
+    assert_eq!(issues[0].priority.as_deref(), Some("High"));
+    assert_eq!(
+        issues[0].url.as_deref(),
+        Some("https://management.peshbar.com/acme/projects/1/tasks/9")
+    );
+
+    // `/api/me/tasks` wraps the list in `data`.
+    let mine = parse_issues(
+        TrackerKind::Peshbar,
+        r#"{"data":[{"code":"WEB-1","title":"Landing"}]}"#,
+        None,
+    )
+    .unwrap();
+    assert_eq!(mine[0].key, "WEB-1");
+
+    let error = parse_issues(
+        TrackerKind::Peshbar,
+        r#"{"message":"Не авторизован."}"#,
+        None,
+    )
+    .unwrap_err();
+    assert_eq!(error.to_string(), "Не авторизован.");
+}
+
+#[test]
+fn a_peshbar_issue_belongs_to_its_connections_api_whatever_its_link() {
+    let connection = peshbar("5|abc", None);
+    let linked = Issue {
+        key: "MOB-42".into(),
+        url: Some("https://management.peshbar.com/acme/projects/1/tasks/9".into()),
+        ..Issue::default()
+    };
+    let typed = Issue {
+        key: "MOB-42".into(),
+        ..Issue::default()
+    };
+    assert_eq!(origin(&linked, &connection), "management-api.peshbar.com");
+    assert_eq!(origin(&typed, &connection), "management-api.peshbar.com");
+}
+
+#[test]
+fn peshbar_needs_a_token_and_has_no_password_login() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut integrations = Integrations::load(dir.path().join("integrations.json")).unwrap();
+    assert!(integrations.save(peshbar("", None)).is_err());
+    let mut password = peshbar("x", None);
+    password.auth = TrackerAuth::Password;
+    assert_eq!(
+        integrations.save(password).unwrap_err().to_string(),
+        "Peshbar has no password login; use an API key."
+    );
+    assert!(integrations.save(peshbar("5|abc", None)).is_ok());
 }

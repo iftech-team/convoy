@@ -94,9 +94,9 @@ Two caveats on the numbers. Both figures come from the same Xvfb setup, where
 there is no GPU and both fall back to software rendering. And on Windows and macOS the web view is WebView2 and WKWebView,
 which are not WebKitGTK — these numbers describe Linux only.
 
-## Tasks and Linear/Jira import
+## Tasks and Linear/Jira/Peshbar import
 
-The Tasks tab lists a project's tasks and imports them from Linear or Jira
+The Tasks tab lists a project's tasks and imports them from Linear, Jira or Peshbar
 (**Linear & Jira…** in the tab or in Settings). Linear connects with a personal
 API key; Jira with an email and API token (Cloud), a personal access token
 (Data Center) or a username and password (Server basic auth). Either can use
@@ -108,6 +108,17 @@ then queue the tasks or run them at once. The same key from two different
 sites is two issues; the same issue is never imported twice into a project.
 Jira queries with symbolic operators (`project=PAY`) are sent as JQL; tick
 **JQL** to send anything else verbatim.
+
+Peshbar (the Peshbar Management task tracker) connects with a personal token
+from its profile page (**API and MCP tokens**), against
+`https://management-api.peshbar.com` unless another API URL is set. Search
+takes text or a task key such as `MOB-42`; an empty search lists your own
+open tasks. A Peshbar token connection also gives every Claude and Codex
+session Convoy starts the Peshbar MCP server as `peshbar`, so the agent can read the
+task, comment and move it between statuses. Claude gets an owner-only
+`--mcp-config` file, and Codex gets `-c mcp_servers.peshbar.*` with the token in
+`CONVOY_PESHBAR_TOKEN`. The token is never put on the command line
+(`convoy-core::provider::mcp`).
 
 Requests, parsing and import rules live in `convoy-core::integrations`.
 Connections are saved in `integrations.json` beside `workspace.json`, created
