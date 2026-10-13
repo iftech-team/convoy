@@ -1564,6 +1564,7 @@ select:disabled {
 .state__dot--idle { background: var(--state-idle); }
 .state__dot--running { background: var(--state-running); }
 .state__dot--review { background: var(--state-review); }
+.state__dot--testing { background: var(--state-testing); }
 .state__dot--open { background: var(--state-open); }
 .state__dot--done { background: var(--state-done); }
 .state__dot--failed { background: var(--state-failed); }
@@ -4313,6 +4314,7 @@ select:disabled {
 
 .task-row__ring--running { border-color: var(--state-running); border-right-color: transparent; }
 .task-row__ring--review { border-color: var(--state-review); }
+.task-row__ring--testing { border-color: var(--state-testing); border-style: dashed; }
 .task-row__ring--open { border-color: var(--state-open); }
 .task-row__ring--done { border-color: var(--state-done); background: var(--state-done); }
 .task-row__ring--failed { border-color: var(--state-failed); background: var(--state-failed); }

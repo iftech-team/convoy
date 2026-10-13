@@ -106,7 +106,9 @@ pub fn transition(workspace: &Workspace, session_id: &str, state: AgentState) ->
         return Transition::None;
     };
     match (state, task.status) {
-        (AgentState::Working, TaskStatus::Review | TaskStatus::Pr) => Transition::Building,
+        (AgentState::Working, TaskStatus::Review | TaskStatus::Pr | TaskStatus::Testing) => {
+            Transition::Building
+        }
         (AgentState::Done, TaskStatus::Building) => Transition::Review,
         _ => Transition::None,
     }

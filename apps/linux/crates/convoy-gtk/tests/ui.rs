@@ -834,7 +834,7 @@ async fn planning_checks(app: &Rc<convoy_gtk::state::App>) {
     let targets = controllers::<gtk::DropTarget>(page.upcast_ref());
     check(
         "every status but Running takes a dropped task",
-        targets == 6,
+        targets == 7,
         format!("{targets} drop targets"),
     );
 

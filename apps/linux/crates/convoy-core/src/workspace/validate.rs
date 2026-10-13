@@ -25,8 +25,8 @@ const SPEC_FIELDS: [&str; 6] = [
     "constraints",
     "plan",
 ];
-const TASK_STATUSES: [&str; 7] = [
-    "queued", "building", "review", "pr", "changes", "done", "failed",
+const TASK_STATUSES: [&str; 8] = [
+    "queued", "building", "review", "pr", "testing", "changes", "done", "failed",
 ];
 const AGENTS: [&str; 2] = ["claude", "codex"];
 const ACTIVITY_KINDS: [&str; 7] = [

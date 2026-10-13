@@ -284,6 +284,7 @@ impl Workspace {
                     TaskStatus::Queued
                         | TaskStatus::Review
                         | TaskStatus::Pr
+                        | TaskStatus::Testing
                         | TaskStatus::Changes
                         | TaskStatus::Done
                         | TaskStatus::Failed

@@ -315,6 +315,7 @@ pub fn task_status(
         "queued" => TaskStatus::Queued,
         "review" => TaskStatus::Review,
         "pr" => TaskStatus::Pr,
+        "testing" => TaskStatus::Testing,
         "changes" => TaskStatus::Changes,
         "done" => TaskStatus::Done,
         "failed" => TaskStatus::Failed,

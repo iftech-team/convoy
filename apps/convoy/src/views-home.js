@@ -94,7 +94,7 @@ export function homeView() {
              ${[
                ["Queued", count("queued")],
                ["Running", count("building")],
-               ["To review", count("review", "pr", "changes")],
+               ["To review", count("review", "pr", "testing", "changes")],
                ["Done", count("done")],
              ]
                .map(([name, value]) => `<button class="home-stat" data-home-tasks="1"><strong>${value}</strong><span>${escape(t(name))}</span></button>`)

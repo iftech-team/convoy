@@ -210,11 +210,12 @@ pub fn overview(
 }
 
 /// The task statuses in board order, as the Tauri client shows them.
-const STATUSES: [(TaskStatus, &str); 7] = [
+const STATUSES: [(TaskStatus, &str); 8] = [
     (TaskStatus::Queued, "Queued"),
     (TaskStatus::Building, "Running"),
     (TaskStatus::Review, "Needs review"),
     (TaskStatus::Pr, "Pull request"),
+    (TaskStatus::Testing, "In testing"),
     (TaskStatus::Changes, "Needs changes"),
     (TaskStatus::Done, "Done"),
     (TaskStatus::Failed, "Failed"),

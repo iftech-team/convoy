@@ -53,6 +53,8 @@ pub enum TaskStatus {
     Review,
     /// Finished, and it opened a pull request: review happens there.
     Pr,
+    /// Being tested: the project's checks and a QA agent, or a person.
+    Testing,
     Changes,
     Done,
     Failed,
@@ -65,6 +67,7 @@ impl TaskStatus {
             TaskStatus::Building => "building",
             TaskStatus::Review => "review",
             TaskStatus::Pr => "pr",
+            TaskStatus::Testing => "testing",
             TaskStatus::Changes => "changes",
             TaskStatus::Done => "done",
             TaskStatus::Failed => "failed",

@@ -14,6 +14,7 @@ const COLUMNS = [
   ["building", "Running", "running"],
   ["review", "Needs review", "review"],
   ["pr", "Pull request", "review"],
+  ["testing", "In testing", "testing"],
   ["changes", "Needs changes", "open"],
   ["done", "Done", "done"],
   ["failed", "Failed", "failed"],
