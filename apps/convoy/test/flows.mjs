@@ -674,8 +674,22 @@ try {
   await page.locator(".toast", { hasText: "Review brief copied" }).waitFor();
   if (await readClipboard() !== null) assert.match(await readClipboard(), /Review the login changes/);
   await page.keyboard.press("Escape");
-  // "Blocked by": the task waits for another, and says so.
+  // A task with a session opens that session on a click; its form is in its
+  // menu.
   await page.locator('[data-tab="tasks"]').click();
+  await page.locator(".task-row", { hasText: "Checkout retries" }).click();
+  await page.locator('.tab-item--selected[data-tab-open="builder"]').waitFor();
+  assert.equal(await page.locator(".modal").count(), 0);
+  // Escape is always the page's, so the macOS window never takes it as
+  // "leave full screen".
+  assert.equal(
+    await page.evaluate(() => !document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))),
+    true,
+  );
+  await page.locator('.project-row [data-project="project"]').click();
+  await page.locator('[data-tab="tasks"]').click();
+  // "Blocked by": the task waits for another, and says so. One that has
+  // never run opens its form.
   await page.locator('.task-row[data-task="task"]').click();
   await page.locator('.modal [data-depends-on]').first().check();
   await page.locator('[data-action="save-task"]').click();

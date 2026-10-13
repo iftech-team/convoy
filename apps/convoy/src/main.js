@@ -1800,7 +1800,18 @@ addEventListener("keydown", async (event) => {
     return findStep({ previous: event.shiftKey });
   }
   if (event.key === "Escape") {
+    // Claimed whatever it does: an Escape the page leaves alone reaches the
+    // macOS window, which takes it to mean leave full screen. It closes a
+    // menu or dialog first; outside one, a search box still clears, as it
+    // would by default.
+    event.preventDefault();
     if (state.menu || state.dialog) return closeDialog();
+    const field = event.target;
+    if (field?.type === "search" && field.value) {
+      field.value = "";
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
     if (state.page === "settings") return closeSettings();
     return;
   }
@@ -2970,10 +2981,16 @@ async function exportSpec(id) {
   }
 }
 
-function openTask(id) {
-  const task = state.planning?.tasks.find((item) => item.id === id);
+/// A click on a task opens its session and resumes the agent there if it
+/// has stopped; a task that has never run opens its form. Editing one that
+/// has run is in its menu.
+async function openTask(id) {
+  const task = findTask(id);
   if (!task) return;
-  openModal({ kind: "task", ...task, skills: task.skills ?? [], skillsTouched: true });
+  const sessionId = task.session_id && anySession(task.session_id) ? task.session_id : null;
+  if (!sessionId) return openModal({ kind: "task", ...task, skills: task.skills ?? [], skillsTouched: true });
+  await openAnywhere(sessionId);
+  if (!isRunning(sessionId)) await startSession(sessionId);
 }
 
 /// Saves the form; with `run`, starts the task straight away, as the macOS
