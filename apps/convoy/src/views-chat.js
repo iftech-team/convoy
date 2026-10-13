@@ -17,7 +17,7 @@ import { icon, icons } from "./icons.js";
 import { highlight, markdown } from "./views-files.js";
 import { helperCards, helperOf } from "./views-helpers.js";
 import { skillsChip } from "./views-skills.js";
-import { missingConversation } from "./terminal.js";
+import { missingConversation, thinOutput } from "./terminal.js";
 
 // ------------------------------------------------------------------ views --
 
@@ -30,12 +30,20 @@ export function viewOf(item) {
   return view === "chat" ? "chat" : "terminal";
 }
 
-/// A stopped terminal session shows its conversation, read from the agent's
-/// own transcript, rather than the last screen it left: Claude clears the
-/// screen on exit, so that screen is little more than a resume hint. A
-/// conversation the agent could not find keeps the terminal and its warning.
+/// A stopped terminal session stays a terminal: what it printed in this
+/// window, or its saved output. Only when there is next to nothing to show
+/// (see `thinOutput`) does its conversation, read from the agent's own
+/// transcript, stand in. A conversation the agent could not find keeps the
+/// terminal and its warning.
 export function shownAsTranscript(item) {
-  return !!item && viewOf(item) === "terminal" && !!item.started && !isRunning(item.id) && !missingConversation(item.id);
+  return (
+    !!item &&
+    viewOf(item) === "terminal" &&
+    !!item.started &&
+    !isRunning(item.id) &&
+    !missingConversation(item.id) &&
+    thinOutput(item.id)
+  );
 }
 
 /// The conversation is read again the next time it is shown: a terminal run

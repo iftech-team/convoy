@@ -264,6 +264,18 @@ export function restore(id, text) {
 
 export const missingConversation = (id) => !!terminals.get(id)?.missing;
 
+/// Whether a stopped session has nothing worth showing as a terminal: it did
+/// not run in this window, and its saved output, once read, is empty or a
+/// line or two such as the agent's resume hint. Only then does the
+/// conversation stand in for it; until the output is read, the terminal
+/// stays.
+export function thinOutput(id) {
+  const entry = terminals.get(id);
+  if (!entry?.restored || entry.live) return false;
+  const lines = (entry.saved ?? "").split("\n").filter((line) => /[\p{L}\p{N}]/u.test(line));
+  return lines.length < 3;
+}
+
 /// Whether the session printed to a terminal since the window opened; a chat
 /// never does.
 export const ranInTerminal = (id) => !!terminals.get(id)?.live;

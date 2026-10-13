@@ -497,7 +497,8 @@ async function showSaved(id) {
   const text = await call("session_output", { id });
   if (text === undefined || isRunning(id)) return;
   terminal.restore(id, text);
-  if (terminal.missingConversation(id)) render();
+  // Read only now: it may turn out too thin to show, or a missing conversation.
+  if (terminal.missingConversation(id) || terminal.thinOutput(id)) render();
 }
 
 /// Home or the Agent Dashboard, with what they show brought up to date.

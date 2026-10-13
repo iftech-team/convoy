@@ -172,7 +172,7 @@ try {
       }
       if (cmd === "worktree_create") return { branch: args.branch, shared_paths: [], setup_command: null, directory: "/fixture/worktrees/x" };
       if (cmd === "plugin:window|set_badge_count") { window.badge = args.value; return null; }
-      if (cmd === "session_output") return { review: "Found: a token refresh race", notes: "No conversation found with session ID 0199" }[args.id] ?? "";
+      if (cmd === "session_output") return { review: "Found: a token refresh race", notes: "No conversation found with session ID 0199", busy: "● Pushed to main as 0fc2782.\n\nWhat changed\n- Sign-up with an emailed code\n- Password reset\n\n❯ " }[args.id] ?? "";
       if (cmd === "session_snapshot") { (window.snapshots ??= {})[args.id] = args.text; return null; }
       if (cmd === "session_recover") {
         sessions.push({ id: "notes-fresh", project_id: "other", title: "Release notes · recovery", agent: "codex", provider_id: "", started: false, running: false, pinned: false, review_of: null });
@@ -1270,19 +1270,32 @@ try {
   const switched = await page.evaluate(() => window.checkCalls.filter((c) => ["session_stop", "session_view", "session_start"].includes(c.cmd) && c.args.id === "chatty").map((c) => [c.cmd, c.args.view]));
   assert.deepEqual(switched, [["session_stop", undefined], ["session_view", "terminal"], ["session_start", undefined]]);
   assert.equal(await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "chat_history" && c.args.id === "chatty").length), 1, "history is read once");
-  // Stopped in the terminal, it shows its conversation read back from the
-  // transcript, without a composer, instead of the screen Claude cleared on
-  // exit; what the terminal run added is read again.
+  // Stopped in the terminal, it stays a terminal: what it printed is still
+  // there, under a line saying it stopped.
   await page.evaluate(() => window.emitTauri("terminal:data", { id: "chatty", data: "working…" }));
   await page.evaluate(() => {
     window.mockSessions.find((item) => item.id === "chatty").running = false;
     window.emitTauri("terminal:exit", { id: "chatty", cause: "stopped", code: 0 });
   });
+  await page.waitForFunction(() => document.querySelector("#terminal-host .xterm-rows")?.textContent.includes("session stopped"));
+  assert.equal(await page.locator("#terminal-host").count(), 1);
+  assert.equal(await page.locator(".chat-slot--readonly").count(), 0);
+  // Opened after a restart, a stopped session shows its saved output as a
+  // terminal; only one with next to nothing saved shows its conversation.
+  await page.evaluate(() => {
+    for (const [id, title] of [["busy", "Email integration"], ["quiet", "Spike"]]) {
+      window.mockSessions.push({ id, project_id: "project", title, agent: "claude", provider_id: `p-${id}`, started: true, running: false, pinned: false, review_of: null });
+    }
+  });
+  await page.locator('[data-action="home"]').first().click();
+  await page.locator('[data-open="busy"]').first().click();
+  await page.waitForFunction(() => document.querySelector("#terminal-host .xterm-rows")?.textContent.includes("Pushed to main as 0fc2782"));
+  assert.equal(await page.locator(".chat-slot--readonly").count(), 0);
+  await page.locator('[data-action="home"]').first().click();
+  await page.locator('[data-open="quiet"]').first().click();
   await page.locator(".session-banner", { hasText: "Saved conversation · read-only" }).waitFor();
   await page.locator(".chat-slot--readonly .chat").waitFor();
   assert.equal(await page.locator(".chat-slot--readonly .chat__composer").isVisible(), false);
-  assert.equal(await page.locator("#terminal-host").count(), 0);
-  await page.waitForFunction(() => window.checkCalls.filter((c) => c.cmd === "chat_history" && c.args.id === "chatty").length === 2);
 
   // ---------------------------------------------------------- approvals inbox --
   // Two chat sessions ask — one never opened in this window — and a terminal
