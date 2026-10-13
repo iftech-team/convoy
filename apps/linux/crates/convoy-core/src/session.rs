@@ -145,9 +145,13 @@ pub fn plan_launch_with(
     let connections = crate::integrations::Integrations::load(storage.integrations())
         .map(|integrations| integrations.connections().to_vec())
         .unwrap_or_default();
+    // The project's link, so a Peshbar server works in the linked workspace.
+    let link = crate::integrations::ProjectLinks::load(storage.integration_links())
+        .ok()
+        .and_then(|links| links.get(&session.project_id).cloned());
     let mcp_flags = crate::provider::mcp::flags(
         session.agent,
-        &crate::provider::mcp::servers(&connections),
+        &crate::provider::mcp::servers(&connections, link.as_ref()),
         &storage.telemetry(),
         &session.id,
         &mut account.env,
