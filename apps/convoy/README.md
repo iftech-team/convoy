@@ -1,7 +1,6 @@
-# Convoy for Windows and Linux
+# Convoy
 
-A Tauri client sharing one design and one codebase across Windows and Linux.
-macOS keeps its native SwiftUI app — it is the design this one follows.
+The Convoy client: one design and one codebase across macOS, Windows and Linux.
 
 ## Why this and not the GTK client
 
@@ -32,7 +31,7 @@ the agent monitor, hibernation, keep-awake, notifications, the activity log and
 a command palette.
 
 The rules behind all of it are `convoy-core`, shared with the GTK client and
-byte-compatible with what the Electron and SwiftUI builds write.
+byte-compatible with what the earlier Electron and SwiftUI builds wrote.
 
 ## The terminal
 

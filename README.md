@@ -2,165 +2,24 @@
 
 **Website and download:** [peshbar.com/convoy](https://peshbar.com/convoy) · **Releases:** [GitHub Releases](https://github.com/iftech-team/convoy/releases) · Part of the [Peshbar](https://peshbar.com) family.
 
-Install the latest build on macOS 14+ with one command (downloads the release, installs to /Applications, clears quarantine):
+Convoy is a workspace for Claude Code and Codex sessions. Sessions and cross-agent reviews come first; Spec Driven Development is optional.
 
-```sh
-curl -fsSL https://peshbar.com/convoy-install.sh | sh
-```
+It is written in Rust on every platform:
 
+- [`apps/linux/crates/convoy-core`](apps/linux/crates/convoy-core) holds the rules, storage, Git, providers and the task queue, with no toolkit dependency.
+- [`apps/convoy`](apps/convoy/README.md) is the client for macOS, Windows and Linux, built with Tauri on top of the core.
+- [`apps/linux`](apps/linux/README.md) also holds the native GTK client for Linux, which shares the same core.
 
-Convoy is a workspace for Claude Code and Codex sessions. The production app is native macOS; a Windows/Linux client built with Tauri lives in [`apps/convoy`](apps/convoy/README.md), and a native GTK client for Linux in [`apps/linux`](apps/linux/README.md). Both share one Rust core. Sessions and cross-agent reviews come first; Spec Driven Development is optional.
+See each client's README for setup, build instructions and current limitations.
 
-See each client's README for its setup, build instructions and current limitations. The instructions below describe the native macOS app.
-
-Requires macOS 14+, Swift 6 to build, and your existing Claude Code / Codex CLI installation and login. Embedded terminals use SwiftTerm 1.20.0 (MIT).
-
-## Build and open
-
-```sh
-bash scripts/build-app.sh
-bash scripts/install.sh   # or: open dist/Convoy.app
-```
-
-The first build fetches SwiftTerm and its package dependencies. The script packages its resource bundle in the macOS Resources directory and adjusts SwiftPM's generated release resource accessor accordingly. The app is ad-hoc signed for local use, not notarized for distribution.
-
-## Signing for distribution
-
-Local builds are ad-hoc signed and need `xattr -dr com.apple.quarantine` (or the landing's one-line installer) on other Macs. For a build Gatekeeper accepts:
-
-```sh
-xcrun notarytool store-credentials convoy --apple-id you@example.com --team-id TEAMID   # once; uses an app-specific password
-SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=convoy bash scripts/install.sh
-```
-
-This needs a paid Apple Developer Program membership and a Developer ID Application certificate (Xcode → Settings → Accounts → Manage Certificates).
-
-## Start working
-
-1. Choose **Open folder…**. Select a single repository or a parent such as `Projects` or `olucha-cargo`.
-2. Parent folders containing recognizable projects become expandable groups. Click the group name itself to work across that folder; click a child for a single-project session.
-3. Click **New session**, choose Claude Code or Codex, name it, and optionally add a first message.
-4. Click **Start**. The agent runs in an embedded terminal at the selected folder. Type directly into it, including responding to the agent's trust and permission prompts.
-5. Switch between projects/sessions without stopping their terminals. Right-click sessions to rename or archive them. Archive is disabled while a session runs.
-
-Existing folders imported by the first prototype can be converted using **⋯ → Import projects from this folder**. Re-import preserves specs, sessions and IDs. Discovery recognizes Git and common project manifests, stops at a project boundary, skips hidden folders/dependencies/build output, and never follows directory symlinks. A repository containing nested projects can be explicitly scanned with the same context action. A bounded scan reports an error rather than silently dropping work when a tree is too large or unreadable. Non-project folders without recognized descendants are omitted.
-
-Every project and group has a visible **⋯** menu: **New session…**, import/refresh projects, Show in Finder, Copy folder path, Reconnect folder, and Remove. New session from this menu always targets that row's folder. The same actions remain available on right-click. Session cards also expose a **⋯** menu for editing, reviewing and archiving.
-
-Groups are real workspaces with their own sessions and optional specs, not just visual labels. A session in `olucha-cargo` runs there, with its child repositories beneath the agent's working directory. This does not automatically inject every file into the model's context; the agent discovers relevant files as it does in your terminal.
-
-## Review handoff
-
-Select a coding session and click **Start review**. The other agent is selected by default. Inspect/edit the brief, which includes the original task, notes and recent terminal output, then launch the reviewer. Review sessions are linked to their source and appear under **Reviews**.
-
-**Send feedback to builder** captures recent reviewer output in an editable dialog, then inserts your edited feedback into the running builder terminal. Press Enter in that terminal to send it. There is no need to create a spec.
-
-Let the builder finish editing before starting a review. Reviews use the same workspace, not an immutable Git snapshot. The prompt asks reviewers not to edit, but their existing CLI permissions still apply. Automatically repeating fix/review rounds, structured findings, revision pinning, and automatic acceptance are not implemented yet.
-
-## Session lifetime and recovery
-
-- Switching views or closing the window keeps agents running while Convoy remains open.
-- Quitting warns about running sessions and stops them if confirmed.
-- Names, notes, agent IDs, associations and recent text snapshots are stored locally and restored on relaunch.
-- Claude gets a stable session UUID at launch; **Resume** uses that ID. The provider must have persisted a conversation for it to be resumable.
-- Codex's ID is captured when it prints `codex resume <UUID>` on exit. If no ID was captured (for example after forced termination), **Open resume picker** runs Codex's picker at the same directory. **Edit** allows saving the exact ID manually. The app never guesses with `--last`.
-- A saved terminal snapshot is recent output, not a complete provider transcript or a live process.
-- Missing executables, authentication problems, and CLI errors appear in the terminal. A process running does not imply its agent is ready or has finished a task.
-
-## Permissions and storage
-
-As requested for embedded terminals, this version uses normal macOS user permissions rather than Apple App Sandbox. It does **not** require Full Disk Access, Accessibility, Automation, or screen recording. Agents retain their own permission settings; the app adds no permission-bypass flags. The selected working directory is not an OS-enforced filesystem boundary. A login shell loads your normal shell setup to find tools installed through NVM, Homebrew, or local installers.
-
-State: `~/Library/Application Support/Convoy/workspace.json`.
-Recent terminal snapshots: `~/Library/Application Support/Convoy/TerminalHistory/`.
-On first launch, existing records from this app's earlier sandbox container are copied to the new location if no new workspace exists. The original file remains untouched. Unsupported schemas and corrupt data block saving rather than overwrite the file.
-
-Right-click a project/group to remove its app records after confirmation. Files and provider history are untouched. Removing a group retains its children. Stop its own running sessions before removal. Export optional specs before removing their workspace if you want to keep them.
-
-## Optional specs
-
-The **Specs** tab retains requirements, acceptance criteria, approval revisions, task assignments, findings and Markdown export. Changes to an approved spec invalidate its approval and mark completed tasks for reassessment. Specs are currently stored in the workspace; Markdown export is a snapshot. Repository synchronization/import is not implemented.
-
-## Linear and Jira import
-
-**Settings → Integrations** holds tracker connections. Linear connects with a personal API key; Jira with an email plus API token (Cloud), a personal access token (Data Center), or a username and password (Server/Data Center basic auth). Either tracker can instead use the agent's own MCP server: Convoy stores no credentials and the task prompt tells the agent to fetch the issue with its Linear or Atlassian MCP tools. Secrets are kept in the macOS Keychain.
-
-On the Tasks page, **Import** searches open issues (assigned to you by default; Jira also accepts raw JQL), or takes pasted issue keys and links for MCP connections. Choose one agent and model for the whole import, or override them per issue, then queue the tasks or run them immediately. Imported tasks keep a link to their issue and are not imported twice into the same project.
-
-## Tests
-
-```sh
-env CLANG_MODULE_CACHE_PATH="$PWD/.build/ModuleCache" \
-  SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/ModuleCache" \
-  swift test --disable-sandbox --cache-path .build/cache \
-  --config-path .build/config --security-path .build/security
-```
-
-To include the native-window and real PTY input/output test (uses a harmless shell, no model requests), also set `SPECDESK_UI_TEST_DIR="$PWD/.build/qa"`. This writes test-window snapshots and uses isolated test workspace data. Native tests require a normal macOS GUI session.
-
-Tests cover persistence, schema migration, folder discovery, duplicate imports, group removal, shell argument escaping, review context, terminal input/output, git status/diff/log parsing, and the Files & Changes model against a temporary repository (stage, commit, hunk discard, branches, revert, reset). With `SPECDESK_UI_TEST_DIR` set, a snapshot test also renders the panel to PNGs. Full end-to-end model reviews are not exercised by tests.
-
-References: [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm), [Codex CLI](https://learn.chatgpt.com/docs/developer-commands?surface=cli), [Claude Code CLI](https://code.claude.com/docs/en/cli-reference).
-
-## Tabs, agent status and notifications
-
-Every open session is a tab across the top, regardless of project; the sidebar lists sessions under their project. ⌘K opens a command palette (sessions, projects, actions), ⌘E a most-recent-first terminal switcher, ⌃Tab cycles tabs and ⌘1–9 jump. Settings → Shortcuts lists everything.
-
-Claude sessions report working / waiting / done through Claude Code hooks that Convoy passes per session with `--settings`; your global `~/.claude/settings.json` is not modified and nothing is inferred from terminal output. Tabs and sidebar rows show an amber “?” when an agent needs input or permission and a green check when it finished. macOS notifications fire for sessions you are not looking at, the Dock badge counts sessions waiting on you, and the status bar links to the first. Codex has no hook API, so it shows running / stopped only.
-
-## Git worktrees and branches
-
-**New session → Run in a new git worktree** creates an isolated checkout under `~/Library/Application Support/Convoy/worktrees/<project>/<branch>` with `git worktree add --no-track -b <branch>`, so parallel sessions on one repo never overwrite each other. The branch name is generated from the session title (optional prefix in Settings) and can be edited. Reviews of a worktree session run in the same worktree. Right-click the session to show, copy or remove the worktree (optionally deleting the branch). The sidebar and session header show the current branch, changed-file count and ahead/behind, read with optional locks disabled so polling never races an agent's own git commands.
-
-## Files & Changes panel
-
-⇧⌘G (or the panel button in the tab bar, or the branch label in a session header) opens a JetBrains-style source-control panel beside the terminal. It follows the focused session's folder, worktrees included, and works on the project page too. Its width is remembered.
-
-- **Changes** lists conflicts, staged, unstaged and untracked files with ± line counts; the checkbox stages or unstages. The diff below shows the selected file (unified or split, wrap, maximize) with line numbers and a per-hunk **Discard**. The commit box has Amend, **Generate** (asks Claude for a message from the diff, using the existing `claude` login), **Commit** (⌘↩) and a menu for Commit & Push, Push, Fetch, Pull and Open pull request (needs the `gh` CLI). Right-click a file to discard its changes or move an untracked file to the Trash; both ask first.
-- **Files** is a tree of tracked and untracked-but-not-ignored files (plain folders fall back to a directory walk) coloured by git status, with a filter, a read-only viewer with line numbers, rendered Markdown with a Raw toggle, and image previews.
-- **Log** shows the last 200 commits; select one to see its files and diffs. Right-click for Revert commit and soft or mixed Reset, each with a confirmation. Hard reset is deliberately not offered.
-- The branch chip switches branches (local or remote), creates one, and runs Fetch, Pull (fast-forward only) and Push (with `-u origin HEAD` when the branch has no upstream).
-
-The panel refreshes on file-system events, after every action, and every 10 s while open. Git runs with `--no-optional-locks`, and writes respect an agent's `index.lock` (the error is shown; try again once the agent is done). Git never prompts for credentials here; push from the terminal if authentication is needed.
-
-## Review, split view, quick commands
-
-**⚡ Quick commands** (⌘/) are saved prompts or shell commands, global or per project, inserted with bracketed paste and optionally submitted. The bell (⇧⌘A) opens the Activity feed of completions, questions, sleeps and worktree events.
-
-## Sidebar extras, hibernation, accounts
-
-Right-click a session to pin it to the top, put it to sleep, open it in a split, or manage its worktree. ⌘-click selects several sessions for bulk archive or tab close. Right-click a project for icon and color (emoji or GitHub avatar), worktree setup commands, and move up/down; root projects also drag to reorder. Settings → Agents → Hibernation stops Claude agents that finished and sat idle; opening a sleeping session resumes it. Settings → Accounts creates isolated Claude (`CLAUDE_CONFIG_DIR`) or Codex (`CODEX_HOME`) logins; the status bar chip hot-swaps which one new sessions use, without touching your system login.
-
-## Settings
-
-⌘, opens an in-window settings page with search: General, Appearance, Terminal (font size, scrollback), Agents (status hooks, hibernation, usage status line), Accounts, Quick Commands, Git (polling, worktree setup hooks), Notifications, AI Limits and Shortcuts (every binding remappable with a key recorder).
-
-## Workspace controls and AI Limits
-
-The sidebar includes search and a Workspace options menu for group hierarchy, alphabetical sorting and compact rows. Each project/group and session has a visible three-dot actions menu. The bottom bar shows running sessions, AI Limits, Keep awake, and System/Light/Dark appearance. Appearance is also available directly in the macOS menu bar; the choice persists across launches. The blue accent adapts to light and dark surfaces.
-
-**AI Limits** reads actual Codex account windows through the installed CLI's supported `account/rateLimits/read` endpoint. It uses the CLI's existing login, not copied tokens or cookies, and sends no model request. The panel displays usage percentages, reset dates, refresh errors and last-updated time. Data older than five minutes is marked cached in the status bar. Refresh happens when the panel first opens or when requested, not on a background polling loop. Some API-authenticated accounts do not expose subscription windows.
-
-Claude's **Claude limits integration** switch enables a session-scoped status-line helper for newly started or resumed sessions. It leaves global settings unchanged, but replaces a custom status line for that launch. Claude Code 2.1.251+ reports subscription limits after a response; the app stores only quota windows, source session name and update time, never the full status-line payload. Missing or expired windows are not shown as zero. The native panel reads the latest reporting session every five seconds; percentages are snapshots, not continuous account polling. **Open Claude usage** provides the supported `/usage` command in a dedicated embedded session for an on-demand check. Integration is optional and off initially. See [Claude status-line data](https://code.claude.com/docs/en/statusline).
-
-**Keep awake** defaults to Off. Options are Always while Convoy is open, While a session is running, and Off. It prevents idle system sleep, not explicit sleep or lid closure. A running CLI may be idle at its input prompt; this is process-based, not inferred agent activity.
-
-Read-only live Codex integration test: add `SPECDESK_LIVE_LIMITS_TEST=1` to the test command. This requires an installed, signed-in Codex CLI and network access; it reads account quotas without making a model request.
-
-Opening a session collapses the project and session sidebars and replaces the workspace header with a 40-point terminal toolbar. Use the project menu to reach Reviews or Specs, the session title to switch conversations, the list button to browse sessions, and the three-dot menu for review, edit, archive and stop actions. The native sidebar button restores projects. Agent trust/permission prompts remain in the terminal.
-
-Saved terminal output is labelled read-only. If Claude reports that a conversation ID does not exist (for example, a launch ended at the trust screen before any messages), Convoy offers **Start fresh** in the same workspace. This creates a new session record and preserves the old one; it does not bypass the agent's trust prompt or silently replay the original task. Snapshots preserve blank terminal cells as spaces and skip continuation cells for wide characters.
-
-### Session reliability
-
-Resume always asks the provider to resume the recorded conversation; it never silently replays the first prompt when a transcript lookup fails. Missing Claude conversations offer explicit fresh recovery, preserving the worktree, branch, review relationship and account configuration. Sessions bind to their provider configuration home on their next launch; older records without that information use the selected account once. Keep the original account selected when resuming a legacy record for the first time.
-
-Stopping a terminal terminates its PTY process group and reaps the child, with a bounded fallback for an unresponsive process. Switching views retains the running terminal. Saved snapshots preserve spaces and join soft-wrapped lines. Review feedback switches focus to the original builder after insertion, without submitting it. Removed sessions are excluded from tab navigation; bulk closing does not remove running sessions from their panes.
-
-## License
-
-MIT. Embedded terminals use [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (MIT). The Claude and OpenAI marks belong to their owners and are used to identify the agents.
+Data from the earlier native macOS app (`~/Library/Application Support/Convoy`) is imported by `convoy_core::macos_import`; the client offers it on first launch and under Settings → Setup.
 
 ## Releasing
 
-`scripts/release.sh <version> [notes.md]` bumps the version, builds, tags and publishes a GitHub release with `Convoy-<version>.zip` plus a stable `Convoy.zip`. peshbar.com and `convoy-install.sh` download `releases/latest/download/Convoy.zip`, so they follow every release automatically.
+`scripts/release.sh <version> [notes.md]` tags the current `main` and publishes a GitHub release. That starts `.github/workflows/convoy-release.yml`, which builds every client with the release version and attaches them under names that never change: `Convoy.zip` and `Convoy-macos-universal.dmg` for macOS, `Convoy-windows-x64-setup.exe`, and the Linux AppImage and `.deb`. peshbar.com and `convoy-install.sh` download `releases/latest/download/Convoy.zip`, so they follow every release once its macOS job finishes.
+
+The macOS app is ad-hoc signed unless the repository has the `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD` and `APPLE_SIGNING_IDENTITY` secrets (a Developer ID Application certificate, base64-encoded `.p12`); with `APPLE_ID`, `APPLE_PASSWORD` (app-specific) and `APPLE_TEAM_ID` as well, it is also notarized.
+
+## License
+
+MIT. The Claude and OpenAI marks belong to their owners and are used to identify the agents.

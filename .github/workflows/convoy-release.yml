@@ -1,10 +1,9 @@
-name: Convoy release (Windows and Linux)
+name: Convoy release
 
-# Attaches the Tauri client to every Convoy release. `scripts/release.sh`
-# publishes the macOS app; this adds the Windows installer and the Linux
-# packages to the same release, under names that never change, so
-# releases/latest/download/<name> always resolves — as Convoy.zip does for
-# macOS — and peshbar.com needs no update per release.
+# Attaches the Tauri client to every Convoy release: the macOS app, the
+# Windows installer and the Linux packages, under names that never change, so
+# releases/latest/download/<name> always resolves and peshbar.com needs no
+# update per release. `scripts/release.sh` publishes the release.
 on:
   release:
     types: [published]
@@ -26,6 +25,81 @@ env:
   TAG: ${{ github.event.release.tag_name || inputs.tag }}
 
 jobs:
+  macos:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: apps/convoy
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/convoy/package-lock.json
+
+      # One app for Apple silicon and Intel Macs.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/convoy/src-tauri
+
+      - run: npm ci
+
+      - name: Stamp the release version
+        run: node -e 'const f="src-tauri/tauri.conf.json";const c=JSON.parse(require("fs").readFileSync(f));c.version=process.env.TAG.replace(/^v/,"");require("fs").writeFileSync(f,JSON.stringify(c,null,2))'
+
+      # Signed with a Developer ID and notarized when the secrets are set,
+      # ad-hoc signed otherwise. The variables are exported only when they
+      # have a value: Tauri treats an empty one as set.
+      - name: Choose the signing identity
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+            {
+              printf 'APPLE_CERTIFICATE<<CONVOY_CERT\n%s\nCONVOY_CERT\n' "$APPLE_CERTIFICATE"
+              echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
+              echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY"
+            } >> "$GITHUB_ENV"
+            if [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+              {
+                echo "APPLE_ID=$APPLE_ID"
+                echo "APPLE_PASSWORD=$APPLE_PASSWORD"
+                echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+              } >> "$GITHUB_ENV"
+            fi
+          else
+            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build the app
+        run: npm run tauri build -- --target universal-apple-darwin --bundles app,dmg
+
+      # Convoy.zip is the name the installer and peshbar.com download.
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd src-tauri/target/universal-apple-darwin/release/bundle
+          ditto -c -k --keepParent macos/Convoy.app "$RUNNER_TEMP/Convoy.zip"
+          cp "$RUNNER_TEMP/Convoy.zip" "$RUNNER_TEMP/Convoy-${TAG#v}.zip"
+          cp dmg/*.dmg "$RUNNER_TEMP/Convoy-macos-universal.dmg"
+          gh release upload "$TAG" --clobber --repo "$GITHUB_REPOSITORY" \
+            "$RUNNER_TEMP/Convoy.zip" "$RUNNER_TEMP/Convoy-${TAG#v}.zip" "$RUNNER_TEMP/Convoy-macos-universal.dmg"
+
   linux:
     # 22.04 so the AppImage runs on distributions older than the runner's.
     runs-on: ubuntu-22.04

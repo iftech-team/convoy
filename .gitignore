@@ -1,8 +1,5 @@
-.build/
-.swiftpm/
 dist/
 *.zip
 .DS_Store
-Resources/AppIcon.iconset/
 .claude/settings.local.json
 node_modules/
