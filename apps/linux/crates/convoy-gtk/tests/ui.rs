@@ -879,7 +879,7 @@ fn controllers<T: IsA<gtk::EventController>>(root: &gtk::Widget) -> usize {
     while let Some(widget) = pending.pop() {
         let list = widget.observe_controllers();
         count += (0..list.n_items())
-            .filter(|index| list.item(*index).and_downcast::<T>().is_some())
+            .filter(|index| list.item(*index).is_some_and(|item| item.is::<T>()))
             .count();
         let mut child = widget.first_child();
         while let Some(current) = child {
