@@ -652,7 +652,7 @@ async fn files_checks(app: &Rc<convoy_gtk::state::App>) {
 /// Specifications, tasks and the queue, driven through the same calls the
 /// dialog makes.
 async fn planning_checks(app: &Rc<convoy_gtk::state::App>) {
-    use convoy_core::model::{PublishMode, TaskStatus};
+    use convoy_core::model::{PublishMode, Task, TaskStatus};
     use convoy_core::planning::{SpecInput, TaskInput};
     use convoy_core::queue::{self, Step};
 
@@ -868,6 +868,41 @@ async fn planning_checks(app: &Rc<convoy_gtk::state::App>) {
         format!("{:?}", status_of()),
     );
     move_task(app, &task.id, TaskStatus::Done).expect("back to done");
+
+    // A task that ran opens its session; one that never ran opens its form.
+    let ran = app
+        .workspace
+        .borrow()
+        .state()
+        .tasks
+        .iter()
+        .find(|other| other.id == task.id)
+        .cloned()
+        .expect("task");
+    check(
+        "a task that ran opens the session it ran in",
+        convoy_gtk::planning_ui::task_session(app, &ran).is_some()
+            && convoy_gtk::planning_ui::task_session(app, &ran) == ran.session_id,
+        format!("{:?}", ran.session_id),
+    );
+    let fresh = Task {
+        session_id: None,
+        ..ran.clone()
+    };
+    check(
+        "a task that never ran opens its form",
+        convoy_gtk::planning_ui::task_session(app, &fresh).is_none(),
+        "it offered a session",
+    );
+    let gone = Task {
+        session_id: Some("deleted-session".into()),
+        ..ran
+    };
+    check(
+        "a task whose session was deleted opens its form",
+        convoy_gtk::planning_ui::task_session(app, &gone).is_none(),
+        "it offered the missing session",
+    );
 
     settle(50).await;
 }

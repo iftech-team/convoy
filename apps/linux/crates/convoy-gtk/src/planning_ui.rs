@@ -12,7 +12,7 @@ use convoy_core::planning::{markdown, SpecInput, TaskInput};
 use std::rc::Rc;
 
 use crate::state::App;
-use crate::{queue_ui, window};
+use crate::{queue_ui, terminal, window};
 
 pub fn open(app: &Rc<App>) {
     let Some(project) = app.selected_project() else {
@@ -320,15 +320,16 @@ fn task_row(
         ))
         .activatable(true)
         .build();
-    row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
-    row.connect_activated({
+    // A task that has run opens its session on activation, so its form
+    // moves to an Edit button; one that never ran opens the form.
+    let edit = {
         let app = app.clone();
         let navigation = navigation.clone();
         let dialog = dialog.clone();
         let task = task.clone();
         let project_id = project_id.to_string();
         let specs = specs.to_vec();
-        move |_| {
+        move || {
             navigation.push(&task_page(
                 &app,
                 &dialog,
@@ -338,7 +339,33 @@ fn task_row(
                 Some(task.clone()),
             ))
         }
-    });
+    };
+    match task_session(app, task) {
+        Some(session_id) => {
+            let button = gtk::Button::builder()
+                .icon_name("document-edit-symbolic")
+                .tooltip_text("Edit task")
+                .valign(gtk::Align::Center)
+                .build();
+            button.add_css_class("flat");
+            button.connect_clicked(move |_| edit());
+            row.add_suffix(&button);
+            row.add_suffix(&gtk::Image::from_icon_name("utilities-terminal-symbolic"));
+            row.connect_activated({
+                let app = app.clone();
+                let dialog = dialog.clone();
+                move |_| {
+                    dialog.close();
+                    crate::notify::focus(&app, &session_id);
+                    terminal::start(&app, &session_id);
+                }
+            });
+        }
+        None => {
+            row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+            row.connect_activated(move |_| edit());
+        }
+    }
     if task.status != TaskStatus::Building {
         let source = gtk::DragSource::builder()
             .actions(gtk::gdk::DragAction::MOVE)
@@ -353,6 +380,15 @@ fn task_row(
         row.add_controller(source);
     }
     row
+}
+
+/// The session a task opens on activation: the one it last ran in, while
+/// that session is still in the workspace. `terminal::start` resumes it if
+/// the agent has stopped and leaves it alone if it is running.
+pub fn task_session(app: &App, task: &Task) -> Option<String> {
+    let id = task.session_id.clone()?;
+    app.workspace.borrow().session(&id).ok()?;
+    Some(id)
 }
 
 /// What dropping a task on a status group does: sets that status, or nothing
