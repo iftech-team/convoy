@@ -483,20 +483,23 @@ try {
   await page.locator("#imp-manual").fill("ENG-7 Test imported task");
   await page.locator("#imp-model").fill("sonnet");
   await page.locator('[data-action="import-run"]:not([disabled])').click();
-  // Grouped by status; the task's own form carries its model.
-  await page.locator(".task-group", { hasText: "Queued" }).waitFor();
-  await page.locator('.row[data-task="task"]').click();
+  // The board is the default view; the task's own form carries its model.
+  await page.locator('[data-task-view="board"][aria-pressed="true"]').waitFor();
+  await page.locator('[data-task-column="queued"] [data-task-card="task"]').click();
+  // The form keeps its work to Save and Run now: no Accept or Back to queue.
+  assert.equal(await page.locator(".modal [data-status]").count(), 0);
   // Model and account sit under Advanced; the models are the agent's own.
   await page.locator('.modal [data-toggle="advanced"]').click();
   assert.equal(await page.locator("#task-model").inputValue(), "sonnet");
   assert.deepEqual(await page.locator("#task-model option").allTextContents(), ["Default", "Opus · most capable", "Sonnet · balanced"]);
   await page.locator("#task-model").selectOption("opus");
   await page.locator('[data-action="save-task"]').click();
-  await page.locator('.row[data-task="task"]').waitFor();
-  // On the board, a card dragged to another column takes that status.
-  await page.locator('[data-task-view="board"]').click();
+  await page.locator('[data-task-card="task"]').waitFor();
+  // A card dragged to another column takes that status, and the drop does
+  // not open the task.
   await page.locator('[data-task-card="task"]').dragTo(page.locator('[data-task-column="review"]'));
   await page.locator('[data-task-column="review"] [data-task-card="task"]').waitFor();
+  assert.equal(await page.locator(".modal").count(), 0);
   // Its menu sets any status, and deletes after asking.
   await page.locator('[data-task-card="task"]').click({ button: "right" });
   await page.locator('[data-menu-act="task-status:changes"]').click();
@@ -505,7 +508,17 @@ try {
   await page.locator('[data-task-scope="all"]').click();
   await page.locator('[data-task-card="task"] .card__project', { hasText: "Example" }).waitFor();
   await page.locator('[data-task-scope="project"]').click();
+  // The list groups by status under a bar per group, one line per task with
+  // its issue key; it is remembered, and rows drag onto another group.
   await page.locator('[data-task-view="list"]').click();
+  await page.locator('.task-list__group[data-task-column="changes"] .task-group', { hasText: "Needs changes" }).waitFor();
+  await page.locator('.task-row[data-task="task"] .task-row__key', { hasText: "ENG-7" }).waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem("convoy.taskView")), "list");
+  await page.locator('[data-task-view="board"]').click();
+  await page.locator('[data-task-card="task"]').dragTo(page.locator('[data-task-column="queued"]'));
+  await page.locator('[data-task-view="list"]').click();
+  await page.locator('.task-list__group[data-task-column="queued"] .task-row[data-task="task"]').waitFor();
+  if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/tasks-list.png` });
   // Under the sessions, what the agents saved here and in worktrees that no
   // session holds yet; Resume records it as a session in its own folder and
   // starts it. There is no separate History tab.
@@ -663,10 +676,10 @@ try {
   await page.keyboard.press("Escape");
   // "Blocked by": the task waits for another, and says so.
   await page.locator('[data-tab="tasks"]').click();
-  await page.locator('.row[data-task="task"]').click();
+  await page.locator('.task-row[data-task="task"]').click();
   await page.locator('.modal [data-depends-on]').first().check();
   await page.locator('[data-action="save-task"]').click();
-  await page.locator('.row[data-task="task"] .task-blocked', { hasText: "waits for Checkout retries" }).waitFor();
+  await page.locator('.task-row[data-task="task"] .task-blocked[title="Waits for Checkout retries"]').waitFor();
   // New tasks publish as a pull request unless the project says otherwise.
   await page.locator('[data-action="new-task"]').click();
   await page.locator('.modal .choice [data-value="pr"][aria-pressed="true"]').waitFor();
@@ -679,7 +692,7 @@ try {
   await page.locator("#task-account").selectOption("work");
   if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/task-form.png` });
   await page.keyboard.press("Escape");
-  await page.locator('.row[data-task="task"] [data-task-more="task"]').click();
+  await page.locator('.task-row[data-task="task"] [data-task-more="task"]').click();
   await page.locator('[data-menu-act="task-delete"]').click();
   // A destructive button keeps its colour under the pointer.
   await page.locator('.modal [data-action="confirm-generic"]').hover();
@@ -688,7 +701,7 @@ try {
     "rgb(239, 68, 68)",
   );
   await page.locator('.modal [data-action="confirm-generic"]').click();
-  await page.locator('.row[data-task="task"]').waitFor({ state: "detached" });
+  await page.locator('.task-row[data-task="task"]').waitFor({ state: "detached" });
 
   // Sidebar: the project shows its icon, its sessions show the agent's mark,
   // and right-click offers the project's and the session's actions.
@@ -961,7 +974,7 @@ try {
   assert(calls.some(c => c.cmd === "terminal_paste" && c.args.id === "builder" && c.args.text === "Fix the error path before shipping." && c.args.submit === false));
   assert(calls.some(c => c.cmd === "issues_import" && c.args.options.model === "sonnet"));
   assert(calls.some(c => c.cmd === "task_agent" && c.args.model === "opus"));
-  assert.deepEqual(calls.filter((c) => c.cmd === "task_status").map((c) => c.args.status), ["review", "changes"]);
+  assert.deepEqual(calls.filter((c) => c.cmd === "task_status").map((c) => c.args.status), ["review", "changes", "queued"]);
   // Remove all projects is in the sidebar's ⋯ menu, and waits while an agent runs.
   await page.locator('[data-action="workspace-menu"]').click();
   await page.locator('[data-action="remove-all-projects"]').click();
@@ -1381,7 +1394,7 @@ try {
     { ...created, model: undefined, effort: undefined },
     {
       id: null, project_id: "project", title: "Morning triage", prompt: "Triage the new issues and summarise them.",
-      agent: "claude", model: undefined, effort: undefined, profile_id: null, view: "chat", worktree: true,
+      agent: "claude", model: undefined, effort: undefined, profile_id: null, view: "terminal", worktree: true,
       schedule: { kind: "weekdays", at: "07:30", days: ["mon", "tue", "wed", "thu", "fri", "sat"] },
       enabled: true, catch_up: true, skills: [],
     },

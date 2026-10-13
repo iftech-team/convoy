@@ -1185,7 +1185,7 @@ app.addEventListener("click", async (event) => {
     "[data-action],[data-project],[data-tab],[data-start],[data-stop],[data-open]," +
       "[data-set],[data-toggle],[data-dismiss],[data-quick],[data-files-view]," +
       "[data-change],[data-file],[data-commit],[data-branch],[data-task],[data-spec]," +
-      "[data-approve],[data-export],[data-prepare],[data-status],[data-remove-profile]," +
+      "[data-approve],[data-export],[data-prepare],[data-remove-profile]," +
       "[data-remove-command],[data-import],[data-task-view],[data-palette],[data-split],"
       + "[data-capture],[data-expand],[data-project-more],[data-menu-act],[data-settings-section]," +
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon]," +
@@ -1564,6 +1564,11 @@ app.addEventListener("click", async (event) => {
   }
   if (data.taskView) {
     state.taskView = data.taskView;
+    try {
+      localStorage.setItem("convoy.taskView", state.taskView);
+    } catch {
+      /* not remembered */
+    }
     return render();
   }
   if (data.task) return openTask(data.task);
@@ -1576,7 +1581,6 @@ app.addEventListener("click", async (event) => {
   }
   if (data.export) return exportSpec(data.export);
   if (data.prepare) return prepareTask(data.prepare);
-  if (data.status) return setTaskStatus(data.status);
   if (data.useAccount) {
     const [agent, id] = data.useAccount.split(":");
     rememberAccount(agent, id);
@@ -3010,13 +3014,6 @@ async function saveTask(run = false) {
   if (run) await runTask(id);
 }
 
-async function setTaskStatus(status) {
-  const id = state.dialog.id;
-  if (!(await done("task_status", { id, status }))) return;
-  closeDialog();
-  await reloadTasks();
-}
-
 const findTask = (id) =>
   state.planning?.tasks.find((item) => item.id === id) ?? state.allTasks?.find((item) => item.id === id);
 
@@ -3988,33 +3985,75 @@ app.addEventListener("dragend", () => {
   for (const other of app.querySelectorAll(".project-row--drop")) other.classList.remove("project-row--drop");
 });
 
-// Task cards move between board columns by dragging.
-let draggedTask = null;
-app.addEventListener("dragstart", (event) => {
-  const card = event.target.closest?.("[data-task-card]");
-  if (!card) return;
-  draggedTask = card.dataset.taskCard;
-  event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("text/plain", draggedTask);
-});
-app.addEventListener("dragover", (event) => {
-  const column = event.target.closest?.("[data-task-column]");
-  if (!column || !draggedTask) return;
-  event.preventDefault();
+// Tasks move between statuses by dragging a board card onto a column or a
+// list row onto a group. Pointer events rather than HTML5 drag and drop:
+// WebKit will not drag a <button>, and the webview's own file drop handler
+// takes drops before the page sees them.
+let taskDrag = null;
+const taskDropAt = (x, y) => document.elementFromPoint(x, y)?.closest("[data-task-column]");
+function clearTaskDrop() {
   for (const other of app.querySelectorAll(".board__column--drop")) other.classList.remove("board__column--drop");
-  column.classList.add("board__column--drop");
+}
+function endTaskDrag() {
+  if (!taskDrag) return;
+  taskDrag.ghost?.remove();
+  taskDrag.item.classList.remove("task-dragging");
+  document.body.classList.remove("is-dragging-task");
+  clearTaskDrop();
+  taskDrag = null;
+}
+app.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  const item = event.target.closest?.("[data-task-card]");
+  if (!item || event.target.closest(".task-row__actions")) return;
+  taskDrag = { id: item.dataset.taskCard, item, x: event.clientX, y: event.clientY, ghost: null };
 });
-app.addEventListener("drop", (event) => {
-  const column = event.target.closest?.("[data-task-column]");
-  if (!column || !draggedTask) return;
-  event.preventDefault();
-  const id = draggedTask;
-  draggedTask = null;
-  moveTask(id, column.dataset.taskColumn);
+window.addEventListener("pointermove", (event) => {
+  if (!taskDrag) return;
+  if (!taskDrag.ghost) {
+    if (Math.hypot(event.clientX - taskDrag.x, event.clientY - taskDrag.y) < 5) return;
+    const box = taskDrag.item.getBoundingClientRect();
+    const ghost = taskDrag.item.cloneNode(true);
+    ghost.classList.add("task-ghost");
+    ghost.removeAttribute("data-task");
+    ghost.removeAttribute("data-task-card");
+    ghost.style.width = `${box.width}px`;
+    document.body.append(ghost);
+    Object.assign(taskDrag, { ghost, dx: taskDrag.x - box.left, dy: taskDrag.y - box.top });
+    taskDrag.item.classList.add("task-dragging");
+    document.body.classList.add("is-dragging-task");
+  }
+  taskDrag.ghost.style.transform = `translate(${event.clientX - taskDrag.dx}px, ${event.clientY - taskDrag.dy}px)`;
+  const column = taskDropAt(event.clientX, event.clientY);
+  clearTaskDrop();
+  column?.classList.add("board__column--drop");
 });
-app.addEventListener("dragend", () => {
-  draggedTask = null;
-  for (const other of app.querySelectorAll(".board__column--drop")) other.classList.remove("board__column--drop");
+window.addEventListener("pointerup", (event) => {
+  if (!taskDrag) return;
+  const { id, ghost } = taskDrag;
+  const column = ghost && taskDropAt(event.clientX, event.clientY);
+  endTaskDrag();
+  if (!ghost) return;
+  justDropped = true;
+  if (column) moveTask(id, column.dataset.taskColumn);
+});
+// The click that follows a drop must not open the task. Any later press
+// clears this, so a drop that ends without a click swallows nothing.
+let justDropped = false;
+window.addEventListener("pointerdown", () => (justDropped = false), { capture: true });
+window.addEventListener(
+  "click",
+  (event) => {
+    if (!justDropped) return;
+    justDropped = false;
+    event.stopPropagation();
+    event.preventDefault();
+  },
+  { capture: true },
+);
+window.addEventListener("pointercancel", endTaskDrag);
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && taskDrag?.ghost) endTaskDrag();
 });
 
 // Tabs are reordered by dragging one onto another.

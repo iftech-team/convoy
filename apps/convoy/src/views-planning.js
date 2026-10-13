@@ -89,8 +89,8 @@ export function tasksView() {
         <span class="section__count">${tasks.length}</span>
       </h2>
       <div class="segmented">
-        <button data-task-view="list" aria-pressed="${state.taskView !== "board"}">${escape(t("List"))}</button>
-        <button data-task-view="board" aria-pressed="${state.taskView === "board"}">${escape(t("Board"))}</button>
+        <button data-task-view="list" aria-pressed="${state.taskView === "list"}">${escape(t("List"))}</button>
+        <button data-task-view="board" aria-pressed="${state.taskView !== "list"}">${escape(t("Board"))}</button>
       </div>
       <div class="segmented">
         <button data-task-scope="project" aria-pressed="${state.taskScope !== "all"}">${escape(t("This project"))}</button>
@@ -114,7 +114,7 @@ export function tasksView() {
   if (!tasks.length) {
     return `${head}${empty("board", t("No tasks yet"), t("Add one to queue work for an agent."))}`;
   }
-  return `${head}${state.taskView === "board" ? board(tasks) : taskList(tasks)}`;
+  return `${head}${state.taskView === "list" ? taskList(tasks) : board(tasks)}`;
 }
 
 /// Tasks that can be started from here: waiting, or back after a failure or
@@ -124,46 +124,56 @@ export const runnable = (task) => ["queued", "failed", "changes"].includes(task.
 const projectName = (task) =>
   state.taskScope === "all" ? state.projects.find((item) => item.id === task.project_id)?.title : "";
 
-function taskRow(task) {
+/// One line per task, as in Linear: status ring, key, title, then what sets
+/// it apart on the right. Rows drag onto another group like board cards.
+function taskRow(task, tone) {
   const owner = projectName(task);
+  const key = task.source?.key ?? "";
+  const tags = [
+    owner ? `<span class="badge badge--muted">${escape(owner)}</span>` : "",
+    task.blocked_by?.length
+      ? `<span class="badge task-blocked" title="${escape(t("Waits for {tasks}", { tasks: task.blocked_by.join(", ") }))}">${escape(t("blocked"))}</span>`
+      : "",
+    task.auto_review ? `<span class="badge badge--muted">${escape(t("auto review"))}</span>` : "",
+    `<span class="badge badge--muted">${escape(t(MODES[task.mode] ?? task.mode))}</span>`,
+  ].join("");
   return `
-    <div class="row" data-task="${escape(task.id)}" data-task-menu="${escape(task.id)}">
-      <span class="row__mark">${task.agent ? agentIcon(task.agent, 16) : "◇"}</span>
-      <div class="row__body">
-        <div class="row__title">${escape(task.title)}</div>
-        <div class="row__meta">
-          ${owner ? `${escape(owner)} · ` : ""}${task.source ? escape(`${task.source.tracker === "jira" ? "Jira" : "Linear"} ${task.source.key}`) + " · " : ""}${task.model ? escape(task.model) + " · " : ""}${escape(t(MODES[task.mode] ?? task.mode))}
-          ${task.auto_review ? ` · ${escape(t("automatic review"))}` : ""}
-          ${task.last_error ? ` · ${escape(task.last_error)}` : ""}
-          ${task.blocked_by?.length ? ` · <span class="task-blocked">${escape(t("waits for {tasks}", { tasks: task.blocked_by.join(", ") }))}</span>` : ""}
-        </div>
-      </div>
-      <div class="row__actions">
-        ${task.pr_url ? button({ label: t("Pull request"), icon: "open", data: { "task-pr": task.id } }) : ""}
-        ${task.source?.url ? button({ label: task.source.key, data: { "issue-source": task.id } }) : ""}
-        ${runnable(task) ? button({ label: t("Run"), icon: "play", data: { "task-run": task.id } }) : ""}
+    <div class="task-row" data-task="${escape(task.id)}" data-task-menu="${escape(task.id)}" data-task-card="${escape(task.id)}">
+      <span class="task-row__ring task-row__ring--${tone}"></span>
+      <span class="task-row__key">${escape(key)}</span>
+      <span class="task-row__title">${escape(task.title)}</span>
+      ${task.last_error ? `<span class="task-row__error" title="${escape(task.last_error)}">${escape(task.last_error)}</span>` : ""}
+      <span class="task-row__tags">${tags}</span>
+      <span class="task-row__agent" title="${escape(task.model || "")}">${task.agent ? agentIcon(task.agent, 14) : ""}</span>
+      <span class="task-row__actions">
+        ${task.pr_url ? button({ icon: "open", kind: "quiet", title: t("Pull request"), data: { "task-pr": task.id } }) : ""}
+        ${task.source?.url ? button({ icon: "open", kind: "quiet", title: t("Open {name}", { name: task.source.key }), data: { "issue-source": task.id } }) : ""}
+        ${runnable(task) ? button({ icon: "play", kind: "quiet", title: t("Run"), data: { "task-run": task.id } }) : ""}
         ${button({ icon: "more", kind: "quiet", title: t("Task actions"), data: { "task-more": task.id } })}
-      </div>
+      </span>
     </div>`;
 }
 
-/// Grouped by status as on macOS, each group folding shut.
+/// Grouped by status as in Linear: a bar per group that folds shut, empty
+/// groups left out. A group takes rows dropped on it.
 function taskList(tasks) {
-  return COLUMNS.filter(([key]) => !(state.hideDone && key === "done"))
+  return `<div class="task-list">${COLUMNS.filter(([key]) => !(state.hideDone && key === "done"))
     .map(([key, label, tone]) => {
       const group = tasks.filter((task) => task.status === key);
       if (!group.length) return "";
       const folded = state.foldedStatuses?.has(key);
       return `
-        <button class="task-group" data-task-group="${key}" aria-expanded="${!folded}">
-          <span class="task-group__chevron">${folded ? icons.chevronRight : icons.chevronDown}</span>
-          <span class="state__dot state__dot--${tone}"></span>
-          <span class="task-group__title">${escape(t(label))}</span>
-          <span class="board__count">${group.length}</span>
-        </button>
-        ${folded ? "" : `<div class="list">${group.map(taskRow).join("")}</div>`}`;
+        <section class="task-list__group" data-task-column="${key}">
+          <button class="task-group" data-task-group="${key}" aria-expanded="${!folded}">
+            <span class="task-group__chevron">${folded ? icons.chevronRight : icons.chevronDown}</span>
+            <span class="state__dot state__dot--${tone}"></span>
+            <span class="task-group__title">${escape(t(label))}</span>
+            <span class="board__count">${group.length}</span>
+          </button>
+          ${folded ? "" : group.map((task) => taskRow(task, tone)).join("")}
+        </section>`;
     })
-    .join("");
+    .join("")}</div>`;
 }
 
 /// Cards drag between columns: onto Running runs the task, onto Queued puts
@@ -187,7 +197,7 @@ function board(tasks) {
                       .map(
                         (task) => `
                 <button class="card" data-task="${escape(task.id)}" data-task-menu="${escape(task.id)}"
-                        draggable="true" data-task-card="${escape(task.id)}">
+                        data-task-card="${escape(task.id)}">
                   <div class="card__title">${escape(task.title)}</div>
                   ${projectName(task) ? `<div class="card__project">${escape(projectName(task))}</div>` : ""}
                   ${task.details ? `<div class="card__body">${escape(task.details)}</div>` : ""}

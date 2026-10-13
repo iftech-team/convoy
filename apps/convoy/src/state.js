@@ -76,6 +76,14 @@ export const state = {
       return true;
     }
   })(),
+  // Tasks as a board (the default) or a list grouped by status; per machine.
+  taskView: (() => {
+    try {
+      return localStorage.getItem("convoy.taskView") === "list" ? "list" : "board";
+    } catch {
+      return "board";
+    }
+  })(),
   // Sessions picked with ⌘-click (Ctrl-click elsewhere) in the sidebar.
   selected: new Set(),
   /// Rows picked to delete on the Sessions list (`s:<id>`, `c:<agent>:<id>`);

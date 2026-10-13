@@ -68,7 +68,7 @@ export function installAutomations({ render, openModal, closeDialog, selectProje
       account: item ? (item.profile_id ?? "") : activeAccount(agent),
       model: item?.model ?? fresh.model ?? "",
       effort: item?.effort ?? fresh.effort ?? "",
-      view: item?.view ?? "chat",
+      view: item?.view ?? "terminal",
       worktree: item?.worktree ?? false,
       catch_up: item?.catch_up ?? true,
       enabled: item?.enabled ?? true,

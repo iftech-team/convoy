@@ -638,8 +638,6 @@ const taskForm = (dialog) => {
     foot: `
       ${dialog.id ? button({ icon: "trash", kind: "quiet", title: t("Delete task"), action: "delete-task", disabled: dialog.status === "building" }) : ""}
       ${button({ label: t("Cancel"), data: { dismiss: "1" } })}
-      ${dialog.id ? button({ label: t("Back to queue"), data: { status: "queued" } }) : ""}
-      ${dialog.id ? button({ label: t("Accept"), data: { status: "done" } }) : ""}
       ${!dialog.id || ["queued", "failed", "changes"].includes(dialog.status) ? button({ label: t("Run now"), icon: "play", action: "run-task-now" }) : ""}
       ${button({ label: t("Save"), action: "save-task", kind: "primary" })}`,
   });

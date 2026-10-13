@@ -839,8 +839,6 @@ export default {
     "Automatic review": "Автоматическое ревью",
     "Details": "Подробности",
     "Delete task": "Удалить задачу",
-    "Back to queue": "Вернуть в очередь",
-    "Accept": "Принять",
     "Run now": "Запустить сейчас",
     "Run {tasks}?": "Запустить {tasks}?",
     "Runs the installed agents. Publishing happens only for tasks configured for it. A failure pauses the queue.": "Запускает установленных агентов. Публикуются только задачи, для которых это настроено. Ошибка приостанавливает очередь.",

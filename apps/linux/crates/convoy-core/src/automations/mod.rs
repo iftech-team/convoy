@@ -41,8 +41,8 @@ fn yes() -> bool {
     true
 }
 
-fn chat() -> String {
-    "chat".into()
+fn terminal() -> String {
+    "terminal".into()
 }
 
 /// How a run went.
@@ -91,7 +91,7 @@ pub struct Automation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,
     /// `chat` or `terminal`.
-    #[serde(default = "chat")]
+    #[serde(default = "terminal")]
     pub view: String,
     /// Each run in a fresh worktree of its own.
     #[serde(default)]
@@ -172,7 +172,7 @@ pub struct AutomationInput {
     pub effort: String,
     #[serde(default)]
     pub profile_id: Option<String>,
-    #[serde(default = "chat")]
+    #[serde(default = "terminal")]
     pub view: String,
     #[serde(default)]
     pub worktree: bool,

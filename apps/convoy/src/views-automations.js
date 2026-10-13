@@ -97,7 +97,7 @@ function automationRow(item) {
       <div class="row__body">
         <div class="row__title">${escape(item.title)}
           ${item.worktree ? `<span class="badge badge--muted auto-row__tag">${icons.branch}${escape(t("worktree"))}</span>` : ""}
-          ${item.view === "terminal" ? `<span class="badge badge--muted auto-row__tag">${escape(t("Terminal"))}</span>` : ""}
+          ${item.view === "chat" ? `<span class="badge badge--muted auto-row__tag">${escape(t("Chat"))}</span>` : ""}
         </div>
         <div class="row__meta auto-row__schedule">${icons.clock}<span>${escape(scheduleText(item.schedule))}</span><span aria-hidden="true">·</span>${next}</div>
         <div class="row__meta auto-row__prompt" title="${escape(item.prompt)}">${escape(firstLine)}</div>
