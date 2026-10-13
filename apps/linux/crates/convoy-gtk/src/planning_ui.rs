@@ -108,7 +108,7 @@ fn overview(
 
     let tasks = adw::PreferencesGroup::builder()
         .title("Tasks")
-        .description("A clean exit moves a task to review. Accepting it is a separate step.")
+        .description("A clean exit moves a task to review.")
         .build();
     if project_tasks.is_empty() {
         tasks.add(
@@ -503,36 +503,29 @@ fn task_page(
             .title(task.status.as_str())
             .subtitle(task.last_error.as_deref().unwrap_or(""))
             .build();
-        for (label, target) in [
-            ("Back to queue", TaskStatus::Queued),
-            ("Needs changes", TaskStatus::Changes),
-            ("Accept", TaskStatus::Done),
-        ] {
-            let button = gtk::Button::with_label(label);
-            button.set_valign(gtk::Align::Center);
-            if target == TaskStatus::Done {
-                button.add_css_class("suggested-action");
-            }
-            button.connect_clicked({
-                let app = app.clone();
-                let dialog = dialog.clone();
-                let id = task.id.clone();
-                move |_| {
-                    let outcome = {
-                        let mut workspace = app.workspace.borrow_mut();
-                        workspace.set_task_status(&id, target).map(|_| ())
-                    };
-                    match outcome {
-                        Ok(()) => {
-                            app.sync();
-                            dialog.close();
-                        }
-                        Err(error) => app.error(error),
+        let changes = gtk::Button::with_label("Needs changes");
+        changes.set_valign(gtk::Align::Center);
+        changes.connect_clicked({
+            let app = app.clone();
+            let dialog = dialog.clone();
+            let id = task.id.clone();
+            move |_| {
+                let outcome = {
+                    let mut workspace = app.workspace.borrow_mut();
+                    workspace
+                        .set_task_status(&id, TaskStatus::Changes)
+                        .map(|_| ())
+                };
+                match outcome {
+                    Ok(()) => {
+                        app.sync();
+                        dialog.close();
                     }
+                    Err(error) => app.error(error),
                 }
-            });
-            row.add_suffix(&button);
-        }
+            }
+        });
+        row.add_suffix(&changes);
         status.add(&row);
 
         let prepare = gtk::Button::with_label("Prepare session");
