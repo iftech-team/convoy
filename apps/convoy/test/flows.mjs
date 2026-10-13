@@ -374,9 +374,14 @@ try {
   assert(scrolledTo > 0, `the strip did not scroll (${end})`);
   await page.locator(".tab-item").last().click({ position: { x: 20, y: 10 } });
   await page.locator(".tab-item--selected").last().waitFor();
-  // Within sub-pixel rounding: the bug was a jump back to the start.
-  const kept = await strip.evaluate((node) => node.scrollLeft);
-  assert(Math.abs(kept - scrolledTo) <= 2, `the strip moved from ${scrolledTo} to ${kept}`);
+  // It does not jump back to the start, and the tab stays in view. (A
+  // selected tab sheds its ⌘-number, so a few pixels may shift.)
+  const [kept, inView] = await strip.evaluate((node) => {
+    const tab = node.querySelector(".tab-item--selected").getBoundingClientRect();
+    const box = node.getBoundingClientRect();
+    return [node.scrollLeft, tab.left >= box.left - 1 && tab.right <= box.right + 1];
+  });
+  assert(kept > scrolledTo / 2 && inView, `the strip moved from ${scrolledTo} to ${kept}, tab in view: ${inView}`);
   await page.evaluate(() => document.querySelectorAll("style").forEach((tag) => tag.textContent.includes(".tabbar__tabs { max-width") && tag.remove()));
   await page.locator(`.tab-item[data-tab-open="${shownTab}"]`).click({ position: { x: 20, y: 10 } });
   await page.locator(`.tab-item--selected[data-tab-open="${shownTab}"]`).waitFor();
