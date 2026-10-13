@@ -136,6 +136,7 @@ fn parses_linear_answers_and_errors() {
             status: Some("Todo".into()),
             priority: Some("High".into()),
             origin: None,
+            parent: None,
         }]
     );
     let error = parse_issues(

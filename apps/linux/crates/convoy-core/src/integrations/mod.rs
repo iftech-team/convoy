@@ -1,4 +1,4 @@
-//! Linear, Jira and Peshbar: saved connections, the search request for each, and the
+//! Linear, Jira, Peshbar and Notion: saved connections, the search request for each, and the
 //! parsing of what comes back. Port of the macOS `IssueTrackers.swift`.
 //!
 //! Nothing here touches the network. [`search_request`] describes the HTTP
@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
+pub mod notion;
 pub mod scopes;
 pub use scopes::{narrow, parse_scopes, scopes_request, ProjectLink, ProjectLinks, Scope};
 
@@ -24,6 +25,7 @@ pub enum TrackerKind {
     Linear,
     Jira,
     Peshbar,
+    Notion,
 }
 
 impl TrackerKind {
@@ -32,6 +34,7 @@ impl TrackerKind {
             TrackerKind::Linear => "Linear",
             TrackerKind::Jira => "Jira",
             TrackerKind::Peshbar => "Peshbar",
+            TrackerKind::Notion => "Notion",
         }
     }
 }
@@ -128,6 +131,9 @@ pub struct Issue {
     /// Filled by [`with_origins`]; see [`IssueSource::origin`].
     #[serde(default)]
     pub origin: Option<String>,
+    /// The Notion database a page sits in, for [`narrow`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
 }
 
 /// `host[/path]` of a link, where the path is the part that names the site:
@@ -160,6 +166,10 @@ fn url_origin(url: &str) -> Option<String> {
 /// Peshbar task links carry the workspace slug and the task id rather than the
 /// key, so a Peshbar issue always belongs to its connection's API.
 pub fn origin(issue: &Issue, connection: &Connection) -> String {
+    // Page ids are unique across Notion, so its pages share one origin.
+    if connection.kind == TrackerKind::Notion {
+        return "notion.so".into();
+    }
     if connection.kind == TrackerKind::Peshbar {
         if let Some(origin) = url_origin(&connection.peshbar_api()) {
             return origin;
@@ -271,6 +281,7 @@ pub fn search_request_in(
                 body: None,
             })
         }
+        TrackerKind::Notion => Ok(notion::search_request(authorization, link, query)),
         TrackerKind::Peshbar => {
             // A key or text goes to the global search, which also matches
             // `MOB-42`; the search needs two characters, so an empty query
@@ -329,7 +340,7 @@ fn authorization(connection: &Connection) -> Result<String> {
                 ))
             }
         }
-        TrackerKind::Peshbar => Ok(format!("Bearer {secret}")),
+        TrackerKind::Peshbar | TrackerKind::Notion => Ok(format!("Bearer {secret}")),
     }
 }
 
@@ -438,6 +449,7 @@ pub fn parse_issues(kind: TrackerKind, body: &str, site: Option<&str>) -> Result
                         status: text(&node["state"]["name"]),
                         priority: text(&node["priorityLabel"]),
                         origin: None,
+                        parent: None,
                     })
                 })
                 .collect())
@@ -466,12 +478,14 @@ pub fn parse_issues(kind: TrackerKind, body: &str, site: Option<&str>) -> Result
                         status: text(&fields["status"]["name"]),
                         priority: text(&fields["priority"]["name"]),
                         origin: None,
+                        parent: None,
                         details,
                         key,
                     })
                 })
                 .collect())
         }
+        TrackerKind::Notion => notion::parse_pages(&json),
         TrackerKind::Peshbar => {
             if let Some(message) = json["message"]
                 .as_str()
@@ -498,6 +512,7 @@ pub fn parse_issues(kind: TrackerKind, body: &str, site: Option<&str>) -> Result
                         status: text(&task["status"]["name"]),
                         priority: text(&task["priority"]["label"]),
                         origin: None,
+                        parent: None,
                     })
                 })
                 .collect())
@@ -602,6 +617,16 @@ pub fn manual_issues(text: &str) -> Vec<Issue> {
     text.split(['\n', ','])
         .filter_map(|raw| {
             let line = raw.trim();
+            // A Notion link names a page, not an issue key.
+            if let (Some(id), true) = (notion::page_id(line), line.contains("notion.")) {
+                let key = notion::short_id(&id);
+                return seen.insert(key.clone()).then(|| Issue {
+                    title: key.clone(),
+                    url: Some(line.to_string()),
+                    key,
+                    ..Issue::default()
+                });
+            }
             let found = KEY.find(line)?;
             let key = found.as_str().to_uppercase();
             if !seen.insert(key.clone()) {

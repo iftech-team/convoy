@@ -69,7 +69,7 @@ try {
       if (cmd === "review_brief") return "Review the login changes. Tests pass.";
       if (cmd === "review_create") { sessions.push({ id: "review", project_id: "project", title: "Review: Fix login", agent: "codex", provider_id: "", started: false, running: false, review_of: "builder" }); return "review"; }
       if (cmd === "review_builder") return "builder";
-      if (cmd === "integrations_list") return [{ id: "linear", kind: "linear", auth: "mcp", name: "Linear MCP", has_secret: false, levels: ["Team", "Project"] }, { id: "peshbar", kind: "peshbar", auth: "apiKey", name: "Peshbar", has_secret: true, levels: ["Workspace", "Project"] }];
+      if (cmd === "integrations_list") return [{ id: "linear", kind: "linear", auth: "mcp", name: "Linear MCP", has_secret: false, levels: ["Team", "Project"] }, { id: "peshbar", kind: "peshbar", auth: "apiKey", name: "Peshbar", has_secret: true, levels: ["Workspace", "Project"] }, { id: "notion", kind: "notion", auth: "apiKey", name: "Notion", has_secret: true, levels: ["Database", null] }];
       if (cmd === "project_link_get") return window.links?.[args.projectId] ?? null;
       if (cmd === "project_link_save") { (window.links ??= {})[args.projectId] = args.link; return null; }
       if (cmd === "integration_scopes") return args.parent ? [{ id: "3", name: "Amir cargo", key: "AMR" }] : [{ id: "9", name: "Tojiron" }, { id: "4", name: "Peshbar" }, { id: "5", name: "Logistics" }];
@@ -859,7 +859,22 @@ try {
   await page.locator(".import__row", { hasText: "Weigh parcels at intake" }).waitFor();
   if (shots) await page.screenshot({ path: `${shots}/import-linked.png` });
   assert.equal(await page.evaluate(() => window.checkCalls.findLast((c) => c.cmd === "issues_search").args.projectId), "project");
+  // Notion searches page titles or a pasted link; it has no "assigned to me".
+  await page.locator("#imp-connection").selectOption("notion");
+  await page.locator('#imp-query[placeholder="Page title, or a page link"]').waitFor();
+  assert.equal(await page.locator("#imp-mine").count(), 0);
+  await page.locator(".field__note", { hasText: "Searching all of Notion." }).waitFor();
   await page.keyboard.press("Escape");
+  // Integrations from the Tasks tab: the same catalog, and only Done below it.
+  await page.locator('.section [data-action="integrations"]').click();
+  await page.locator(".modal--catalog .catalog__service").nth(3).waitFor();
+  assert.equal(await page.locator(".modal--catalog .modal__foot .button").count(), 1);
+  if (shots) {
+    await page.waitForTimeout(300); // past the opening animation
+    await page.screenshot({ path: `${shots}/integrations.png` });
+  }
+  await page.keyboard.press("Escape");
+  await page.locator(".modal--catalog").waitFor({ state: "detached" });
   // Unlinked again, the import is back to the whole connection.
   await page.evaluate(() => { window.links = {}; });
 
@@ -972,9 +987,15 @@ try {
   await page.locator("#settings-search").fill("jira");
   assert.equal(await page.locator(".prefs__item").count(), 1, "search narrows the sections");
   await page.locator('[data-settings-section="Integrations"]').click();
-  await page.locator(".pref-row", { hasText: "Linear MCP" }).waitFor();
-  // Peshbar sits beside them: a token connection, added with its API URL.
-  await page.locator(".pref-row", { hasText: "Peshbar · API token" }).waitFor();
+  // One card per service, its connections inside: connected ones first,
+  // the rest offering Connect.
+  await page.locator(".catalog__connection", { hasText: "Linear MCP" }).waitFor();
+  assert.deepEqual(await page.locator(".catalog__name").allTextContents(), ["Linear", "Notion", "Peshbar", "Jira"]);
+  await page.locator('.catalog__service', { hasText: "Jira" }).getByRole("button", { name: "Connect" }).waitFor();
+  await page.locator('.catalog__service', { hasText: "Peshbar" }).getByRole("button", { name: "Add another" }).waitFor();
+  await page.locator(".catalog__connection", { hasText: "Peshbar" }).getByText("Token").waitFor();
+  if (shots) await page.screenshot({ path: `${shots}/settings-integrations.png` });
+  // Peshbar: a token connection, added with its API URL.
   await page.locator('[data-conn-add="peshbar"]').click();
   await page.locator('#conn-site[placeholder="https://management-api.peshbar.com"]').waitFor();
   assert.deepEqual(
@@ -985,6 +1006,19 @@ try {
   await page.getByText("Convoy also connects the peshbar MCP server").waitFor();
   await page.keyboard.press("Escape");
   await page.locator("#conn-site").waitFor({ state: "detached" });
+  // Notion: an internal integration's secret, or the agent's own MCP server.
+  await page.locator('[data-conn-add="notion"]').click();
+  await page.locator(".field__label", { hasText: "Internal integration secret" }).waitFor();
+  assert.deepEqual(
+    await page.locator("[data-conn-auth]").evaluateAll((items) => items.map((item) => item.dataset.connAuth)),
+    ["apiKey", "mcp"],
+  );
+  await page.getByText("share each database with it").waitFor();
+  assert.equal(await page.locator("#conn-site").count(), 0, "Notion has no site to enter");
+  await page.locator('[data-conn-auth="mcp"]').click();
+  await page.getByText("https://mcp.notion.com/mcp").waitFor();
+  await page.keyboard.press("Escape");
+  await page.locator('[data-conn-auth]').first().waitFor({ state: "detached" });
   if (shots) await page.screenshot({ path: `${shots}/settings.png` });
   await page.keyboard.press("Escape");
   await page.locator(".sidebar").waitFor();

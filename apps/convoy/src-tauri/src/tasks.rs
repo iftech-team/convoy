@@ -354,8 +354,32 @@ fn mode(value: &str) -> Result<PublishMode, String> {
     }
 }
 
+/// A Notion page's text lives in its blocks, which the search does not
+/// return: each page is read here, before it becomes a task. A page that
+/// cannot be read keeps the properties the search showed.
+fn with_page_text(connection: &Connection, issues: Vec<Issue>) -> Vec<Issue> {
+    issues
+        .into_iter()
+        .map(|mut issue| {
+            let text = issue.url.as_deref().and_then(|url| {
+                let request = integrations::notion::content_request(connection, url).ok()?;
+                let body = send(connection, &request).ok()?;
+                integrations::notion::parse_content(&body).ok()
+            });
+            if let Some(text) = text.filter(|text| !text.trim().is_empty()) {
+                issue.details = if issue.details.is_empty() {
+                    text
+                } else {
+                    format!("{text}\n\n{}", issue.details)
+                };
+            }
+            issue
+        })
+        .collect()
+}
+
 #[tauri::command]
-pub fn issues_import(
+pub async fn issues_import(
     project_id: String,
     connection_id: String,
     issues: Vec<Issue>,
@@ -363,12 +387,15 @@ pub fn issues_import(
     trackers: State<'_, Trackers>,
     workspace: State<'_, Workspace>,
 ) -> Result<Imported, String> {
-    let connection = trackers.with(&workspace, |integrations| {
-        integrations
-            .get(&connection_id)
-            .cloned()
-            .map_err(|error| error.to_string())
-    })?;
+    let connection = connection(&trackers, &workspace, &connection_id)?;
+    let issues = if connection.kind == TrackerKind::Notion && connection.auth != TrackerAuth::Mcp {
+        let reader = connection.clone();
+        tauri::async_runtime::spawn_blocking(move || with_page_text(&reader, issues))
+            .await
+            .map_err(|error| error.to_string())?
+    } else {
+        issues
+    };
     let mut overrides = BTreeMap::new();
     for (key, pick) in options.overrides {
         overrides.insert(

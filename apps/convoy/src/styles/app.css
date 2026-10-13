@@ -5893,3 +5893,118 @@ select:disabled {
 .link-button:hover {
   text-decoration: underline;
 }
+
+/* Integrations: one card per service, its connections inside it. A new
+   service is a new card, never a new button in the footer. */
+.modal--catalog {
+  width: min(560px, 100%);
+}
+
+.catalog {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.catalog__service {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+}
+
+.catalog__service--on {
+  background: var(--bg-subtle);
+}
+
+.catalog__head,
+.catalog__connection {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.catalog__mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius);
+  background: var(--mark);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.catalog__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.catalog__name {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.catalog__label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.catalog__detail {
+  margin-top: 1px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog__connections {
+  border-top: 1px solid var(--border);
+}
+
+/* Lined up under the service name: the dot sits where the mark does. */
+.catalog__connection {
+  padding: 8px 8px 8px 24px;
+}
+
+.catalog__connection + .catalog__connection {
+  border-top: 1px solid var(--border);
+}
+
+.catalog__connection .button--quiet {
+  opacity: 0.55;
+}
+
+.catalog__connection:hover .button--quiet,
+.catalog__connection .button--quiet:focus-visible {
+  opacity: 1;
+}
+
+.catalog__status {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin: 0 12px 0 0;
+  border-radius: 50%;
+  background: var(--state-done);
+}
+
+.catalog__status--off {
+  background: var(--state-idle);
+}
+
+.catalog__note {
+  margin: 12px 2px 0;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.catalog__note code,
+.pref-group__footer code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}

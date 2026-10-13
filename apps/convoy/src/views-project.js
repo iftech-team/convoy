@@ -44,7 +44,7 @@ const select = (key, options, selected) =>
      ${options.map(([value, name]) => `<option value="${escape(value)}"${value === selected ? " selected" : ""}>${escape(name)}</option>`).join("")}
    </select>`;
 
-const TRACKERS = { linear: "Linear", jira: "Jira", peshbar: "Peshbar" };
+const TRACKERS = { linear: "Linear", jira: "Jira", peshbar: "Peshbar", notion: "Notion" };
 
 /// One level's picker: what the tracker listed, the saved choice even when
 /// the list could not be read, and "Any" for not narrowing.
@@ -68,7 +68,7 @@ function integration(project) {
   if (!connections.length) {
     return groupBox(
       t("Integration"),
-      row(t("No integrations yet"), t("Add Linear, Jira or Peshbar, then link this project to a workspace in it."), button({ label: t("Integrations…"), action: "integrations" })),
+      row(t("No integrations yet"), t("Add Linear, Jira, Peshbar or Notion, then link this project to a workspace or database in it."), button({ label: t("Integrations…"), action: "integrations" })),
     );
   }
   const [first, second] = current?.levels ?? [];

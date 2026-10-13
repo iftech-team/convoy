@@ -1,4 +1,4 @@
-// The Tasks tab, and importing tasks into it from Linear, Jira and Peshbar.
+// The Tasks tab, and importing tasks into it from Linear, Jira, Peshbar and Notion.
 //
 // Every rule — the request, the parsing, dedupe, the task brief — lives in
 // convoy-core. This file draws state and passes input back, as main.js does.
@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { agentIcon } from "./icons.js";
 import { t } from "./i18n.js";
 import { plural } from "./ui.js";
+import { catalog, storageNote } from "./integrations-catalog.js";
 
 const MODELS = {
   claude: [["fable", "Fable · most capable"], ["opus", "Opus"], ["sonnet", "Sonnet · balanced"], ["haiku", "Haiku · fastest"]],
@@ -23,12 +24,12 @@ const STATUS = {
   failed: ["Failed", "state state--failed"],
 };
 const AUTH = {
-  apiKey: { linear: "API key", jira: "API token", peshbar: "API token" },
-  password: { linear: "Login & password", jira: "Login & password", peshbar: "Login & password" },
-  mcp: { linear: "Agent MCP server", jira: "Agent MCP server", peshbar: "Agent MCP server" },
+  apiKey: { linear: "API key", jira: "API token", peshbar: "API token", notion: "Integration token" },
+  password: { linear: "Login & password", jira: "Login & password", peshbar: "Login & password", notion: "Login & password" },
+  mcp: { linear: "Agent MCP server", jira: "Agent MCP server", peshbar: "Agent MCP server", notion: "Agent MCP server" },
 };
 const authOptions = (kind) => (kind === "jira" ? ["apiKey", "password", "mcp"] : ["apiKey", "mcp"]);
-const trackerName = (kind) => ({ jira: "Jira", peshbar: "Peshbar" })[kind] ?? "Linear";
+const trackerName = (kind) => ({ jira: "Jira", peshbar: "Peshbar", notion: "Notion" })[kind] ?? "Linear";
 // The Peshbar API a connection without a site talks to (integrations::PESHBAR_API).
 const PESHBAR_API = "https://management-api.peshbar.com";
 
@@ -303,7 +304,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         <button class="button button--primary" data-action="import">${icons.plus} ${escape(t("Import tasks"))}</button>
       </div>
       <p class="section__hint">
-        ${escape(t("Import tasks from Linear, Jira or Peshbar, choose the agent and model for all of them or per task, then run each in its own session."))}
+        ${escape(t("Import tasks from Linear, Jira, Peshbar or Notion, choose the agent and model for all of them or per task, then run each in its own session."))}
       </p>
       <div class="list">${
         rows ||
@@ -359,9 +360,9 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
            </label>`
         : `<div class="import__search">
              <input id="imp-query" value="${escape(draft.query)}" spellcheck="false"
-                    placeholder="${escape(current?.kind === "jira" ? (draft.rawJql ? t("JQL, e.g. project in (PAY, OPS)") : t("Text, issue key, or JQL")) : current?.kind === "peshbar" ? t("Title text or task key, e.g. MOB-42") : t("Title text or issue key, e.g. ENG-123"))}" />
+                    placeholder="${escape(current?.kind === "jira" ? (draft.rawJql ? t("JQL, e.g. project in (PAY, OPS)") : t("Text, issue key, or JQL")) : current?.kind === "peshbar" ? t("Title text or task key, e.g. MOB-42") : current?.kind === "notion" ? t("Page title, or a page link") : t("Title text or issue key, e.g. ENG-123"))}" />
              ${current?.kind === "jira" ? `<label class="import__check"><input type="checkbox" id="imp-jql"${draft.rawJql ? " checked" : ""} /> JQL</label>` : ""}
-             <label class="import__check"><input type="checkbox" id="imp-mine"${draft.mineOnly ? " checked" : ""} /> ${escape(t("Assigned to me"))}</label>
+             ${current?.kind === "notion" ? "" : `<label class="import__check"><input type="checkbox" id="imp-mine"${draft.mineOnly ? " checked" : ""} /> ${escape(t("Assigned to me"))}</label>`}
              <button class="button" data-action="import-search"${draft.loading ? " disabled" : ""}>${escape(draft.loading ? t("Searching…") : t("Search"))}</button>
            </div>`;
 
@@ -433,34 +434,18 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
     return modal(t("Import tasks"), escape(t("In {project}", { project: project()?.title ?? "" })), body, foot, "modal--wide");
   }
 
+  /// Every service in one list, each with its saved connections; adding a
+  /// service never adds a button here.
   function integrationsDialog() {
-    const rows = state.integrations
-      .map(
-        (item) => `
-        <div class="setting">
-          <div class="setting__text">
-            <div class="setting__title">${escape(item.name)}</div>
-            <div class="setting__hint">${escape([trackerName(item.kind), t(AUTH[item.auth][item.kind]), item.site, item.username].filter(Boolean).join(" · "))}</div>
-          </div>
-          <div class="setting__control">
-            <button class="button" data-conn-edit="${escape(item.id)}">${escape(t("Edit"))}</button>
-            <button class="button button--danger" data-conn-remove="${escape(item.id)}">${escape(t("Remove"))}</button>
-          </div>
-        </div>`,
-      )
-      .join("");
-    return modal("Integrations", escape(t("Import tasks from them in a project's Tasks tab.")), `
-      <div class="group">
-        <div class="group__label">${escape(t("Connections"))}</div>
-        ${rows || `<p class="setting__hint">${escape(t("None yet."))}</p>`}
-      </div>
-      <p class="modal__note">
-        ${t("Keys, tokens and passwords are kept in {file} beside the workspace, readable by your user only. MCP connections store nothing: the agent fetches each issue with its own MCP server.", { file: "<code>integrations.json</code>" })}
-      </p>`,
-      `<button class="button" data-dismiss="1">${escape(t("Close"))}</button>
-       <button class="button" data-conn-add="peshbar">${icons.plus} Peshbar</button>
-       <button class="button" data-conn-add="jira">${icons.plus} Jira</button>
-       <button class="button button--primary" data-conn-add="linear">${icons.plus} Linear</button>`);
+    return modal(
+      t("Integrations"),
+      escape(t("Connect a service, then import its tasks from a project's Tasks tab.")),
+      `${catalog(state.integrations)}
+       <p class="catalog__note">${storageNote()}</p>`,
+      `<span class="section__spacer"></span>
+       <button class="button button--primary" data-dismiss="1">${escape(t("Done"))}</button>`,
+      "modal--catalog",
+    );
   }
 
   function connectionDialog() {
@@ -468,7 +453,11 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
     const item = draft.connection;
     const needsSecret = item.auth !== "mcp";
     const help =
-      item.kind === "peshbar"
+      item.kind === "notion"
+        ? item.auth === "mcp"
+          ? t("Add Notion’s MCP server to your agent, e.g. claude mcp add --transport http notion https://mcp.notion.com/mcp, then import by page link.")
+          : t("Create an internal integration at notion.so/profile/integrations and copy its secret. Then share each database with it: ••• → Connections → your integration. Pages it cannot see are not found.")
+        : item.kind === "peshbar"
         ? item.auth === "mcp"
           ? t("Add the Peshbar MCP server to your agent, e.g. claude mcp add --transport http peshbar {url} --header \"Authorization: Bearer <token>\", then import by task key.", { url: `${PESHBAR_API}/mcp` })
           : t("Create a token in Peshbar → Profile → API and MCP tokens. Convoy also connects the peshbar MCP server to every agent it starts, so tasks can be read and updated from the session.")
@@ -481,7 +470,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
           : item.auth === "password"
             ? t("Jira Server / Data Center with basic authentication. Jira Cloud needs an API token instead.")
             : t("Jira Cloud: your account email plus an API token from id.atlassian.com. Data Center: leave the email empty and paste a personal access token.");
-    const secretLabel = item.kind === "linear" ? t("Personal API key") : item.kind === "peshbar" ? t("API token") : item.auth === "password" ? t("Password") : t("API token or personal access token");
+    const secretLabel = item.kind === "linear" ? t("Personal API key") : item.kind === "peshbar" ? t("API token") : item.kind === "notion" ? t("Internal integration secret") : item.auth === "password" ? t("Password") : t("API token or personal access token");
     const body = `
       <label class="field">
         <span class="field__label">${escape(t("Name"))}</span>

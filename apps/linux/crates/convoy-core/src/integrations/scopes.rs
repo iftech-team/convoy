@@ -43,6 +43,7 @@ impl TrackerKind {
             TrackerKind::Linear => ("Team", Some("Project")),
             TrackerKind::Jira => ("Project", None),
             TrackerKind::Peshbar => ("Workspace", Some("Project")),
+            TrackerKind::Notion => ("Database", None),
         }
     }
 }
@@ -95,6 +96,13 @@ pub fn scopes_request(connection: &Connection, parent: Option<&Scope>) -> Result
                 ],
                 body: None,
             })
+        }
+        TrackerKind::Notion => {
+            ensure!(
+                parent.is_none(),
+                "Notion databases have no level below them."
+            );
+            Ok(super::notion::databases_request(authorization))
         }
         TrackerKind::Peshbar => {
             let api = connection.peshbar_api();
@@ -177,6 +185,7 @@ pub fn parse_scopes(kind: TrackerKind, second_level: bool, body: &str) -> Result
                 .filter_map(|project| scope(project, Some(&project["key"])))
                 .collect()
         }
+        TrackerKind::Notion => super::notion::parse_databases(&json)?,
         TrackerKind::Peshbar => {
             let data = json.get("data").unwrap_or(&json);
             if let Some(message) = json["message"]
@@ -282,8 +291,22 @@ pub(super) fn peshbar_headers(link: Option<&ProjectLink>) -> Vec<(String, String
 
 /// What the search found, kept to the linked project where the tracker could
 /// not filter by it: a Peshbar search spans the workspace, so its tasks are
-/// matched on their key prefix.
+/// matched on their key prefix; Notion's search spans every shared page, so
+/// its pages are matched on their database.
 pub fn narrow(kind: TrackerKind, issues: Vec<Issue>, link: Option<&ProjectLink>) -> Vec<Issue> {
+    if let (TrackerKind::Notion, Some(database)) =
+        (kind, link.and_then(|link| link.workspace.as_ref()))
+    {
+        return issues
+            .into_iter()
+            .filter(|issue| {
+                issue
+                    .parent
+                    .as_deref()
+                    .is_some_and(|parent| super::notion::same_id(parent, &database.id))
+            })
+            .collect();
+    }
     let prefix = match (kind, link.and_then(|link| link.project.as_ref())) {
         (TrackerKind::Peshbar, Some(project)) => project
             .key
