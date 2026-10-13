@@ -344,12 +344,14 @@ function render() {
   const position = document.activeElement?.selectionStart;
   // Every change re-renders, and a scroller that jumps to the top each time
   // makes a long dialog or a long file list unusable.
+  // Both ways: the tab strip scrolls sideways.
   const scrolled = new Map(
     [...document.querySelectorAll("[data-scroll]")].map((node) => [
       node.dataset.scroll,
-      node.scrollTop,
+      [node.scrollTop, node.scrollLeft],
     ]),
   );
+  const selectedTab = document.querySelector(".tab-item--selected")?.dataset.tabOpen;
 
   app.innerHTML =
     state.page === "settings"
@@ -376,10 +378,16 @@ function render() {
   }
   shown = overlay;
 
-  for (const [key, top] of scrolled) {
+  for (const [key, [top, left]] of scrolled) {
     const node = document.querySelector(`[data-scroll="${key}"]`);
-    if (node) node.scrollTop = top;
+    if (!node) continue;
+    node.scrollTop = top;
+    node.scrollLeft = left;
   }
+  // A tab selected from elsewhere (the sidebar, ⌘1–9) is brought into view;
+  // one clicked in the strip is already there, so nothing moves.
+  const tab = document.querySelector(".tab-item--selected");
+  if (tab && tab.dataset.tabOpen !== selectedTab) tab.scrollIntoView({ block: "nearest", inline: "nearest" });
 
   // A freshly opened editor starts with the caret at the end of the file.
   if (state.docs?.focusEditor) {

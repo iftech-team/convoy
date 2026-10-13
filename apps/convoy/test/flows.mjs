@@ -359,6 +359,19 @@ try {
   await page.keyboard.press(`${primary}+e`);
   await page.keyboard.press("Enter");
   await page.locator('.tab-item--selected[data-tab-open="builder"]').waitFor();
+  // A tab strip scrolled sideways stays put when its last tab is clicked.
+  await page.addStyleTag({ content: ".tabbar__tabs { max-width: 160px !important; flex: none !important; }" });
+  const strip = page.locator(".tabbar__tabs");
+  const shownTab = await page.locator(".tab-item--selected").first().getAttribute("data-tab-open");
+  const end = await strip.evaluate((node) => (node.scrollLeft = node.scrollWidth));
+  const scrolledTo = await strip.evaluate((node) => node.scrollLeft);
+  assert(scrolledTo > 0, `the strip did not scroll (${end})`);
+  await page.locator(".tab-item").last().click({ position: { x: 20, y: 10 } });
+  await page.locator(".tab-item--selected").last().waitFor();
+  assert.equal(await strip.evaluate((node) => node.scrollLeft), scrolledTo);
+  await page.evaluate(() => document.querySelectorAll("style").forEach((tag) => tag.textContent.includes("max-width: 160px") && tag.remove()));
+  await page.locator(`.tab-item[data-tab-open="${shownTab}"]`).click({ position: { x: 20, y: 10 } });
+  await page.locator(`.tab-item--selected[data-tab-open="${shownTab}"]`).waitFor();
   // ⌘K reaches every project's sessions and the actions, best match first.
   await page.keyboard.press(`${primary}+k`);
   await page.locator("#palette-input").fill("notes");
