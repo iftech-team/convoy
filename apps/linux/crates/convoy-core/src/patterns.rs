@@ -48,7 +48,9 @@ pub static CODEX_RESUME: LazyLock<Regex> = LazyLock::new(|| {
         .unwrap()
 });
 
-/// A GitHub pull request or GitLab merge request link.
+/// A GitHub pull request or GitLab merge request link, on any host: self-hosted
+/// GitLab and GitHub Enterprise print the same paths as the public sites.
 pub static PULL_REQUEST: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"https://(github\.com|gitlab\.com)/[^\s'"`)]+/(pull|merge_requests)/\d+"#).unwrap()
+    Regex::new(r#"https://[A-Za-z0-9.-]+(?::\d+)?/[^\s'"`)]+/(?:pull|merge_requests)/\d+"#)
+        .unwrap()
 });

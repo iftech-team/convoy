@@ -42,6 +42,29 @@ fn codex_resume_ids_and_pull_request_links_are_found_in_output() {
 }
 
 #[test]
+fn a_self_hosted_merge_or_pull_request_is_recognised() {
+    assert_eq!(
+        pull_request_url(
+            "Created https://gitlab.eskhata.com/digital/eskhataonline/laravel-ewallet/-/merge_requests/828"
+        )
+        .as_deref(),
+        Some("https://gitlab.eskhata.com/digital/eskhataonline/laravel-ewallet/-/merge_requests/828")
+    );
+    assert_eq!(
+        pull_request_url("at https://git.acme.local:8443/team/app/-/merge_requests/5.").as_deref(),
+        Some("https://git.acme.local:8443/team/app/-/merge_requests/5")
+    );
+    assert_eq!(
+        pull_request_url("`https://github.acme.com/team/app/pull/19`").as_deref(),
+        Some("https://github.acme.com/team/app/pull/19")
+    );
+    assert_eq!(
+        pull_request_url("https://jira.acme.com/browse/APP-523 and https://gitlab.acme.com/team/app/-/issues/4"),
+        None
+    );
+}
+
+#[test]
 fn a_codex_session_without_an_id_takes_the_printed_one_once() {
     let (_dir, mut workspace) = workspace();
     let project = workspace.state().projects[0].id.clone();
