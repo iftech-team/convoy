@@ -11,8 +11,7 @@
 //!   task gets its own worktree so it never pushes the shared checkout.
 
 use crate::model::{Task, TaskStatus};
-use crate::review;
-use crate::workspace::{NewSession, Workspace};
+use crate::workspace::Workspace;
 use crate::Result;
 
 /// Whether a session currently has a process.
@@ -93,26 +92,23 @@ pub fn needs_worktree(workspace: &Workspace, task_id: &str) -> Option<String> {
 /// What should happen after a task session exits cleanly.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Completion {
-    /// Not a task session, or the task is not awaiting review.
+    /// Not a task session, or its round was already handled.
     Nothing,
     /// The specification moved on while the task ran: the work is against an
     /// old brief, so the task goes back to `changes` and the queue stops.
     Superseded,
-    /// Hand the work to the other agent.
-    Review(Box<NewSession>),
-    /// Test the task (the project starts QA by itself), and review it too
-    /// when that is also due.
-    Test {
-        task: String,
-        review: Option<Box<NewSession>>,
-    },
-    /// Accepted into review; carry on with the queue.
-    Continue,
+    /// Its round is done; the pipeline moved it on. Carry on with the queue.
+    Advance(Vec<crate::pipeline::Action>),
 }
 
-/// Decides what a clean exit means. `output` is the terminal excerpt that
-/// would go into a review brief; it is context, never instructions.
-pub fn on_clean_exit(workspace: &Workspace, session_id: &str, output: &str) -> Result<Completion> {
+/// Decides what a clean exit means: the builder's round is done, as if it
+/// had written its completion file. A round already handled by that file
+/// is not handled again.
+pub fn on_clean_exit(
+    workspace: &mut Workspace,
+    context: &crate::pipeline::Context<'_>,
+    session_id: &str,
+) -> Result<Completion> {
     let state = workspace.state();
     let Some(task) = state
         .tasks
@@ -121,7 +117,7 @@ pub fn on_clean_exit(workspace: &Workspace, session_id: &str, output: &str) -> R
     else {
         return Ok(Completion::Nothing);
     };
-    if !matches!(task.status, TaskStatus::Review | TaskStatus::Pr) {
+    if !matches!(task.status, TaskStatus::Review | TaskStatus::Pr) || task.stage_run.is_none() {
         return Ok(Completion::Nothing);
     }
     let spec = task
@@ -133,28 +129,21 @@ pub fn on_clean_exit(workspace: &Workspace, session_id: &str, output: &str) -> R
             return Ok(Completion::Superseded);
         }
     }
-    // One review per builder: a second exit must not spawn another.
-    let reviewed = state
-        .sessions
-        .iter()
-        .any(|session| session.review_of.as_deref() == Some(session_id));
-    let review = if task.auto_review && !reviewed {
-        let brief = review::brief(workspace, session_id, output)?;
-        Some(Box::new(review::handoff(workspace, session_id, brief)?))
-    } else {
-        None
-    };
-    let project = workspace.project(&task.project_id)?;
-    if project.qa_auto == Some(true) && crate::qa::configured(project) {
-        return Ok(Completion::Test {
-            task: task.id.clone(),
-            review,
-        });
-    }
-    Ok(match review {
-        Some(review) => Completion::Review(review),
-        None => Completion::Continue,
-    })
+    let task_id = task.id.clone();
+    // Whatever the builder wrote on its way out is read first.
+    let report = task.stage_run.as_deref().and_then(|run| {
+        match crate::stage::read(
+            crate::stage::Stage::Build,
+            &crate::stage::file(workspace, crate::stage::Stage::Build, run),
+        ) {
+            Some(crate::stage::StageResult::Build { summary, verified }) => {
+                Some((summary, verified))
+            }
+            _ => None,
+        }
+    });
+    let actions = crate::pipeline::build_done(workspace, context, &task_id, report)?;
+    Ok(Completion::Advance(actions))
 }
 
 /// Marks a task as superseded and reports that the queue must stop.

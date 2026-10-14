@@ -81,7 +81,7 @@ const RELATED_DETAILS: usize = 2_000;
 
 /// The tasks this one waits for or is related to, for its agent to read
 /// first: what each is, where it stands, and where its work lives.
-fn related_context(state: &State, task: &Task) -> String {
+pub(crate) fn related_context(state: &State, task: &Task) -> String {
     let mut ids: Vec<&String> = task.depends_on.iter().collect();
     for id in &task.related {
         if !ids.contains(&id) {
@@ -143,7 +143,7 @@ fn related_context(state: &State, task: &Task) -> String {
     )
 }
 
-fn source_note(source: &IssueSource) -> String {
+pub(crate) fn source_note(source: &IssueSource) -> String {
     let link = source
         .url
         .as_deref()
@@ -267,6 +267,13 @@ impl Workspace {
         text(&input.title, 200, true)?;
         text(&input.details, 16_000, false)?;
         text(&input.findings, 16_000, false)?;
+        let plan_first = self
+            .state()
+            .projects
+            .iter()
+            .find(|project| project.id == input.project_id)
+            .and_then(|project| project.plan_first_default)
+            .unwrap_or(false);
         self.update(move |state| {
             let existing = input.id.as_ref().map(|id| find_task_index(state, id));
             match existing {
@@ -312,6 +319,14 @@ impl Workspace {
                         task.status = TaskStatus::Queued;
                         task.session_id = None;
                         task.spec_revision = None;
+                        task.stage_run = None;
+                        task.round = 0;
+                        // The plan was for the task as it was.
+                        if let Some(plan) = task.plan.as_mut() {
+                            if plan.status == crate::plan::PlanStatus::Approved {
+                                plan.status = crate::plan::PlanStatus::ChangesRequested;
+                            }
+                        }
                     }
                 }
                 None => state.tasks.push(Task {
@@ -338,6 +353,15 @@ impl Workspace {
                     skills: attached(input.skills.clone().unwrap_or_default()),
                     sync: None,
                     qa: None,
+                    round: 0,
+                    stage_run: None,
+                    build_summary: None,
+                    review: None,
+                    plan_first,
+                    plan_auto_approve: None,
+                    plan: None,
+                    docs: Vec::new(),
+                    docs_run: None,
                     unknown: Default::default(),
                 }),
             }
@@ -358,6 +382,7 @@ impl Workspace {
                         | TaskStatus::Changes
                         | TaskStatus::Done
                         | TaskStatus::Failed
+                        | TaskStatus::Attention
                 ),
                 "Invalid task status."
             );
@@ -378,6 +403,26 @@ impl Workspace {
                 }
             }
             state.tasks[index].status = status;
+            Ok(())
+        })
+    }
+
+    /// Whether a task is planned before it is built, and whether its plans
+    /// are approved by themselves (`None` follows the project).
+    pub fn set_task_plan(
+        &mut self,
+        id: &str,
+        plan_first: bool,
+        auto_approve: Option<bool>,
+    ) -> Result<&State> {
+        let id = id.to_string();
+        self.update(move |state| {
+            let Some(index) = find_task_index(state, &id) else {
+                bail!("Task unavailable.")
+            };
+            let task = &mut state.tasks[index];
+            task.plan_first = plan_first;
+            task.plan_auto_approve = auto_approve;
             Ok(())
         })
     }
@@ -529,6 +574,9 @@ impl Workspace {
     /// state; the caller looks the session up through `task.session_id`.
     pub fn prepare_task(&mut self, id: &str, profile_id: Option<String>) -> Result<&State> {
         let id = id.to_string();
+        // The run its builder reports on when it is done.
+        let run = new_id();
+        let done_file = crate::stage::file(self, crate::stage::Stage::Build, &run);
         self.update(move |state| {
             let Some(index) = find_task_index(state, &id) else {
                 bail!("Task unavailable.")
@@ -538,6 +586,10 @@ impl Workspace {
                 "Task unavailable."
             );
             let task = state.tasks[index].clone();
+            ensure!(
+                !crate::plan::needed(&task),
+                "This task is planned first: approve its plan before it is built."
+            );
             let spec = task
                 .spec_id
                 .as_deref()
@@ -579,9 +631,25 @@ impl Workspace {
                 String::new()
             };
             let context = related_context(state, &task);
+            let plan = task
+                .plan
+                .as_ref()
+                .filter(|plan| plan.approved())
+                .map(|plan| format!("\n\n## Approved plan\nFollow this plan.\n\n{}", plan.text.trim()))
+                .unwrap_or_default();
+            let instructions = state
+                .projects
+                .iter()
+                .find(|project| project.id == task.project_id)
+                .map(|project| crate::roles::brief(&state.settings, project, crate::model::Role::Build))
+                .filter(|text| !text.is_empty())
+                .map(|text| format!("\n\n## Instructions\n{text}"))
+                .unwrap_or_default();
             let prompt = format!(
-                "{preamble}\n## Current task\n{}\n\n{}{origin}{findings}{context}\n\nVerify the changes and report your results. {publication}",
-                task.title, task.details
+                "{preamble}\n## Current task\n{}\n\n{}{origin}{findings}{context}{plan}{instructions}\n\nVerify the changes and report your results. {publication}\n\n{}",
+                task.title,
+                task.details,
+                crate::stage::closing(crate::stage::Stage::Build, &done_file)
             );
             ensure!(
                 utf16_len(&prompt) <= 32_000,
@@ -623,6 +691,7 @@ impl Workspace {
             state.sessions.push(session);
             state.tasks[index].session_id = Some(session_id);
             state.tasks[index].spec_revision = revision;
+            state.tasks[index].stage_run = Some(run);
             Ok(())
         })
     }
@@ -712,9 +781,28 @@ impl Workspace {
                     skills: attached(options.skills.clone()),
                     sync: None,
                     qa: None,
+                    round: 0,
+                    stage_run: None,
+                    build_summary: None,
+                    review: None,
+                    plan_first: false,
+                    plan_auto_approve: None,
+                    plan: None,
+                    docs: Vec::new(),
+                    docs_run: None,
                     unknown: Default::default(),
                 });
             }
+        }
+        let plan_first = self
+            .state()
+            .projects
+            .iter()
+            .find(|project| project.id == project_id)
+            .and_then(|project| project.plan_first_default)
+            .unwrap_or(false);
+        for task in created.iter_mut() {
+            task.plan_first = plan_first;
         }
         let count = created.len();
         if count > 0 {

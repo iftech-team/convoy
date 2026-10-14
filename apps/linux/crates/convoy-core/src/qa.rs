@@ -30,6 +30,8 @@ const OUTPUT_TAIL: usize = 4_000;
 pub enum QaStatus {
     /// Running the project's checks.
     Checking,
+    /// The checks passed; the QA agent tests once the review has passed.
+    Waiting,
     /// The QA agent is testing.
     Testing,
     Passed,
@@ -341,15 +343,15 @@ pub fn brief(workspace: &Workspace, task_id: &str, verdict: &Path) -> Result<Str
         .as_deref()
         .map(|url| format!("\nPull request: {url}\n"))
         .unwrap_or_default();
+    let project = workspace.project(&task.project_id)?;
+    let instructions = crate::roles::brief(workspace.settings(), project, crate::model::Role::Qa);
+    let context = crate::pipeline::task_context(task);
     let prompt = format!(
-        "You are QA for this task. Test the change end to end against the task and its acceptance criteria: run the project's tests, and if it has a user interface or an API, use it the way a user would. Look for regressions near the change too.\n\
+        "You are QA for this task. {instructions}\n\
          Do not edit, commit or push anything.\n\n\
-         ## Task\n{}\n\n{}\n{pr}{checks}{}\n\
-         ## Verdict\n\
-         When you are done, write your verdict as JSON to {}:\n\
-         {{\"verdict\": \"pass\"}} when everything works, or\n\
-         {{\"verdict\": \"fail\", \"findings\": \"1. What fails, how to reproduce it, what you expected.\\n2. …\"}}\n\
-         Findings must be concrete and reproducible. Then state the verdict in your last message.",
+         ## Task\n{}\n\n{}\n{pr}{checks}{}{context}\n\
+         {}\n\
+         State the verdict in your last message too.",
         task.title,
         task.details,
         if spec.is_empty() {
@@ -357,7 +359,7 @@ pub fn brief(workspace: &Workspace, task_id: &str, verdict: &Path) -> Result<Str
         } else {
             format!("\n## Specification\n{spec}\n")
         },
-        verdict.display(),
+        crate::stage::closing(crate::stage::Stage::Qa, verdict),
     );
     Ok(head(&prompt, 32_000).to_string())
 }
@@ -409,6 +411,38 @@ pub fn record_session(
     Ok(())
 }
 
+/// Sets up the QA agent of the task's current run: its brief, its session
+/// (with the project's QA skills), tied to the run. Returns the session, to
+/// be started.
+pub fn start_agent(
+    workspace: &mut Workspace,
+    qa_dir: &Path,
+    skills: &[String],
+    task_id: &str,
+    agent: Agent,
+) -> Result<String> {
+    let Some(run_id) = find(workspace, task_id)?
+        .qa
+        .as_ref()
+        .map(|run| run.id.clone())
+    else {
+        bail!("This task has no QA run.")
+    };
+    std::fs::create_dir_all(qa_dir)?;
+    let verdict = verdict_file(qa_dir, &run_id);
+    let brief = brief(workspace, task_id, &verdict)?;
+    let mut input = handoff(workspace, task_id, agent, brief)?;
+    input.skills = skills.to_vec();
+    let session = workspace
+        .add_session(input)?
+        .sessions
+        .last()
+        .map(|session| session.id.clone())
+        .unwrap_or_default();
+    record_session(workspace, task_id, &run_id, &session)?;
+    Ok(session)
+}
+
 #[derive(Deserialize)]
 struct Verdict {
     verdict: String,
@@ -436,7 +470,7 @@ pub fn on_exit(
     else {
         return Ok(None);
     };
-    if matches!(run.status, QaStatus::Passed | QaStatus::Failed) {
+    if run.status != QaStatus::Testing {
         return Ok(None);
     }
     let verdict = std::fs::read_to_string(verdict_file(qa_dir, &run.id))
@@ -448,6 +482,18 @@ pub fn on_exit(
     let findings = verdict
         .map(|verdict| verdict.findings.trim().to_string())
         .unwrap_or_default();
+    conclude(workspace, &task, passed, findings).map(Some)
+}
+
+/// Applies a QA agent's verdict to its task — `None` when it left none —
+/// and says what that means for the builder.
+pub fn conclude(
+    workspace: &mut Workspace,
+    task: &Task,
+    passed: Option<bool>,
+    findings: String,
+) -> Result<Outcome> {
+    let task_id = task.id.clone();
     let outcome = Outcome {
         task_id: task_id.clone(),
         passed,
@@ -477,7 +523,7 @@ pub fn on_exit(
         }
         Ok(())
     })?;
-    Ok(Some(outcome))
+    Ok(outcome)
 }
 
 /// The commands a project probably tests with, read from its manifests.

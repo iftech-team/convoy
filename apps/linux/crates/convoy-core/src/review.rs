@@ -6,27 +6,58 @@
 //! builder — Convoy never submits on their behalf.
 
 use crate::history::review_brief;
-use crate::model::Agent;
+use crate::model::{Agent, Role, Task};
 use crate::workspace::{NewSession, Workspace};
 use crate::{bail, ensure, json::head, Result};
+use std::path::Path;
 
 pub const DEFAULT_TEMPLATE: &str =
     "Review correctness, regressions, tests and security. Report findings without editing code.";
 
-/// Builds the brief for reviewing `id`, using the project's own template when
-/// it has one.
+/// Builds the brief for reviewing `id`, with the review role's
+/// instructions for its project.
 pub fn brief(workspace: &Workspace, id: &str, output: &str) -> Result<String> {
     let session = workspace.session(id)?;
     let project = workspace.project(&session.project_id)?;
-    let global = workspace.settings().review_template.as_str();
-    let template = project
-        .review_template
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .or(Some(global).filter(|value| !value.trim().is_empty()))
-        .unwrap_or(DEFAULT_TEMPLATE);
+    let template = crate::roles::brief(workspace.settings(), project, Role::Review);
     let brief = review_brief(session, output);
     Ok(head(&format!("{template}\n\n{brief}"), 32_000).to_string())
+}
+
+/// The brief for reviewing a task's builder in the pipeline: the same, with
+/// the task, its plan, and where the verdict goes.
+pub fn task_brief(
+    workspace: &Workspace,
+    id: &str,
+    output: &str,
+    task: &Task,
+    verdict: &Path,
+) -> Result<String> {
+    let session = workspace.session(id)?;
+    let project = workspace.project(&session.project_id)?;
+    let template = crate::roles::brief(workspace.settings(), project, Role::Review);
+    let findings = task
+        .review
+        .as_ref()
+        .filter(|run| run.round + 1 == task.round && !run.findings.trim().is_empty())
+        .map(|run| {
+            format!(
+                "\n## Your previous findings\nThe builder was asked to fix these; check that it did.\n\n{}\n",
+                run.findings.trim()
+            )
+        })
+        .unwrap_or_default();
+    let context = crate::pipeline::task_context(task);
+    // The excerpt is the end of the builder's output; the brief keeps room
+    // for everything around it.
+    let excerpt = head(&review_brief(session, output), 20_000).to_string();
+    let text = format!(
+        "{template}\nDo not edit, commit or push anything.\n\n## Task\n{}\n\n{}\n{context}{findings}\n{excerpt}\n\n{}",
+        task.title,
+        task.details,
+        crate::stage::closing(crate::stage::Stage::Review, verdict)
+    );
+    Ok(head(&text, 32_000).to_string())
 }
 
 /// The session a review handoff creates: the other agent, the same project,

@@ -16,7 +16,7 @@
 
 use crate::automations::Instant;
 use crate::json::utf16_len;
-use crate::workspace::model::Agent;
+use crate::workspace::model::{Agent, Role};
 use crate::workspace::{new_id, Workspace};
 use crate::{bail, ensure, ConvoyError, Result};
 use serde::{Deserialize, Serialize};
@@ -81,6 +81,10 @@ pub struct Skill {
     /// Attached by default to new sessions, tasks and automations in its scope.
     #[serde(default)]
     pub auto: bool,
+    /// The task roles it is given to; none is the builder only, as skills
+    /// always were.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roles: Option<Vec<Role>>,
     pub created: Instant,
     #[serde(default)]
     pub updated: Instant,
@@ -100,6 +104,14 @@ impl Skill {
     pub fn applies(&self, agent: Agent, project_id: &str) -> bool {
         self.agents.includes(agent) && self.in_scope(project_id)
     }
+
+    /// Whether it is for this role in a task.
+    pub fn for_role(&self, role: Role) -> bool {
+        match &self.roles {
+            Some(roles) => roles.contains(&role),
+            None => role == Role::Build,
+        }
+    }
 }
 
 /// What the editor sends.
@@ -118,6 +130,20 @@ pub struct SkillInput {
     pub agents: String,
     #[serde(default)]
     pub auto: bool,
+    /// The task roles it is for; none or empty is the builder only.
+    #[serde(default)]
+    pub roles: Option<Vec<Role>>,
+}
+
+/// A role list as kept: none for the builder alone, without repeats.
+fn roles_kept(roles: Option<Vec<Role>>) -> Option<Vec<Role>> {
+    let mut unique: Vec<Role> = Vec::new();
+    for role in roles.unwrap_or_default() {
+        if !unique.contains(&role) {
+            unique.push(role);
+        }
+    }
+    (!unique.is_empty() && unique != [Role::Build]).then_some(unique)
 }
 
 /// Checks what the editor sent. `others` are the skills already kept, so a
@@ -266,6 +292,7 @@ impl Store {
                     skill.project_id = project_id;
                     skill.agents = agents;
                     skill.auto = input.auto;
+                    skill.roles = roles_kept(input.roles.clone());
                     skill.updated = now;
                     Ok(id.clone())
                 })
@@ -280,6 +307,7 @@ impl Store {
                     project_id,
                     agents,
                     auto: input.auto,
+                    roles: roles_kept(input.roles.clone()),
                     created: now,
                     updated: now,
                     unknown: Map::new(),
@@ -368,8 +396,21 @@ impl Store {
             .skills
             .iter()
             .filter(|skill| skill.auto && skill.in_scope(project_id))
+            .filter(|skill| skill.for_role(Role::Build))
             .filter(|skill| agent.is_none_or(|agent| skill.agents.includes(agent)))
             .map(|skill| skill.id.clone())
+            .collect()
+    }
+
+    /// The `auto` skills of a role in a task, for this agent in this
+    /// project, within the attachment limit.
+    pub fn for_role(&self, project_id: &str, agent: Agent, role: Role) -> Vec<String> {
+        self.state
+            .skills
+            .iter()
+            .filter(|skill| skill.auto && skill.applies(agent, project_id) && skill.for_role(role))
+            .map(|skill| skill.id.clone())
+            .take(MAX_ATTACHED)
             .collect()
     }
 

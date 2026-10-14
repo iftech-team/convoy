@@ -294,6 +294,13 @@ impl Merge<'_> {
                 qa_agent: None,
                 qa_auto: None,
                 qa_timeout: None,
+                role_instructions: None,
+                max_fix_rounds: None,
+                review_auto: None,
+                plan_first_default: None,
+                plan_auto_approve: None,
+                docs_dir: None,
+                docs_auto: None,
                 unknown: Default::default(),
             });
             ids.insert(id, state.projects.last().expect("pushed").id.clone());
@@ -504,6 +511,15 @@ impl Merge<'_> {
                         skills: None,
                         sync: None,
                         qa: None,
+                        round: 0,
+                        stage_run: None,
+                        build_summary: None,
+                        review: None,
+                        plan_first: false,
+                        plan_auto_approve: None,
+                        plan: None,
+                        docs: Vec::new(),
+                        docs_run: None,
                         unknown: Default::default(),
                     });
                     self.report.tasks += 1;
@@ -596,6 +612,15 @@ impl Merge<'_> {
                 skills: None,
                 sync: None,
                 qa: None,
+                round: 0,
+                stage_run: None,
+                build_summary: None,
+                review: None,
+                plan_first: false,
+                plan_auto_approve: None,
+                plan: None,
+                docs: Vec::new(),
+                docs_run: None,
                 unknown: Default::default(),
             });
             self.report.tasks += 1;

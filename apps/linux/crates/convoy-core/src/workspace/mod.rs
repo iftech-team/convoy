@@ -52,6 +52,17 @@ pub struct ProjectPatch {
     pub qa_agent: Option<String>,
     pub qa_auto: Option<bool>,
     pub qa_timeout: Option<u32>,
+    /// Each role's instructions; a role missing or blank follows the global
+    /// ones. Replaces the whole map.
+    pub role_instructions: Option<std::collections::BTreeMap<crate::model::Role, String>>,
+    /// 0 sends every failure straight to attention.
+    pub max_fix_rounds: Option<u32>,
+    pub review_auto: Option<bool>,
+    pub plan_first_default: Option<bool>,
+    pub plan_auto_approve: Option<bool>,
+    /// An absolute folder; `Some("")` clears it.
+    pub docs_dir: Option<String>,
+    pub docs_auto: Option<bool>,
 }
 
 impl ProjectPatch {
@@ -156,6 +167,7 @@ pub struct SettingsPatch {
     pub worktree_shared: Option<String>,
     /// `chat` or `terminal`.
     pub default_view: Option<String>,
+    pub role_instructions: Option<std::collections::BTreeMap<crate::model::Role, String>>,
 }
 
 pub struct Workspace {
@@ -268,6 +280,13 @@ impl Workspace {
                     qa_agent: None,
                     qa_auto: None,
                     qa_timeout: None,
+                    role_instructions: None,
+                    max_fix_rounds: None,
+                    review_auto: None,
+                    plan_first_default: None,
+                    plan_auto_approve: None,
+                    docs_dir: None,
+                    docs_auto: None,
                     unknown: Default::default(),
                 });
             }
@@ -302,6 +321,25 @@ impl Workspace {
                 Agent::parse(value).ok_or_else(|| ConvoyError::message("Unknown agent."))?,
             )),
         };
+        if let Some(roles) = &patch.role_instructions {
+            ensure!(
+                roles.values().all(|text| utf16_len(text) <= 16_000),
+                "Role instructions may be 16,000 characters at most."
+            );
+        }
+        if let Some(rounds) = patch.max_fix_rounds {
+            ensure!(rounds <= 10, "Allow 0 to 10 rounds of fixes.");
+        }
+        if let Some(dir) = patch
+            .docs_dir
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            ensure!(
+                Path::new(dir.trim()).is_absolute(),
+                "Choose the documents folder by its full path."
+            );
+        }
         if let Some(minutes) = patch.qa_timeout {
             ensure!(
                 (1..=240).contains(&minutes),
@@ -409,6 +447,32 @@ impl Workspace {
             if let Some(value) = patch.qa_timeout {
                 project.qa_timeout = Some(value);
             }
+            if let Some(roles) = patch.role_instructions {
+                let roles: std::collections::BTreeMap<_, _> = roles
+                    .into_iter()
+                    .filter(|(_, text)| !text.trim().is_empty())
+                    .collect();
+                project.role_instructions = (!roles.is_empty()).then_some(roles);
+            }
+            if let Some(value) = patch.max_fix_rounds {
+                project.max_fix_rounds = Some(value);
+            }
+            if let Some(value) = patch.review_auto {
+                project.review_auto = Some(value);
+            }
+            if let Some(value) = patch.plan_first_default {
+                project.plan_first_default = Some(value);
+            }
+            if let Some(value) = patch.plan_auto_approve {
+                project.plan_auto_approve = Some(value);
+            }
+            if let Some(value) = patch.docs_dir {
+                let value = value.trim().to_string();
+                project.docs_dir = (!value.is_empty()).then(|| PathBuf::from(value));
+            }
+            if let Some(value) = patch.docs_auto {
+                project.docs_auto = Some(value);
+            }
             Ok(())
         })
     }
@@ -501,6 +565,13 @@ impl Workspace {
                     qa_agent: None,
                     qa_auto: None,
                     qa_timeout: None,
+                    role_instructions: None,
+                    max_fix_rounds: None,
+                    review_auto: None,
+                    plan_first_default: None,
+                    plan_auto_approve: None,
+                    docs_dir: None,
+                    docs_auto: None,
                     unknown: Default::default(),
                 });
                 ids.push(id);
@@ -852,6 +923,7 @@ impl Workspace {
             worktree_setup: patch.worktree_setup.unwrap_or(current.worktree_setup),
             worktree_shared: patch.worktree_shared.unwrap_or(current.worktree_shared),
             default_view: patch.default_view.unwrap_or(current.default_view),
+            role_instructions: patch.role_instructions.unwrap_or(current.role_instructions),
             unknown: current.unknown,
         };
         ensure!(

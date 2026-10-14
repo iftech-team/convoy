@@ -370,6 +370,10 @@ pub fn mark_started(workspace: &mut Workspace, plan: &LaunchPlan) -> Result<()> 
         {
             task.status = TaskStatus::Building;
             task.last_error = None;
+            // Every round of building reports on a run of its own.
+            if task.stage_run.is_none() {
+                task.stage_run = Some(crate::workspace::new_id());
+            }
         }
         Ok(())
     })?;
@@ -397,6 +401,14 @@ pub fn finish_session(workspace: &mut Workspace, id: &str, cause: ExitCause) -> 
                 return Ok(());
             };
             let task = &state.tasks[index];
+            // A task the pipeline already moved on — its round reported by
+            // file, then the builder put to sleep — stays where it is.
+            if !matches!(
+                task.status,
+                TaskStatus::Building | TaskStatus::Queued | TaskStatus::Changes
+            ) {
+                return Ok(());
+            }
             let superseded = task
                 .spec_id
                 .as_deref()

@@ -52,6 +52,7 @@ fn add_skill(world: &World, name: &str, body: &str, agents: &str) -> String {
                 project_id: None,
                 agents: agents.into(),
                 auto: false,
+                roles: None,
             },
             &world.workspace,
             1,

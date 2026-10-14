@@ -21,6 +21,7 @@ fn input(name: &str, body: &str) -> SkillInput {
         project_id: None,
         agents: "both".into(),
         auto: false,
+        roles: None,
     }
 }
 
@@ -33,6 +34,7 @@ fn skill(id: &str, name: &str, body: &str, agents: Agents, project: Option<&str>
         project_id: project.map(str::to_string),
         agents,
         auto: false,
+        roles: None,
         created: 0,
         updated: 0,
         unknown: Map::new(),

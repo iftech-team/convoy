@@ -1097,6 +1097,13 @@ mod tests {
             qa_agent: None,
             qa_auto: None,
             qa_timeout: None,
+            role_instructions: None,
+            max_fix_rounds: None,
+            review_auto: None,
+            plan_first_default: None,
+            plan_auto_approve: None,
+            docs_dir: None,
+            docs_auto: None,
             unknown: Default::default(),
         });
         let import = |id: &str, at: f64| Import {

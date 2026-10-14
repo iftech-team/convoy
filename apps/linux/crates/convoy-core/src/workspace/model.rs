@@ -58,6 +58,14 @@ pub enum TaskStatus {
     Changes,
     Done,
     Failed,
+    /// Stuck: out of fix rounds, no verdict, or a stage failed. A person
+    /// looks at it; nothing moves it on by itself.
+    Attention,
+    /// A planner is writing the plan; nothing is changed yet.
+    Planning,
+    /// The plan is written and waits for a person's approval.
+    #[serde(rename = "plan_review")]
+    PlanReview,
 }
 
 impl TaskStatus {
@@ -71,7 +79,58 @@ impl TaskStatus {
             TaskStatus::Changes => "changes",
             TaskStatus::Done => "done",
             TaskStatus::Failed => "failed",
+            TaskStatus::Attention => "attention",
+            TaskStatus::Planning => "planning",
+            TaskStatus::PlanReview => "plan_review",
         }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        [
+            TaskStatus::Queued,
+            TaskStatus::Building,
+            TaskStatus::Review,
+            TaskStatus::Pr,
+            TaskStatus::Testing,
+            TaskStatus::Changes,
+            TaskStatus::Done,
+            TaskStatus::Failed,
+            TaskStatus::Attention,
+            TaskStatus::Planning,
+            TaskStatus::PlanReview,
+        ]
+        .into_iter()
+        .find(|status| status.as_str() == value)
+    }
+}
+
+/// The parts an agent plays in a task, each with its own instructions and
+/// skills: see [`crate::roles`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    Plan,
+    Build,
+    Review,
+    Qa,
+    Docs,
+}
+
+impl Role {
+    pub const ALL: [Role; 5] = [Role::Plan, Role::Build, Role::Review, Role::Qa, Role::Docs];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Role::Plan => "plan",
+            Role::Build => "build",
+            Role::Review => "review",
+            Role::Qa => "qa",
+            Role::Docs => "docs",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Role::ALL.into_iter().find(|role| role.as_str() == value)
     }
 }
 
@@ -233,6 +292,50 @@ pub struct Project {
     /// Minutes each check may take; 15 when unset.
     #[serde(rename = "qaTimeout", default, skip_serializing_if = "Option::is_none")]
     pub qa_timeout: Option<u32>,
+    /// Instructions for each role in this project; a role left out follows
+    /// the global ones. `reviewTemplate` still counts as the reviewer's.
+    #[serde(
+        rename = "roleInstructions",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub role_instructions: Option<BTreeMap<Role, String>>,
+    /// Rounds of automatic fixes after a failed review or QA before the task
+    /// needs attention; 2 when unset.
+    #[serde(
+        rename = "maxFixRounds",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub max_fix_rounds: Option<u32>,
+    /// New tasks are reviewed automatically.
+    #[serde(
+        rename = "reviewAuto",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub review_auto: Option<bool>,
+    /// New tasks start with a plan.
+    #[serde(
+        rename = "planFirstDefault",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub plan_first_default: Option<bool>,
+    /// Plans are approved without waiting for a person.
+    #[serde(
+        rename = "planAutoApprove",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub plan_auto_approve: Option<bool>,
+    /// Where task documents go, outside the repository; Convoy's own data
+    /// folder when unset.
+    #[serde(rename = "docsDir", default, skip_serializing_if = "Option::is_none")]
+    pub docs_dir: Option<PathBuf>,
+    /// Write the task document once QA passes.
+    #[serde(rename = "docsAuto", default, skip_serializing_if = "Option::is_none")]
+    pub docs_auto: Option<bool>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }
@@ -483,8 +586,47 @@ pub struct Task {
     /// Its latest QA run: the checks, then the QA agent's verdict.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub qa: Option<crate::qa::QaRun>,
+    /// The current round of fixes; 0 is the first build.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub round: u32,
+    /// The run its builder reports on: the completion file it writes is
+    /// named after it ([`crate::stage`]). Cleared once that is read.
+    #[serde(rename = "stageRun", default, skip_serializing_if = "Option::is_none")]
+    pub stage_run: Option<String>,
+    /// What the builder said it did, from its last completion file.
+    #[serde(
+        rename = "buildSummary",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub build_summary: Option<String>,
+    /// Its latest review, as the reviewer's verdict.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review: Option<crate::pipeline::ReviewRun>,
+    /// A plan is written and approved before anything is built.
+    #[serde(rename = "planFirst", default, skip_serializing_if = "is_false")]
+    pub plan_first: bool,
+    /// Overrides the project's plan auto-approval.
+    #[serde(
+        rename = "planAutoApprove",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub plan_auto_approve: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<crate::plan::PlanRun>,
+    /// Documents written for it: the last stage of its work.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub docs: Vec<crate::task_docs::TaskDoc>,
+    /// Its latest documentation run.
+    #[serde(rename = "docsRun", default, skip_serializing_if = "Option::is_none")]
+    pub docs_run: Option<crate::task_docs::DocsRun>,
     #[serde(flatten)]
     pub unknown: Unknown,
+}
+
+fn is_zero(value: &u32) -> bool {
+    *value == 0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -558,6 +700,13 @@ pub struct Settings {
     /// The review brief's instructions unless a project sets its own.
     #[serde(rename = "reviewTemplate", default)]
     pub review_template: String,
+    /// Each role's instructions unless a project sets its own.
+    #[serde(
+        rename = "roleInstructions",
+        default,
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
+    pub role_instructions: BTreeMap<Role, String>,
     #[serde(rename = "notifyWaiting", default = "yes")]
     pub notify_waiting: bool,
     #[serde(rename = "notifyDone", default = "yes")]
@@ -681,6 +830,7 @@ impl Default for Settings {
             yolo_claude: false,
             yolo_codex: false,
             review_template: String::new(),
+            role_instructions: BTreeMap::new(),
             notify_waiting: true,
             notify_done: true,
             notify_when_focused: false,
