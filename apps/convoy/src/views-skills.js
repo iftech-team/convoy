@@ -15,6 +15,7 @@ export const ROLES = [
   ["build", "Builder", "Builds the task. Added to its brief."],
   ["review", "Reviewer", "Reviews each round of work. Reports a verdict; edits nothing."],
   ["qa", "QA", "Tests the change end to end after the checks and the review."],
+  ["pr", "Pull request author", "Writes the pull request's title and description when Convoy publishes. Put the team's template here."],
   ["docs", "Documentation", "Writes the task's document once QA passes."],
 ];
 

@@ -362,6 +362,9 @@ impl Workspace {
                     plan: None,
                     docs: Vec::new(),
                     docs_run: None,
+                    publish_run: None,
+                    pr_title: None,
+                    pr_body: None,
                     unknown: Default::default(),
                 }),
             }
@@ -614,10 +617,19 @@ impl Workspace {
                     return Ok(());
                 }
             }
+            let convoy_publishes = state
+                .projects
+                .iter()
+                .find(|project| project.id == task.project_id)
+                .is_some_and(|project| project.convoy_publishes == Some(true));
             let publication = match task.mode {
+                PublishMode::None => NO_PUBLISH_NOTE,
+                _ if convoy_publishes => crate::publish::BUILDER_NOTE,
                 PublishMode::Pr => PR_NOTE,
                 PublishMode::Push => PUSH_NOTE,
-                PublishMode::None => NO_PUBLISH_NOTE,
+                // Only the description is wanted: the builder commits, and a
+                // person opens the request.
+                PublishMode::Describe => crate::publish::BUILDER_NOTE,
             };
             let preamble = spec
                 .as_ref()
@@ -790,6 +802,9 @@ impl Workspace {
                     plan: None,
                     docs: Vec::new(),
                     docs_run: None,
+                    publish_run: None,
+                    pr_title: None,
+                    pr_body: None,
                     unknown: Default::default(),
                 });
             }

@@ -1104,6 +1104,10 @@ mod tests {
             plan_auto_approve: None,
             docs_dir: None,
             docs_auto: None,
+            task_worktrees: None,
+            max_parallel: None,
+            convoy_publishes: None,
+            pr_cli: None,
             unknown: Default::default(),
         });
         let import = |id: &str, at: f64| Import {

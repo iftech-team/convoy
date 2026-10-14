@@ -184,6 +184,9 @@ try {
       if (cmd === "qa_start") return window.qaStart(args.taskId);
       if (cmd === "pipeline_after_exit") return window.pipelineExit?.(args.id) ?? [];
       if (cmd === "pipeline_tick") return window.pipelineTick?.() ?? [];
+      if (cmd === "queue_next") return window.queueNext?.() ?? [];
+      if (cmd === "task_prepare") return window.prepared?.(args.id) ?? null;
+      if (cmd === "queue_summary") return tasks.filter((item) => item.status === "queued").map((item) => item.title);
       if (cmd === "plan_approve") { const task = tasks.find((item) => item.id === args.taskId); task.plan.status = "approved"; task.status = "queued"; return null; }
       if (cmd === "plan_request_changes") { const task = tasks.find((item) => item.id === args.taskId); task.plan.status = "drafting"; task.status = "planning"; return [{ kind: "send", task: task.id, session: "builder", text: `Revise the plan: ${args.comment}` }]; }
       if (cmd === "task_plan") { Object.assign(tasks.find((item) => item.id === args.id), { plan_first: args.planFirst, plan_auto_approve: args.autoApprove }); return null; }
@@ -1106,6 +1109,23 @@ try {
   await page.locator('.modal [data-action="plan-approve"]').click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "plan_approve" && c.args.taskId === "planned"));
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_prepare" && c.args.id === "planned"));
+
+  // The queue starts what the core picks: here two tasks side by side.
+  await page.evaluate(() => {
+    for (const id of ["side-a", "side-b"]) {
+      window.mockTasks.push({ id, project_id: "project", title: `Side ${id}`, details: "", findings: "", agent: "claude", status: "queued", mode: "none", auto_review: false, round: 0, max_rounds: 2, depends_on: [], related: [], skills: [], docs: [] });
+    }
+    let asked = 0;
+    window.queueNext = () => (asked++ === 0 ? ["side-a", "side-b"] : []);
+    window.prepared = (id) => {
+      window.mockSessions.push({ id: `q-${id}`, project_id: "project", title: `Side ${id}`, agent: "claude", provider_id: "", started: false, running: false, pinned: false, review_of: null, task_id: id });
+      return `q-${id}`;
+    };
+  });
+  await page.keyboard.press("Escape");
+  await page.locator('[data-action="queue-start"]').click();
+  await page.locator('.modal [data-action="confirm-queue"]').click();
+  await page.waitForFunction(() => ["side-a", "side-b"].every((id) => window.checkCalls.some((c) => c.cmd === "task_prepare" && c.args.id === id)));
 
   // AI Limits: the status bar shows the peak reading, and the panel asks
   // Codex on opening.

@@ -47,6 +47,48 @@ const select = (key, options, selected) =>
 const TRACKERS = { linear: "Linear", jira: "Jira", peshbar: "Peshbar", notion: "Notion" };
 
 
+/// Tasks in worktrees of their own, several at once, and published by
+/// Convoy after review and QA.
+function autopilot(project) {
+  return groupBox(
+    t("Autopilot"),
+    `${row(
+      t("A worktree for each task"),
+      t("Each task builds on a branch of its own, set up with the shared paths and setup commands above. Turning this on lets those commands run without asking."),
+      `<button class="switch" data-proj-toggle="task_worktrees" aria-pressed="${!!project.task_worktrees}"
+               aria-label="${escape(t("A worktree for each task"))}"></button>`,
+    )}
+     ${row(
+       t("Tasks at once"),
+       project.task_worktrees ? t("How many queued tasks run side by side.") : t("Needs a worktree for each task; one checkout runs one task."),
+       select(
+         "max_parallel",
+         [1, 2, 3, 4, 6, 8].map((count) => [String(count), String(count)]),
+         String(project.max_parallel ?? 1),
+       ),
+     )}
+     ${row(
+       t("Convoy publishes"),
+       t("Builders commit and stop; once review and QA pass, Convoy pushes the branch and opens the request, with a description from the Pull request author role."),
+       `<button class="switch" data-proj-toggle="convoy_publishes" aria-pressed="${!!project.convoy_publishes}"
+                aria-label="${escape(t("Convoy publishes"))}"></button>`,
+     )}
+     ${row(
+       t("Requests open with"),
+       t("Read from the remote's host when automatic: glab for GitLab, gh otherwise."),
+       select(
+         "pr_cli",
+         [
+           ["", t("Automatic")],
+           ["gh", "gh (GitHub)"],
+           ["glab", "glab (GitLab)"],
+         ],
+         project.pr_cli ?? "",
+       ),
+     )}`,
+  );
+}
+
 /// Each role's instructions in this project; an empty field follows the
 /// global ones, shown as its placeholder.
 function roles(project) {
@@ -385,6 +427,7 @@ export function projectSettingsPage() {
               [
                 ["none", t("Commit only")],
                 ["pr", t("Pull request")],
+                ["describe", t("PR description only")],
                 ["push", t("Push")],
               ],
               project.task_mode || "none",
@@ -424,6 +467,7 @@ export function projectSettingsPage() {
                       aria-label="${escape(t("Approve plans automatically"))}"></button>`,
            )}`,
         )}
+        ${autopilot(project)}
         ${roles(project)}
         ${documents(project)}
         ${testing(project)}

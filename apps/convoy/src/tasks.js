@@ -14,7 +14,7 @@ const MODELS = {
   codex: [["gpt-5-codex", "GPT-5 Codex"], ["gpt-5", "GPT-5"], ["o3", "o3"]],
 };
 const AGENTS = [["claude", "Claude Code"], ["codex", "Codex"]];
-const MODES = [["pr", "Pull request"], ["push", "Push"], ["none", "Commit only"]];
+const MODES = [["pr", "Pull request"], ["describe", "PR description only"], ["push", "Push"], ["none", "Commit only"]];
 const STATUS = {
   queued: ["Queued", "state"],
   building: ["Building", "state state--running"],

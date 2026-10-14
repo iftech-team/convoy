@@ -71,6 +71,112 @@ pub fn next_step(workspace: &Workspace, project_id: &str, running: Running<'_>) 
     }
 }
 
+/// The tasks the queue starts now in a project, in order: queued, waiting
+/// for nothing that is not done, as many as its free slots. A project runs
+/// `maxParallel` at once only when each task has a worktree of its own;
+/// tasks sharing one checkout run one at a time.
+pub fn next_tasks(workspace: &Workspace, project_id: &str, running: Running<'_>) -> Vec<String> {
+    let state = workspace.state();
+    let Some(project) = state
+        .projects
+        .iter()
+        .find(|project| project.id == project_id)
+    else {
+        return Vec::new();
+    };
+    let limit = if project.task_worktrees == Some(true) {
+        project.max_parallel.unwrap_or(1).max(1) as usize
+    } else {
+        1
+    };
+    let busy = state
+        .tasks
+        .iter()
+        .filter(|task| task.project_id == project_id)
+        .filter(|task| match task.status {
+            TaskStatus::Building => task.session_id.as_deref().is_some_and(running),
+            TaskStatus::Planning => true,
+            _ => false,
+        })
+        .count();
+    state
+        .tasks
+        .iter()
+        .filter(|task| {
+            task.project_id == project_id
+                && task.status == TaskStatus::Queued
+                && blocked_by(state, task).is_empty()
+        })
+        .take(limit.saturating_sub(busy))
+        .map(|task| task.id.clone())
+        .collect()
+}
+
+/// The branch a task's worktree gets: the prefix, then its issue key and
+/// title as far as they spell in ASCII — `convoy/LOYAL-523-refresh-token`.
+pub fn task_branch(workspace: &Workspace, task: &Task) -> String {
+    let prefix = workspace
+        .project(&task.project_id)
+        .ok()
+        .and_then(|project| project.branch_prefix.clone())
+        .or_else(|| Some(workspace.settings().branch_prefix.clone()))
+        .map(|prefix| prefix.trim().trim_matches('/').to_string())
+        .filter(|prefix| !prefix.is_empty())
+        .unwrap_or_else(|| "convoy".into());
+    let key = task
+        .source
+        .as_ref()
+        .map(|source| source.key.clone())
+        .unwrap_or_default();
+    let title = task
+        .title
+        .strip_prefix(&format!("{key}:"))
+        .unwrap_or(&task.title);
+    let mut slug = String::new();
+    for word in title
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|word| !word.is_empty())
+    {
+        if slug.len() + word.len() > 40 {
+            break;
+        }
+        if !slug.is_empty() {
+            slug.push('-');
+        }
+        slug.push_str(&word.to_ascii_lowercase());
+    }
+    let key: String = key
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    let name = match (key.is_empty(), slug.is_empty()) {
+        (false, false) => format!("{key}-{slug}"),
+        (false, true) => key,
+        (true, false) => slug,
+        (true, true) => format!("task-{}", &task.id[..task.id.len().min(8)]),
+    };
+    format!("{prefix}/{name}")
+}
+
+/// The branch a task's builder gets a worktree on, when its project gives
+/// each task one and the builder is new, with no folder of its own yet.
+pub fn wants_worktree(workspace: &Workspace, task_id: &str) -> Option<String> {
+    let state = workspace.state();
+    let task = state.tasks.iter().find(|task| task.id == task_id)?;
+    let project = state
+        .projects
+        .iter()
+        .find(|project| project.id == task.project_id)?;
+    if project.task_worktrees != Some(true) {
+        return None;
+    }
+    let session = state
+        .sessions
+        .iter()
+        .find(|session| Some(&session.id) == task.session_id.as_ref())?;
+    (session.working_directory.is_none() && !session.started).then(|| task_branch(workspace, task))
+}
+
 /// Fills in the worktree branch once the task's session exists, which is only
 /// after `prepare_task` has run.
 pub fn needs_worktree(workspace: &Workspace, task_id: &str) -> Option<String> {
@@ -176,6 +282,7 @@ pub fn summary(workspace: &Workspace, project_id: &str) -> Vec<String> {
                 crate::model::PublishMode::None => "no publishing",
                 crate::model::PublishMode::Pr => "pull request",
                 crate::model::PublishMode::Push => "push",
+                crate::model::PublishMode::Describe => "pull request description",
             };
             let waits = blocked_by(workspace.state(), task);
             format!(

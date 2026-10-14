@@ -24,6 +24,8 @@ pub enum Stage {
     Review,
     Qa,
     Docs,
+    /// The pull request's title and description.
+    Pr,
 }
 
 /// What a stage's file said.
@@ -32,11 +34,21 @@ pub enum StageResult {
     /// The plan, as Markdown.
     Plan(String),
     /// What the builder did and how it verified it.
-    Build { summary: String, verified: String },
+    Build {
+        summary: String,
+        verified: String,
+    },
     /// A reviewer's or QA's verdict.
-    Verdict { passed: bool, findings: String },
+    Verdict {
+        passed: bool,
+        findings: String,
+    },
     /// The documents written, as absolute paths.
     Docs(Vec<PathBuf>),
+    Pr {
+        title: String,
+        body: String,
+    },
 }
 
 /// Convoy's data folder: where `workspace.json` is.
@@ -70,6 +82,7 @@ pub fn file(workspace: &Workspace, stage: Stage, run_id: &str) -> PathBuf {
         Stage::Review => stages.join(format!("{run_id}.verdict.json")),
         Stage::Qa => crate::qa::verdict_file(&qa_dir(workspace), run_id),
         Stage::Docs => stages.join(format!("{run_id}.docs.json")),
+        Stage::Pr => stages.join(format!("{run_id}.pr.json")),
     }
 }
 
@@ -86,6 +99,13 @@ struct Verdict {
     verdict: String,
     #[serde(default)]
     findings: String,
+}
+
+#[derive(Deserialize)]
+struct Pr {
+    title: String,
+    #[serde(default)]
+    body: String,
 }
 
 #[derive(Deserialize)]
@@ -126,6 +146,13 @@ pub fn read(stage: Stage, path: &Path) -> Option<StageResult> {
         Stage::Docs => serde_json::from_str::<Docs>(&text)
             .ok()
             .map(|docs| StageResult::Docs(docs.files)),
+        Stage::Pr => serde_json::from_str::<Pr>(&text)
+            .ok()
+            .filter(|pr| !pr.title.trim().is_empty())
+            .map(|pr| StageResult::Pr {
+                title: pr.title.trim().to_string(),
+                body: pr.body.trim().to_string(),
+            }),
     }
 }
 
@@ -143,6 +170,9 @@ pub fn closing(stage: Stage, path: &Path) -> String {
         ),
         Stage::Docs => format!(
             "write JSON to {path}: {{\"files\": [\"/absolute/path/of/each/document\"]}}"
+        ),
+        Stage::Pr => format!(
+            "write JSON to {path}: {{\"title\": \"the pull request's title\", \"body\": \"its description, as Markdown\"}}"
         ),
     };
     format!(

@@ -650,6 +650,7 @@ const taskForm = (dialog) => {
       ${planPanel(dialog)}
       ${reviewPanel(dialog)}
       ${qaPanel(dialog)}
+      ${publishPanel(dialog)}
       ${docsPanel(dialog)}
       ${field(t("Title"), textInput("task-title", dialog.title))}
       ${field(t("Agent"), choice("agent", AGENTS, dialog.agent))}
@@ -673,7 +674,7 @@ const taskForm = (dialog) => {
         t("Publishing"),
         choice(
           "mode",
-          [["none", t("Do not publish")], ["pr", t("Pull request")], ["push", t("Push")]],
+          [["none", t("Do not publish")], ["pr", t("Pull request")], ["describe", t("PR description only")], ["push", t("Push")]],
           dialog.mode,
         ),
       )}
@@ -787,6 +788,36 @@ function reviewPanel(task) {
       <div class="qa-panel__actions">
         ${task.review_session_id ? button({ label: t("Open reviewer"), icon: "terminal", action: "review-open" }) : ""}
         ${canSkip ? button({ label: t("Skip review"), icon: "chevronRight", action: "review-skip", kind: "quiet" }) : ""}
+      </div>
+    </section>`;
+}
+
+const PUBLISH_HEADLINES = {
+  writing: ["The pull request is being written…", "running"],
+  publishing: ["Pushing and opening the request…", "running"],
+  published: ["Published", "done"],
+  described: ["The description is ready", "done"],
+  failed: ["Not published", "failed"],
+};
+
+/// Publishing by Convoy: how it went, the request, and the description.
+function publishPanel(task) {
+  const run = task.publish_run;
+  if (!task.id || task.mode === "none" || (!run && !["review", "testing", "attention"].includes(task.status))) return "";
+  const [headline, tone] = run ? PUBLISH_HEADLINES[run.status] ?? [run.status, "idle"] : ["Not published yet", "idle"];
+  const busy = run && ["writing", "publishing"].includes(run.status);
+  return `
+    <section class="qa-panel qa-panel--${tone}">
+      <div class="qa-panel__head">
+        <span class="state__dot state__dot--${tone}"></span>
+        <span class="qa-panel__title">${escape(t(headline))}</span>
+      </div>
+      ${run?.error ? `<div class="qa-panel__findings">${escape(run.error)}</div>` : ""}
+      ${task.pr_title ? `<details${run?.status === "described" ? " open" : ""}><summary>${escape(task.pr_title)}</summary><div class="plan-text docs__render">${markdown(task.pr_body ?? "")}</div></details>` : ""}
+      <div class="qa-panel__actions">
+        ${task.pr_url ? button({ label: t("Open pull request"), icon: "open", data: { "task-pr": task.id } }) : ""}
+        ${task.pr_title ? button({ label: t("Copy title and description"), icon: "copy", action: "task-pr-copy", kind: "quiet" }) : ""}
+        ${busy || run?.status === "published" ? "" : button({ label: run ? t("Publish again") : t("Publish now"), icon: "refresh", action: "task-publish", kind: "quiet" })}
       </div>
     </section>`;
 }

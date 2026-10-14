@@ -350,12 +350,7 @@ pub struct Imported {
 }
 
 fn mode(value: &str) -> Result<PublishMode, String> {
-    match value {
-        "pr" => Ok(PublishMode::Pr),
-        "push" => Ok(PublishMode::Push),
-        "none" => Ok(PublishMode::None),
-        other => Err(format!("Unknown publish mode: {other}")),
-    }
+    PublishMode::parse(value).ok_or_else(|| format!("Unknown publish mode: {value}"))
 }
 
 /// A Notion page's text lives in its blocks, which the search does not

@@ -17,6 +17,9 @@ pub const QA: &str = "Test the change end to end against the task and its accept
 /// The documentation writer's built-in instructions.
 pub const DOCS: &str = "Write the document that closes this task, for the people who test and integrate it: what changed and why, how to use it (endpoints, screens, settings), how it was verified, and the known risks. Write it as Markdown unless your instructions ask for another format.";
 
+/// The pull request author's built-in instructions.
+pub const PR: &str = "Write the pull request for this task: a short title, and a description saying what changed and why, how it was verified, and anything a reviewer should look at closely. Link the issue when there is one.";
+
 /// What a role does when nobody has said otherwise.
 pub fn builtin(role: Role) -> &'static str {
     match role {
@@ -25,6 +28,7 @@ pub fn builtin(role: Role) -> &'static str {
         Role::Review => crate::review::DEFAULT_TEMPLATE,
         Role::Qa => QA,
         Role::Docs => DOCS,
+        Role::Pr => PR,
     }
 }
 

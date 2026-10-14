@@ -114,10 +114,19 @@ pub enum Role {
     Review,
     Qa,
     Docs,
+    /// Writes the pull request's title and description.
+    Pr,
 }
 
 impl Role {
-    pub const ALL: [Role; 5] = [Role::Plan, Role::Build, Role::Review, Role::Qa, Role::Docs];
+    pub const ALL: [Role; 6] = [
+        Role::Plan,
+        Role::Build,
+        Role::Review,
+        Role::Qa,
+        Role::Pr,
+        Role::Docs,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -126,6 +135,7 @@ impl Role {
             Role::Review => "review",
             Role::Qa => "qa",
             Role::Docs => "docs",
+            Role::Pr => "pr",
         }
     }
 
@@ -141,6 +151,31 @@ pub enum PublishMode {
     None,
     Pr,
     Push,
+    /// Only the pull request's description is written, for a person to open
+    /// it with.
+    Describe,
+}
+
+impl PublishMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PublishMode::None => "none",
+            PublishMode::Pr => "pr",
+            PublishMode::Push => "push",
+            PublishMode::Describe => "describe",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        [
+            PublishMode::None,
+            PublishMode::Pr,
+            PublishMode::Push,
+            PublishMode::Describe,
+        ]
+        .into_iter()
+        .find(|mode| mode.as_str() == value)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -336,6 +371,32 @@ pub struct Project {
     /// Write the task document once QA passes.
     #[serde(rename = "docsAuto", default, skip_serializing_if = "Option::is_none")]
     pub docs_auto: Option<bool>,
+    /// Each task builds in a worktree of its own, set up with the project's
+    /// shared paths and setup command.
+    #[serde(
+        rename = "taskWorktrees",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub task_worktrees: Option<bool>,
+    /// Tasks the queue runs at once; 1 when unset, and 1 without worktrees.
+    #[serde(
+        rename = "maxParallel",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub max_parallel: Option<u32>,
+    /// Convoy publishes a task once review and QA pass, rather than its
+    /// builder as it finishes.
+    #[serde(
+        rename = "convoyPublishes",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub convoy_publishes: Option<bool>,
+    /// `gh` or `glab`; read from the remote's host when unset.
+    #[serde(rename = "prCli", default, skip_serializing_if = "Option::is_none")]
+    pub pr_cli: Option<String>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }
@@ -621,6 +682,18 @@ pub struct Task {
     /// Its latest documentation run.
     #[serde(rename = "docsRun", default, skip_serializing_if = "Option::is_none")]
     pub docs_run: Option<crate::task_docs::DocsRun>,
+    /// Its latest publication by Convoy.
+    #[serde(
+        rename = "publishRun",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub publish_run: Option<crate::publish::PublishRun>,
+    /// The pull request's title and description, as its author wrote them.
+    #[serde(rename = "prTitle", default, skip_serializing_if = "Option::is_none")]
+    pub pr_title: Option<String>,
+    #[serde(rename = "prBody", default, skip_serializing_if = "Option::is_none")]
+    pub pr_body: Option<String>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }

@@ -29,6 +29,7 @@ pub mod planning;
 pub mod platform;
 pub mod process;
 pub mod provider;
+pub mod publish;
 pub mod qa;
 pub mod queue;
 pub mod repository;

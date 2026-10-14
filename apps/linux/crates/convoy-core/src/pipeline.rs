@@ -104,6 +104,8 @@ pub enum Action {
     Test { task: String },
     /// Run the task: its plan is approved.
     Run { task: String },
+    /// Push the task's branch and open its request, off the window's thread.
+    Publish { task: String },
     /// This session finished its stage: put it to sleep. It can be resumed.
     Hibernate { session: String },
     /// The builder finished a round: a running queue may start the next task.
@@ -336,7 +338,10 @@ fn ready(workspace: &mut Workspace, context: &Context<'_>, task_id: &str) -> Res
         detail: String::new(),
     }];
     let task = find(workspace, task_id)?;
-    if workspace.project(&task.project_id)?.docs_auto == Some(true) {
+    // Published first, so the document can link the request.
+    if crate::publish::due(workspace, &task) {
+        actions.extend(crate::publish::begin(workspace, context, task_id)?);
+    } else if workspace.project(&task.project_id)?.docs_auto == Some(true) {
         actions.extend(crate::task_docs::begin(workspace, context, task_id)?);
     }
     Ok(actions)
@@ -569,7 +574,10 @@ pub fn review_now(
     crate::ensure!(
         !matches!(
             task.status,
-            TaskStatus::Building | TaskStatus::Planning | TaskStatus::PlanReview | TaskStatus::Queued
+            TaskStatus::Building
+                | TaskStatus::Planning
+                | TaskStatus::PlanReview
+                | TaskStatus::Queued
         ),
         "Review a task once its builder has finished."
     );
@@ -729,6 +737,21 @@ pub fn poll(workspace: &mut Workspace, context: &Context<'_>) -> Result<Vec<Acti
             }
         }
         if let Some(run) = task
+            .publish_run
+            .as_ref()
+            .filter(|run| run.status == crate::publish::PublishStatus::Writing)
+        {
+            if let Some(StageResult::Pr { title, body }) =
+                stage::read(Stage::Pr, &stage::file(workspace, Stage::Pr, &run.id))
+            {
+                actions.extend(hibernate(context, run.session_id.as_ref()));
+                actions.extend(crate::publish::written(
+                    workspace, context, &task.id, &title, &body,
+                )?);
+                continue;
+            }
+        }
+        if let Some(run) = task
             .docs_run
             .as_ref()
             .filter(|run| run.status == crate::task_docs::DocsStatus::Writing)
@@ -776,6 +799,14 @@ pub fn on_exit(
                 workspace,
                 &task.id,
                 "The planner ended without writing a plan.",
+            )?);
+        } else if task.publish_run.as_ref().is_some_and(|run| {
+            run.status == crate::publish::PublishStatus::Writing && mine(&run.session_id)
+        }) {
+            actions.extend(crate::publish::failed(
+                workspace,
+                &task.id,
+                "The pull request's author ended without writing it.",
             )?);
         } else if task.docs_run.as_ref().is_some_and(|run| {
             run.status == crate::task_docs::DocsStatus::Writing && mine(&run.session_id)

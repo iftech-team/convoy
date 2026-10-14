@@ -301,6 +301,10 @@ impl Merge<'_> {
                 plan_auto_approve: None,
                 docs_dir: None,
                 docs_auto: None,
+                task_worktrees: None,
+                max_parallel: None,
+                convoy_publishes: None,
+                pr_cli: None,
                 unknown: Default::default(),
             });
             ids.insert(id, state.projects.last().expect("pushed").id.clone());
@@ -520,6 +524,9 @@ impl Merge<'_> {
                         plan: None,
                         docs: Vec::new(),
                         docs_run: None,
+                        publish_run: None,
+                        pr_title: None,
+                        pr_body: None,
                         unknown: Default::default(),
                     });
                     self.report.tasks += 1;
@@ -621,6 +628,9 @@ impl Merge<'_> {
                 plan: None,
                 docs: Vec::new(),
                 docs_run: None,
+                publish_run: None,
+                pr_title: None,
+                pr_body: None,
                 unknown: Default::default(),
             });
             self.report.tasks += 1;

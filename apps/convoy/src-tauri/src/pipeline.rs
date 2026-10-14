@@ -68,6 +68,42 @@ pub fn pipeline_after_exit(
     })
 }
 
+/// Starts publishing a task by hand: after a failure, or where it is not
+/// automatic.
+#[tauri::command]
+pub fn task_publish_start(
+    task_id: String,
+    workspace: State<'_, Workspace>,
+    terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<Chats>>,
+) -> Result<Vec<Action>, String> {
+    run(&workspace, &terminals, &chats, |core, context| {
+        convoy_core::publish::begin(core, context, &task_id)
+    })
+}
+
+/// Pushes the task's branch and opens its request, off the main thread,
+/// then records how it went.
+#[tauri::command]
+pub async fn task_publish(
+    task_id: String,
+    workspace: State<'_, Workspace>,
+    terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<Chats>>,
+) -> Result<Vec<Action>, String> {
+    let plan = workspace.act(|core| convoy_core::publish::plan(core, &task_id))?;
+    let running = plan.clone();
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        convoy_core::publish::run(&running, Arc::new(convoy_core::StdRunner))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string());
+    run(&workspace, &terminals, &chats, |core, context| {
+        convoy_core::publish::finish(core, context, &task_id, &plan.run_id, outcome)
+    })
+}
+
 /// Reviews a finished task now.
 #[tauri::command]
 pub fn review_now(

@@ -741,6 +741,18 @@ const ACTIONS = {
     render();
   },
   "task-docs-write": () => writeTaskDoc(state.dialog?.id),
+  "task-publish": async () => {
+    const id = state.dialog?.id;
+    if (!id) return;
+    const actions = await call("task_publish_start", { taskId: id });
+    if (actions) await applyPipeline(actions);
+  },
+  "task-pr-copy": async () => {
+    const task = state.dialog;
+    if (!task?.pr_title) return;
+    await navigator.clipboard.writeText(`${task.pr_title}\n\n${task.pr_body ?? ""}`);
+    toast(t("Copied"));
+  },
   "task-mark-done": async () => {
     const id = state.dialog?.id;
     if (id && (await done("task_status", { id, status: "done" }))) {
@@ -1928,7 +1940,7 @@ app.addEventListener("change", async (event) => {
   }
   const projectKey = event.target.dataset?.projText ?? event.target.dataset?.projSelect;
   if (projectKey) {
-    const numeric = ["qa_timeout", "max_fix_rounds"].includes(projectKey);
+    const numeric = ["qa_timeout", "max_fix_rounds", "max_parallel"].includes(projectKey);
     return saveProjectField({ [projectKey]: numeric ? Number(event.target.value) : event.target.value });
   }
   const choiceKey = event.target.dataset?.prefSelect;
@@ -3392,7 +3404,11 @@ async function moveTask(id, status) {
   if (status === "building") return runnable(task) ? runTask(id) : toast(t("Only a queued, failed or returned task can run."));
   // Into testing where the project tests its tasks: that is a QA run.
   if (status === "testing" && state.projects.find((item) => item.id === task.project_id)?.qa) return startQa(id);
-  if (await done("task_status", { id, status })) await reloadTasks();
+  if (await done("task_status", { id, status })) {
+    await reloadTasks();
+    // A finished task may be what others in the queue waited for.
+    if (status === "done" && state.queues.has(task.project_id)) await advanceQueue(task.project_id);
+  }
 }
 
 // --------------------------------------------------------------------- QA --
@@ -3428,6 +3444,10 @@ function pipelineNotice(action) {
       return toast(t("The plan for “{task}” approved itself. Building it now.", { task }));
     case "docs_written":
       return toast(t("The document for “{task}” is written.", { task }));
+    case "published":
+      return toast(action.detail ? t("“{task}” is published: {url}", { task, url: action.detail }) : t("“{task}” is pushed.", { task }));
+    case "described":
+      return toast(t("The pull request description for “{task}” is ready to copy.", { task }));
   }
 }
 
@@ -3460,6 +3480,10 @@ async function applyPipeline(actions) {
       case "hibernate":
         await terminal.hibernate(action.session);
         break;
+      case "publish":
+        // Not awaited: pushing and opening the request take a while.
+        publishTask(action.task);
+        break;
       case "built":
         if (state.projects.find((item) => item.id === action.project)?.auto_run_tasks) state.queues.add(action.project);
         if (state.queues.has(action.project)) await advanceQueue(action.project);
@@ -3485,6 +3509,14 @@ async function pipelineTick() {
   } finally {
     pipelineBusy = false;
   }
+}
+
+/// Pushes a task's branch and opens its request.
+async function publishTask(id) {
+  toast(t("Publishing “{task}”…", { task: findTask(id)?.title ?? "" }));
+  const actions = await call("task_publish", { taskId: id });
+  if (actions) await applyPipeline(actions);
+  else await reloadTasks();
 }
 
 /// Approves a plan and builds the task with it.
@@ -3518,6 +3550,10 @@ function refreshTaskDialog(id) {
       plan: task.plan,
       docs: task.docs,
       docs_run: task.docs_run,
+      publish_run: task.publish_run,
+      pr_title: task.pr_title,
+      pr_body: task.pr_body,
+      pr_url: task.pr_url,
       last_error: task.last_error,
     });
   }
@@ -3598,21 +3634,30 @@ async function startQueue() {
 
 /// Starts the next queued task. The rules are the core's; this supplies the
 /// clock and the starting.
+/// Starts what the queue may start now: the core picks queued tasks that
+/// wait for nothing unfinished, as many as the project's free slots. With
+/// nothing left queued the queue stops; with tasks only waiting, it waits.
 async function advanceQueue(projectId) {
   if (!state.queues.has(projectId)) return;
-  await loadPlanning();
-  const next = state.planning?.tasks.find((task) => task.status === "queued");
-  if (!next) {
-    state.queues.delete(projectId);
+  const next = (await call("queue_next", { projectId })) ?? [];
+  if (!next.length) {
+    await loadPlanning();
+    const waiting = (state.planning?.tasks ?? []).some((task) => task.project_id === projectId && task.status === "queued");
+    const busy = (state.planning?.tasks ?? []).some((task) => task.project_id === projectId && ["building", "planning"].includes(task.status));
+    if (!waiting || !busy) state.queues.delete(projectId);
     return render();
   }
-  const sessionId = await call("task_prepare", { id: next.id, profileId: null });
-  if (!sessionId) {
-    state.queues.delete(projectId);
-    return render();
+  for (const id of next) {
+    const sessionId = await call("task_prepare", { id, profileId: null });
+    if (!sessionId) {
+      state.queues.delete(projectId);
+      await reloadTasks();
+      return render();
+    }
+    await loadSessions();
+    await startSession(sessionId, { background: next.length > 1 });
   }
-  await loadSessions();
-  await startSession(sessionId);
+  await reloadTasks();
 }
 
 // ---------------------------------------------------------------- files ---

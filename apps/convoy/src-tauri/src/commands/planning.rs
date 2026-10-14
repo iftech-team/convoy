@@ -68,6 +68,9 @@ pub struct TaskView {
     pub plan: Option<convoy_core::plan::PlanRun>,
     pub docs: Vec<convoy_core::task_docs::TaskDoc>,
     pub docs_run: Option<convoy_core::task_docs::DocsRun>,
+    pub publish_run: Option<convoy_core::publish::PublishRun>,
+    pub pr_title: Option<String>,
+    pub pr_body: Option<String>,
 }
 
 fn task_view(state: &convoy_core::model::State, task: &convoy_core::model::Task) -> TaskView {
@@ -108,6 +111,9 @@ fn task_view(state: &convoy_core::model::State, task: &convoy_core::model::Task)
         plan: task.plan.clone(),
         docs: task.docs.clone(),
         docs_run: task.docs_run.clone(),
+        publish_run: task.publish_run.clone(),
+        pr_title: task.pr_title.clone(),
+        pr_body: task.pr_body.clone(),
         blocked_by: convoy_core::queue::blocked_by(state, task)
             .into_iter()
             .map(|other| other.title.clone())
@@ -133,11 +139,7 @@ pub struct PlanningView {
 }
 
 fn mode_name(mode: PublishMode) -> &'static str {
-    match mode {
-        PublishMode::None => "none",
-        PublishMode::Pr => "pr",
-        PublishMode::Push => "push",
-    }
+    mode.as_str()
 }
 
 #[tauri::command]
@@ -306,12 +308,8 @@ pub struct TaskFormInput {
 /// Returns the task's id, so a new task can be run at once.
 pub fn task_save(input: TaskFormInput, workspace: State<'_, Workspace>) -> Result<String, String> {
     let agent = Agent::parse(&input.agent).ok_or("Unknown agent.")?;
-    let mode = match input.mode.as_str() {
-        "none" => PublishMode::None,
-        "pr" => PublishMode::Pr,
-        "push" => PublishMode::Push,
-        other => return Err(format!("Unknown publication mode: {other}")),
-    };
+    let mode = PublishMode::parse(&input.mode)
+        .ok_or_else(|| format!("Unknown publication mode: {}", input.mode))?;
     let existing = input.id.clone().filter(|id| !id.is_empty());
     let skills = match (&input.skills, &existing) {
         (None, Some(_)) => None,
@@ -369,14 +367,95 @@ pub fn task_status(
 /// the session it belongs to. A task planned first gets its planner instead,
 /// until its plan is approved.
 #[tauri::command]
-pub fn task_prepare(
+pub async fn task_prepare(
     id: String,
     profile_id: Option<String>,
     workspace: State<'_, Workspace>,
     terminals: State<'_, std::sync::Arc<crate::pty::Terminals>>,
     chats: State<'_, std::sync::Arc<crate::chat::Chats>>,
+    repositories: State<'_, super::Repositories>,
 ) -> Result<String, String> {
-    crate::pipeline::run(&workspace, &terminals, &chats, |workspace, context| {
+    let session = prepare(&workspace, &terminals, &chats, &id, profile_id)?;
+    // A new builder in a project that gives each task a worktree gets one,
+    // set up, before it starts.
+    let branch = workspace.act(|core| Ok(convoy_core::queue::wants_worktree(core, &id)))?;
+    if let Some(branch) = branch {
+        if let Err(error) = task_worktree(&workspace, &repositories, &session, &branch).await {
+            let reason = format!("Its worktree could not be prepared. {error}");
+            workspace
+                .act(|core| convoy_core::pipeline::attention(core, &id, &reason).map(|_| ()))?;
+            return Err(reason);
+        }
+    }
+    Ok(session)
+}
+
+/// Creates the builder's worktree on `branch` (or the first free variant of
+/// it), copies the shared paths and runs the setup commands. Turning on a
+/// worktree per task in the project is the consent to run them unasked.
+async fn task_worktree(
+    workspace: &Workspace,
+    repositories: &super::Repositories,
+    session: &str,
+    branch: &str,
+) -> Result<(), String> {
+    let (project, shared, command) = workspace.act(|core| {
+        let project_id = core.session(session)?.project_id.clone();
+        let project = core.project(&project_id)?.clone();
+        let (shared, command) = convoy_core::worktree::setup_parts(core, &project);
+        Ok((project, shared, command))
+    })?;
+    let root = workspace.storage.worktrees();
+    let git = convoy_core::Git::default();
+    let (directory, branch) = repositories.with(&project.path, || {
+        // A task prepared again after an edit keeps its old branch; the new
+        // one takes the next free name.
+        let mut name = branch.to_string();
+        for n in 2..10 {
+            if !git.succeeds(
+                &project.path,
+                &[
+                    "rev-parse",
+                    "--verify",
+                    "--quiet",
+                    &format!("refs/heads/{name}"),
+                ],
+            ) {
+                break;
+            }
+            name = format!("{branch}-{n}");
+        }
+        git.create_worktree_from(&project.path, &root, &name, project.base_ref.as_deref())
+            .map(|directory| (directory, name))
+            .map_err(|error| error.to_string())
+    })?;
+    workspace
+        .act(|core| convoy_core::worktree::record_create(core, session, &directory, &branch))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        convoy_core::worktree::setup_within(
+            &project.path,
+            &directory,
+            &shared,
+            command.as_deref().filter(|value| !value.trim().is_empty()),
+            &convoy_core::StdRunner,
+            std::time::Duration::from_secs(15 * 60),
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())
+}
+
+/// The builder's session, or the planner's for a task planned first.
+fn prepare(
+    workspace: &Workspace,
+    terminals: &crate::pty::Terminals,
+    chats: &crate::chat::Chats,
+    id: &str,
+    profile_id: Option<String>,
+) -> Result<String, String> {
+    let id = id.to_string();
+    crate::pipeline::run(workspace, terminals, chats, |workspace, context| {
         let planned = workspace
             .state()
             .tasks
@@ -450,6 +529,19 @@ pub fn after_exit(
             Completion::Advance(actions) => Ok(AfterExit::Advance { actions }),
         }
     })
+}
+
+/// The tasks the queue starts now in a project: as many as its free slots,
+/// none waiting for another that is not done.
+#[tauri::command]
+pub fn queue_next(
+    project_id: String,
+    workspace: State<'_, Workspace>,
+    terminals: State<'_, std::sync::Arc<crate::pty::Terminals>>,
+    chats: State<'_, std::sync::Arc<crate::chat::Chats>>,
+) -> Result<Vec<String>, String> {
+    let running = |session: &str| crate::chat::is_running(&terminals, &chats, session);
+    workspace.with(|core| Ok(convoy_core::queue::next_tasks(core, &project_id, &running)))
 }
 
 #[tauri::command]

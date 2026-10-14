@@ -55,6 +55,14 @@ pub struct ProjectInput {
     pub docs_dir: Option<String>,
     #[serde(default)]
     pub docs_auto: Option<bool>,
+    #[serde(default)]
+    pub task_worktrees: Option<bool>,
+    #[serde(default)]
+    pub max_parallel: Option<u32>,
+    #[serde(default)]
+    pub convoy_publishes: Option<bool>,
+    #[serde(default)]
+    pub pr_cli: Option<String>,
 }
 
 #[tauri::command]
@@ -91,6 +99,10 @@ pub fn project_edit(
                     plan_auto_approve: input.plan_auto_approve,
                     docs_dir: input.docs_dir,
                     docs_auto: input.docs_auto,
+                    task_worktrees: input.task_worktrees,
+                    max_parallel: input.max_parallel,
+                    convoy_publishes: input.convoy_publishes,
+                    pr_cli: input.pr_cli,
                     ..Default::default()
                 },
             )
@@ -193,6 +205,10 @@ pub struct ProjectDetail {
     /// Where documents go when no folder is set.
     pub docs_default_dir: String,
     pub docs_auto: bool,
+    pub task_worktrees: bool,
+    pub max_parallel: u32,
+    pub convoy_publishes: bool,
+    pub pr_cli: String,
 }
 
 #[tauri::command]
@@ -263,6 +279,10 @@ pub fn project_detail(
             .to_string_lossy()
             .into_owned(),
             docs_auto: project.docs_auto == Some(true),
+            task_worktrees: project.task_worktrees == Some(true),
+            max_parallel: project.max_parallel.unwrap_or(1),
+            convoy_publishes: project.convoy_publishes == Some(true),
+            pr_cli: project.pr_cli.clone().unwrap_or_default(),
         })
     })
 }

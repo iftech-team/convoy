@@ -63,6 +63,12 @@ pub struct ProjectPatch {
     /// An absolute folder; `Some("")` clears it.
     pub docs_dir: Option<String>,
     pub docs_auto: Option<bool>,
+    pub task_worktrees: Option<bool>,
+    /// 1 to 8 tasks at once.
+    pub max_parallel: Option<u32>,
+    pub convoy_publishes: Option<bool>,
+    /// `gh`, `glab`, or empty to read it from the remote.
+    pub pr_cli: Option<String>,
 }
 
 impl ProjectPatch {
@@ -287,6 +293,10 @@ impl Workspace {
                     plan_auto_approve: None,
                     docs_dir: None,
                     docs_auto: None,
+                    task_worktrees: None,
+                    max_parallel: None,
+                    convoy_publishes: None,
+                    pr_cli: None,
                     unknown: Default::default(),
                 });
             }
@@ -329,6 +339,12 @@ impl Workspace {
         }
         if let Some(rounds) = patch.max_fix_rounds {
             ensure!(rounds <= 10, "Allow 0 to 10 rounds of fixes.");
+        }
+        if let Some(parallel) = patch.max_parallel {
+            ensure!((1..=8).contains(&parallel), "Run 1 to 8 tasks at once.");
+        }
+        if let Some(cli) = patch.pr_cli.as_deref() {
+            ensure!(["", "gh", "glab"].contains(&cli), "Use gh or glab.");
         }
         // `~/Desktop/Docs` is how people write it.
         let docs_dir = patch.docs_dir.as_deref().map(|value| {
@@ -382,7 +398,7 @@ impl Workspace {
         }
         if let Some(mode) = patch.task_mode.as_deref() {
             ensure!(
-                ["pr", "push", "none", ""].contains(&mode),
+                ["pr", "push", "describe", "none", ""].contains(&mode),
                 "Unknown task mode."
             );
         }
@@ -478,6 +494,18 @@ impl Workspace {
             }
             if let Some(value) = patch.docs_auto {
                 project.docs_auto = Some(value);
+            }
+            if let Some(value) = patch.task_worktrees {
+                project.task_worktrees = Some(value);
+            }
+            if let Some(value) = patch.max_parallel {
+                project.max_parallel = Some(value);
+            }
+            if let Some(value) = patch.convoy_publishes {
+                project.convoy_publishes = Some(value);
+            }
+            if let Some(value) = patch.pr_cli {
+                project.pr_cli = (!value.is_empty()).then_some(value);
             }
             Ok(())
         })
@@ -578,6 +606,10 @@ impl Workspace {
                     plan_auto_approve: None,
                     docs_dir: None,
                     docs_auto: None,
+                    task_worktrees: None,
+                    max_parallel: None,
+                    convoy_publishes: None,
+                    pr_cli: None,
                     unknown: Default::default(),
                 });
                 ids.push(id);

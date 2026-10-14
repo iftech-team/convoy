@@ -14,8 +14,9 @@
 
 ## 1. Ворктри и `setup_command` на задачу
 
-- `Project.task_worktrees: Option<bool>`. Задача с режимом `pr` получает
-  ворктри всегда (как и задумывалось в `queue::needs_worktree`).
+- `Project.task_worktrees: Option<bool>`. Только по этой настройке: задача
+  `pr` без неё ворктри не получает, а публикация Convoy на `main`/`master`
+  отказывает с подсказкой включить ворктри.
 - Ветка: `<branchPrefix>/<KEY>-<slug>` (`convoy/LOYAL-523-refresh-token`),
   без ключа — `convoy/task-<id8>`.
 - `task_prepare` (Tauri, async): после `prepare_task` создаёт ворктри от

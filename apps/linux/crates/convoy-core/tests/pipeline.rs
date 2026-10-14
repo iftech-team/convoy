@@ -824,7 +824,13 @@ fn a_finished_task_can_be_reviewed_on_request() {
         .unwrap();
     let actions = pipeline::review_now(&mut workspace, &context(), &id).unwrap();
     assert_eq!(started(&actions).len(), 1);
-    assert_eq!(task(&workspace).review.unwrap().status, ReviewStatus::Reviewing);
+    assert_eq!(
+        task(&workspace).review.unwrap().status,
+        ReviewStatus::Reviewing
+    );
     assert_eq!(task(&workspace).stage_run, None);
-    assert!(pipeline::review_now(&mut workspace, &context(), &id).is_err(), "once at a time");
+    assert!(
+        pipeline::review_now(&mut workspace, &context(), &id).is_err(),
+        "once at a time"
+    );
 }
