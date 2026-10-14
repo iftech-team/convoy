@@ -375,7 +375,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         <div class="import__row${done ? " import__row--done" : ""}">
           <input type="checkbox" data-issue="${escape(issue.key)}"${draft.selected.has(issue.key) && !done ? " checked" : ""}${done ? " disabled" : ""} />
           <code class="import__key">${escape(issue.key)}</code>
-          <div class="import__title">
+          <div class="import__title import__title--full">
             <div>${escape(issue.title)}</div>
             <div class="import__meta">${done ? escape(t("Already imported")) : escape([issue.status, issue.priority].filter(Boolean).join(" · "))}</div>
           </div>

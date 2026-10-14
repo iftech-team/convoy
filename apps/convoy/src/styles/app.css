@@ -1815,7 +1815,7 @@ select:disabled {
 }
 
 .import__list {
-  max-height: 280px;
+  max-height: 360px;
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1855,6 +1855,13 @@ select:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* An issue's title is the task's name: shown whole, wrapped. */
+.import__title--full > div:first-child {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 
 .import__meta {
