@@ -14,7 +14,7 @@ import {
   toggle,
 } from "./ui.js";
 import { language, t } from "./i18n.js";
-import { activeAccount, anySession, isRunning, project, session, state, visibleSessions } from "./state.js";
+import { activeAccount, anySession, isProjectTab, isRunning, project, session, state, visibleSessions } from "./state.js";
 import { TASK_STATUSES, runnable } from "./views-planning.js";
 import { missingConversation } from "./terminal.js";
 import { shownAsTranscript, viewOf } from "./views-chat.js";
@@ -1069,11 +1069,44 @@ function tabGlyph(id, running, info) {
   return stateDot({ ...info, running, started: info.started ?? running });
 }
 
+const PROJECT_VIEWS = {
+  sessions: "Sessions",
+  reviews: "Reviews",
+  specs: "Specs",
+  tasks: "Tasks",
+  docs: "Docs",
+  automations: "Automations",
+};
+
+/// A project's page as a tab: its icon and name, and the part of the page
+/// it was left on.
+function projectTabItem(id, index) {
+  const info = tabInfo(id);
+  const owner = state.projects.find((item) => item.id === info?.project_id);
+  if (!owner) return "";
+  const selected =
+    !state.files && !state.sessionId && state.projectId === owner.id && (!state.page || state.page === "project");
+  const view = PROJECT_VIEWS[info.view] ?? PROJECT_VIEWS.sessions;
+  return `
+    <div class="tab-item tab-item--project${selected ? " tab-item--selected" : ""}" data-tab-open="${escape(id)}"
+         draggable="true" title="${escape(`${owner.title} · ${t(view)}`)}">
+      <span class="tab-item__bar" style="background:${projectTint(owner)}"></span>
+      ${projectIcon(owner, 13)}
+      <span class="tab-item__text">
+        <span class="tab-item__title">${escape(owner.title)}</span>
+        <span class="tab-item__project">${escape(t(view))}</span>
+      </span>
+      ${index < 9 && !selected ? `<span class="tab-item__number">${/mac/i.test(navigator.platform) ? "⌘" : "Ctrl+"}${index + 1}</span>` : ""}
+      <button class="tab-item__close" data-tab-close="${escape(id)}" title="${escape(t("Close tab"))}">${icons.close}</button>
+    </div>`;
+}
+
 /// The bar across the top, as in the macOS app: Home, one tab per open
-/// session in any project, then Files & Changes, the bell and New session.
+/// session or project page, then Files & Changes, the bell and New session.
 export function tabBar() {
   const tabs = state.tabs
     .map((id, index) => {
+      if (isProjectTab(id)) return projectTabItem(id, index);
       const info = tabInfo(id);
       if (!info) return "";
       const owner = state.projects.find((item) => item.id === info.project_id);
@@ -1142,7 +1175,7 @@ function tabMenu(menu) {
     <div class="scrim scrim--clear" data-dismiss="1">
       <div class="menu menu--context" role="menu" style="left:${Math.max(8, Math.min(menu.x, window.innerWidth - 240))}px;top:${menu.y}px">
         ${
-          state.layout > 1
+          state.layout > 1 && !isProjectTab(menu.id)
             ? Array.from({ length: state.layout }, (_, index) => item(t("Open in pane {number}", { number: index + 1 }), `pane-${index}`)).join("") +
               '<div class="menu__divider"></div>'
             : ""

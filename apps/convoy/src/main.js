@@ -28,6 +28,9 @@ import {
   toast,
   visibleSessions,
   ensureModels,
+  PROJECT_TAB,
+  projectTab,
+  isProjectTab,
 } from "./state.js";
 import { escape, plural, value } from "./ui.js";
 import { setLanguage, t } from "./i18n.js";
@@ -240,13 +243,38 @@ function stepPane(step) {
   return focusPane((state.focus + step + state.layout) % state.layout);
 }
 
-/// The open session always has a tab, and a tab remembers what it shows so
-/// it can be drawn while another project is open. Archived sessions leave.
+/// The tab of what the main area shows: the open session, or the page of
+/// the selected project. `null` on Home, Files, Settings and the like.
+function currentTab() {
+  if (state.files || (state.page && state.page !== "project")) return null;
+  if (state.sessionId) return state.sessionId;
+  return state.projectId ? projectTab(state.projectId) : null;
+}
+
+/// The open session and the open project page always have a tab, and a tab
+/// remembers what it shows so it can be drawn while another project is open.
+/// Archived sessions and removed projects leave.
 function syncTabs() {
   let touched = false;
-  if (state.sessionId && !state.tabs.includes(state.sessionId)) {
-    state.tabs.push(state.sessionId);
+  const current = currentTab();
+  if (current && !state.tabs.includes(current)) {
+    state.tabs.push(current);
     touched = true;
+  }
+  if (current && isProjectTab(current) && !state.page) {
+    const info = { kind: "project", project_id: state.projectId, view: state.tab };
+    if (JSON.stringify(state.tabInfo[current]) !== JSON.stringify(info)) {
+      state.tabInfo[current] = info;
+      touched = true;
+    }
+  }
+  if (state.projects.length) {
+    const gone = state.tabs.filter((id) => isProjectTab(id) && !state.projects.some((item) => projectTab(item.id) === id));
+    if (gone.length) {
+      state.tabs = state.tabs.filter((id) => !gone.includes(id));
+      for (const id of gone) delete state.tabInfo[id];
+      touched = true;
+    }
   }
   for (const item of state.sessions) {
     if (!state.tabs.includes(item.id)) continue;
@@ -267,6 +295,13 @@ function syncTabs() {
 async function openTab(id) {
   const info = tabInfo(id);
   if (!info) return;
+  if (isProjectTab(id)) {
+    if (state.page === "project") closeProjectSettings();
+    state.page = null;
+    state.capturing = null;
+    await selectProject(info.project_id);
+    return showTab(info.view ?? state.tab);
+  }
   state.page = null;
   if (info.project_id && info.project_id !== state.projectId) await selectProject(info.project_id);
   if (!state.sessions.some((item) => item.id === id)) {
@@ -303,13 +338,16 @@ function dropTab(id) {
     if (earlier >= 0) closedTabs.splice(earlier, 1);
     closedTabs.push(id);
   }
+  const shown = currentTab() === id;
   state.tabs = state.tabs.filter((tab) => tab !== id);
   delete state.tabInfo[id];
   saveTabs();
-  if (!state.running.includes(id)) terminal.forget(id);
-  if (state.sessionId === id) {
+  if (!isProjectTab(id) && !state.running.includes(id)) terminal.forget(id);
+  if (shown) {
     const next = state.tabs[Math.min(at, state.tabs.length - 1)];
     if (next) return openTab(next);
+    // A project page left on screen would take its tab straight back.
+    if (isProjectTab(id)) return openHome();
     state.sessionId = null;
   }
   render();
@@ -325,7 +363,7 @@ function moveTab(id, target) {
 
 function stepTabs(step) {
   if (state.tabs.length < 2) return stepSession(step);
-  const at = state.tabs.indexOf(state.sessionId);
+  const at = state.tabs.indexOf(currentTab());
   return openTab(state.tabs[(Math.max(at, 0) + step + state.tabs.length) % state.tabs.length]);
 }
 
@@ -487,6 +525,10 @@ const closedTabs = [];
 function reopenTab() {
   while (closedTabs.length) {
     const id = closedTabs.pop();
+    if (isProjectTab(id) && state.projects.some((item) => projectTab(item.id) === id)) {
+      state.tabInfo[id] = { kind: "project", project_id: id.slice(PROJECT_TAB.length), view: "sessions" };
+      return openTab(id);
+    }
     if (anySession(id)) return openAnywhere(id);
   }
 }

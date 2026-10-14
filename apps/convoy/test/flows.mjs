@@ -359,8 +359,19 @@ try {
   assert.equal(await page.locator(".header").count(), 0, "the project header gives way to the session");
   await page.locator('.tab-item[data-tab-open="builder"]').waitFor();
   await page.locator('.tab-item[data-tab-open="review"]').waitFor();
+  // The project's page, opened first, keeps a tab of its own.
+  await page.locator('.tab-item--project[data-tab-open^="project:"]').first().waitFor();
   const primary = process.platform === "darwin" ? "Meta" : "Control";
-  await page.keyboard.press(`${primary}+1`);
+  const builderAt = await page.evaluate(() =>
+    [...document.querySelectorAll(".tab-item")].findIndex((tab) => tab.dataset.tabOpen === "builder"),
+  );
+  await page.keyboard.press(`${primary}+${builderAt + 1}`);
+  await page.locator('.tab-item--selected[data-tab-open="builder"]').waitFor();
+  // Leaving the project's page for a session, its tab brings the page back.
+  await page.locator('.tab-item--project[data-tab-open^="project:"]').first().click();
+  await page.locator('.tab-item--project.tab-item--selected').waitFor();
+  await page.locator(".header").waitFor();
+  await page.locator('.tab-item[data-tab-open="builder"]').click();
   await page.locator('.tab-item--selected[data-tab-open="builder"]').waitFor();
   if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/tabs.png` });
   // ⌘+ / ⌘0 zoom this terminal only, from the Settings size (13).
@@ -491,7 +502,10 @@ try {
   const order = () => page.evaluate(() => [...document.querySelectorAll(".tab-item")].map((tab) => tab.dataset.tabOpen));
   const before = await order();
   await page.keyboard.press(`${primary}+Shift+ArrowRight`);
-  await page.waitForFunction((first) => document.querySelector(".tab-item").dataset.tabOpen !== first, before[0]);
+  await page.waitForFunction(
+    (at) => [...document.querySelectorAll(".tab-item")].findIndex((tab) => tab.dataset.tabOpen === "builder") !== at,
+    before.indexOf("builder"),
+  );
   assert.equal((await order()).indexOf("builder"), before.indexOf("builder") + 1);
   await page.locator(".status__needs", { hasText: "1 needs you" }).waitFor();
   await page.locator('[data-action="awake-menu"]').click();

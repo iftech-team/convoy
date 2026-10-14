@@ -175,6 +175,10 @@ export const project = () =>
 export const session = () =>
   state.sessions.find((item) => item.id === state.sessionId);
 export const isRunning = (id) => state.running.includes(id);
+/// A project's page in the tab strip, beside the session tabs.
+export const PROJECT_TAB = "project:";
+export const projectTab = (id) => PROJECT_TAB + id;
+export const isProjectTab = (id) => typeof id === "string" && id.startsWith(PROJECT_TAB);
 export const anySession = (id) =>
   state.sessions.find((item) => item.id === id) ??
   state.allSessions.find((item) => item.id === id);
