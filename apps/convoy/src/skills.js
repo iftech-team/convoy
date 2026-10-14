@@ -50,6 +50,7 @@ export function installSkills({ render, openModal, closeDialog, openSettings, lo
       project_id: item ? (item.project_id ?? "") : (projectId ?? ""),
       agents: item?.agents ?? "both",
       auto: item?.auto ?? false,
+      roles: item?.roles ?? ["build"],
       preview: false,
     });
   }
@@ -65,6 +66,8 @@ export function installSkills({ render, openModal, closeDialog, openSettings, lo
       project_id: dialog.project_id || null,
       agents: dialog.agents,
       auto: !!dialog.auto,
+      // The builder alone is what a skill always was: kept as none.
+      roles: dialog.roles?.some((role) => role !== "build") ? dialog.roles : null,
     };
     dialog.busy = true;
     render();
@@ -164,6 +167,16 @@ export function installSkills({ render, openModal, closeDialog, openSettings, lo
     }
     if (data.toggle === "skill-auto") {
       state.dialog.auto = !state.dialog.auto;
+      render();
+      return true;
+    }
+    if (data.toggle?.startsWith("skill-role:")) {
+      const role = data.toggle.slice("skill-role:".length);
+      const roles = new Set(state.dialog.roles ?? ["build"]);
+      if (roles.has(role)) roles.delete(role);
+      else roles.add(role);
+      // A skill is for at least one role; none would be the builder anyway.
+      state.dialog.roles = roles.size ? [...roles] : ["build"];
       render();
       return true;
     }

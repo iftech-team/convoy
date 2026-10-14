@@ -9,6 +9,15 @@ import { t } from "./i18n.js";
 import { state } from "./state.js";
 import { markdown } from "./views-files.js";
 
+/// The parts an agent plays in a task, in the order they come.
+export const ROLES = [
+  ["plan", "Planner", "Writes the plan before anything is built, when a task is planned first."],
+  ["build", "Builder", "Builds the task. Added to its brief."],
+  ["review", "Reviewer", "Reviews each round of work. Reports a verdict; edits nothing."],
+  ["qa", "QA", "Tests the change end to end after the checks and the review."],
+  ["docs", "Documentation", "Writes the task's document once QA passes."],
+];
+
 export const AGENT_SCOPES = [
   ["both", "Both agents"],
   ["claude", "Claude Code"],
@@ -62,7 +71,10 @@ export function skillsFor(agent, projectId) {
 }
 
 /// The automatic ones, for a new session, task or automation.
-export const autoSkills = (agent, projectId) => skillsFor(agent, projectId).filter((item) => item.auto).map((item) => item.id);
+export const autoSkills = (agent, projectId) =>
+  skillsFor(agent, projectId)
+    .filter((item) => item.auto && (item.roles ?? ["build"]).includes("build"))
+    .map((item) => item.id);
 
 // ------------------------------------------------------------- settings --
 
@@ -71,6 +83,9 @@ function skillRow(skill) {
     `<span class="badge badge--muted skill-tag">${escape(scopeText(skill))}</span>`,
     `<span class="badge badge--muted skill-tag">${escape(agentsText(skill.agents))}</span>`,
     skill.auto ? `<span class="badge skill-tag skill-tag--auto">${escape(t("Automatic"))}</span>` : "",
+    ...(skill.roles ?? [])
+      .filter((role) => role !== "build")
+      .map((role) => `<span class="badge badge--muted skill-tag">${escape(t(ROLES.find(([key]) => key === role)?.[1] ?? role))}</span>`),
   ].join("");
   const detail = skill.description || String(skill.body ?? "").split("\n").find((line) => line.trim()) || "";
   return `
@@ -193,6 +208,14 @@ export function skillEditor(dialog) {
           t("Attach to new sessions automatically"),
           t("Preselected for new sessions, tasks and automations in its scope. You can still take it off each one."),
           toggle("skill-auto", dialog.auto, t("Attach to new sessions automatically")),
+        )}
+        ${setting(
+          t("Roles in a task"),
+          t("Which agents of a task get it: the builder, and the planner, reviewer, QA or documentation writer of its project."),
+          `<div class="segmented">${ROLES.map(
+            ([role, name]) =>
+              `<button data-toggle="skill-role:${role}" aria-pressed="${(dialog.roles ?? ["build"]).includes(role)}">${escape(t(name))}</button>`,
+          ).join("")}</div>`,
         )}
       </div>`,
     note: escape(t("A change applies to each session the next time it starts.")),

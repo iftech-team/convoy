@@ -330,13 +330,20 @@ impl Workspace {
         if let Some(rounds) = patch.max_fix_rounds {
             ensure!(rounds <= 10, "Allow 0 to 10 rounds of fixes.");
         }
-        if let Some(dir) = patch
-            .docs_dir
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-        {
+        // `~/Desktop/Docs` is how people write it.
+        let docs_dir = patch.docs_dir.as_deref().map(|value| {
+            let value = value.trim();
+            match value.strip_prefix("~/") {
+                Some(rest) => crate::storage::home(crate::Platform::current())
+                    .join(rest)
+                    .to_string_lossy()
+                    .into_owned(),
+                None => value.to_string(),
+            }
+        });
+        if let Some(dir) = docs_dir.as_deref().filter(|value| !value.is_empty()) {
             ensure!(
-                Path::new(dir.trim()).is_absolute(),
+                Path::new(dir).is_absolute(),
                 "Choose the documents folder by its full path."
             );
         }
@@ -466,8 +473,7 @@ impl Workspace {
             if let Some(value) = patch.plan_auto_approve {
                 project.plan_auto_approve = Some(value);
             }
-            if let Some(value) = patch.docs_dir {
-                let value = value.trim().to_string();
+            if let Some(value) = docs_dir {
                 project.docs_dir = (!value.is_empty()).then(|| PathBuf::from(value));
             }
             if let Some(value) = patch.docs_auto {

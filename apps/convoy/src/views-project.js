@@ -7,7 +7,7 @@ import { icons } from "./icons.js";
 import { button, escape, shorten } from "./ui.js";
 import { state } from "./state.js";
 import { t } from "./i18n.js";
-import { projectSkills } from "./views-skills.js";
+import { ROLES, projectSkills } from "./views-skills.js";
 
 /// The macOS app's palette and emoji choices, in its order.
 export const COLORS = ["#5E6AD2", "#4CAF83", "#E5A54B", "#D65C5C", "#3FA7D6", "#B067C9", "#8A8F98", "#E07C4C"];
@@ -45,6 +45,46 @@ const select = (key, options, selected) =>
    </select>`;
 
 const TRACKERS = { linear: "Linear", jira: "Jira", peshbar: "Peshbar", notion: "Notion" };
+
+
+/// Each role's instructions in this project; an empty field follows the
+/// global ones, shown as its placeholder.
+function roles(project) {
+  const own = project.role_instructions ?? {};
+  const fallback = project.role_fallbacks ?? {};
+  return groupBox(
+    t("Roles"),
+    ROLES.map(
+      ([role, name, about]) => `
+      <div class="pref-block pref-stack">
+        <div class="pref-row__title">${escape(t(name))}</div>
+        <div class="pref-row__detail">${escape(t(about))}</div>
+        <textarea class="pref-area" data-proj-role="${role}" rows="4" spellcheck="false"
+                  placeholder="${escape(fallback[role] || t("No instructions"))}">${escape(own[role] ?? "")}</textarea>
+      </div>`,
+    ).join(""),
+    t("Empty fields follow Settings → Roles. Skills reach a role when they are marked for it in the skill's editor."),
+  );
+}
+
+/// Where task documents go, and whether they are written by themselves.
+function documents(project) {
+  return groupBox(
+    t("Task documents"),
+    `${row(
+      t("Write the document when QA passes"),
+      t("A documentation writer, with the Documentation role's instructions, writes it as the last stage."),
+      `<button class="switch" data-proj-toggle="docs_auto" aria-pressed="${!!project.docs_auto}"
+               aria-label="${escape(t("Write the document when QA passes"))}"></button>`,
+    )}
+     <div class="pref-block pref-stack">
+       <div class="pref-row__title">${escape(t("Documents folder"))}</div>
+       <input class="pref-text pref-text--wide" data-proj-text="docs_dir" spellcheck="false"
+              value="${escape(project.docs_dir ?? "")}" placeholder="${escape(project.docs_default_dir ?? "")}" />
+       <div class="pref-row__detail">${escape(t("A full path outside the repository, such as ~/Desktop/EskhataDocs. Empty keeps documents in Convoy's own data."))}</div>
+     </div>`,
+  );
+}
 
 /// How this project's tasks are tested when they move to In testing: its
 /// own checks first, then a QA agent.
@@ -90,7 +130,7 @@ function testing(project) {
          String(project.qa_timeout ?? 15),
        ),
      )}`,
-    t("Moving a task to In testing starts its QA. A failure sends it back to Needs changes with the findings for its builder; a pass waits for you to mark it done."),
+    t("Moving a task to In testing starts its QA: the checks, the review when it is due, then the QA agent. A failure goes back to the builder with the findings; a pass waits for you to mark it done."),
   );
 }
 
@@ -356,16 +396,36 @@ export function projectSettingsPage() {
              `<button class="switch" data-proj-toggle="auto_run_tasks" aria-pressed="${!!project.auto_run_tasks}"
                       aria-label="${escape(t("Auto-run task queue"))}"></button>`,
            )}
-           <div class="pref-block pref-stack">
-             <div class="pref-row__title">${escape(t("Review brief template"))}</div>
-             <textarea class="pref-area" data-proj-text="review_template" rows="6" spellcheck="false"
-                       placeholder="${escape(t("Empty uses the global template from Settings → Agents"))}">${escape(project.review_template ?? "")}</textarea>
-             <div class="pref-inline pref-inline--flush">
-               ${button({ label: t("Insert default"), action: "insert-review-default", kind: "quiet" })}
-               ${button({ label: t("Use global"), data: { "proj-clear": "review_template" }, disabled: !project.review_template })}
-             </div>
-           </div>`,
+           ${row(
+             t("Review tasks automatically"),
+             t("New tasks start with automatic review switched on: the other agent reviews each round before QA."),
+             `<button class="switch" data-proj-toggle="review_auto" aria-pressed="${!!project.review_auto}"
+                      aria-label="${escape(t("Review tasks automatically"))}"></button>`,
+           )}
+           ${row(
+             t("Rounds of automatic fixes"),
+             t("A failed review or QA goes back to the builder with the findings this many times; after that the task needs your attention."),
+             select(
+               "max_fix_rounds",
+               [0, 1, 2, 3, 4, 5].map((rounds) => [String(rounds), rounds === 0 ? t("None") : String(rounds)]),
+               String(project.max_fix_rounds ?? 2),
+             ),
+           )}
+           ${row(
+             t("Plan new tasks first"),
+             t("A planner writes the plan before anything is built; you approve it or ask for changes."),
+             `<button class="switch" data-proj-toggle="plan_first_default" aria-pressed="${!!project.plan_first_default}"
+                      aria-label="${escape(t("Plan new tasks first"))}"></button>`,
+           )}
+           ${row(
+             t("Approve plans automatically"),
+             t("The builder starts as soon as the plan is written. A task can say otherwise."),
+             `<button class="switch" data-proj-toggle="plan_auto_approve" aria-pressed="${!!project.plan_auto_approve}"
+                      aria-label="${escape(t("Approve plans automatically"))}"></button>`,
+           )}`,
         )}
+        ${roles(project)}
+        ${documents(project)}
         ${testing(project)}
         ${integration(project)}
         ${projectSkills(project.id)}

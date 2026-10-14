@@ -665,6 +665,7 @@ const DRAFT_FIELDS = {
   "draft-setup": "setup_command",
   "draft-review": "review_template",
   "task-spec": "spec_id",
+  "plan-comment": "plan_comment",
   "task-account": "profile_id",
   ...Object.fromEntries(["title", "problem", "requirements", "acceptance", "constraints", "plan"].map((key) => [`spec-${key}`, key])),
   ...Object.fromEntries(["title", "details", "findings", "model", "effort"].map((key) => [`task-${key}`, key])),
@@ -704,6 +705,42 @@ const ACTIONS = {
     const id = state.dialog?.id;
     if (id) return startQa(id);
   },
+  "plan-approve": () => approvePlan(state.dialog?.id),
+  "plan-changes": async () => {
+    captureDraft();
+    const id = state.dialog?.id;
+    const comment = (state.dialog?.plan_comment ?? "").trim();
+    if (!id) return;
+    if (!comment) return toast(t("Say what should change in the plan."));
+    const actions = await call("plan_request_changes", { taskId: id, comment });
+    if (!actions) return;
+    state.dialog.plan_comment = "";
+    toast(t("Sent to the planner. The new plan shows here when it is written."));
+    await applyPipeline(actions);
+    refreshTaskDialog(id);
+    render();
+  },
+  "plan-open": () => {
+    const session = state.dialog?.plan?.session_id;
+    if (!session) return;
+    closeDialog();
+    return openAnywhere(session);
+  },
+  "review-open": () => {
+    const session = state.dialog?.review_session_id;
+    if (!session) return;
+    closeDialog();
+    return openAnywhere(session);
+  },
+  "review-skip": async () => {
+    const id = state.dialog?.id;
+    if (!id) return;
+    const actions = await call("review_skip", { taskId: id });
+    if (actions) await applyPipeline(actions);
+    refreshTaskDialog(id);
+    render();
+  },
+  "task-docs-write": () => writeTaskDoc(state.dialog?.id),
   "task-mark-done": async () => {
     const id = state.dialog?.id;
     if (id && (await done("task_status", { id, status: "done" }))) {
@@ -1033,7 +1070,8 @@ const ACTIONS = {
       mode: project()?.task_mode || "pr",
       ...lastChoice(project()?.default_agent || state.settings.default_agent),
       profile_id: activeAccount(project()?.default_agent || state.settings.default_agent),
-      auto_review: false,
+      auto_review: !!project()?.review_auto,
+      plan_first: !!project()?.plan_first_default,
       spec_id: "",
     }),
   "save-task": () => saveTask(false),
@@ -1156,12 +1194,6 @@ const ACTIONS = {
   "files-load-all": () => {
     state.files.loadAll = true;
     render();
-  },
-  "insert-review-default": async () => {
-    const text = await call("review_template_default");
-    if (text === undefined) return;
-    if (state.page === "project") return saveProjectField({ review_template: text });
-    return savePref({ review_template: text });
   },
   // Enter in the automation editor's fields.
   "automation-save": () => automations.onClick({ dataset: { action: "automation-save" } }),
@@ -1318,7 +1350,7 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon],[data-sync-toggle]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-inbox-answer],[data-inbox-open],[data-inbox-expand],[data-tab-close],[data-tab-open],[data-related-remove],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day],[data-skill],[data-skill-pick],[data-skill-toggle],[data-usage-days],[data-usage-agent],[data-usage-table],[data-price-add],[data-price-remove],[data-price-reset],[data-price-save]",
+      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day],[data-skill],[data-skill-pick],[data-skill-toggle],[data-usage-days],[data-usage-agent],[data-usage-table],[data-price-add],[data-price-remove],[data-price-reset],[data-price-save],[data-task-doc-open],[data-task-doc-reveal],[data-task-doc]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -1683,6 +1715,9 @@ app.addEventListener("click", async (event) => {
   }
   if (data.taskRun) return runTask(data.taskRun);
   if (data.taskPr) return done("task_pr_open", { id: data.taskPr });
+  if (data.taskDocOpen) return done("task_doc_open", { projectId: state.dialog?.project_id ?? state.projectId, path: data.taskDocOpen });
+  if (data.taskDocReveal) return done("task_doc_reveal", { projectId: state.dialog?.project_id ?? state.projectId, path: data.taskDocReveal });
+  if (data.taskDoc) return openTaskDoc(data.taskDoc);
   if (data.taskMore) {
     const box = target.getBoundingClientRect();
     return openContextMenu("task", data.taskMore, box.left - 180, box.bottom + 4);
@@ -1871,12 +1906,31 @@ app.addEventListener("change", async (event) => {
     captureDraft();
     return render();
   }
+  if (state.dialog?.kind === "task" && event.target.id === "task-plan-auto") {
+    state.dialog.plan_auto_approve = { yes: true, no: false }[event.target.value] ?? null;
+    return render();
+  }
   if (state.dialog?.kind === "task" && ["task-account", "task-spec", "task-model"].includes(event.target.id)) {
     state.dialog[DRAFT_FIELDS[event.target.id]] = event.target.value;
     return render();
   }
+  // A role's instructions: the whole map is saved. The reviewer's replaces
+  // the older review template, which is cleared so it no longer shows through.
+  const projectRole = event.target.dataset?.projRole;
+  if (projectRole) {
+    const roles = { ...(state.projectDraft?.role_instructions ?? {}), [projectRole]: event.target.value };
+    return saveProjectField({ role_instructions: roles, ...(projectRole === "review" ? { review_template: "" } : {}) });
+  }
+  const globalRole = event.target.dataset?.prefRole;
+  if (globalRole) {
+    const roles = { ...(state.settings.role_instructions ?? {}), [globalRole]: event.target.value };
+    return savePref({ role_instructions: roles, ...(globalRole === "review" ? { review_template: "" } : {}) });
+  }
   const projectKey = event.target.dataset?.projText ?? event.target.dataset?.projSelect;
-  if (projectKey) return saveProjectField({ [projectKey]: projectKey === "qa_timeout" ? Number(event.target.value) : event.target.value });
+  if (projectKey) {
+    const numeric = ["qa_timeout", "max_fix_rounds"].includes(projectKey);
+    return saveProjectField({ [projectKey]: numeric ? Number(event.target.value) : event.target.value });
+  }
   const choiceKey = event.target.dataset?.prefSelect;
   if (choiceKey) return savePref({ [choiceKey]: event.target.value });
   const textKey = event.target.dataset?.prefText;
@@ -3050,10 +3104,12 @@ async function loadDocs() {
   const id = state.projectId;
   if (!id) return;
   const files = (await call("docs_list", { projectId: id })) ?? [];
+  const taskDocs = (await call("task_docs_list", { projectId: id })) ?? [];
   const previous = state.docs?.projectId === id ? state.docs : null;
   state.docs = {
     projectId: id,
     files,
+    taskDocs,
     selected: previous?.selected && files.includes(previous.selected) ? previous.selected : null,
     text: "",
     editing: false,
@@ -3063,9 +3119,26 @@ async function loadDocs() {
   else render();
 }
 
+/// A task document: Markdown rendered as the other docs are, a PDF in the
+/// web view's own viewer.
+let pdfUrl = null;
+async function openTaskDoc(path) {
+  if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+  pdfUrl = null;
+  state.docs = { ...state.docs, selected: null, taskDoc: path, text: "", pdf: null, editing: false, dirty: false, loading: true };
+  render();
+  const content = await call("task_doc_read", { projectId: state.docs.projectId, path });
+  if (content?.kind === "pdf") {
+    const bytes = Uint8Array.from(atob(content.base64), (char) => char.charCodeAt(0));
+    pdfUrl = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+  }
+  state.docs = { ...state.docs, text: content?.kind === "markdown" ? content.text : "", pdf: pdfUrl, loading: false };
+  render();
+}
+
 async function openDoc(path) {
   // As on macOS, opening another file leaves unsaved edits behind.
-  state.docs = { ...state.docs, selected: path, text: "", editing: false, dirty: false, loading: true };
+  state.docs = { ...state.docs, selected: path, taskDoc: null, pdf: null, text: "", editing: false, dirty: false, loading: true };
   render();
   const text = await call("doc_read", { projectId: state.docs.projectId, path });
   state.docs = { ...state.docs, text: text ?? "", loading: false };
@@ -3278,6 +3351,11 @@ async function saveTask(run = false) {
   if ((account ?? "") !== (before?.profile_id ?? "")) {
     if (!(await done("task_account", { id, profileId: account }))) return;
   }
+  const planFirst = !!dialog.plan_first;
+  const planAuto = dialog.plan_auto_approve ?? null;
+  if (planFirst !== !!before?.plan_first || planAuto !== (before?.plan_auto_approve ?? null)) {
+    if (!(await done("task_plan", { id, planFirst, autoApprove: planAuto }))) return;
+  }
   closeDialog();
   await reloadTasks();
   if (run) await runTask(id);
@@ -3319,48 +3397,129 @@ async function moveTask(id, status) {
 
 // --------------------------------------------------------------------- QA --
 
-/// Tests a task: the project's checks, then its QA agent. The run shows
-/// itself on the task as it goes; this starts the agent and passes findings
-/// on to the builder.
+/// Tests a task: the project's checks, then the review when it is due and
+/// the QA agent. The run shows itself on the task as it goes; what follows
+/// the checks is the pipeline's to say.
 async function startQa(id) {
   const title = findTask(id)?.title ?? "";
   toast(t("Testing “{task}”…", { task: title }));
-  const result = await call("qa_start", { taskId: id });
+  const actions = await call("qa_start", { taskId: id });
   await reloadTasks();
-  if (!result) return render();
-  if (result.kind === "agent") {
-    await loadSessions();
-    await startSession(result.session, { background: true });
-    toast(t("Checks passed. A QA agent is testing “{task}”.", { task: title }));
-  } else if (result.kind === "passed") {
-    toast(t("QA passed: “{task}” is ready to mark done.", { task: title }));
-  } else {
-    await qaFailed(title, result.delivery);
-  }
+  if (actions) await applyPipeline(actions);
   refreshTaskDialog(id);
   render();
 }
 
-/// Findings sent to a running builder, or left for its next resume.
-async function qaFailed(title, delivery) {
-  if (delivery) {
-    const { builder, feedback } = delivery;
-    if (viewOf(anySession(builder)) === "chat") await sendText(builder, feedback);
-    else await terminal.paste(builder, feedback, true);
+// --------------------------------------------------------------- pipeline --
+
+/// What the pipeline tells the person, by event.
+function pipelineNotice(action) {
+  const task = findTask(action.task)?.title ?? "";
+  switch (action.event) {
+    case "ready":
+      return toast(t("“{task}” passed everything that runs by itself. It is ready for you to mark done.", { task }));
+    case "fixing":
+      return toast(t("{stage} found problems with “{task}”. They went back to its builder.", { stage: t(action.detail), task }));
+    case "attention":
+      return toast(t("“{task}” needs your attention: {reason}", { task, reason: action.detail.split("\n")[0] }), "bad");
+    case "plan_ready":
+      return toast(t("The plan for “{task}” is ready for your approval.", { task }));
+    case "plan_approved":
+      return toast(t("The plan for “{task}” approved itself. Building it now.", { task }));
+    case "docs_written":
+      return toast(t("The document for “{task}” is written.", { task }));
   }
-  toast(
-    delivery
-      ? t("QA failed: the findings went to the builder, and “{task}” is back in Needs changes.", { task: title })
-      : t("QA failed: “{task}” is back in Needs changes. Its builder gets the findings when it resumes.", { task: title }),
-    "bad",
-  );
+}
+
+/// Does what the pipeline asks, in order: start or resume a session, send
+/// one a message, test or run a task, put a finished stage to sleep, carry
+/// a queue on, tell the person.
+async function applyPipeline(actions) {
+  if (!actions?.length) return;
+  let loaded = false;
+  for (const action of actions) {
+    switch (action.kind) {
+      case "start":
+        if (!loaded) {
+          await loadSessions();
+          loaded = true;
+        }
+        await startSession(action.session, { background: true });
+        break;
+      case "send":
+        if (viewOf(anySession(action.session)) === "chat") await sendText(action.session, action.text);
+        else await terminal.paste(action.session, action.text, true);
+        break;
+      case "test":
+        // Not awaited: the checks can take minutes.
+        startQa(action.task);
+        break;
+      case "run":
+        await runTask(action.task);
+        break;
+      case "hibernate":
+        await terminal.hibernate(action.session);
+        break;
+      case "built":
+        if (state.projects.find((item) => item.id === action.project)?.auto_run_tasks) state.queues.add(action.project);
+        if (state.queues.has(action.project)) await advanceQueue(action.project);
+        break;
+      case "notice":
+        pipelineNotice(action);
+        break;
+    }
+  }
+  await reloadTasks();
+  for (const task of new Set(actions.map((action) => action.task).filter(Boolean))) refreshTaskDialog(task);
+  render();
+}
+
+/// Every two seconds: stages that reported by file are moved on.
+let pipelineBusy = false;
+async function pipelineTick() {
+  if (pipelineBusy) return;
+  pipelineBusy = true;
+  try {
+    const actions = await attempt("pipeline_tick");
+    if (actions.ok && actions.value?.length) await applyPipeline(actions.value);
+  } finally {
+    pipelineBusy = false;
+  }
+}
+
+/// Approves a plan and builds the task with it.
+async function approvePlan(id) {
+  if (!id || !(await done("plan_approve", { taskId: id }))) return;
+  closeDialog();
+  await reloadTasks();
+  await runTask(id);
+}
+
+/// Writes the task's document now.
+async function writeTaskDoc(id) {
+  if (!id) return;
+  const actions = await call("task_docs_start", { taskId: id });
+  if (actions) await applyPipeline(actions);
 }
 
 /// A task form left open follows its task's QA run.
 function refreshTaskDialog(id) {
   const task = findTask(id);
   if (state.dialog?.kind === "task" && state.dialog.id === id && task) {
-    Object.assign(state.dialog, { qa: task.qa, status: task.status, findings: task.findings, sync: task.sync });
+    Object.assign(state.dialog, {
+      qa: task.qa,
+      status: task.status,
+      findings: task.findings,
+      sync: task.sync,
+      review: task.review,
+      review_session_id: task.review_session_id,
+      round: task.round,
+      build_summary: task.build_summary,
+      plan: task.plan,
+      docs: task.docs,
+      docs_run: task.docs_run,
+      last_error: task.last_error,
+    });
   }
 }
 
@@ -3384,6 +3543,18 @@ async function runTaskMenu(act, id) {
     case "task-qa":
       render();
       return startQa(id);
+    case "task-plan":
+      return openModal({ kind: "task", ...task });
+    case "task-planner":
+      return openAnywhere(task.plan?.session_id);
+    case "task-skip-review": {
+      render();
+      const actions = await call("review_skip", { taskId: id });
+      return actions && applyPipeline(actions);
+    }
+    case "task-docs":
+      render();
+      return writeTaskDoc(id);
     case "task-sync-retry":
       render();
       if (await done("task_sync_retry", { id })) await reloadTasks();
@@ -4127,19 +4298,13 @@ terminal.onExit(async (exit) => {
     return;
   }
   await applyKeepAwake();
-  // A QA agent ending, cleanly or not: its verdict decides the task.
-  if (anySession(exit.id)?.qa_of) {
-    const verdict = await call("qa_after_exit", { id: exit.id });
-    await reloadTasks();
-    if (verdict) {
-      const title = findTask(verdict.task)?.title ?? "";
-      if (verdict.passed === true) toast(t("QA passed: “{task}” is ready to mark done.", { task: title }));
-      else if (verdict.passed === false) await qaFailed(title, verdict.delivery);
-      else toast(t("The QA agent ended without a verdict for “{task}”. Open its session to see why.", { task: title }), "bad");
-      refreshTaskDialog(verdict.task);
-    }
-    return render();
-  }
+  // A stage ending — a reviewer, a QA agent, a planner, a documentation
+  // writer — cleanly or not: what it reported decides the task, and one
+  // that reported nothing needs attention.
+  const after = await attempt("pipeline_after_exit", { id: exit.id });
+  if (after.ok && after.value?.length) await applyPipeline(after.value);
+  const ended = anySession(exit.id);
+  if (ended?.qa_of || ended?.review_of) return render();
   const projectId =
     state.sessions.find((item) => item.id === exit.id)?.project_id ?? state.projectId;
   // "Auto-run task queue": the queue carries on by itself in this project.
@@ -4169,19 +4334,8 @@ terminal.onExit(async (exit) => {
     await loadPlanning();
     return render();
   }
-  if (step.kind === "review") {
-    await loadSessions();
-    await startSession(step.session);
-  }
-  if (step.kind === "test") {
-    if (step.review) {
-      await loadSessions();
-      await startSession(step.review);
-    }
-    // Not awaited: the checks can take minutes, and the queue carries on.
-    startQa(step.task);
-  }
-  if (queued && step.kind !== "nothing") await advanceQueue(projectId);
+  // The round is done: its "built" action carries a running queue on.
+  if (step.kind === "advance") await applyPipeline(step.actions);
 });
 
 // ------------------------------------------------------------- file drop --
@@ -4254,6 +4408,7 @@ try {
   if (state.projects.length) openHome();
   await applyKeepAwake();
   setInterval(monitorTick, 2000);
+  setInterval(pipelineTick, 2000);
   setInterval(applyKeepAwake, 10000);
   refreshLimits(false);
   setInterval(() => refreshLimits(false), 60000);

@@ -647,7 +647,10 @@ const taskForm = (dialog) => {
     wide: true,
     body: `
       ${syncNotice(dialog)}
+      ${planPanel(dialog)}
+      ${reviewPanel(dialog)}
       ${qaPanel(dialog)}
+      ${docsPanel(dialog)}
       ${field(t("Title"), textInput("task-title", dialog.title))}
       ${field(t("Agent"), choice("agent", AGENTS, dialog.agent))}
       ${skillPicker(dialog.skills, dialog.agent, projectId)}
@@ -674,7 +677,24 @@ const taskForm = (dialog) => {
           dialog.mode,
         ),
       )}
-      ${setting(t("Hand to the other agent when it finishes"), "", toggle("auto_review", dialog.auto_review, t("Automatic review")))}
+      ${setting(t("Review each round with the other agent"), t("Findings go back to the builder by themselves, a few rounds at most."), toggle("auto_review", dialog.auto_review, t("Automatic review")))}
+      ${setting(t("Plan first"), t("A planner writes the plan; the task is built once it is approved."), toggle("plan_first", dialog.plan_first, t("Plan first")))}
+      ${
+        dialog.plan_first
+          ? field(
+              t("Plan approval"),
+              select(
+                "task-plan-auto",
+                [
+                  ["", t("As the project says")],
+                  ["yes", t("Approve by itself")],
+                  ["no", t("Wait for me")],
+                ],
+                dialog.plan_auto_approve === true ? "yes" : dialog.plan_auto_approve === false ? "no" : "",
+              ),
+            )
+          : ""
+      }
       ${blockedBy(dialog)}
       ${relatedTasks(dialog)}
       ${field(t("Details"), textArea("task-details", dialog.details, "", 4))}
@@ -695,13 +715,117 @@ const taskForm = (dialog) => {
     foot: `
       ${dialog.id ? button({ icon: "trash", kind: "quiet", title: t("Delete task"), action: "delete-task", disabled: dialog.status === "building" }) : ""}
       ${button({ label: t("Cancel"), data: { dismiss: "1" } })}
-      ${!dialog.id || ["queued", "failed", "changes"].includes(dialog.status) ? button({ label: t("Run now"), icon: "play", action: "run-task-now" }) : ""}
+      ${!dialog.id || ["queued", "failed", "changes", "attention"].includes(dialog.status) ? button({ label: dialog.plan_first && dialog.plan?.status !== "approved" ? t("Plan now") : t("Run now"), icon: "play", action: "run-task-now" }) : ""}
       ${button({ label: t("Save"), action: "save-task", kind: "primary" })}`,
   });
 };
 
+const PLAN_HEADLINES = {
+  drafting: ["The planner is writing the plan…", "running"],
+  waiting: ["The plan waits for your approval", "review"],
+  approved: ["Plan approved", "done"],
+  changes_requested: ["The task changed: the plan will be redone", "open"],
+};
+
+/// The plan: what the planner wrote, and approving it or asking for
+/// changes.
+function planPanel(task) {
+  const plan = task.plan;
+  if (!plan) return "";
+  const [headline, tone] = PLAN_HEADLINES[plan.status] ?? [plan.status, "idle"];
+  const waiting = plan.status === "waiting";
+  const comments = (plan.comments ?? [])
+    .map((comment) => `<li>${escape(comment.text)}</li>`)
+    .join("");
+  return `
+    <section class="qa-panel qa-panel--${tone}" aria-live="polite">
+      <div class="qa-panel__head">
+        <span class="state__dot state__dot--${tone}"></span>
+        <span class="qa-panel__title">${escape(t(headline))}</span>
+      </div>
+      ${plan.text ? `<div class="plan-text docs__render">${markdown(plan.text)}</div>` : ""}
+      ${comments ? `<details><summary>${escape(t("Your comments"))}</summary><ul class="plain-list">${comments}</ul></details>` : ""}
+      ${
+        waiting
+          ? `<textarea id="plan-comment" class="field__input plan-comment" rows="2" placeholder="${escape(t("What should change in the plan?"))}">${escape(task.plan_comment ?? "")}</textarea>`
+          : ""
+      }
+      <div class="qa-panel__actions">
+        ${waiting ? button({ label: t("Approve and build"), icon: "check", action: "plan-approve", kind: "primary" }) : ""}
+        ${waiting ? button({ label: t("Ask for changes"), icon: "edit", action: "plan-changes" }) : ""}
+        ${plan.session_id ? button({ label: t("Open planner"), icon: "terminal", action: "plan-open" }) : ""}
+      </div>
+    </section>`;
+}
+
+const REVIEW_HEADLINES = {
+  reviewing: ["The other agent is reviewing…", "running"],
+  passed: ["Review passed", "done"],
+  failed: ["Review found problems", "failed"],
+  no_verdict: ["The reviewer ended without a verdict", "idle"],
+  skipped: ["Review skipped", "idle"],
+};
+
+/// The latest review, which round it was, and going on without it.
+function reviewPanel(task) {
+  const run = task.review;
+  if (!run && !task.round) return "";
+  const [headline, tone] = run ? REVIEW_HEADLINES[run.status] ?? [run.status, "idle"] : ["", "idle"];
+  const round = task.round
+    ? `<span class="badge badge--muted">${escape(t("Fix round {round} of {max}", { round: task.round, max: task.max_rounds }))}</span>`
+    : "";
+  const canSkip = run && ["reviewing", "no_verdict", "failed"].includes(run.status);
+  return `
+    <section class="qa-panel qa-panel--${tone}" aria-live="polite">
+      <div class="qa-panel__head">
+        <span class="state__dot state__dot--${tone}"></span>
+        <span class="qa-panel__title">${escape(headline ? t(headline) : t("Fixing"))}</span>
+        ${round}
+      </div>
+      ${run?.findings ? `<div class="qa-panel__findings">${escape(run.findings)}</div>` : ""}
+      ${task.build_summary ? `<details><summary>${escape(t("What the builder reports"))}</summary><div class="qa-panel__findings">${escape(task.build_summary)}</div></details>` : ""}
+      <div class="qa-panel__actions">
+        ${task.review_session_id ? button({ label: t("Open reviewer"), icon: "terminal", action: "review-open" }) : ""}
+        ${canSkip ? button({ label: t("Skip review"), icon: "chevronRight", action: "review-skip", kind: "quiet" }) : ""}
+      </div>
+    </section>`;
+}
+
+/// The documents written for the task, and writing one now.
+function docsPanel(task) {
+  if (!task.id) return "";
+  const docs = task.docs ?? [];
+  const writing = task.docs_run?.status === "writing";
+  const ready = ["testing", "review", "pr", "done", "attention"].includes(task.status);
+  if (!docs.length && !writing && !ready) return "";
+  const list = docs
+    .map(
+      (doc) => `
+        <li class="qa-check">
+          <div class="qa-check__line">
+            <span class="qa-check__mark">${doc.kind === "pdf" ? "PDF" : "MD"}</span>
+            <code class="qa-check__command">${escape(doc.title)}</code>
+            ${button({ icon: "open", kind: "quiet", title: t("Open in the system viewer"), data: { "task-doc-open": doc.path } })}
+            ${button({ icon: "folder", kind: "quiet", title: t("Show in Finder"), data: { "task-doc-reveal": doc.path } })}
+          </div>
+        </li>`,
+    )
+    .join("");
+  return `
+    <section class="qa-panel qa-panel--${writing ? "running" : docs.length ? "done" : "idle"}">
+      <div class="qa-panel__head">
+        <span class="qa-panel__title">${escape(writing ? t("The document is being written…") : docs.length ? t("Task documents") : t("No document yet"))}</span>
+      </div>
+      ${list ? `<ul class="qa-panel__checks">${list}</ul>` : ""}
+      <div class="qa-panel__actions">
+        ${writing ? "" : button({ label: docs.length ? t("Write it again") : t("Write the document"), icon: "doc", action: "task-docs-write", kind: "quiet" })}
+      </div>
+    </section>`;
+}
+
 const QA_HEADLINES = {
   checking: ["Running the project's checks…", "running"],
+  waiting: ["Checks passed. QA waits for the review.", "idle"],
   testing: ["Checks passed. A QA agent is testing.", "running"],
   passed: ["QA passed", "done"],
   failed: ["QA failed", "failed"],

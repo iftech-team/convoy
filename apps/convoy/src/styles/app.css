@@ -6339,3 +6339,48 @@ select:disabled {
   font-family: var(--font-mono);
   font-size: 12.5px;
 }
+
+/* Task documents in the Documents list: two lines, the task above, the
+   kind, date and task status below. */
+.doc-file--task {
+  height: auto;
+  min-height: 26px;
+  padding: 4px 8px;
+  flex-wrap: wrap;
+  row-gap: 0;
+}
+
+.doc-file--task .doc-file__name {
+  flex: 1;
+  min-width: 0;
+}
+
+.doc-file--task .doc-file__meta {
+  flex-basis: 100%;
+  padding-left: 21px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.docs__pdf {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  background: var(--bg);
+}
+
+/* The plan in a task's form: rendered, and kept from pushing the form away. */
+.plan-text {
+  max-height: 320px;
+  padding: 8px 12px;
+  max-width: none;
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 12.5px;
+}
+
+.plan-comment {
+  width: 100%;
+  resize: vertical;
+}

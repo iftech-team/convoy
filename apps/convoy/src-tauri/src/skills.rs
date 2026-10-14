@@ -163,6 +163,7 @@ mod tests {
             project_id: project.map(str::to_string),
             agents: "both".into(),
             auto,
+            roles: None,
         }
     }
 

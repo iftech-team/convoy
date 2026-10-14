@@ -12,11 +12,14 @@ import { when } from "./views-history.js";
 
 const COLUMNS = [
   ["queued", "Queued", "idle"],
+  ["planning", "Planning", "running"],
+  ["plan_review", "Plan to approve", "review"],
   ["building", "Running", "running"],
   ["review", "Needs review", "review"],
   ["pr", "Pull request", "review"],
   ["testing", "In testing", "testing"],
   ["changes", "Needs changes", "open"],
+  ["attention", "Needs attention", "failed"],
   ["done", "Done", "done"],
   ["failed", "Failed", "failed"],
 ];
@@ -57,18 +60,37 @@ export function syncSummary(task) {
 
 const QA_BADGES = {
   checking: ["QA: running checks", "running"],
+  waiting: ["QA: after the review", "idle"],
   testing: ["QA: agent testing", "running"],
   passed: ["QA passed", "done"],
   failed: ["QA failed", "failed"],
   no_verdict: ["QA: no verdict", "idle"],
 };
 
-/// How the task's latest QA run stands, as a badge.
+const REVIEW_BADGES = {
+  reviewing: ["Reviewing", "running"],
+  failed: ["Review failed", "failed"],
+  no_verdict: ["Review: no verdict", "idle"],
+};
+
+const badge = ([label, tone], title = "") =>
+  `<span class="qa-badge qa-badge--${tone}"${title ? ` title="${escape(title)}"` : ""}><span class="state__dot state__dot--${tone}"></span>${escape(t(label))}</span>`;
+
+/// How the task's latest QA run stands, as a badge, with the review while
+/// it matters and the round of fixes it is in.
 export function qaBadge(task) {
-  const badge = QA_BADGES[task.qa?.status];
-  if (!badge) return "";
-  const [label, tone] = badge;
-  return `<span class="qa-badge qa-badge--${tone}"><span class="state__dot state__dot--${tone}"></span>${escape(t(label))}</span>`;
+  const parts = [];
+  const review = REVIEW_BADGES[task.review?.status];
+  if (review) parts.push(badge(review));
+  const qa = QA_BADGES[task.qa?.status];
+  if (qa) parts.push(badge(qa));
+  if (task.round) {
+    parts.push(
+      `<span class="badge badge--muted">${escape(t("round {round}/{max}", { round: task.round, max: task.max_rounds ?? 2 }))}</span>`,
+    );
+  }
+  if (task.docs?.length) parts.push(`<span class="badge badge--muted">${escape(t("document"))}</span>`);
+  return parts.join("");
 }
 
 /// The issue key, marked with how its last push went; `compact` drops the
@@ -179,7 +201,7 @@ export function tasksView() {
 
 /// Tasks that can be started from here: waiting, or back after a failure or
 /// a request for changes.
-export const runnable = (task) => ["queued", "failed", "changes"].includes(task.status);
+export const runnable = (task) => ["queued", "failed", "changes", "attention"].includes(task.status);
 
 const projectName = (task) =>
   state.taskScope === "all" ? state.projects.find((item) => item.id === task.project_id)?.title : "";

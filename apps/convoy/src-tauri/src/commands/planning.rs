@@ -58,6 +58,16 @@ pub struct TaskView {
     pub blocked_by: Vec<String>,
     /// Skills its session starts with, by id.
     pub skills: Vec<String>,
+    /// The current round of fixes.
+    pub round: u32,
+    pub max_rounds: u32,
+    pub review: Option<convoy_core::pipeline::ReviewRun>,
+    pub build_summary: Option<String>,
+    pub plan_first: bool,
+    pub plan_auto_approve: Option<bool>,
+    pub plan: Option<convoy_core::plan::PlanRun>,
+    pub docs: Vec<convoy_core::task_docs::TaskDoc>,
+    pub docs_run: Option<convoy_core::task_docs::DocsRun>,
 }
 
 fn task_view(state: &convoy_core::model::State, task: &convoy_core::model::Task) -> TaskView {
@@ -84,6 +94,20 @@ fn task_view(state: &convoy_core::model::State, task: &convoy_core::model::Task)
         related: task.related.clone(),
         profile_id: task.profile_id.clone(),
         skills: task.skills.clone().unwrap_or_default(),
+        round: task.round,
+        max_rounds: state
+            .projects
+            .iter()
+            .find(|project| project.id == task.project_id)
+            .map(convoy_core::pipeline::max_rounds)
+            .unwrap_or(convoy_core::pipeline::DEFAULT_MAX_FIX_ROUNDS),
+        review: task.review.clone(),
+        build_summary: task.build_summary.clone(),
+        plan_first: task.plan_first,
+        plan_auto_approve: task.plan_auto_approve,
+        plan: task.plan.clone(),
+        docs: task.docs.clone(),
+        docs_run: task.docs_run.clone(),
         blocked_by: convoy_core::queue::blocked_by(state, task)
             .into_iter()
             .map(|other| other.title.clone())
@@ -335,20 +359,33 @@ pub fn task_status(
         "changes" => TaskStatus::Changes,
         "done" => TaskStatus::Done,
         "failed" => TaskStatus::Failed,
+        "attention" => TaskStatus::Attention,
         other => return Err(format!("Invalid task status: {other}")),
     };
     workspace.act(|workspace| workspace.set_task_status(&id, status).map(|_| ()))
 }
 
 /// Writes the brief from the approved specification and the task, and returns
-/// the session it belongs to.
+/// the session it belongs to. A task planned first gets its planner instead,
+/// until its plan is approved.
 #[tauri::command]
 pub fn task_prepare(
     id: String,
     profile_id: Option<String>,
     workspace: State<'_, Workspace>,
+    terminals: State<'_, std::sync::Arc<crate::pty::Terminals>>,
+    chats: State<'_, std::sync::Arc<crate::chat::Chats>>,
 ) -> Result<String, String> {
-    workspace.act(|workspace| {
+    crate::pipeline::run(&workspace, &terminals, &chats, |workspace, context| {
+        let planned = workspace
+            .state()
+            .tasks
+            .iter()
+            .find(|task| task.id == id)
+            .is_some_and(convoy_core::plan::needed);
+        if planned {
+            return convoy_core::plan::begin(workspace, context, &id);
+        }
         let state = workspace.prepare_task(&id, profile_id)?;
         Ok(state
             .tasks
@@ -367,19 +404,14 @@ pub fn task_prepare(
 #[derive(serde::Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum AfterExit {
-    /// Not a task session, or the task is not awaiting review.
+    /// Not a task session, or its round was already handled.
     Nothing,
     /// The specification moved on while the task ran. The queue stops.
     Superseded,
-    /// Accepted into review; the queue may pull the next task.
-    Continue,
-    /// A review session was created and is waiting to be started.
-    Review { session: String },
-    /// The project tests its tasks by itself: QA starts for `task`, with a
-    /// review session to start as well when one was due.
-    Test {
-        task: String,
-        review: Option<String>,
+    /// The round is done; the pipeline asks for these. The queue may pull
+    /// the next task.
+    Advance {
+        actions: Vec<convoy_core::pipeline::Action>,
     },
 }
 
@@ -388,49 +420,34 @@ pub fn queue_after_exit(
     id: String,
     clean: bool,
     workspace: State<'_, Workspace>,
+    terminals: State<'_, std::sync::Arc<crate::pty::Terminals>>,
+    chats: State<'_, std::sync::Arc<crate::chat::Chats>>,
 ) -> Result<AfterExit, String> {
-    after_exit(&workspace, &id, clean)
+    let running = |session: &str| crate::chat::is_running(&terminals, &chats, session);
+    after_exit(&workspace, &id, clean, &running)
 }
 
 /// The rule itself, apart from Tauri's state extractor so a test can reach it.
-pub fn after_exit(workspace: &Workspace, id: &str, clean: bool) -> Result<AfterExit, String> {
+pub fn after_exit(
+    workspace: &Workspace,
+    id: &str,
+    clean: bool,
+    running: &dyn Fn(&str) -> bool,
+) -> Result<AfterExit, String> {
     // A failure or a stop pauses the queue, and the caller does that; there is
     // nothing to hand on.
     if !clean {
         return Ok(AfterExit::Nothing);
     }
-    let history = convoy_core::history::History::new(workspace.storage.history());
-    workspace.act(|core| {
+    crate::pipeline::run_with(workspace, running, |core, context| {
         core.session(id)?;
-        // The excerpt is context for the reviewer, never instructions.
-        let output = history.read(id).unwrap_or_default();
-        match convoy_core::queue::on_clean_exit(core, id, &output)? {
+        match convoy_core::queue::on_clean_exit(core, context, id)? {
             Completion::Nothing => Ok(AfterExit::Nothing),
             Completion::Superseded => {
                 convoy_core::queue::mark_superseded(core, id)?;
                 Ok(AfterExit::Superseded)
             }
-            Completion::Continue => Ok(AfterExit::Continue),
-            Completion::Review(handoff) => {
-                let state = core.add_session(*handoff)?;
-                let session = state
-                    .sessions
-                    .last()
-                    .map(|session| session.id.clone())
-                    .unwrap_or_default();
-                Ok(AfterExit::Review { session })
-            }
-            Completion::Test { task, review } => {
-                let review = match review {
-                    Some(handoff) => core
-                        .add_session(*handoff)?
-                        .sessions
-                        .last()
-                        .map(|session| session.id.clone()),
-                    None => None,
-                };
-                Ok(AfterExit::Test { task, review })
-            }
+            Completion::Advance(actions) => Ok(AfterExit::Advance { actions }),
         }
     })
 }
@@ -484,10 +501,18 @@ mod tests {
         drop(core);
 
         let workspace = Workspace::at(storage.clone());
-        let step = after_exit(&workspace, &builder, true).unwrap();
-        let AfterExit::Review { session } = step else {
+        let idle = |_: &str| false;
+        let step = after_exit(&workspace, &builder, true, &idle).unwrap();
+        let AfterExit::Advance { actions } = step else {
             panic!("no review was handed on");
         };
+        let session = actions
+            .iter()
+            .find_map(|action| match action {
+                convoy_core::pipeline::Action::Start { session, .. } => Some(session.clone()),
+                _ => None,
+            })
+            .expect("a review session to start");
 
         let core = CoreWorkspace::load(storage.workspace_file()).unwrap();
         let review = core
@@ -503,10 +528,10 @@ mod tests {
             "a review goes to the other agent"
         );
 
-        // One review per builder: a second exit must not spawn another.
+        // One review per round: a second exit must not spawn another.
         assert!(matches!(
-            after_exit(&workspace, &builder, true).unwrap(),
-            AfterExit::Continue
+            after_exit(&workspace, &builder, true, &idle).unwrap(),
+            AfterExit::Nothing
         ));
         std::fs::remove_dir_all(&root).ok();
     }

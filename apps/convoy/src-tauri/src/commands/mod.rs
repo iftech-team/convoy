@@ -136,6 +136,10 @@ pub struct ProjectView {
     pub auto_run_tasks: bool,
     /// Test commands or a QA agent are set up, so a task moved to testing is tested.
     pub qa: bool,
+    /// New tasks here are reviewed automatically.
+    pub review_auto: bool,
+    /// New tasks here are planned first.
+    pub plan_first_default: bool,
     pub sessions: usize,
     pub running: usize,
 }
@@ -260,6 +264,8 @@ pub fn workspace_read(
                     task_mode: project.task_mode.clone(),
                     auto_run_tasks: project.auto_run_tasks == Some(true),
                     qa: convoy_core::qa::configured(project),
+                    review_auto: project.review_auto == Some(true),
+                    plan_first_default: project.plan_first_default == Some(true),
                     sessions: own.iter().filter(|session| !session.is_archived()).count(),
                     running: own
                         .iter()
@@ -314,6 +320,10 @@ pub struct SettingsView {
     pub worktree_shared: String,
     /// `chat` or `terminal`, for sessions that have not chosen.
     pub default_view: String,
+    /// Each role's global instructions, as set.
+    pub role_instructions: std::collections::BTreeMap<convoy_core::model::Role, String>,
+    /// What each role does when nothing is set, for the fields' placeholders.
+    pub role_builtins: std::collections::BTreeMap<convoy_core::model::Role, String>,
     pub storage: String,
 }
 
@@ -360,6 +370,11 @@ pub fn settings_read(workspace: State<'_, Workspace>) -> Result<SettingsView, St
             worktree_setup: settings.worktree_setup.clone(),
             worktree_shared: settings.worktree_shared.clone(),
             default_view: settings.view().to_string(),
+            role_instructions: settings.role_instructions.clone(),
+            role_builtins: convoy_core::model::Role::ALL
+                .into_iter()
+                .map(|role| (role, convoy_core::roles::builtin(role).to_string()))
+                .collect(),
             storage: storage.clone(),
         })
     })
@@ -413,6 +428,8 @@ pub struct SettingsInput {
     pub worktree_shared: Option<String>,
     #[serde(default)]
     pub default_view: Option<String>,
+    #[serde(default)]
+    pub role_instructions: Option<std::collections::BTreeMap<convoy_core::model::Role, String>>,
 }
 
 #[tauri::command]
@@ -448,6 +465,7 @@ pub fn settings_save(input: SettingsInput, workspace: State<'_, Workspace>) -> R
                 sort_projects: input.sort_projects,
                 yolo_claude: input.yolo_claude,
                 yolo_codex: input.yolo_codex,
+                role_instructions: input.role_instructions,
                 review_template: input.review_template,
                 notify_waiting: input.notify_waiting,
                 notify_done: input.notify_done,

@@ -10,6 +10,7 @@ mod chat;
 mod commands;
 mod helpers;
 mod monitor;
+mod pipeline;
 mod power;
 mod pty;
 mod qa;
@@ -120,8 +121,18 @@ pub fn run() {
             sync::tracker_statuses,
             sync::task_sync_retry,
             qa::qa_start,
-            qa::qa_after_exit,
             qa::qa_suggest_commands,
+            pipeline::pipeline_tick,
+            pipeline::pipeline_after_exit,
+            pipeline::review_skip,
+            pipeline::task_plan,
+            pipeline::plan_approve,
+            pipeline::plan_request_changes,
+            pipeline::task_docs_start,
+            pipeline::task_docs_list,
+            pipeline::task_doc_read,
+            pipeline::task_doc_open,
+            pipeline::task_doc_reveal,
             tasks::issues_parse_keys,
             tasks::issues_import,
             tasks::tasks_for,

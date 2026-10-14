@@ -136,6 +136,10 @@ pub fn begin(workspace: &mut Workspace, context: &Context<'_>, task_id: &str) ->
         !matches!(task.status, TaskStatus::Building | TaskStatus::Planning),
         "The task is already running."
     );
+    ensure!(
+        task.status != TaskStatus::PlanReview,
+        "Approve the plan or ask for changes first."
+    );
     let run = new_id();
     let file = stage::file(workspace, Stage::Plan, &run);
     std::fs::create_dir_all(stage::dir(workspace))?;
