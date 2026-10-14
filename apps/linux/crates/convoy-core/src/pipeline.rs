@@ -557,6 +557,36 @@ pub fn review_verdict(
     handle(workspace, context, task_id, Event::Review(passed, findings))
 }
 
+/// A person asks for the review now: the builder's round counts as done,
+/// whether or not it wrote its completion file. For a builder briefed
+/// before the pipeline, which was never told to write one.
+pub fn review_now(
+    workspace: &mut Workspace,
+    context: &Context<'_>,
+    task_id: &str,
+) -> Result<Vec<Action>> {
+    let task = find(workspace, task_id)?;
+    crate::ensure!(
+        !matches!(
+            task.status,
+            TaskStatus::Building | TaskStatus::Planning | TaskStatus::PlanReview | TaskStatus::Queued
+        ),
+        "Review a task once its builder has finished."
+    );
+    crate::ensure!(
+        !task
+            .review
+            .as_ref()
+            .is_some_and(|run| run.status == ReviewStatus::Reviewing),
+        "This task is already being reviewed."
+    );
+    change(workspace, task_id, |task| {
+        task.stage_run = None;
+        task.last_error = None;
+    })?;
+    start_review(workspace, context, task_id)
+}
+
 /// A person goes on without the review.
 pub fn skip_review(
     workspace: &mut Workspace,

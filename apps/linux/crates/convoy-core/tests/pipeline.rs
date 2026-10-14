@@ -801,3 +801,30 @@ fn a_writer_without_a_document_leaves_the_task_needing_attention() {
     assert!(stuck.last_error.unwrap().starts_with("No document."));
     assert_eq!(stuck.docs_run.unwrap().status, DocsStatus::Failed);
 }
+
+#[test]
+fn a_finished_task_can_be_reviewed_on_request() {
+    let (_fixture, mut workspace, _, id) = setup(ProjectPatch::default());
+    workspace.prepare_task(&id, None).unwrap();
+    // Not while it builds.
+    workspace
+        .update(|state| {
+            state.tasks[0].status = TaskStatus::Building;
+            Ok(())
+        })
+        .unwrap();
+    assert!(pipeline::review_now(&mut workspace, &context(), &id).is_err());
+    // A builder briefed before the pipeline: its hook moved it to review,
+    // and it never writes a completion file.
+    workspace
+        .update(|state| {
+            state.tasks[0].status = TaskStatus::Review;
+            Ok(())
+        })
+        .unwrap();
+    let actions = pipeline::review_now(&mut workspace, &context(), &id).unwrap();
+    assert_eq!(started(&actions).len(), 1);
+    assert_eq!(task(&workspace).review.unwrap().status, ReviewStatus::Reviewing);
+    assert_eq!(task(&workspace).stage_run, None);
+    assert!(pipeline::review_now(&mut workspace, &context(), &id).is_err(), "once at a time");
+}

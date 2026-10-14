@@ -1355,6 +1355,8 @@ export default {
     "No tasks": "Нет задач",
     // Task pipeline: stages, roles, plans and documents
     "Make a plan": "Составить план",
+    "Review now": "Сделать ревью",
+    "The other agent is reviewing “{task}”.": "Другой агент делает ревью «{task}».",
     "Planning": "Планирование",
     "Plan to approve": "План на утверждении",
     "Needs attention": "Нужно внимание",

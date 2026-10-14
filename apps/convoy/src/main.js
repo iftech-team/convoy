@@ -3547,6 +3547,12 @@ async function runTaskMenu(act, id) {
       return openModal({ kind: "task", ...task });
     case "task-planner":
       return openAnywhere(task.plan?.session_id);
+    case "task-review-now": {
+      render();
+      const actions = await call("review_now", { taskId: id });
+      if (actions) toast(t("The other agent is reviewing “{task}”.", { task: task.title }));
+      return actions && applyPipeline(actions);
+    }
     case "task-skip-review": {
       render();
       const actions = await call("review_skip", { taskId: id });

@@ -125,6 +125,7 @@ pub fn run() {
             pipeline::pipeline_tick,
             pipeline::pipeline_after_exit,
             pipeline::review_skip,
+            pipeline::review_now,
             pipeline::task_plan,
             pipeline::plan_approve,
             pipeline::plan_request_changes,

@@ -68,6 +68,19 @@ pub fn pipeline_after_exit(
     })
 }
 
+/// Reviews a finished task now.
+#[tauri::command]
+pub fn review_now(
+    task_id: String,
+    workspace: State<'_, Workspace>,
+    terminals: State<'_, Arc<Terminals>>,
+    chats: State<'_, Arc<Chats>>,
+) -> Result<Vec<Action>, String> {
+    run(&workspace, &terminals, &chats, |core, context| {
+        pipeline::review_now(core, context, &task_id)
+    })
+}
+
 #[tauri::command]
 pub fn review_skip(
     task_id: String,
