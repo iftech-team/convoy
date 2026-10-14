@@ -76,6 +76,73 @@ pub struct ImportOptions {
 }
 
 /// The origin of an imported task, as the agent reads it in its brief.
+/// Characters of a related task's details that go into a brief.
+const RELATED_DETAILS: usize = 2_000;
+
+/// The tasks this one waits for or is related to, for its agent to read
+/// first: what each is, where it stands, and where its work lives.
+fn related_context(state: &State, task: &Task) -> String {
+    let mut ids: Vec<&String> = task.depends_on.iter().collect();
+    for id in &task.related {
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    let entries: Vec<String> = ids
+        .into_iter()
+        .filter_map(|id| state.tasks.iter().find(|other| other.id == *id))
+        .map(|other| {
+            let mut entry = format!("### {}\n", other.title.trim());
+            let mut facts = vec![format!("Status: {}", other.status.as_str())];
+            if task.depends_on.contains(&other.id) {
+                facts.push("this task waits for it".into());
+            }
+            if let Some(source) = &other.source {
+                facts.push(format!("{} {}", source.tracker.label(), source.key));
+            }
+            entry.push_str(&facts.join(" · "));
+            if other.project_id != task.project_id {
+                if let Some(project) = state.projects.iter().find(|p| p.id == other.project_id) {
+                    entry.push_str(&format!(
+                        "\nProject: {} at {}",
+                        project.title,
+                        project.path.display()
+                    ));
+                }
+            }
+            let builder = other
+                .session_id
+                .as_deref()
+                .and_then(|id| state.sessions.iter().find(|session| session.id == id));
+            if let Some(branch) = builder.and_then(|session| session.branch.as_deref()) {
+                entry.push_str(&format!("\nBranch: {branch}"));
+            }
+            if let Some(folder) = builder.and_then(|session| session.working_directory.as_ref()) {
+                entry.push_str(&format!("\nWorking folder: {}", folder.display()));
+            }
+            if let Some(pr) = &other.pr_url {
+                entry.push_str(&format!("\nPull request: {pr}"));
+            }
+            let details = other.details.trim();
+            if !details.is_empty() {
+                let mut text: String = details.chars().take(RELATED_DETAILS).collect();
+                if text.len() < details.len() {
+                    text.push_str(" …");
+                }
+                entry.push_str(&format!("\n\n{text}"));
+            }
+            entry
+        })
+        .collect();
+    if entries.is_empty() {
+        return String::new();
+    }
+    format!(
+        "\n\n## Related tasks\nRead these before you start, and keep this task consistent with them: reuse what they built, and do not undo or duplicate their work. Look at their branch or pull request when it helps.\n\n{}",
+        entries.join("\n\n")
+    )
+}
+
 fn source_note(source: &IssueSource) -> String {
     let link = source
         .url
@@ -266,6 +333,7 @@ impl Workspace {
                     source: None,
                     pr_url: None,
                     depends_on: Vec::new(),
+                    related: Vec::new(),
                     profile_id: None,
                     skills: attached(input.skills.clone().unwrap_or_default()),
                     sync: None,
@@ -356,6 +424,38 @@ impl Workspace {
         })
     }
 
+    /// Sets the tasks related to this one, of any project. The link is kept
+    /// on both sides: a task added gains this one, a task removed loses it.
+    pub fn set_task_related(&mut self, id: &str, related: Vec<String>) -> Result<&State> {
+        let id = id.to_string();
+        self.update(move |state| {
+            ensure!(find_task_index(state, &id).is_some(), "Task unavailable.");
+            let mut unique: Vec<String> = Vec::new();
+            for other in related {
+                ensure!(other != id, "A task cannot be related to itself.");
+                ensure!(
+                    find_task_index(state, &other).is_some(),
+                    "A related task is no longer available."
+                );
+                if !unique.contains(&other) {
+                    unique.push(other);
+                }
+            }
+            for task in state.tasks.iter_mut() {
+                if task.id == id {
+                    task.related = unique.clone();
+                } else if unique.contains(&task.id) {
+                    if !task.related.contains(&id) {
+                        task.related.push(id.clone());
+                    }
+                } else {
+                    task.related.retain(|other| *other != id);
+                }
+            }
+            Ok(())
+        })
+    }
+
     /// Makes an existing session the one that builds a task — the macOS
     /// app's "Link existing session". The session must be of the task's
     /// project and not already building another task.
@@ -414,6 +514,7 @@ impl Workspace {
             state.tasks.remove(index);
             for task in state.tasks.iter_mut() {
                 task.depends_on.retain(|other| *other != id);
+                task.related.retain(|other| *other != id);
             }
             for session in state.sessions.iter_mut() {
                 if session.task_id.as_deref() == Some(id.as_str()) {
@@ -477,8 +578,9 @@ impl Workspace {
             } else {
                 String::new()
             };
+            let context = related_context(state, &task);
             let prompt = format!(
-                "{preamble}\n## Current task\n{}\n\n{}{origin}{findings}\n\nVerify the changes and report your results. {publication}",
+                "{preamble}\n## Current task\n{}\n\n{}{origin}{findings}{context}\n\nVerify the changes and report your results. {publication}",
                 task.title, task.details
             );
             ensure!(
@@ -605,6 +707,7 @@ impl Workspace {
                     }),
                     pr_url: None,
                     depends_on: Vec::new(),
+                    related: Vec::new(),
                     profile_id: None,
                     skills: attached(options.skills.clone()),
                     sync: None,

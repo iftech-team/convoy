@@ -4810,6 +4810,75 @@ select:disabled {
   white-space: pre-wrap;
 }
 
+/* Related tasks in the task form. */
+.related-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.related-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 4px 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 13px;
+  background: var(--bg);
+  font-size: 12px;
+}
+
+.related-chip__key {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.related-chip__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.related-chip__project {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.related-chip__remove {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.related-chip__remove:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.related-chip__remove svg {
+  width: 10px;
+  height: 10px;
+}
+
+.related-add {
+  width: 100%;
+}
+
 .check-list {
   display: flex;
   flex-direction: column;

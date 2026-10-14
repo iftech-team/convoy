@@ -51,6 +51,8 @@ pub struct TaskView {
     /// The session reviewing its work, when there is one.
     pub review_session_id: Option<String>,
     pub depends_on: Vec<String>,
+    /// Tasks of any project its agent reads first.
+    pub related: Vec<String>,
     pub profile_id: Option<String>,
     /// The titles of the tasks it still waits for.
     pub blocked_by: Vec<String>,
@@ -79,6 +81,7 @@ fn task_view(state: &convoy_core::model::State, task: &convoy_core::model::Task)
         sync: task.sync.clone(),
         qa: task.qa.clone(),
         depends_on: task.depends_on.clone(),
+        related: task.related.clone(),
         profile_id: task.profile_id.clone(),
         skills: task.skills.clone().unwrap_or_default(),
         blocked_by: convoy_core::queue::blocked_by(state, task)
@@ -171,6 +174,15 @@ pub fn task_dependencies(
     workspace: State<'_, Workspace>,
 ) -> Result<(), String> {
     workspace.act(|workspace| workspace.set_task_dependencies(&id, depends_on).map(|_| ()))
+}
+
+#[tauri::command]
+pub fn task_related(
+    id: String,
+    related: Vec<String>,
+    workspace: State<'_, Workspace>,
+) -> Result<(), String> {
+    workspace.act(|workspace| workspace.set_task_related(&id, related).map(|_| ()))
 }
 
 #[tauri::command]

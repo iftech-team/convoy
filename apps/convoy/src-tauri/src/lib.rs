@@ -197,6 +197,7 @@ pub fn run() {
             commands::planning::task_status,
             commands::planning::task_delete,
             commands::planning::task_dependencies,
+            commands::planning::task_related,
             commands::planning::task_link_session,
             commands::planning::task_account,
             commands::planning::tasks_all,

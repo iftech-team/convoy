@@ -147,6 +147,9 @@ let shown = null;
 
 const TABS_KEY = "convoy.tabs";
 
+/// Every project's tasks are being fetched for a task form's related picker.
+let allTasksLoading = false;
+
 try {
   state.sidebarHidden = localStorage.getItem("convoy.sidebarHidden") === "1";
 } catch {
@@ -373,6 +376,14 @@ function render() {
   if (state.tab === "sessions") ensureHistory();
   // A sheet choosing a model asks for the agent's list the first time.
   if (state.dialog?.kind === "task") ensureModels(state.dialog.agent, state.dialog.profile_id ?? "");
+  // Related tasks are picked from every project.
+  if (state.dialog?.kind === "task" && !state.allTasks && !allTasksLoading) {
+    allTasksLoading = true;
+    loadAllTasks().then(() => {
+      allTasksLoading = false;
+      render();
+    });
+  }
   if (["session", "review"].includes(state.dialog?.kind) && state.dialog.agent) ensureModels(state.dialog.agent, state.dialog.account ?? "");
   if (state.dialog && isImportDialog()) {
     ensureModels("claude");
@@ -1296,7 +1307,7 @@ app.addEventListener("click", async (event) => {
       + "[data-capture],[data-expand],[data-project-more],[data-menu-act],[data-settings-section]," +
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon],[data-sync-toggle]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
-      "[data-inbox-answer],[data-inbox-open],[data-inbox-expand],[data-tab-close],[data-tab-open],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
+      "[data-inbox-answer],[data-inbox-open],[data-inbox-expand],[data-tab-close],[data-tab-open],[data-related-remove],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
       "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day],[data-skill],[data-skill-pick],[data-skill-toggle],[data-usage-days],[data-usage-agent],[data-usage-table],[data-price-add],[data-price-remove],[data-price-reset],[data-price-save]",
   );
   if (!target) return;
@@ -1337,6 +1348,11 @@ app.addEventListener("click", async (event) => {
   }
   if (data.inboxExpand) {
     if (!state.inboxExpanded.delete(data.inboxExpand)) state.inboxExpanded.add(data.inboxExpand);
+    return render();
+  }
+  if (data.relatedRemove && state.dialog?.kind === "task") {
+    captureDraft();
+    state.dialog.related = (state.dialog.related ?? []).filter((id) => id !== data.relatedRemove);
     return render();
   }
   if (data.tabClose) return closeTab(data.tabClose);
@@ -1785,6 +1801,11 @@ app.addEventListener("change", async (event) => {
       await loadPlanning();
       toast(t("Session linked"));
     }
+    return render();
+  }
+  if (event.target.dataset?.relatedAdd && state.dialog?.kind === "task" && event.target.value) {
+    captureDraft();
+    state.dialog.related = [...(state.dialog.related ?? []), event.target.value];
     return render();
   }
   if (event.target.dataset?.dependsOn !== undefined && state.dialog?.kind === "task") {
@@ -3222,6 +3243,13 @@ async function saveTask(run = false) {
   const had = findTask(id)?.depends_on ?? [];
   if (wanted.length !== had.length || wanted.some((other) => !had.includes(other))) {
     if (!(await done("task_dependencies", { id, dependsOn: wanted }))) return;
+  }
+  const related = dialog.related ?? [];
+  const linked = findTask(id)?.related ?? [];
+  if (related.length !== linked.length || related.some((other) => !linked.includes(other))) {
+    if (!(await done("task_related", { id, related }))) return;
+    // The other side of each link changed too.
+    if (state.allTasks) await loadAllTasks();
   }
   const model = (dialog.model ?? "").trim();
   const effort = effortLevels(dialog.agent, dialog.profile_id ?? "", model).includes(dialog.effort) ? dialog.effort : "";

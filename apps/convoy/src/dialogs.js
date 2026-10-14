@@ -14,10 +14,10 @@ import {
   toggle,
 } from "./ui.js";
 import { markdown } from "./views-files.js";
-import { syncState, syncSummary } from "./views-planning.js";
+import { TASK_STATUSES, syncState, syncSummary } from "./views-planning.js";
 import { when } from "./views-history.js";
 import { state, project, session } from "./state.js";
-import { agentIcon } from "./icons.js";
+import { agentIcon, icons } from "./icons.js";
 import { t } from "./i18n.js";
 import { automationEditor } from "./views-automations.js";
 import { autoSkills, skillEditor, skillPicker } from "./views-skills.js";
@@ -583,6 +583,59 @@ function blockedBy(dialog) {
     </div>`;
 }
 
+/// Tasks of any project this one's agent reads before starting: each as a
+/// chip, and a picker for more, this project's tasks first.
+function relatedTasks(dialog) {
+  const pool = new Map();
+  for (const task of [...(state.allTasks ?? []), ...(state.planning?.tasks ?? [])]) pool.set(task.id, task);
+  pool.delete(dialog.id);
+  if (!pool.size) return "";
+  const here = dialog.project_id ?? state.projectId;
+  const chosen = (dialog.related ?? []).filter((id) => pool.has(id));
+  const projectName = (id) => state.projects.find((item) => item.id === id)?.title ?? "";
+  const tone = (status) => TASK_STATUSES.find(([key]) => key === status)?.[2] ?? "idle";
+  const chips = chosen
+    .map((id) => {
+      const task = pool.get(id);
+      const elsewhere = task.project_id !== here ? projectName(task.project_id) : "";
+      return `
+        <span class="related-chip" title="${escape(`${task.title} · ${t(task.status)}${elsewhere ? ` · ${elsewhere}` : ""}`)}">
+          <span class="state__dot state__dot--${tone(task.status)}"></span>
+          ${task.source?.key ? `<code class="related-chip__key">${escape(task.source.key)}</code>` : ""}
+          <span class="related-chip__title">${escape(task.title)}</span>
+          ${elsewhere ? `<span class="related-chip__project">${escape(elsewhere)}</span>` : ""}
+          <button class="related-chip__remove" data-related-remove="${escape(id)}" title="${escape(t("Remove"))}">${icons.close}</button>
+        </span>`;
+    })
+    .join("");
+  const groups = new Map();
+  for (const task of pool.values()) {
+    if (chosen.includes(task.id)) continue;
+    const key = task.project_id ?? here;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(task);
+  }
+  const order = [...groups.keys()].sort((a, b) => (a === here ? -1 : b === here ? 1 : projectName(a).localeCompare(projectName(b))));
+  const options = order
+    .map(
+      (key) => `<optgroup label="${escape(projectName(key) || t("This project"))}">${groups
+        .get(key)
+        .map(
+          (task) =>
+            `<option value="${escape(task.id)}">${escape(`${task.source?.key ? `${task.source.key} · ` : ""}${task.title}`)}</option>`,
+        )
+        .join("")}</optgroup>`,
+    )
+    .join("");
+  return `
+    <div class="field">
+      <span class="field__label">${escape(t("Related tasks"))}</span>
+      ${chips ? `<div class="related-chips">${chips}</div>` : ""}
+      ${options ? `<select class="related-add" data-related-add="1"><option value="">${escape(t("Add a related task…"))}</option>${options}</select>` : ""}
+      <span class="field__note">${escape(t("Its agent reads these first: their details, branch and pull request."))}</span>
+    </div>`;
+}
+
 const taskForm = (dialog) => {
   const specs = state.planning?.specs ?? [];
   const projectId = dialog.project_id ?? state.projectId;
@@ -623,6 +676,7 @@ const taskForm = (dialog) => {
       )}
       ${setting(t("Hand to the other agent when it finishes"), "", toggle("auto_review", dialog.auto_review, t("Automatic review")))}
       ${blockedBy(dialog)}
+      ${relatedTasks(dialog)}
       ${field(t("Details"), textArea("task-details", dialog.details, "", 4))}
       ${field(t("Findings"), textArea("task-findings", dialog.findings, "", 3))}
       <button class="sheet-disclosure" data-toggle="advanced" aria-expanded="${!!dialog.advanced}">

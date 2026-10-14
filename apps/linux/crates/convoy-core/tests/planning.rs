@@ -374,3 +374,77 @@ fn the_system_login_leaves_the_agents_home_unset() {
         assert_eq!(kept.env.get(key), Some(&default));
     }
 }
+
+#[test]
+fn related_tasks_are_linked_both_ways_and_read_by_the_agent() {
+    let Planned {
+        fixture: _fixture,
+        mut workspace,
+        project,
+        task: first,
+        ..
+    } = planned();
+    workspace
+        .save_task(TaskInput {
+            skills: None,
+            id: None,
+            project_id: project.clone(),
+            spec_id: None,
+            title: "Show the shortcuts".into(),
+            details: "A help sheet lists every shortcut.".into(),
+            findings: String::new(),
+            agent: Agent::Claude,
+            mode: PublishMode::None,
+            auto_review: false,
+        })
+        .unwrap();
+    let second = workspace.state().tasks[1].id.clone();
+    workspace
+        .update(|state| {
+            state.tasks[0].details = "Arrow keys move between rows.".into();
+            state.tasks[0].pr_url = Some("https://github.com/acme/app/pull/7".into());
+            Ok(())
+        })
+        .unwrap();
+
+    assert!(workspace
+        .set_task_related(&second, vec![second.clone()])
+        .is_err());
+    workspace
+        .set_task_related(&second, vec![first.clone(), first.clone()])
+        .unwrap();
+    let find = |workspace: &Workspace, id: &str| {
+        workspace
+            .state()
+            .tasks
+            .iter()
+            .find(|task| task.id == id)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(
+        find(&workspace, &second).related,
+        std::slice::from_ref(&first)
+    );
+    assert_eq!(
+        find(&workspace, &first).related,
+        std::slice::from_ref(&second),
+        "kept on both sides"
+    );
+
+    workspace.prepare_task(&second, None).unwrap();
+    let session = find(&workspace, &second).session_id.unwrap();
+    let prompt = workspace.session(&session).unwrap().prompt.clone();
+    assert!(prompt.contains("## Related tasks"));
+    assert!(prompt.contains("### Keyboard support"));
+    assert!(prompt.contains("Arrow keys move between rows."));
+    assert!(prompt.contains("Pull request: https://github.com/acme/app/pull/7"));
+
+    workspace.set_task_related(&second, Vec::new()).unwrap();
+    assert!(find(&workspace, &first).related.is_empty());
+    workspace
+        .set_task_related(&first, vec![second.clone()])
+        .unwrap();
+    workspace.delete_task(&second).unwrap();
+    assert!(find(&workspace, &first).related.is_empty());
+}

@@ -466,6 +466,11 @@ pub struct Task {
     /// queue passes it by until they are.
     #[serde(rename = "dependsOn", default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<String>,
+    /// Tasks, of any project, its agent reads before starting: their
+    /// details, branch and pull request go into its brief. Kept on both
+    /// sides.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub related: Vec<String>,
     /// The account its session signs in with; none is the system login.
     #[serde(rename = "profileID", default, skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,

@@ -99,6 +99,14 @@ try {
         task.blocked_by = args.dependsOn.map((id) => tasks.find((item) => item.id === id).title);
         return null;
       }
+      if (cmd === "task_related") {
+        for (const task of tasks) {
+          if (task.id === args.id) task.related = args.related;
+          else if (args.related.includes(task.id)) task.related = [...new Set([...(task.related ?? []), args.id])];
+          else task.related = (task.related ?? []).filter((other) => other !== args.id);
+        }
+        return null;
+      }
       if (cmd === "task_link_session") { tasks.find((item) => item.id === args.id).session_id = args.sessionId; return null; }
       if (cmd === "task_status") { tasks.find((item) => item.id === args.id).status = args.status; return null; }
       if (cmd === "task_delete") { tasks.splice(tasks.findIndex((item) => item.id === args.id), 1); return null; }
@@ -747,7 +755,18 @@ try {
   // never run opens its form.
   await page.locator('.task-row[data-task="task"]').click();
   await page.locator('.modal [data-depends-on]').first().check();
+  // Related tasks: picked from a list, shown as chips, linked on save.
+  await page.locator("#task-title").fill("ENG-7: Test imported task, edited");
+  const relatedId = await page.locator('.modal [data-related-add] option[value]:not([value=""])').first().getAttribute("value");
+  await page.locator(".modal [data-related-add]").selectOption(relatedId);
+  await page.locator(`.modal .related-chip [data-related-remove="${relatedId}"]`).waitFor();
+  assert.equal(await page.locator("#task-title").inputValue(), "ENG-7: Test imported task, edited", "picking keeps what was typed");
+  if (process.env.CONVOY_TEST_SHOTS) await page.locator(".modal").screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/related-form.png` });
   await page.locator('[data-action="save-task"]').click();
+  await page.waitForFunction(
+    (other) => window.checkCalls.some((c) => c.cmd === "task_related" && c.args.id === "task" && c.args.related.includes(other)),
+    relatedId,
+  );
   await page.locator('.task-row[data-task="task"] .task-blocked[title="Waits for Checkout retries"]').waitFor();
   // New tasks publish as a pull request unless the project says otherwise.
   await page.locator('[data-action="new-task"]').click();
