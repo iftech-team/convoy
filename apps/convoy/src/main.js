@@ -1359,7 +1359,7 @@ app.addEventListener("click", async (event) => {
       "[data-approve],[data-export],[data-prepare],[data-remove-profile]," +
       "[data-remove-command],[data-import],[data-task-view],[data-palette],[data-split],"
       + "[data-capture],[data-expand],[data-project-more],[data-menu-act],[data-settings-section]," +
-      "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon],[data-sync-toggle]," +
+      "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon],[data-sync-toggle],[data-intake-toggle]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-inbox-answer],[data-inbox-open],[data-inbox-expand],[data-tab-close],[data-tab-open],[data-related-remove],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
       "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day],[data-skill],[data-skill-pick],[data-skill-toggle],[data-usage-days],[data-usage-agent],[data-usage-table],[data-price-add],[data-price-remove],[data-price-reset],[data-price-save],[data-task-doc-open],[data-task-doc-reveal],[data-task-doc]",
@@ -1448,6 +1448,7 @@ app.addEventListener("click", async (event) => {
     if (data.projIcon !== undefined) return saveProjectField({ icon: data.projIcon });
     if (data.projToggle) return saveProjectField({ [data.projToggle]: !state.projectDraft[data.projToggle] });
     if (data.syncToggle) return toggleSync(data.syncToggle);
+    if (data.intakeToggle) return saveIntake({ [data.intakeToggle]: !state.projectDraft?.link?.intake?.[data.intakeToggle] });
     if (data.projClear) return saveProjectField({ [data.projClear]: "" });
     if (data.iconSource) return setProjectImage(data.iconSource);
   }
@@ -1932,6 +1933,11 @@ app.addEventListener("change", async (event) => {
   if (projectRole) {
     const roles = { ...(state.projectDraft?.role_instructions ?? {}), [projectRole]: event.target.value };
     return saveProjectField({ role_instructions: roles, ...(projectRole === "review" ? { review_template: "" } : {}) });
+  }
+  const intakeKey = event.target.dataset?.intakeText ?? event.target.dataset?.intakeSelect ?? event.target.dataset?.intakeCheck;
+  if (intakeKey) {
+    const value = event.target.dataset.intakeCheck ? event.target.checked : event.target.dataset.intakeSelect ? Number(event.target.value) : event.target.value;
+    return saveIntake({ [intakeKey]: value });
   }
   const globalRole = event.target.dataset?.prefRole;
   if (globalRole) {
@@ -3513,6 +3519,39 @@ async function pipelineTick() {
   }
 }
 
+/// Changes the project's scheduled import; a change searches again at once.
+function saveIntake(patch) {
+  const link = state.projectDraft?.link;
+  if (!link) return;
+  const intake = { ...(link.intake ?? {}), ...patch, last_run: null };
+  return saveProjectLink({ ...link, intake });
+}
+
+/// Every minute: linked projects whose scheduled search is due are searched,
+/// and what is new is imported — and run, where the project asks.
+let intakeBusy = false;
+async function intakeTick() {
+  if (intakeBusy) return;
+  intakeBusy = true;
+  try {
+    const results = await attempt("intake_tick");
+    if (!results.ok || !results.value?.length) return;
+    let changed = false;
+    for (const result of results.value) {
+      const name = state.projects.find((item) => item.id === result.project_id)?.title ?? "";
+      if (!result.created.length) continue;
+      changed = true;
+      toast(t("Imported {tasks} into {project}.", { tasks: plural(result.created.length, "task"), project: name }));
+      if (result.run) state.queues.add(result.project_id);
+    }
+    if (!changed) return;
+    await reloadTasks();
+    for (const result of results.value) if (result.run && result.created.length) await advanceQueue(result.project_id);
+  } finally {
+    intakeBusy = false;
+  }
+}
+
 /// Pushes a task's branch and opens its request.
 async function publishTask(id) {
   toast(t("Publishing “{task}”…", { task: findTask(id)?.title ?? "" }));
@@ -4462,6 +4501,8 @@ try {
   await applyKeepAwake();
   setInterval(monitorTick, 2000);
   setInterval(pipelineTick, 2000);
+  setInterval(intakeTick, 60000);
+  setTimeout(intakeTick, 10000);
   setInterval(applyKeepAwake, 10000);
   refreshLimits(false);
   setInterval(() => refreshLimits(false), 60000);

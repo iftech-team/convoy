@@ -306,12 +306,57 @@ function integration(project) {
     if (second && link.workspace) rows.push(row(t(second), "", levelPicker("link-project", levels.projects, link.project, t("Any"))));
     if (failure) rows.push(`<div class="pref-block"><div class="pref-row__detail pref-row__detail--error">${escape(failure)}</div></div>`);
     rows.push(statusSync(link, current));
+    rows.push(intakeRows(link, current));
   }
   return groupBox(
     t("Integration"),
     rows.join(""),
     t("Import tasks searches only here, and opens on this connection. Each project keeps its own link."),
   );
+}
+
+/// Importing new issues by itself: a saved search, every few minutes, and
+/// whether the queue runs what it found.
+function intakeRows(link, connection) {
+  const intake = link.intake ?? {};
+  const on = !!intake.enabled;
+  const rows = [
+    row(
+      t("Import new issues by themselves"),
+      t("Searches this link on a schedule; what is not imported yet becomes tasks with this project's defaults."),
+      `<button class="switch" data-intake-toggle="enabled" aria-pressed="${on}" aria-label="${escape(t("Import new issues by themselves"))}"></button>`,
+    ),
+  ];
+  if (on) {
+    rows.push(`
+      <div class="pref-block pref-stack">
+        <div class="pref-row__title">${escape(connection.kind === "jira" ? t("Search or JQL") : t("Search"))}</div>
+        <input class="pref-text pref-text--wide" data-intake-text="query" spellcheck="false"
+               value="${escape(intake.query ?? "")}" placeholder="${escape(connection.kind === "jira" ? 'status = "To Do" AND assignee = currentUser()' : t("Empty finds every open issue"))}" />
+        <div class="pref-inline pref-inline--flush">
+          ${connection.kind === "jira" ? `<label class="check"><input type="checkbox" data-intake-check="raw_jql"${intake.raw_jql ? " checked" : ""} /> ${escape(t("JQL as written"))}</label>` : ""}
+          <label class="check"><input type="checkbox" data-intake-check="mine_only"${intake.mine_only ? " checked" : ""} /> ${escape(t("Only mine"))}</label>
+        </div>
+      </div>`);
+    rows.push(
+      row(
+        t("Every"),
+        "",
+        `<select class="pref-select" data-intake-select="minutes">${[5, 10, 15, 30, 60]
+          .map((minutes) => `<option value="${minutes}"${minutes === (intake.minutes ?? 15) ? " selected" : ""}>${escape(t("{minutes} min", { minutes }))}</option>`)
+          .join("")}</select>`,
+      ),
+      row(
+        t("Run what is imported"),
+        t("Queues the new tasks and starts the queue."),
+        `<button class="switch" data-intake-toggle="run" aria-pressed="${!!intake.run}" aria-label="${escape(t("Run what is imported"))}"></button>`,
+      ),
+    );
+    if (intake.last_result) {
+      rows.push(`<div class="pref-block"><div class="pref-row__detail">${escape(t("Last search: {result}", { result: intake.last_result }))}</div></div>`);
+    }
+  }
+  return rows.join("");
 }
 
 function identity(project) {

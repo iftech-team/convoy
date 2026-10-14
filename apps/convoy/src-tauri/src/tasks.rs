@@ -414,6 +414,20 @@ pub async fn issues_import(
         auto_review: options.auto_review,
         overrides,
     };
+    let (created, skipped) = import_into(&workspace, &project_id, &connection, &issues, &options)?;
+    Ok(Imported { created, skipped })
+}
+
+/// Makes tasks of the issues not imported yet. Returns the new tasks, in
+/// issue order, so "run immediately" starts exactly these, and how many
+/// were skipped.
+fn import_into(
+    workspace: &Workspace,
+    project_id: &str,
+    connection: &Connection,
+    issues: &[Issue],
+    options: &ImportOptions,
+) -> Result<(Vec<String>, usize), String> {
     workspace.with(|workspace| {
         let before: std::collections::HashSet<String> = workspace
             .state()
@@ -422,9 +436,8 @@ pub async fn issues_import(
             .map(|task| task.id.clone())
             .collect();
         let (_, skipped) = workspace
-            .import_issues(&project_id, &connection, &issues, &options)
+            .import_issues(project_id, connection, issues, options)
             .map_err(|error| error.to_string())?;
-        // The new tasks, in issue order, so "run immediately" starts exactly these.
         let created = workspace
             .state()
             .tasks
@@ -432,8 +445,129 @@ pub async fn issues_import(
             .filter(|task| !before.contains(&task.id))
             .map(|task| task.id.clone())
             .collect();
-        Ok(Imported { created, skipped })
+        Ok((created, skipped))
     })
+}
+
+/// What one project's scheduled search did.
+#[derive(Serialize)]
+pub struct IntakeResult {
+    project_id: String,
+    created: Vec<String>,
+    /// Whether its queue should run them.
+    run: bool,
+    error: Option<String>,
+}
+
+fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Searches every linked project whose intake is due and imports what is
+/// new, with the project's own defaults. The window asks every minute.
+#[tauri::command]
+pub async fn intake_tick(
+    trackers: State<'_, Trackers>,
+    workspace: State<'_, Workspace>,
+) -> Result<Vec<IntakeResult>, String> {
+    let now = now();
+    let due: Vec<(String, ProjectLink)> = trackers.with_links(&workspace, |links| {
+        Ok(links
+            .all()
+            .iter()
+            .filter(|(_, link)| link.intake.as_ref().is_some_and(|intake| intake.due(now)))
+            .map(|(id, link)| (id.clone(), link.clone()))
+            .collect())
+    })?;
+    let mut results = Vec::new();
+    for (project_id, link) in due {
+        let intake = link.intake.clone().unwrap_or_default();
+        let outcome = intake_one(&trackers, &workspace, &project_id, &link).await;
+        let summary = match &outcome {
+            Ok(created) if created.is_empty() => "Nothing new.".to_string(),
+            Ok(created) => format!("Imported {}.", created.len()),
+            Err(error) => error.clone(),
+        };
+        trackers.with_links(&workspace, |links| {
+            links
+                .record_intake(&project_id, now, &summary)
+                .map_err(|error| error.to_string())
+        })?;
+        results.push(match outcome {
+            Ok(created) => IntakeResult {
+                project_id,
+                created,
+                run: intake.run,
+                error: None,
+            },
+            Err(error) => IntakeResult {
+                project_id,
+                created: Vec::new(),
+                run: false,
+                error: Some(error),
+            },
+        });
+    }
+    Ok(results)
+}
+
+async fn intake_one(
+    trackers: &Trackers,
+    workspace: &Workspace,
+    project_id: &str,
+    link: &ProjectLink,
+) -> Result<Vec<String>, String> {
+    let intake = link.intake.clone().unwrap_or_default();
+    let connection = connection(trackers, workspace, &link.connection_id)?;
+    if connection.auth == TrackerAuth::Mcp {
+        return Err("An MCP connection is searched by its agent, not by Convoy.".into());
+    }
+    let (reader, scope) = (connection.clone(), link.clone());
+    let issues = tauri::async_runtime::spawn_blocking(move || {
+        let issues = fetch(
+            &reader,
+            Some(&scope),
+            &intake.query,
+            intake.mine_only,
+            intake.raw_jql,
+        )?;
+        Ok::<_, String>(if reader.kind == TrackerKind::Notion {
+            with_page_text(&reader, issues)
+        } else {
+            issues
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    let (agent, mode, auto_review) = workspace.with(|core| {
+        let project = core
+            .project(project_id)
+            .map_err(|error| error.to_string())?;
+        Ok((
+            project
+                .default_agent
+                .unwrap_or(core.settings().default_agent),
+            project
+                .task_mode
+                .as_deref()
+                .and_then(PublishMode::parse)
+                .unwrap_or_default(),
+            project.review_auto == Some(true),
+        ))
+    })?;
+    let options = ImportOptions {
+        skills: crate::skills::resolve(&workspace.storage, project_id, None, None)?,
+        agent,
+        model: String::new(),
+        mode,
+        auto_review,
+        overrides: BTreeMap::new(),
+    };
+    let (created, _) = import_into(workspace, project_id, &connection, &issues, &options)?;
+    Ok(created)
 }
 
 #[derive(Serialize)]

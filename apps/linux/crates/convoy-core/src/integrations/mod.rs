@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 pub mod notion;
 pub mod scopes;
 pub mod sync;
-pub use scopes::{narrow, parse_scopes, scopes_request, ProjectLink, ProjectLinks, Scope};
+pub use scopes::{narrow, parse_scopes, scopes_request, Intake, ProjectLink, ProjectLinks, Scope};
 
 pub const PAGE_SIZE: usize = 50;
 

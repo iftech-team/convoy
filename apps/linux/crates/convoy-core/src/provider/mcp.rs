@@ -307,6 +307,7 @@ mod tests {
             }),
             project: None,
             sync: None,
+            intake: None,
         }
     }
 

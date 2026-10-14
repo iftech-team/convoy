@@ -194,3 +194,50 @@ fn an_agent_waits_for_the_environment_after_its_review() {
         QaStatus::Queued
     );
 }
+
+#[test]
+fn intake_searches_on_its_schedule_and_remembers_how_it_went() {
+    use convoy_core::integrations::{Intake, ProjectLink, ProjectLinks};
+    let mut intake = Intake {
+        enabled: true,
+        minutes: Some(1),
+        ..Intake::default()
+    };
+    assert_eq!(intake.interval(), 5 * 60, "five minutes at the least");
+    assert!(intake.due(1_000), "never searched: due now");
+    intake.last_run = Some(1_000);
+    assert!(!intake.due(1_000 + 299));
+    assert!(intake.due(1_000 + 300));
+    intake.enabled = false;
+    assert!(!intake.due(10_000));
+
+    let folder = tempfile::tempdir().unwrap();
+    let file = folder.path().join("integration-links.json");
+    let mut links = ProjectLinks::load(&file).unwrap();
+    links
+        .set(
+            "p1",
+            Some(ProjectLink {
+                connection_id: "jira".into(),
+                workspace: None,
+                project: None,
+                sync: None,
+                intake: Some(Intake {
+                    enabled: true,
+                    query: "status = \"To Do\"".into(),
+                    run: true,
+                    ..Intake::default()
+                }),
+            }),
+        )
+        .unwrap();
+    links.record_intake("p1", 42, "Imported 3.").unwrap();
+    // Unlinked projects are left alone.
+    links.record_intake("p2", 42, "nothing").unwrap();
+    let reread = ProjectLinks::load(&file).unwrap();
+    let kept = reread.get("p1").unwrap().intake.clone().unwrap();
+    assert_eq!(kept.last_run, Some(42));
+    assert_eq!(kept.last_result.as_deref(), Some("Imported 3."));
+    assert!(kept.run);
+    assert_eq!(reread.all().len(), 1);
+}

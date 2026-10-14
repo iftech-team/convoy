@@ -138,6 +138,7 @@ pub fn run() {
             pipeline::task_doc_reveal,
             tasks::issues_parse_keys,
             tasks::issues_import,
+            tasks::intake_tick,
             tasks::tasks_for,
             tasks::task_agent,
             tasks::issue_open,
