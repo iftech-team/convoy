@@ -962,8 +962,8 @@ try {
 
   // ------------------------------------------------------------------ QA --
   // The project's QA: commands found in its files, an agent, automatic runs.
-  await page.locator('[data-menu-project="project"]').click({ button: "right" });
-  await page.locator('[data-menu-act="project-settings"]').click();
+  // Reached from the Settings button in the project's header.
+  await page.locator('.header__actions [data-action="project-settings"]').click();
   await page.locator('[data-action="qa-detect"]').click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.test_commands === "npm test\nnpm run lint"));
   await page.locator('[data-proj-select="qa_agent"]').selectOption("codex");

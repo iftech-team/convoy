@@ -426,6 +426,7 @@ export function header() {
           <div class="header__path" title="${escape(current.path)}">${escape(current.path)}</div>
         </div>
         <div class="header__actions">
+          ${button({ label: t("Settings"), icon: "gear", action: "project-settings", title: t("Project settings…") })}
         </div>
       </div>
       <nav class="tabs">
