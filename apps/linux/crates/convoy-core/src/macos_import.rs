@@ -305,6 +305,7 @@ impl Merge<'_> {
                 max_parallel: None,
                 convoy_publishes: None,
                 pr_cli: None,
+                qa_environment: None,
                 unknown: Default::default(),
             });
             ids.insert(id, state.projects.last().expect("pushed").id.clone());

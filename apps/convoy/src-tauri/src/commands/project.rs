@@ -63,6 +63,8 @@ pub struct ProjectInput {
     pub convoy_publishes: Option<bool>,
     #[serde(default)]
     pub pr_cli: Option<String>,
+    #[serde(default)]
+    pub qa_environment: Option<String>,
 }
 
 #[tauri::command]
@@ -103,6 +105,7 @@ pub fn project_edit(
                     max_parallel: input.max_parallel,
                     convoy_publishes: input.convoy_publishes,
                     pr_cli: input.pr_cli,
+                    qa_environment: input.qa_environment,
                     ..Default::default()
                 },
             )
@@ -209,6 +212,7 @@ pub struct ProjectDetail {
     pub max_parallel: u32,
     pub convoy_publishes: bool,
     pub pr_cli: String,
+    pub qa_environment: String,
 }
 
 #[tauri::command]
@@ -283,6 +287,7 @@ pub fn project_detail(
             max_parallel: project.max_parallel.unwrap_or(1),
             convoy_publishes: project.convoy_publishes == Some(true),
             pr_cli: project.pr_cli.clone().unwrap_or_default(),
+            qa_environment: project.qa_environment.clone().unwrap_or_default(),
         })
     })
 }

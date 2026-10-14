@@ -25,6 +25,23 @@ pub async fn qa_start<R: Runtime>(
     terminals: State<'_, Arc<Terminals>>,
     chats: State<'_, Arc<Chats>>,
 ) -> Result<Vec<Action>, String> {
+    // Another task is testing in the same environment: this one waits its
+    // turn, and the pipeline starts it when the environment is free.
+    let queued = workspace.act(|core| {
+        if !qa::environment_busy(core, &task_id) {
+            return Ok(false);
+        }
+        qa::enqueue(core, &task_id)?;
+        Ok(true)
+    })?;
+    if queued {
+        let _ = app.emit("task:qa", &task_id);
+        return Ok(vec![Action::Notice {
+            task: task_id,
+            event: "qa_queued",
+            detail: String::new(),
+        }]);
+    }
     let plan = workspace.act(|core| qa::begin(core, &task_id))?;
     let _ = app.emit("task:qa", &task_id);
     let checks = {

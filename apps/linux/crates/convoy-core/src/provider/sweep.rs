@@ -1108,6 +1108,7 @@ mod tests {
             max_parallel: None,
             convoy_publishes: None,
             pr_cli: None,
+            qa_environment: None,
             unknown: Default::default(),
         });
         let import = |id: &str, at: f64| Import {

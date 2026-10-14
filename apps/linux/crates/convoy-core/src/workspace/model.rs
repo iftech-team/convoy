@@ -397,6 +397,14 @@ pub struct Project {
     /// `gh` or `glab`; read from the remote's host when unset.
     #[serde(rename = "prCli", default, skip_serializing_if = "Option::is_none")]
     pub pr_cli: Option<String>,
+    /// The QA environment its tasks test in, by name: projects that share a
+    /// name — one local database, say — run one QA at a time.
+    #[serde(
+        rename = "qaEnvironment",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub qa_environment: Option<String>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }

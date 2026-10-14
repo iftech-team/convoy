@@ -1355,6 +1355,12 @@ export default {
     "No tasks": "Нет задач",
     // Task pipeline: stages, roles, plans and documents
     "Make a plan": "Составить план",
+    "Shared QA environment": "Общее QA-окружение",
+    "e.g. local-db": "например, local-db",
+    "Projects with the same name here test one task at a time: the others wait their turn. Leave empty when QA runs can overlap.": "Проекты с одинаковым именем тестируют по одной задаче: остальные ждут очереди. Оставьте пустым, если прогоны QA не мешают друг другу.",
+    "QA: waiting for its environment": "QA: ждёт окружение",
+    "Another task is testing in the same environment. This one is next in line.": "В том же окружении тестируется другая задача. Эта — следующая в очереди.",
+    "“{task}” waits for its QA environment: another task is testing in it.": "«{task}» ждёт QA-окружение: в нём тестируется другая задача.",
     "PR description": "описание PR",
     "PR description only": "Только описание PR",
     "Pull request author": "Автор PR",

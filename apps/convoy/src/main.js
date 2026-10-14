@@ -3444,6 +3444,8 @@ function pipelineNotice(action) {
       return toast(t("The plan for “{task}” approved itself. Building it now.", { task }));
     case "docs_written":
       return toast(t("The document for “{task}” is written.", { task }));
+    case "qa_queued":
+      return toast(t("“{task}” waits for its QA environment: another task is testing in it.", { task }));
     case "published":
       return toast(action.detail ? t("“{task}” is published: {url}", { task, url: action.detail }) : t("“{task}” is pushed.", { task }));
     case "described":

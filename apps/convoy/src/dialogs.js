@@ -856,6 +856,7 @@ function docsPanel(task) {
 
 const QA_HEADLINES = {
   checking: ["Running the project's checks…", "running"],
+  queued: ["Another task is testing in the same environment. This one is next in line.", "idle"],
   waiting: ["Checks passed. QA waits for the review.", "idle"],
   testing: ["Checks passed. A QA agent is testing.", "running"],
   passed: ["QA passed", "done"],

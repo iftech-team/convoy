@@ -69,6 +69,9 @@ pub struct ProjectPatch {
     pub convoy_publishes: Option<bool>,
     /// `gh`, `glab`, or empty to read it from the remote.
     pub pr_cli: Option<String>,
+    /// A name shared by projects that test in one environment; empty for
+    /// none.
+    pub qa_environment: Option<String>,
 }
 
 impl ProjectPatch {
@@ -297,6 +300,7 @@ impl Workspace {
                     max_parallel: None,
                     convoy_publishes: None,
                     pr_cli: None,
+                    qa_environment: None,
                     unknown: Default::default(),
                 });
             }
@@ -507,6 +511,10 @@ impl Workspace {
             if let Some(value) = patch.pr_cli {
                 project.pr_cli = (!value.is_empty()).then_some(value);
             }
+            if let Some(value) = patch.qa_environment {
+                let value = value.trim().to_string();
+                project.qa_environment = (!value.is_empty()).then_some(value);
+            }
             Ok(())
         })
     }
@@ -610,6 +618,7 @@ impl Workspace {
                     max_parallel: None,
                     convoy_publishes: None,
                     pr_cli: None,
+                    qa_environment: None,
                     unknown: Default::default(),
                 });
                 ids.push(id);

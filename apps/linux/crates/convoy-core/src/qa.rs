@@ -28,6 +28,8 @@ const OUTPUT_TAIL: usize = 4_000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QaStatus {
+    /// Waiting for its QA environment, which another task is testing in.
+    Queued,
     /// Running the project's checks.
     Checking,
     /// The checks passed; the QA agent tests once the review has passed.
@@ -565,6 +567,71 @@ pub fn suggest_commands(directory: &Path) -> Vec<String> {
         found.push("pytest".into());
     }
     found
+}
+
+/// The QA environment a task tests in, when its project shares one.
+pub fn environment(workspace: &Workspace, task: &Task) -> Option<String> {
+    workspace
+        .project(&task.project_id)
+        .ok()
+        .and_then(|project| project.qa_environment.clone())
+}
+
+/// Whether another task is testing in this task's environment now: running
+/// its checks or its QA agent. A run waiting for its review holds nothing.
+pub fn environment_busy(workspace: &Workspace, task_id: &str) -> bool {
+    let Ok(task) = find(workspace, task_id) else {
+        return false;
+    };
+    let Some(name) = environment(workspace, task) else {
+        return false;
+    };
+    workspace.state().tasks.iter().any(|other| {
+        other.id != task.id
+            && other
+                .qa
+                .as_ref()
+                .is_some_and(|run| matches!(run.status, QaStatus::Checking | QaStatus::Testing))
+            && environment(workspace, other).as_deref() == Some(name.as_str())
+    })
+}
+
+/// Puts the task's QA run in line for its environment. A run whose checks
+/// already passed keeps them, and only its agent waits.
+pub fn enqueue(workspace: &mut Workspace, task_id: &str) -> Result<()> {
+    let id = task_id.to_string();
+    workspace.update(move |state| {
+        let task = task_mut(state, &id)?;
+        task.status = TaskStatus::Testing;
+        match task.qa.as_mut() {
+            Some(run)
+                if !matches!(
+                    run.status,
+                    QaStatus::Passed | QaStatus::Failed | QaStatus::NoVerdict
+                ) =>
+            {
+                run.status = QaStatus::Queued;
+            }
+            _ => {
+                task.qa = Some(QaRun {
+                    id: new_id(),
+                    status: QaStatus::Queued,
+                    checks: Vec::new(),
+                    session_id: None,
+                    findings: String::new(),
+                    started: crate::time::now_iso8601(),
+                    finished: None,
+                });
+            }
+        }
+        Ok(())
+    })?;
+    Ok(())
+}
+
+/// Whether a queued run has only its agent left: its checks ran and passed.
+pub fn checks_passed(run: &QaRun) -> bool {
+    !run.checks.is_empty() && run.checks.iter().all(|check| check.ok)
 }
 
 fn find<'a>(workspace: &'a Workspace, task_id: &str) -> Result<&'a Task> {

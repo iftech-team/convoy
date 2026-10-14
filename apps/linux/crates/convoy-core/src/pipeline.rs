@@ -288,6 +288,14 @@ fn apply(
         Step::Wait => Ok(Vec::new()),
         Step::Test => Ok(vec![Action::Test { task: id }]),
         Step::Review => start_review(workspace, context, &id),
+        Step::QaAgent(_) if qa::environment_busy(workspace, &id) => {
+            qa::enqueue(workspace, &id)?;
+            Ok(vec![Action::Notice {
+                task: id,
+                event: "qa_queued",
+                detail: String::new(),
+            }])
+        }
         Step::QaAgent(agent) => {
             let skills = context.skills(&task.project_id, agent, Role::Qa);
             let session =
@@ -665,6 +673,67 @@ fn hibernate(context: &Context<'_>, session: Option<&String>) -> Vec<Action> {
         .collect()
 }
 
+/// Starts the QA runs waiting for an environment that is free now, oldest
+/// first, one per environment.
+fn release_environments(workspace: &mut Workspace, context: &Context<'_>) -> Result<Vec<Action>> {
+    let mut waiting: Vec<Task> = workspace
+        .state()
+        .tasks
+        .iter()
+        .filter(|task| {
+            task.qa
+                .as_ref()
+                .is_some_and(|run| run.status == QaStatus::Queued)
+        })
+        .cloned()
+        .collect();
+    waiting.sort_by(|a, b| {
+        let started = |task: &Task| task.qa.as_ref().map(|run| run.started.clone());
+        started(a).cmp(&started(b))
+    });
+    let mut actions = Vec::new();
+    for task in waiting {
+        if qa::environment_busy(workspace, &task.id) {
+            continue;
+        }
+        let run = task.qa.clone().expect("filtered above");
+        let agent = workspace.project(&task.project_id)?.qa_agent;
+        match agent {
+            Some(agent) if qa::checks_passed(&run) => {
+                change(workspace, &task.id, |task| {
+                    if let Some(run) = task.qa.as_mut() {
+                        run.status = QaStatus::Testing;
+                    }
+                })?;
+                let skills = context.skills(&task.project_id, agent, Role::Qa);
+                let session = qa::start_agent(
+                    workspace,
+                    &stage::qa_dir(workspace),
+                    &skills,
+                    &task.id,
+                    agent,
+                )?;
+                actions.push(Action::Start {
+                    task: task.id.clone(),
+                    session,
+                });
+            }
+            _ => {
+                // Holds the environment until the window runs the checks.
+                change(workspace, &task.id, |task| {
+                    if let Some(run) = task.qa.as_mut() {
+                        run.status = QaStatus::Checking;
+                    }
+                })?;
+                actions.push(Action::Test {
+                    task: task.id.clone(),
+                });
+            }
+        }
+    }
+    Ok(actions)
+}
+
 /// Looks for the completion files of every stage under way and acts on
 /// those that have appeared. Cheap enough to call every few seconds: one
 /// file check per active stage.
@@ -764,6 +833,8 @@ pub fn poll(workspace: &mut Workspace, context: &Context<'_>) -> Result<Vec<Acti
             }
         }
     }
+    // Runs that ended above may have freed an environment.
+    actions.extend(release_environments(workspace, context)?);
     Ok(actions)
 }
 

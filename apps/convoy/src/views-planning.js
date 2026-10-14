@@ -59,6 +59,7 @@ export function syncSummary(task) {
 // --------------------------------------------------------------------- QA --
 
 const QA_BADGES = {
+  queued: ["QA: waiting for its environment", "idle"],
   checking: ["QA: running checks", "running"],
   waiting: ["QA: after the review", "idle"],
   testing: ["QA: agent testing", "running"],

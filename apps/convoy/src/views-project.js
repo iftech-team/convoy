@@ -163,6 +163,12 @@ function testing(project) {
        t("A task whose builder finishes cleanly moves to In testing by itself."),
        `<button class="switch" data-proj-toggle="qa_auto" aria-pressed="${!!project.qa_auto}" aria-label="${escape(t("Test tasks when they finish"))}"></button>`,
      )}
+     <div class="pref-block pref-stack">
+       <div class="pref-row__title">${escape(t("Shared QA environment"))}</div>
+       <input class="pref-text pref-text--wide" data-proj-text="qa_environment" spellcheck="false"
+              value="${escape(project.qa_environment ?? "")}" placeholder="${escape(t("e.g. local-db"))}" />
+       <div class="pref-row__detail">${escape(t("Projects with the same name here test one task at a time: the others wait their turn. Leave empty when QA runs can overlap."))}</div>
+     </div>
      ${row(
        t("Time limit per check"),
        "",
