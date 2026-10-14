@@ -543,8 +543,9 @@ pub fn task_pr_open(
             .and_then(|task| task.pr_url.clone())
             .ok_or_else(|| "This task has no pull request.".to_string())
     })?;
-    if !url.starts_with("https://") {
-        return Err("Pull request links must use HTTPS.".into());
+    // Self-hosted servers on a private network may still serve plain HTTP.
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err("Pull request links must use HTTP or HTTPS.".into());
     }
     app.opener()
         .open_url(url, None::<&str>)

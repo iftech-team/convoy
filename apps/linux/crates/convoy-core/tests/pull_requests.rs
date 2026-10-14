@@ -39,6 +39,20 @@ fn codex_resume_ids_and_pull_request_links_are_found_in_output() {
         pull_request_url("https://github.com/acme/app/issues/3"),
         None
     );
+    // Self-hosted: GitLab, GitHub Enterprise, Gitea, Bitbucket.
+    for url in [
+        "https://gitlab.eskhata.com/wallet/api/-/merge_requests/315",
+        "https://git.corp.example:8443/team/app/pull/9",
+        "https://gitea.example.org/me/tool/pulls/4",
+        "https://bitbucket.example.com/projects/AB/repos/app/pull-requests/12",
+        "http://gitlab.local/group/sub/app/-/merge_requests/2",
+    ] {
+        assert_eq!(
+            pull_request_url(&format!("Opened {url}, please review.")).as_deref(),
+            Some(url)
+        );
+    }
+    assert_eq!(pull_request_url("https://example.com/pull/1"), None);
 }
 
 #[test]
