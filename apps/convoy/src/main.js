@@ -254,17 +254,25 @@ function currentTab() {
   return state.projectId ? projectTab(state.projectId) : null;
 }
 
-/// The open session and the open project page always have a tab, and a tab
-/// remembers what it shows so it can be drawn while another project is open.
-/// Archived sessions and removed projects leave.
+/// Gives the selected project's page a tab. Only going to the page does
+/// this: opening one of its sessions passes through it without a tab.
+function keepProjectTab() {
+  if (!state.projectId) return;
+  const id = projectTab(state.projectId);
+  if (!state.tabs.includes(id)) state.tabs.push(id);
+}
+
+/// The open session always has a tab, as does a project page once gone to,
+/// and a tab remembers what it shows so it can be drawn while another
+/// project is open. Archived sessions and removed projects leave.
 function syncTabs() {
   let touched = false;
   const current = currentTab();
-  if (current && !state.tabs.includes(current)) {
+  if (current && !isProjectTab(current) && !state.tabs.includes(current)) {
     state.tabs.push(current);
     touched = true;
   }
-  if (current && isProjectTab(current) && !state.page) {
+  if (current && isProjectTab(current) && !state.page && state.tabs.includes(current)) {
     const info = { kind: "project", project_id: state.projectId, view: state.tab };
     if (JSON.stringify(state.tabInfo[current]) !== JSON.stringify(info)) {
       state.tabInfo[current] = info;
@@ -515,6 +523,7 @@ async function showProject(id) {
     state.files = null;
   }
   await selectProject(id);
+  if (!state.sessionId && !state.files) keepProjectTab();
   render();
 }
 
@@ -1274,6 +1283,7 @@ async function showTab(tab) {
   state.tab = tab;
   state.sessionId = null;
   state.files = null;
+  keepProjectTab();
   render();
   if (tab === "specs" || tab === "tasks") await loadPlanning();
   if (tab === "docs") await loadDocs();
@@ -1470,6 +1480,7 @@ app.addEventListener("click", async (event) => {
     state.tab = data.tab;
     state.sessionId = null;
     state.files = null;
+    keepProjectTab();
     render();
     if (data.tab === "specs" || data.tab === "tasks") await loadPlanning();
     if (data.tab === "docs") await loadDocs();
@@ -2237,6 +2248,7 @@ async function openFolder() {
   await loadWorkspace();
   // The folder just opened is what to show next.
   if (["home", "dashboard", "usage"].includes(state.page)) state.page = null;
+  if (!state.page && !state.sessionId && !state.files) keepProjectTab();
   render();
 }
 

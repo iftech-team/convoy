@@ -538,6 +538,13 @@ try {
   await page.locator(".board__column", { hasText: "Needs you" }).locator('[data-open="builder"]').waitFor();
   await page.locator(".board__column", { hasText: "Idle" }).locator('[data-open="notes"]').waitFor();
   if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/dashboard.png` });
+  // Opening another project's session gives the session a tab, not the
+  // project's page it passes through.
+  await page.locator(".board__column", { hasText: "Idle" }).locator('[data-open="notes"]').click();
+  await page.locator('.tab-item--selected[data-tab-open="notes"]').waitFor();
+  assert.equal(await page.locator('.tab-item[data-tab-open="project:other"]').count(), 0, "no tab for a page not gone to");
+  await page.locator('[data-tab-close="notes"]').click();
+  await page.locator('.tab-item[data-tab-open="notes"]').waitFor({ state: "detached" });
   await page.locator('.project-row [data-project="project"]').click();
   await page.locator(".header").waitFor();
 
