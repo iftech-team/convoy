@@ -124,6 +124,9 @@ pub struct NewSession {
     pub effort: String,
     /// Skills attached, by id; checked against the skills file by the caller.
     pub skills: Vec<String>,
+    /// Other folders it may work in; a session sharing another's folder
+    /// takes that one's when this is empty.
+    pub add_dirs: Vec<PathBuf>,
 }
 
 impl NewSession {
@@ -140,6 +143,7 @@ impl NewSession {
             model: String::new(),
             effort: String::new(),
             skills: Vec::new(),
+            add_dirs: Vec::new(),
         }
     }
 }
@@ -725,6 +729,11 @@ impl Workspace {
                 parent_id: None,
                 manager: None,
                 skills: crate::planning::attached(input.skills),
+                add_dirs: if input.add_dirs.is_empty() {
+                    source.as_ref().and_then(|source| source.add_dirs.clone())
+                } else {
+                    Some(input.add_dirs)
+                },
                 unknown: Default::default(),
             });
             Ok(())

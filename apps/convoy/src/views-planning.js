@@ -91,6 +91,9 @@ export function qaBadge(task) {
     );
   }
   if (task.docs?.length) parts.push(`<span class="badge badge--muted">${escape(t("document"))}</span>`);
+  if (task.extra_projects?.length) {
+    parts.push(`<span class="badge badge--muted">${escape(t("+{count} repos", { count: task.extra_projects.length }))}</span>`);
+  }
   return parts.join("");
 }
 

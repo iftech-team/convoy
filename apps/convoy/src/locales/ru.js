@@ -1355,6 +1355,12 @@ export default {
     "No tasks": "Нет задач",
     // Task pipeline: stages, roles, plans and documents
     "Make a plan": "Составить план",
+    "Also changes": "Также меняет",
+    "Add a repository…": "Добавить репозиторий…",
+    "Its agents work in these too; with a worktree per task each gets one on the task's branch, and each is checked and published.": "Агенты задачи работают и в них; при ворктри на задачу каждый получает свою на ветке задачи, и каждый проверяется и публикуется.",
+    "Attached files": "Вложения",
+    "Downloaded from the issue; its agents are told where they are.": "Скачаны из задачи трекера; агентам сообщается, где они лежат.",
+    "+{count} repos": "+{count} репо",
     "Import new issues by themselves": "Импортировать новые задачи автоматически",
     "Searches this link on a schedule; what is not imported yet becomes tasks with this project's defaults.": "Ищет по этой привязке по расписанию; всё, что ещё не импортировано, становится задачами с настройками проекта.",
     "Search or JQL": "Поиск или JQL",

@@ -489,6 +489,10 @@ pub struct Session {
     /// the agent's instructions when it next starts; see [`crate::skills`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skills: Option<Vec<String>>,
+    /// Folders the agent may work in besides its own: the other
+    /// repositories of a task that spans several (`--add-dir`).
+    #[serde(rename = "addDirs", default, skip_serializing_if = "Option::is_none")]
+    pub add_dirs: Option<Vec<PathBuf>>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }
@@ -534,6 +538,7 @@ impl Session {
             parent_id: None,
             manager: None,
             skills: None,
+            add_dirs: None,
             unknown: Map::new(),
         }
     }
@@ -705,8 +710,34 @@ pub struct Task {
     /// Its issue's files, downloaded for its agents to open.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<TaskAttachment>,
+    /// Other projects — repositories — this task changes too.
+    #[serde(
+        rename = "extraProjects",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub extra_projects: Vec<String>,
+    /// The worktrees made in them for it, on the task's branch.
+    #[serde(
+        rename = "extraCheckouts",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub extra_checkouts: Vec<ExtraCheckout>,
+    /// The requests opened in them.
+    #[serde(rename = "extraPrURLs", default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_pr_urls: Vec<String>,
     #[serde(flatten)]
     pub unknown: Unknown,
+}
+
+/// A worktree of another repository a task changes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExtraCheckout {
+    #[serde(rename = "projectID")]
+    pub project_id: String,
+    pub directory: PathBuf,
+    pub branch: String,
 }
 
 /// A file of a task's issue, kept on this machine.

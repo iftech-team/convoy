@@ -173,6 +173,9 @@ pub fn plan_launch_with(
     // worktree would stop on the agent's "trust this folder?" prompt.
     if settings.auto_trust {
         crate::trust::approve(session.agent, &directory, &account.env);
+        for dir in session.add_dirs.as_deref().unwrap_or_default() {
+            crate::trust::approve(session.agent, dir, &account.env);
+        }
     }
     let spec = session_spec_with(
         &session,
@@ -183,6 +186,7 @@ pub fn plan_launch_with(
         &account.env,
         &[
             permission_flags(session.agent, workspace.settings()),
+            crate::provider::add_dir_flags(session.add_dirs.as_deref()),
             crate::provider::knowledge::flags(session.agent, &storage.knowledge(), &session.id),
             mcp_flags.clone(),
             instructions
@@ -268,6 +272,7 @@ pub fn plan_chat_launch_with(
                     .as_deref(),
                 &[
                     permission_flags(Agent::Claude, settings),
+                    crate::provider::add_dir_flags(session.add_dirs.as_deref()),
                     crate::provider::effort_flags(Agent::Claude, session.effort.as_deref()),
                     crate::provider::knowledge::flags(
                         Agent::Claude,

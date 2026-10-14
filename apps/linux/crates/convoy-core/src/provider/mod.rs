@@ -105,6 +105,15 @@ pub fn permission_flags(agent: Agent, settings: &crate::model::Settings) -> Vec<
     }
 }
 
+/// `--add-dir` for each other folder a session may work in; both agents
+/// take the flag once per folder.
+pub fn add_dir_flags(dirs: Option<&[std::path::PathBuf]>) -> Vec<String> {
+    dirs.unwrap_or_default()
+        .iter()
+        .flat_map(|dir| ["--add-dir".to_string(), dir.to_string_lossy().into_owned()])
+        .collect()
+}
+
 /// Every effort level either agent takes; what a model offers is a subset
 /// (see [`models`]).
 pub const EFFORTS: &[&str] = &["minimal", "low", "medium", "high", "xhigh", "max", "ultra"];

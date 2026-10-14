@@ -260,6 +260,32 @@ pub struct Plan {
     pub body: String,
     /// Where the body is written for `gh`, which reads it from a file.
     pub body_file: PathBuf,
+    /// The task's other repositories, each published the same way.
+    pub extras: Vec<Target>,
+}
+
+/// Another repository to publish in: where the task's work is, and how its
+/// project opens requests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Target {
+    pub title: String,
+    pub directory: PathBuf,
+    pub cli: Option<String>,
+    pub base: Option<String>,
+}
+
+/// What publishing opened: this project's request, then the others'.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Published {
+    pub url: Option<String>,
+    pub extra: Vec<String>,
+}
+
+fn base_of(project: &crate::model::Project) -> Option<String> {
+    project
+        .base_ref
+        .as_deref()
+        .map(|base| base.strip_prefix("origin/").unwrap_or(base).to_string())
 }
 
 pub fn plan(workspace: &Workspace, task_id: &str) -> Result<Plan> {
@@ -272,6 +298,28 @@ pub fn plan(workspace: &Workspace, task_id: &str) -> Result<Plan> {
         run.status == PublishStatus::Publishing,
         "This task is not being published."
     );
+    // The other repositories are published from the worktrees made for
+    // the task, never from a shared checkout.
+    let mut extras = Vec::new();
+    for id in &task.extra_projects {
+        let other = workspace.project(id)?;
+        let Some(checkout) = task
+            .extra_checkouts
+            .iter()
+            .find(|checkout| &checkout.project_id == id)
+        else {
+            bail!(
+                "{} has no worktree for this task, so it cannot be published. Turn on a worktree per task in its project.",
+                other.title
+            )
+        };
+        extras.push(Target {
+            title: other.title.clone(),
+            directory: checkout.directory.clone(),
+            cli: other.pr_cli.clone().filter(|cli| !cli.is_empty()),
+            base: base_of(other),
+        });
+    }
     let directory = match task
         .session_id
         .as_deref()
@@ -286,13 +334,11 @@ pub fn plan(workspace: &Workspace, task_id: &str) -> Result<Plan> {
         mode: task.mode,
         directory,
         cli: project.pr_cli.clone().filter(|cli| !cli.is_empty()),
-        base: project
-            .base_ref
-            .as_deref()
-            .map(|base| base.strip_prefix("origin/").unwrap_or(base).to_string()),
+        base: base_of(project),
         title: task.pr_title.clone().unwrap_or_else(|| task.title.clone()),
         body: task.pr_body.clone().unwrap_or_default(),
         body_file: stage::dir(workspace).join(format!("{}.pr-body.md", run.id)),
+        extras,
     })
 }
 
@@ -325,9 +371,31 @@ fn tool(directory: &std::path::Path, args: &[String]) -> ProcessSpec {
 
 /// Pushes the branch and opens the request. Returns the request's link, or
 /// none for a push. Runs the commands; holds nothing.
-pub fn run(plan: &Plan, runner: Arc<dyn ProcessRunner>) -> Result<Option<String>> {
+pub fn run(plan: &Plan, runner: Arc<dyn ProcessRunner>) -> Result<Published> {
+    let main = Target {
+        title: String::new(),
+        directory: plan.directory.clone(),
+        cli: plan.cli.clone(),
+        base: plan.base.clone(),
+    };
+    let url = publish_in(plan, &main, &runner)?;
+    let mut extra = Vec::new();
+    for target in &plan.extras {
+        let opened = publish_in(plan, target, &runner)
+            .map_err(|error| crate::ConvoyError::message(format!("{}: {error}", target.title)))?;
+        extra.extend(opened);
+    }
+    Ok(Published { url, extra })
+}
+
+/// Pushes one repository's branch and opens its request.
+fn publish_in(
+    plan: &Plan,
+    target: &Target,
+    runner: &Arc<dyn ProcessRunner>,
+) -> Result<Option<String>> {
     let git = Git::new(runner.clone());
-    let directory = &plan.directory;
+    let directory = &target.directory;
     let dirty = git.run(directory, &["status", "--porcelain"])?;
     ensure!(
         dirty.trim().is_empty(),
@@ -342,7 +410,7 @@ pub fn run(plan: &Plan, runner: Arc<dyn ProcessRunner>) -> Result<Option<String>
         "The task's checkout is not on a branch."
     );
     if plan.mode == PublishMode::Pr {
-        let base = plan.base.as_deref().unwrap_or("");
+        let base = target.base.as_deref().unwrap_or("");
         ensure!(
             branch != base && !["main", "master", "develop"].contains(&branch.as_str()),
             "A pull request needs a branch of its own, and this task is on {branch}. Turn on a worktree per task in the project's settings."
@@ -352,7 +420,7 @@ pub fn run(plan: &Plan, runner: Arc<dyn ProcessRunner>) -> Result<Option<String>
     if plan.mode != PublishMode::Pr {
         return Ok(None);
     }
-    let cli = match &plan.cli {
+    let cli = match &target.cli {
         Some(cli) => cli.clone(),
         None => {
             let remote = git.run(directory, &["remote", "get-url", "origin"])?;
@@ -366,7 +434,7 @@ pub fn run(plan: &Plan, runner: Arc<dyn ProcessRunner>) -> Result<Option<String>
             args.push(branch.clone());
             args.extend(["--title".into(), plan.title.clone()]);
             args.extend(["--description".into(), plan.body.clone()]);
-            if let Some(base) = &plan.base {
+            if let Some(base) = &target.base {
                 args.extend(["--target-branch".into(), base.clone()]);
             }
         }
@@ -382,7 +450,7 @@ pub fn run(plan: &Plan, runner: Arc<dyn ProcessRunner>) -> Result<Option<String>
                 "--body-file".into(),
                 plan.body_file.to_string_lossy().into_owned(),
             ]);
-            if let Some(base) = &plan.base {
+            if let Some(base) = &target.base {
                 args.extend(["--base".into(), base.clone()]);
             }
         }
@@ -410,7 +478,7 @@ pub fn finish(
     context: &Context<'_>,
     task_id: &str,
     run_id: &str,
-    outcome: std::result::Result<Option<String>, String>,
+    outcome: std::result::Result<Published, String>,
 ) -> Result<Vec<Action>> {
     let task = find(workspace, task_id)?;
     if !task
@@ -420,17 +488,18 @@ pub fn finish(
     {
         return Ok(Vec::new());
     }
-    let url = match outcome {
-        Ok(url) => url,
+    let published = match outcome {
+        Ok(published) => published,
         Err(error) => return failed(workspace, task_id, &error),
     };
-    let link = url.clone();
+    let url = published.url.clone();
     pipeline::change(workspace, task_id, move |task| {
         if let Some(run) = task.publish_run.as_mut() {
             run.status = PublishStatus::Published;
             run.finished = Some(crate::time::now_iso8601());
         }
-        if let Some(url) = link {
+        task.extra_pr_urls = published.extra;
+        if let Some(url) = published.url {
             task.pr_url = Some(url);
             task.status = TaskStatus::Pr;
         }

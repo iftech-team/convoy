@@ -71,6 +71,10 @@ pub struct TaskView {
     pub publish_run: Option<convoy_core::publish::PublishRun>,
     pub pr_title: Option<String>,
     pub pr_body: Option<String>,
+    pub attachments: Vec<convoy_core::model::TaskAttachment>,
+    pub extra_projects: Vec<String>,
+    pub extra_checkouts: Vec<convoy_core::model::ExtraCheckout>,
+    pub extra_pr_urls: Vec<String>,
 }
 
 fn task_view(state: &convoy_core::model::State, task: &convoy_core::model::Task) -> TaskView {
@@ -114,6 +118,10 @@ fn task_view(state: &convoy_core::model::State, task: &convoy_core::model::Task)
         publish_run: task.publish_run.clone(),
         pr_title: task.pr_title.clone(),
         pr_body: task.pr_body.clone(),
+        attachments: task.attachments.clone(),
+        extra_projects: task.extra_projects.clone(),
+        extra_checkouts: task.extra_checkouts.clone(),
+        extra_pr_urls: task.extra_pr_urls.clone(),
         blocked_by: convoy_core::queue::blocked_by(state, task)
             .into_iter()
             .map(|other| other.title.clone())
@@ -375,6 +383,13 @@ pub async fn task_prepare(
     chats: State<'_, std::sync::Arc<crate::chat::Chats>>,
     repositories: State<'_, super::Repositories>,
 ) -> Result<String, String> {
+    // The task's other repositories get their worktrees first, so the
+    // builder's brief and folders name them.
+    if let Err(error) = extra_worktrees(&workspace, &repositories, &id).await {
+        let reason = format!("A worktree in another repository could not be prepared. {error}");
+        workspace.act(|core| convoy_core::pipeline::attention(core, &id, &reason).map(|_| ()))?;
+        return Err(reason);
+    }
     let session = prepare(&workspace, &terminals, &chats, &id, profile_id)?;
     // A new builder in a project that gives each task a worktree gets one,
     // set up, before it starts.
@@ -444,6 +459,104 @@ async fn task_worktree(
     .await
     .map_err(|error| error.to_string())?
     .map_err(|error| error.to_string())
+}
+
+/// Worktrees on the task's branch in each of its other repositories that
+/// has none yet, set up as that project sets up its own. Only where the
+/// task's project gives each task a worktree.
+async fn extra_worktrees(
+    workspace: &Workspace,
+    repositories: &super::Repositories,
+    id: &str,
+) -> Result<(), String> {
+    let wanted = workspace.act(|core| {
+        let task = core
+            .state()
+            .tasks
+            .iter()
+            .find(|task| task.id == id)
+            .cloned()
+            .ok_or_else(|| convoy_core::ConvoyError::message("Task not found."))?;
+        let isolated = core.project(&task.project_id)?.task_worktrees == Some(true);
+        if !isolated || convoy_core::plan::needed(&task) {
+            return Ok(Vec::new());
+        }
+        let branch = convoy_core::queue::task_branch(core, &task);
+        let mut wanted = Vec::new();
+        for project_id in &task.extra_projects {
+            if task
+                .extra_checkouts
+                .iter()
+                .any(|checkout| &checkout.project_id == project_id)
+            {
+                continue;
+            }
+            let project = core.project(project_id)?.clone();
+            let (shared, command) = convoy_core::worktree::setup_parts(core, &project);
+            wanted.push((project, shared, command, branch.clone()));
+        }
+        Ok(wanted)
+    })?;
+    let root = workspace.storage.worktrees();
+    for (project, shared, command, branch) in wanted {
+        let git = convoy_core::Git::default();
+        let (directory, branch) = repositories.with(&project.path, || {
+            let mut name = branch.clone();
+            for n in 2..10 {
+                if !git.succeeds(
+                    &project.path,
+                    &[
+                        "rev-parse",
+                        "--verify",
+                        "--quiet",
+                        &format!("refs/heads/{name}"),
+                    ],
+                ) {
+                    break;
+                }
+                name = format!("{branch}-{n}");
+            }
+            git.create_worktree_from(&project.path, &root, &name, project.base_ref.as_deref())
+                .map(|directory| (directory, name))
+                .map_err(|error| format!("{}: {error}", project.title))
+        })?;
+        workspace.act(|core| {
+            core.record_extra_checkout(
+                id,
+                convoy_core::model::ExtraCheckout {
+                    project_id: project.id.clone(),
+                    directory: directory.clone(),
+                    branch: branch.clone(),
+                },
+            )
+            .map(|_| ())
+        })?;
+        let title = project.title.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            convoy_core::worktree::setup_within(
+                &project.path,
+                &directory,
+                &shared,
+                command.as_deref().filter(|value| !value.trim().is_empty()),
+                &convoy_core::StdRunner,
+                std::time::Duration::from_secs(15 * 60),
+            )
+        })
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| format!("{title}: {error}"))?;
+    }
+    Ok(())
+}
+
+/// The other projects — repositories — a task changes too.
+#[tauri::command]
+pub fn task_repositories(
+    id: String,
+    projects: Vec<String>,
+    workspace: State<'_, Workspace>,
+) -> Result<(), String> {
+    workspace.act(|core| core.set_task_repositories(&id, projects).map(|_| ()))
 }
 
 /// The builder's session, or the planner's for a task planned first.

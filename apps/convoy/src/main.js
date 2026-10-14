@@ -1362,7 +1362,7 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon],[data-sync-toggle],[data-intake-toggle]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-inbox-answer],[data-inbox-open],[data-inbox-expand],[data-tab-close],[data-tab-open],[data-related-remove],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day],[data-skill],[data-skill-pick],[data-skill-toggle],[data-usage-days],[data-usage-agent],[data-usage-table],[data-price-add],[data-price-remove],[data-price-reset],[data-price-save],[data-task-doc-open],[data-task-doc-reveal],[data-task-doc]",
+      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day],[data-skill],[data-skill-pick],[data-skill-toggle],[data-usage-days],[data-usage-agent],[data-usage-table],[data-price-add],[data-price-remove],[data-price-reset],[data-price-save],[data-task-doc-open],[data-task-doc-reveal],[data-task-doc],[data-repo-remove],[data-task-pr-extra]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -1728,6 +1728,15 @@ app.addEventListener("click", async (event) => {
   }
   if (data.taskRun) return runTask(data.taskRun);
   if (data.taskPr) return done("task_pr_open", { id: data.taskPr });
+  if (data.taskPrExtra) {
+    const [id, index] = data.taskPrExtra.split(":");
+    return done("task_pr_open", { id, extra: Number(index) });
+  }
+  if (data.repoRemove && state.dialog?.kind === "task") {
+    captureDraft();
+    state.dialog.extra_projects = (state.dialog.extra_projects ?? []).filter((id) => id !== data.repoRemove);
+    return render();
+  }
   if (data.taskDocOpen) return done("task_doc_open", { projectId: state.dialog?.project_id ?? state.projectId, path: data.taskDocOpen });
   if (data.taskDocReveal) return done("task_doc_reveal", { projectId: state.dialog?.project_id ?? state.projectId, path: data.taskDocReveal });
   if (data.taskDoc) return openTaskDoc(data.taskDoc);
@@ -1917,6 +1926,11 @@ app.addEventListener("change", async (event) => {
   // The effort levels follow the model picked.
   if (["session", "review"].includes(state.dialog?.kind) && event.target.id === "draft-model") {
     captureDraft();
+    return render();
+  }
+  if (state.dialog?.kind === "task" && event.target.dataset?.repoAdd && event.target.value) {
+    captureDraft();
+    state.dialog.extra_projects = [...(state.dialog.extra_projects ?? []), event.target.value];
     return render();
   }
   if (state.dialog?.kind === "task" && event.target.id === "task-plan-auto") {
@@ -3369,6 +3383,11 @@ async function saveTask(run = false) {
   if ((account ?? "") !== (before?.profile_id ?? "")) {
     if (!(await done("task_account", { id, profileId: account }))) return;
   }
+  const repositories = dialog.extra_projects ?? [];
+  const hadRepositories = before?.extra_projects ?? [];
+  if (repositories.length !== hadRepositories.length || repositories.some((other) => !hadRepositories.includes(other))) {
+    if (!(await done("task_repositories", { id, projects: repositories }))) return;
+  }
   const planFirst = !!dialog.plan_first;
   const planAuto = dialog.plan_auto_approve ?? null;
   if (planFirst !== !!before?.plan_first || planAuto !== (before?.plan_auto_approve ?? null)) {
@@ -3595,6 +3614,9 @@ function refreshTaskDialog(id) {
       pr_title: task.pr_title,
       pr_body: task.pr_body,
       pr_url: task.pr_url,
+      extra_pr_urls: task.extra_pr_urls,
+      extra_checkouts: task.extra_checkouts,
+      attachments: task.attachments,
       last_error: task.last_error,
     });
   }

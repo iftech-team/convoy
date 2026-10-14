@@ -326,3 +326,206 @@ fn attachments_are_downloaded_only_from_the_tracker_and_reach_the_brief() {
                 .contains("- screen.png: /data/attachments/t/screen.png")
     );
 }
+
+#[test]
+fn a_task_over_several_repositories_reaches_them_all() {
+    use convoy_core::model::ExtraCheckout;
+    use convoy_core::process::{Output, ProcessRunner, ProcessSpec};
+    let fixture = fixture();
+    let (mut workspace, admin) = fixture.with_project();
+    let api_dir = fixture.path().join("api");
+    std::fs::create_dir_all(&api_dir).unwrap();
+    workspace.add_project(&api_dir).unwrap();
+    let api = workspace.state().projects.last().unwrap().id.clone();
+    workspace
+        .edit_project(
+            &api,
+            ProjectPatch {
+                test_commands: Some("dotnet test".into()),
+                ..ProjectPatch::default()
+            },
+        )
+        .unwrap();
+    workspace
+        .edit_project(
+            &admin,
+            ProjectPatch {
+                test_commands: Some("php artisan test".into()),
+                ..ProjectPatch::default()
+            },
+        )
+        .unwrap();
+    let id = add_task(&mut workspace, &admin, "Limits in admin and API");
+
+    // Not its own project, and only projects that exist.
+    assert!(workspace
+        .set_task_repositories(&id, vec![admin.clone()])
+        .is_err());
+    assert!(workspace
+        .set_task_repositories(&id, vec!["gone".into()])
+        .is_err());
+    workspace
+        .set_task_repositories(&id, vec![api.clone(), api.clone()])
+        .unwrap();
+    assert_eq!(task(&workspace, &id).extra_projects, std::slice::from_ref(&api));
+
+    // A worktree made for it there is what its agents are given.
+    let checkout = fixture.path().join("worktrees").join("api-task");
+    workspace
+        .record_extra_checkout(
+            &id,
+            ExtraCheckout {
+                project_id: api.clone(),
+                directory: checkout.clone(),
+                branch: "convoy/task-x".into(),
+            },
+        )
+        .unwrap();
+    workspace.prepare_task(&id, None).unwrap();
+    let builder = task(&workspace, &id).session_id.unwrap();
+    let session = workspace.session(&builder).unwrap().clone();
+    assert!(session.prompt.contains("## Other repositories"));
+    assert!(session
+        .prompt
+        .contains(&format!("at {} (branch convoy/task-x)", checkout.display())));
+    assert_eq!(session.add_dirs.as_deref(), Some(&[checkout.clone()][..]));
+    assert_eq!(
+        convoy_core::provider::add_dir_flags(session.add_dirs.as_deref()),
+        [
+            "--add-dir".to_string(),
+            checkout.to_string_lossy().into_owned()
+        ]
+    );
+
+    // A reviewer sharing the builder's folder shares the others too.
+    let mut review = convoy_core::workspace::NewSession::new(admin.clone(), Agent::Codex, "Review");
+    review.review_of = Some(builder.clone());
+    workspace.add_session(review).unwrap();
+    let reviewer = workspace.state().sessions.last().unwrap().clone();
+    assert_eq!(reviewer.add_dirs, session.add_dirs);
+
+    // QA runs each repository's checks in its own folder.
+    struct Seen(std::sync::Mutex<Vec<(String, Option<std::path::PathBuf>)>>);
+    impl ProcessRunner for Seen {
+        fn run(&self, spec: &ProcessSpec) -> convoy_core::Result<Output> {
+            self.0.lock().unwrap().push((
+                spec.args.last().cloned().unwrap_or_default(),
+                spec.cwd.clone(),
+            ));
+            Ok(Output {
+                status: Some(0),
+                stdout: String::new(),
+                stderr: String::new(),
+            })
+        }
+    }
+    workspace
+        .update(|state| {
+            state.tasks[0].status = TaskStatus::Review;
+            Ok(())
+        })
+        .unwrap();
+    let plan = qa::begin(&mut workspace, &id).unwrap();
+    let seen = Seen(std::sync::Mutex::new(Vec::new()));
+    let checks = qa::run_checks(&plan, &seen, |_| {});
+    assert_eq!(
+        checks
+            .iter()
+            .map(|check| check.command.as_str())
+            .collect::<Vec<_>>(),
+        ["php artisan test", "api: dotnet test"]
+    );
+    let ran = seen.0.lock().unwrap().clone();
+    assert!(ran[1].0.contains("dotnet test"));
+    assert_eq!(ran[1].1.as_deref(), Some(checkout.as_path()));
+
+    // Removing it there forgets its worktree record too.
+    workspace
+        .update(|state| {
+            state.tasks[0].status = TaskStatus::Review;
+            Ok(())
+        })
+        .unwrap();
+    workspace.set_task_repositories(&id, Vec::new()).unwrap();
+    assert!(task(&workspace, &id).extra_checkouts.is_empty());
+}
+
+#[test]
+fn every_repository_is_published_from_its_own_worktree() {
+    use convoy_core::model::ExtraCheckout;
+    use convoy_core::publish;
+    let fixture = fixture();
+    let (mut workspace, admin) = fixture.with_project();
+    let api_dir = fixture.path().join("api");
+    std::fs::create_dir_all(&api_dir).unwrap();
+    workspace.add_project(&api_dir).unwrap();
+    let api = workspace.state().projects.last().unwrap().id.clone();
+    workspace
+        .edit_project(
+            &admin,
+            ProjectPatch {
+                convoy_publishes: Some(true),
+                ..ProjectPatch::default()
+            },
+        )
+        .unwrap();
+    workspace
+        .save_task(TaskInput {
+            id: None,
+            project_id: admin.clone(),
+            spec_id: None,
+            title: "Both".into(),
+            details: String::new(),
+            findings: String::new(),
+            agent: Agent::Claude,
+            mode: PublishMode::Push,
+            auto_review: false,
+            skills: None,
+        })
+        .unwrap();
+    let id = workspace.state().tasks[0].id.clone();
+    workspace
+        .set_task_repositories(&id, vec![api.clone()])
+        .unwrap();
+    workspace.prepare_task(&id, None).unwrap();
+    pipeline::handle(
+        &mut workspace,
+        &context(),
+        &id,
+        pipeline::Event::Review(Some(true), String::new()),
+    )
+    .unwrap();
+    // Without a worktree there, it is not published from the shared checkout.
+    let refused = publish::plan(&workspace, &id).unwrap_err().to_string();
+    assert!(refused.contains("has no worktree for this task"));
+    workspace
+        .record_extra_checkout(
+            &id,
+            ExtraCheckout {
+                project_id: api.clone(),
+                directory: "/w/api".into(),
+                branch: "convoy/both".into(),
+            },
+        )
+        .unwrap();
+    let plan = publish::plan(&workspace, &id).unwrap();
+    assert_eq!(plan.extras.len(), 1);
+    assert_eq!(plan.extras[0].directory, std::path::Path::new("/w/api"));
+    publish::finish(
+        &mut workspace,
+        &context(),
+        &id,
+        &plan.run_id,
+        Ok(publish::Published {
+            url: Some("https://gitlab.example/admin/-/merge_requests/1".into()),
+            extra: vec!["https://gitlab.example/api/-/merge_requests/2".into()],
+        }),
+    )
+    .unwrap();
+    let done = task(&workspace, &id);
+    assert_eq!(
+        done.extra_pr_urls,
+        ["https://gitlab.example/api/-/merge_requests/2"]
+    );
+    assert_eq!(done.status, TaskStatus::Pr);
+}

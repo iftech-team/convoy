@@ -82,6 +82,18 @@ pub struct Plan {
     pub commands: Vec<String>,
     pub timeout: Duration,
     pub agent: Option<Agent>,
+    /// The other repositories of a task that spans several: each one's own
+    /// checks, run in its folder for the task, after this project's.
+    pub extra: Vec<ExtraChecks>,
+}
+
+/// One more repository's checks.
+#[derive(Debug, Clone)]
+pub struct ExtraChecks {
+    /// Its project's name, which labels its checks.
+    pub title: String,
+    pub directory: PathBuf,
+    pub commands: Vec<String>,
 }
 
 /// The commands in a project's test field: one per line, blank lines and
@@ -120,10 +132,11 @@ pub fn begin(workspace: &mut Workspace, task_id: &str) -> Result<Plan> {
         }
         _ => project.path.clone(),
     };
+    let extra = extra_checks(workspace, &task);
     let run_id = new_id();
     let run = QaRun {
         id: run_id.clone(),
-        status: if commands.is_empty() {
+        status: if commands.is_empty() && extra.is_empty() {
             QaStatus::Testing
         } else {
             QaStatus::Checking
@@ -150,7 +163,28 @@ pub fn begin(workspace: &mut Workspace, task_id: &str) -> Result<Plan> {
             u64::from(project.qa_timeout.unwrap_or(DEFAULT_TIMEOUT_MINUTES)) * 60,
         ),
         agent: project.qa_agent,
+        extra,
     })
+}
+
+/// The other repositories' checks: each project's commands, in the folder
+/// made for the task there, or its checkout.
+fn extra_checks(workspace: &Workspace, task: &Task) -> Vec<ExtraChecks> {
+    task.extra_projects
+        .iter()
+        .filter_map(|id| workspace.project(id).ok())
+        .map(|project| ExtraChecks {
+            title: project.title.clone(),
+            directory: task
+                .extra_checkouts
+                .iter()
+                .find(|checkout| checkout.project_id == project.id)
+                .map(|checkout| checkout.directory.clone())
+                .unwrap_or_else(|| project.path.clone()),
+            commands: commands(project.test_commands.as_deref().unwrap_or("")),
+        })
+        .filter(|repository| !repository.commands.is_empty())
+        .collect()
 }
 
 /// Runs the checks in order, stopping at the first that fails, and reports
@@ -161,18 +195,32 @@ pub fn run_checks(
     mut each: impl FnMut(&Check),
 ) -> Vec<Check> {
     let mut checks = Vec::new();
-    for command in &plan.commands {
+    let mut runs: Vec<(String, &Path, &String)> = plan
+        .commands
+        .iter()
+        .map(|command| (command.clone(), plan.directory.as_path(), command))
+        .collect();
+    for repository in &plan.extra {
+        for command in &repository.commands {
+            runs.push((
+                format!("{}: {command}", repository.title),
+                repository.directory.as_path(),
+                command,
+            ));
+        }
+    }
+    for (label, directory, command) in runs {
         let spec = ProcessSpec::new(
             crate::worktree::shell_program(),
             crate::worktree::shell_arguments(command),
         )
-        .cwd(&plan.directory)
+        .cwd(directory)
         .timeout(plan.timeout)
         .max_output(256 * 1024);
         let started = Instant::now();
         let check = match runner.run(&spec) {
             Ok(output) => Check {
-                command: command.clone(),
+                command: label.clone(),
                 ok: output.ok(),
                 code: output.status,
                 seconds: started.elapsed().as_secs(),
@@ -180,7 +228,7 @@ pub fn run_checks(
                     .to_string(),
             },
             Err(error) => Check {
-                command: command.clone(),
+                command: label.clone(),
                 ok: false,
                 code: None,
                 seconds: started.elapsed().as_secs(),

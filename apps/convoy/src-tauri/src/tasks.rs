@@ -744,17 +744,22 @@ pub fn issue_open(
 #[tauri::command]
 pub fn task_pr_open(
     id: String,
+    extra: Option<usize>,
     app: tauri::AppHandle,
     workspace: State<'_, Workspace>,
 ) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
+    // `extra` picks one of the requests opened in its other repositories.
     let url = workspace.with(|workspace| {
         workspace
             .state()
             .tasks
             .iter()
             .find(|task| task.id == id)
-            .and_then(|task| task.pr_url.clone())
+            .and_then(|task| match extra {
+                Some(index) => task.extra_pr_urls.get(index).cloned(),
+                None => task.pr_url.clone(),
+            })
             .ok_or_else(|| "This task has no pull request.".to_string())
     })?;
     // Self-hosted servers on a private network may still serve plain HTTP.

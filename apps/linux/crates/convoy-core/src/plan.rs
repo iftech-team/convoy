@@ -109,6 +109,7 @@ fn brief(workspace: &Workspace, task: &Task, file: &std::path::Path) -> Result<S
         .unwrap_or_default();
     let related = crate::planning::related_context(state, task);
     let files = crate::planning::attached_files(task);
+    let (repositories, _) = crate::planning::other_repositories(state, task);
     let comments = task
         .plan
         .as_ref()
@@ -122,7 +123,7 @@ fn brief(workspace: &Workspace, task: &Task, file: &std::path::Path) -> Result<S
         .map(|list| format!("\n\n## Comments on the earlier draft\n{}", list.join("\n")))
         .unwrap_or_default();
     let prompt = format!(
-        "{instructions}\n\nDo not change anything in the repository, and do not commit: only read, and write the plan.\n\n{spec}\n## Current task\n{}\n\n{}{origin}{files}{related}{comments}\n\n{}",
+        "{instructions}\n\nDo not change anything in the repository, and do not commit: only read, and write the plan.\n\n{spec}\n## Current task\n{}\n\n{}{origin}{repositories}{files}{related}{comments}\n\n{}",
         task.title,
         task.details,
         stage::closing(Stage::Plan, file)
@@ -154,6 +155,7 @@ pub fn begin(workspace: &mut Workspace, context: &Context<'_>, task_id: &str) ->
     input.effort = task.effort.clone().unwrap_or_default();
     input.profile_id = task.profile_id.clone();
     input.skills = context.skills(&task.project_id, task.agent, Role::Plan);
+    input.add_dirs = crate::planning::other_repositories(workspace.state(), &task).1;
     let session = workspace
         .add_session(input)?
         .sessions

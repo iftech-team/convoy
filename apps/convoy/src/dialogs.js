@@ -636,6 +636,50 @@ function relatedTasks(dialog) {
     </div>`;
 }
 
+/// Other projects — repositories — the task changes too: chips, and a
+/// picker of the rest.
+function otherRepositories(dialog) {
+  const own = dialog.project_id ?? state.projectId;
+  const projects = state.projects.filter((item) => item.id !== own && !item.is_group);
+  if (!projects.length) return "";
+  const chosen = (dialog.extra_projects ?? []).filter((id) => projects.some((item) => item.id === id));
+  const chips = chosen
+    .map((id) => {
+      const project = projects.find((item) => item.id === id);
+      const checkout = (dialog.extra_checkouts ?? []).find((item) => item.projectID === id);
+      return `
+        <span class="related-chip" title="${escape(checkout ? `${checkout.directory} · ${checkout.branch}` : project.path)}">
+          <span class="related-chip__title">${escape(project.title)}</span>
+          ${checkout ? `<span class="related-chip__project">${escape(checkout.branch)}</span>` : ""}
+          <button class="related-chip__remove" data-repo-remove="${escape(id)}" title="${escape(t("Remove"))}">${icons.close}</button>
+        </span>`;
+    })
+    .join("");
+  const options = projects
+    .filter((item) => !chosen.includes(item.id))
+    .map((item) => `<option value="${escape(item.id)}">${escape(item.title)}</option>`)
+    .join("");
+  return `
+    <div class="field">
+      <span class="field__label">${escape(t("Also changes"))}</span>
+      ${chips ? `<div class="related-chips">${chips}</div>` : ""}
+      ${options ? `<select class="related-add" data-repo-add="1"><option value="">${escape(t("Add a repository…"))}</option>${options}</select>` : ""}
+      <span class="field__note">${escape(t("Its agents work in these too; with a worktree per task each gets one on the task's branch, and each is checked and published."))}</span>
+    </div>`;
+}
+
+/// The issue's files downloaded for the task.
+function attachmentList(dialog) {
+  const files = dialog.attachments ?? [];
+  if (!files.length) return "";
+  return `
+    <div class="field">
+      <span class="field__label">${escape(t("Attached files"))}</span>
+      <ul class="plain-list">${files.map((file) => `<li title="${escape(file.path)}">${escape(file.name)}</li>`).join("")}</ul>
+      <span class="field__note">${escape(t("Downloaded from the issue; its agents are told where they are."))}</span>
+    </div>`;
+}
+
 const taskForm = (dialog) => {
   const specs = state.planning?.specs ?? [];
   const projectId = dialog.project_id ?? state.projectId;
@@ -698,6 +742,8 @@ const taskForm = (dialog) => {
       }
       ${blockedBy(dialog)}
       ${relatedTasks(dialog)}
+      ${otherRepositories(dialog)}
+      ${attachmentList(dialog)}
       ${field(t("Details"), textArea("task-details", dialog.details, "", 4))}
       ${field(t("Findings"), textArea("task-findings", dialog.findings, "", 3))}
       <button class="sheet-disclosure" data-toggle="advanced" aria-expanded="${!!dialog.advanced}">
@@ -816,6 +862,9 @@ function publishPanel(task) {
       ${task.pr_title ? `<details${run?.status === "described" ? " open" : ""}><summary>${escape(task.pr_title)}</summary><div class="plan-text docs__render">${markdown(task.pr_body ?? "")}</div></details>` : ""}
       <div class="qa-panel__actions">
         ${task.pr_url ? button({ label: t("Open pull request"), icon: "open", data: { "task-pr": task.id } }) : ""}
+        ${(task.extra_pr_urls ?? [])
+          .map((url, index) => button({ label: url.replace(/^https?:\/\/[^/]+\//, ""), icon: "open", kind: "quiet", data: { "task-pr-extra": `${task.id}:${index}` } }))
+          .join("")}
         ${task.pr_title ? button({ label: t("Copy title and description"), icon: "copy", action: "task-pr-copy", kind: "quiet" }) : ""}
         ${busy || run?.status === "published" ? "" : button({ label: run ? t("Publish again") : t("Publish now"), icon: "refresh", action: "task-publish", kind: "quiet" })}
       </div>

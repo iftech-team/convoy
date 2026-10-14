@@ -529,6 +529,9 @@ impl Merge<'_> {
                         pr_title: None,
                         pr_body: None,
                         attachments: Vec::new(),
+                        extra_projects: Vec::new(),
+                        extra_checkouts: Vec::new(),
+                        extra_pr_urls: Vec::new(),
                         unknown: Default::default(),
                     });
                     self.report.tasks += 1;
@@ -634,6 +637,9 @@ impl Merge<'_> {
                 pr_title: None,
                 pr_body: None,
                 attachments: Vec::new(),
+                extra_projects: Vec::new(),
+                extra_checkouts: Vec::new(),
+                extra_pr_urls: Vec::new(),
                 unknown: Default::default(),
             });
             self.report.tasks += 1;

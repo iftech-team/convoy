@@ -143,6 +143,46 @@ pub(crate) fn related_context(state: &State, task: &Task) -> String {
     )
 }
 
+/// The other repositories a task changes, as its brief names them, and the
+/// folders its agent is given: their worktrees for this task, or their
+/// checkouts.
+pub(crate) fn other_repositories(state: &State, task: &Task) -> (String, Vec<std::path::PathBuf>) {
+    let mut lines = Vec::new();
+    let mut dirs = Vec::new();
+    for id in &task.extra_projects {
+        let Some(project) = state.projects.iter().find(|project| &project.id == id) else {
+            continue;
+        };
+        let checkout = task
+            .extra_checkouts
+            .iter()
+            .find(|checkout| &checkout.project_id == id);
+        let dir = checkout
+            .map(|checkout| checkout.directory.clone())
+            .unwrap_or_else(|| project.path.clone());
+        lines.push(match checkout {
+            Some(checkout) => format!(
+                "- {} at {} (branch {})",
+                project.title,
+                dir.display(),
+                checkout.branch
+            ),
+            None => format!("- {} at {}", project.title, dir.display()),
+        });
+        dirs.push(dir);
+    }
+    if lines.is_empty() {
+        return (String::new(), dirs);
+    }
+    (
+        format!(
+            "\n\n## Other repositories\nThis task changes these repositories too. You have access to them; make and commit the changes there as well, and keep them consistent with this one:\n{}",
+            lines.join("\n")
+        ),
+        dirs,
+    )
+}
+
 /// The issue's files, downloaded beside the workspace, for the agent to open.
 pub(crate) fn attached_files(task: &Task) -> String {
     if task.attachments.is_empty() {
@@ -381,6 +421,9 @@ impl Workspace {
                     pr_title: None,
                     pr_body: None,
                     attachments: Vec::new(),
+                    extra_projects: Vec::new(),
+                    extra_checkouts: Vec::new(),
+                    extra_pr_urls: Vec::new(),
                     unknown: Default::default(),
                 }),
             }
@@ -442,6 +485,60 @@ impl Workspace {
             let task = &mut state.tasks[index];
             task.plan_first = plan_first;
             task.plan_auto_approve = auto_approve;
+            Ok(())
+        })
+    }
+
+    /// The other projects — repositories — a task changes too. Not its
+    /// own, each once, and only while it is not building.
+    pub fn set_task_repositories(&mut self, id: &str, projects: Vec<String>) -> Result<&State> {
+        let id = id.to_string();
+        self.update(move |state| {
+            let Some(index) = find_task_index(state, &id) else {
+                bail!("Task unavailable.")
+            };
+            ensure!(
+                state.tasks[index].status != TaskStatus::Building,
+                "Stop the task session before changing its repositories."
+            );
+            let own = state.tasks[index].project_id.clone();
+            let mut unique: Vec<String> = Vec::new();
+            for project in projects {
+                ensure!(
+                    project != own,
+                    "The task's own project is already its repository."
+                );
+                ensure!(
+                    state.projects.iter().any(|item| item.id == project),
+                    "A repository is no longer a project here."
+                );
+                if !unique.contains(&project) {
+                    unique.push(project);
+                }
+            }
+            let task = &mut state.tasks[index];
+            task.extra_checkouts
+                .retain(|checkout| unique.contains(&checkout.project_id));
+            task.extra_projects = unique;
+            Ok(())
+        })
+    }
+
+    /// Records a worktree made for a task in another repository.
+    pub fn record_extra_checkout(
+        &mut self,
+        id: &str,
+        checkout: crate::model::ExtraCheckout,
+    ) -> Result<&State> {
+        let id = id.to_string();
+        self.update(move |state| {
+            let Some(index) = find_task_index(state, &id) else {
+                bail!("Task unavailable.")
+            };
+            let task = &mut state.tasks[index];
+            task.extra_checkouts
+                .retain(|other| other.project_id != checkout.project_id);
+            task.extra_checkouts.push(checkout);
             Ok(())
         })
     }
@@ -676,6 +773,7 @@ impl Workspace {
             };
             let context = related_context(state, &task);
             let files = attached_files(&task);
+            let (repositories, add_dirs) = other_repositories(state, &task);
             let plan = task
                 .plan
                 .as_ref()
@@ -691,7 +789,7 @@ impl Workspace {
                 .map(|text| format!("\n\n## Instructions\n{text}"))
                 .unwrap_or_default();
             let prompt = format!(
-                "{preamble}\n## Current task\n{}\n\n{}{origin}{files}{findings}{context}{plan}{instructions}\n\nVerify the changes and report your results. {publication}\n\n{}",
+                "{preamble}\n## Current task\n{}\n\n{}{origin}{repositories}{files}{findings}{context}{plan}{instructions}\n\nVerify the changes and report your results. {publication}\n\n{}",
                 task.title,
                 task.details,
                 crate::stage::closing(crate::stage::Stage::Build, &done_file)
@@ -730,6 +828,7 @@ impl Workspace {
                 parent_id: None,
                 manager: None,
                 skills: task.skills.clone(),
+                add_dirs: (!add_dirs.is_empty()).then_some(add_dirs),
                 unknown: Default::default(),
             };
             let session_id = session.id.clone();
@@ -840,6 +939,9 @@ impl Workspace {
                     pr_title: None,
                     pr_body: None,
                     attachments: Vec::new(),
+                    extra_projects: Vec::new(),
+                    extra_checkouts: Vec::new(),
+                    extra_pr_urls: Vec::new(),
                     unknown: Default::default(),
                 });
             }

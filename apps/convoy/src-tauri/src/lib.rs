@@ -219,6 +219,7 @@ pub fn run() {
             commands::planning::task_prepare,
             commands::planning::queue_summary,
             commands::planning::queue_next,
+            commands::planning::task_repositories,
             commands::planning::queue_after_exit,
             commands::integrations::profiles_read,
             commands::integrations::profile_add,
