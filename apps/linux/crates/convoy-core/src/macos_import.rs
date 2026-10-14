@@ -528,6 +528,7 @@ impl Merge<'_> {
                         publish_run: None,
                         pr_title: None,
                         pr_body: None,
+                        attachments: Vec::new(),
                         unknown: Default::default(),
                     });
                     self.report.tasks += 1;
@@ -632,6 +633,7 @@ impl Merge<'_> {
                 publish_run: None,
                 pr_title: None,
                 pr_body: None,
+                attachments: Vec::new(),
                 unknown: Default::default(),
             });
             self.report.tasks += 1;

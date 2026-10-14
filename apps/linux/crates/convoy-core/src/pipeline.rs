@@ -212,6 +212,7 @@ pub fn task_context(task: &Task) -> String {
             plan.text.trim()
         ));
     }
+    context.push_str(&crate::planning::attached_files(task));
     if let Some(summary) = task
         .build_summary
         .as_deref()

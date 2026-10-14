@@ -108,6 +108,7 @@ fn brief(workspace: &Workspace, task: &Task, file: &std::path::Path) -> Result<S
         .map(crate::planning::source_note)
         .unwrap_or_default();
     let related = crate::planning::related_context(state, task);
+    let files = crate::planning::attached_files(task);
     let comments = task
         .plan
         .as_ref()
@@ -121,7 +122,7 @@ fn brief(workspace: &Workspace, task: &Task, file: &std::path::Path) -> Result<S
         .map(|list| format!("\n\n## Comments on the earlier draft\n{}", list.join("\n")))
         .unwrap_or_default();
     let prompt = format!(
-        "{instructions}\n\nDo not change anything in the repository, and do not commit: only read, and write the plan.\n\n{spec}\n## Current task\n{}\n\n{}{origin}{related}{comments}\n\n{}",
+        "{instructions}\n\nDo not change anything in the repository, and do not commit: only read, and write the plan.\n\n{spec}\n## Current task\n{}\n\n{}{origin}{files}{related}{comments}\n\n{}",
         task.title,
         task.details,
         stage::closing(Stage::Plan, file)

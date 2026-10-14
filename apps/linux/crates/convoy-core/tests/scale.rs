@@ -241,3 +241,88 @@ fn intake_searches_on_its_schedule_and_remembers_how_it_went() {
     assert!(kept.run);
     assert_eq!(reread.all().len(), 1);
 }
+
+#[test]
+fn attachments_are_downloaded_only_from_the_tracker_and_reach_the_brief() {
+    use convoy_core::integrations::{
+        download_request, linear_uploads, safe_file_name, Connection, IssueAttachment, TrackerAuth,
+        TrackerKind,
+    };
+    let jira = Connection {
+        id: "j".into(),
+        kind: TrackerKind::Jira,
+        auth: TrackerAuth::ApiKey,
+        name: "Jira".into(),
+        site: Some("https://jira.eskhata.com".into()),
+        username: Some("me".into()),
+        secret: "token".into(),
+    };
+    let own = download_request(
+        &jira,
+        "https://jira.eskhata.com/secure/attachment/1/screen.png",
+    )
+    .unwrap();
+    assert!(own.header("Authorization").unwrap().starts_with("Basic "));
+    for elsewhere in [
+        "https://evil.example/jira.eskhata.com/a.png",
+        "https://jira.eskhata.com.evil.example/a.png",
+        "http://jira.eskhata.com/a.png",
+    ] {
+        assert!(download_request(&jira, elsewhere).is_err(), "{elsewhere}");
+    }
+    let linear = Connection {
+        kind: TrackerKind::Linear,
+        site: None,
+        username: None,
+        ..jira.clone()
+    };
+    assert!(download_request(&linear, "https://uploads.linear.app/a/b/shot.png").is_ok());
+    assert!(download_request(&linear, "https://linear.app/a").is_err());
+
+    let file = |name: &str, mime: Option<&str>, size: Option<u64>| IssueAttachment {
+        name: name.into(),
+        url: String::new(),
+        mime: mime.map(str::to_string),
+        size,
+    };
+    assert!(file("screen.png", Some("image/png"), Some(1_000)).downloadable());
+    assert!(file("spec.pdf", None, None).downloadable());
+    assert!(!file("build.zip", Some("application/zip"), Some(10)).downloadable());
+    assert!(!file("huge.png", Some("image/png"), Some(50 * 1024 * 1024)).downloadable());
+
+    let uploads = linear_uploads(
+        "See ![shot](https://uploads.linear.app/ws/abc/shot.png) and https://uploads.linear.app/ws/abc/shot.png again",
+    );
+    assert_eq!(uploads.len(), 1);
+    assert_eq!(uploads[0].name, "shot.png");
+    assert_eq!(safe_file_name("../../etc/passwd"), "_.._etc_passwd");
+    assert_eq!(safe_file_name(".env"), "env");
+
+    // The builder is told where they are.
+    let fixture = fixture();
+    let (mut workspace, project) = fixture.with_project();
+    let id = add_task(&mut workspace, &project, "With a screenshot");
+    workspace
+        .set_task_attachments(
+            &id,
+            vec![convoy_core::model::TaskAttachment {
+                name: "screen.png".into(),
+                path: "/data/attachments/t/screen.png".into(),
+            }],
+        )
+        .unwrap();
+    workspace.prepare_task(&id, None).unwrap();
+    let builder = task(&workspace, &id).session_id.unwrap();
+    assert!(
+        workspace
+            .session(&builder)
+            .unwrap()
+            .prompt
+            .contains("## Attached files\n")
+            && workspace
+                .session(&builder)
+                .unwrap()
+                .prompt
+                .contains("- screen.png: /data/attachments/t/screen.png")
+    );
+}

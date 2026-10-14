@@ -135,6 +135,181 @@ pub struct Issue {
     /// The Notion database a page sits in, for [`narrow`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
+    /// The discussion on it, oldest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub comments: Vec<IssueComment>,
+    /// Files and links attached to it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<IssueAttachment>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct IssueComment {
+    #[serde(default)]
+    pub author: String,
+    pub body: String,
+    #[serde(default)]
+    pub at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct IssueAttachment {
+    pub name: String,
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+}
+
+/// The most an attachment may weigh to be downloaded.
+pub const ATTACHMENT_LIMIT: u64 = 10 * 1024 * 1024;
+
+impl IssueAttachment {
+    /// Whether it is worth a local copy: an image, a PDF or text, not too
+    /// large. Links to other services are left as links.
+    pub fn downloadable(&self) -> bool {
+        let name = self.name.to_ascii_lowercase();
+        let kind_ok = self.mime.as_deref().is_some_and(|mime| {
+            mime.starts_with("image/") || mime == "application/pdf" || mime.starts_with("text/")
+        }) || [
+            ".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".txt", ".log", ".csv", ".json",
+        ]
+        .iter()
+        .any(|ext| name.ends_with(ext));
+        kind_ok && self.size.is_none_or(|size| size <= ATTACHMENT_LIMIT)
+    }
+}
+
+/// The request that downloads an attachment with the connection's
+/// credentials — only from the tracker's own host, so they never reach
+/// another server: the Jira site, or Linear's upload host.
+pub fn download_request(connection: &Connection, url: &str) -> Result<HttpRequest> {
+    ensure!(
+        connection.auth != TrackerAuth::Mcp,
+        "MCP connections download nothing here."
+    );
+    let host = |value: &str| {
+        value
+            .split_once("://")
+            .map(|(_, rest)| {
+                rest.split(['/', '?', '#'])
+                    .next()
+                    .unwrap_or("")
+                    .to_lowercase()
+            })
+            .unwrap_or_default()
+    };
+    let wanted = host(url);
+    let allowed = match connection.kind {
+        TrackerKind::Jira => connection
+            .site_url()
+            .is_some_and(|site| host(&site) == wanted),
+        TrackerKind::Linear => wanted == "uploads.linear.app",
+        TrackerKind::Peshbar | TrackerKind::Notion => false,
+    };
+    ensure!(
+        allowed && url.starts_with("https://"),
+        "Attachments are downloaded only from the tracker itself."
+    );
+    Ok(HttpRequest {
+        method: "GET",
+        url: url.to_string(),
+        headers: vec![("Authorization".into(), authorization(connection)?)],
+        body: None,
+    })
+}
+
+/// A file name safe to write in a folder: no separators, no leading dot.
+pub fn safe_file_name(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || "._- ()".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let cleaned = cleaned.trim().trim_start_matches('.').to_string();
+    if cleaned.is_empty() {
+        "attachment".into()
+    } else {
+        cleaned.chars().take(120).collect()
+    }
+}
+
+/// Linear's uploaded files are linked in the text rather than listed as
+/// attachments: each `uploads.linear.app` link becomes one.
+pub fn linear_uploads(text: &str) -> Vec<IssueAttachment> {
+    let mut found: Vec<IssueAttachment> = Vec::new();
+    for start in text
+        .match_indices("https://uploads.linear.app/")
+        .map(|(at, _)| at)
+    {
+        let url: String = text[start..]
+            .chars()
+            .take_while(|c| !c.is_whitespace() && !")]>\"'".contains(*c))
+            .collect();
+        if found.iter().any(|file| file.url == url) {
+            continue;
+        }
+        let name = url.rsplit('/').next().unwrap_or("upload").to_string();
+        found.push(IssueAttachment {
+            name,
+            url,
+            mime: None,
+            size: None,
+        });
+    }
+    found
+}
+
+/// Comments an imported task keeps, the latest ones.
+const COMMENTS_KEPT: usize = 20;
+/// Characters kept of each.
+const COMMENT_LENGTH: usize = 1_500;
+
+impl Issue {
+    /// The issue's text as a task keeps it: its description, then its
+    /// latest comments and its attachments, each under a heading.
+    pub fn full_details(&self) -> String {
+        let mut text = self.details.trim().to_string();
+        let start = self.comments.len().saturating_sub(COMMENTS_KEPT);
+        let comments: Vec<String> = self.comments[start..]
+            .iter()
+            .filter(|comment| !comment.body.trim().is_empty())
+            .map(|comment| {
+                let mut body: String = comment.body.trim().chars().take(COMMENT_LENGTH).collect();
+                if body.len() < comment.body.trim().len() {
+                    body.push_str(" …");
+                }
+                let who = [comment.author.trim(), comment.at.get(..10).unwrap_or("")]
+                    .into_iter()
+                    .filter(|part| !part.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                if who.is_empty() {
+                    format!("- {body}")
+                } else {
+                    format!("- **{who}:** {body}")
+                }
+            })
+            .collect();
+        if !comments.is_empty() {
+            text.push_str(&format!("\n\n## Comments\n{}", comments.join("\n")));
+        }
+        if !self.attachments.is_empty() {
+            let files: Vec<String> = self
+                .attachments
+                .iter()
+                .map(|file| format!("- {} — {}", file.name, file.url))
+                .collect();
+            text.push_str(&format!("\n\n## Attachments\n{}", files.join("\n")));
+        }
+        text
+    }
 }
 
 /// `host[/path]` of a link, where the path is the part that names the site:
@@ -269,7 +444,7 @@ pub fn search_request_in(
                 scopes::jira_scoped(jql(query, mine_only), link)
             };
             let url = format!(
-                "{site}{path}?jql={}&maxResults={PAGE_SIZE}&fields=summary,description,status,priority",
+                "{site}{path}?jql={}&maxResults={PAGE_SIZE}&fields=summary,description,status,priority,comment,attachment",
                 percent_encode(&jql)
             );
             Ok(HttpRequest {
@@ -347,7 +522,11 @@ fn authorization(connection: &Connection) -> Result<String> {
 
 pub const LINEAR_QUERY: &str = "query Issues($filter: IssueFilter, $first: Int) {
   issues(filter: $filter, first: $first, orderBy: updatedAt) {
-    nodes { identifier title description url priorityLabel state { name } }
+    nodes {
+      identifier title description url priorityLabel state { name }
+      comments(first: 20) { nodes { body createdAt user { name } } }
+      attachments(first: 20) { nodes { title url } }
+    }
   }
 }";
 
@@ -451,6 +630,50 @@ pub fn parse_issues(kind: TrackerKind, body: &str, site: Option<&str>) -> Result
                         priority: text(&node["priorityLabel"]),
                         origin: None,
                         parent: None,
+                        comments: node["comments"]["nodes"]
+                            .as_array()
+                            .map(|nodes| {
+                                let mut comments: Vec<IssueComment> = nodes
+                                    .iter()
+                                    .filter_map(|node| {
+                                        Some(IssueComment {
+                                            author: text(&node["user"]["name"]).unwrap_or_default(),
+                                            body: text(&node["body"])?,
+                                            at: text(&node["createdAt"]).unwrap_or_default(),
+                                        })
+                                    })
+                                    .collect();
+                                comments.sort_by(|a, b| a.at.cmp(&b.at));
+                                comments
+                            })
+                            .unwrap_or_default(),
+                        attachments: {
+                            let mut files: Vec<IssueAttachment> = node["attachments"]["nodes"]
+                                .as_array()
+                                .map(|nodes| {
+                                    nodes
+                                        .iter()
+                                        .filter_map(|node| {
+                                            Some(IssueAttachment {
+                                                url: text(&node["url"])?,
+                                                name: text(&node["title"]).unwrap_or_default(),
+                                                mime: None,
+                                                size: None,
+                                            })
+                                        })
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            let mut written = text(&node["description"]).unwrap_or_default();
+                            for comment in
+                                node["comments"]["nodes"].as_array().into_iter().flatten()
+                            {
+                                written.push('\n');
+                                written.push_str(comment["body"].as_str().unwrap_or(""));
+                            }
+                            files.extend(linear_uploads(&written));
+                            files
+                        },
                     })
                 })
                 .collect())
@@ -473,6 +696,45 @@ pub fn parse_issues(kind: TrackerKind, body: &str, site: Option<&str>) -> Result
                         document @ Value::Object(_) => adf_text(document, 0).trim().to_string(),
                         _ => String::new(),
                     };
+                    let comments = fields["comment"]["comments"]
+                        .as_array()
+                        .map(|comments| {
+                            comments
+                                .iter()
+                                .filter_map(|comment| {
+                                    let body = match &comment["body"] {
+                                        Value::String(value) => value.clone(),
+                                        document @ Value::Object(_) => {
+                                            adf_text(document, 0).trim().to_string()
+                                        }
+                                        _ => return None,
+                                    };
+                                    Some(IssueComment {
+                                        author: text(&comment["author"]["displayName"])
+                                            .unwrap_or_default(),
+                                        body,
+                                        at: text(&comment["created"]).unwrap_or_default(),
+                                    })
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let attachments = fields["attachment"]
+                        .as_array()
+                        .map(|files| {
+                            files
+                                .iter()
+                                .filter_map(|file| {
+                                    Some(IssueAttachment {
+                                        name: text(&file["filename"])?,
+                                        url: text(&file["content"])?,
+                                        mime: text(&file["mimeType"]),
+                                        size: file["size"].as_u64(),
+                                    })
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
                     Some(Issue {
                         title: text(&fields["summary"]).unwrap_or_else(|| key.clone()),
                         url: site.map(|site| format!("{site}/browse/{key}")),
@@ -480,6 +742,8 @@ pub fn parse_issues(kind: TrackerKind, body: &str, site: Option<&str>) -> Result
                         priority: text(&fields["priority"]["name"]),
                         origin: None,
                         parent: None,
+                        comments,
+                        attachments,
                         details,
                         key,
                     })
@@ -514,6 +778,8 @@ pub fn parse_issues(kind: TrackerKind, body: &str, site: Option<&str>) -> Result
                         priority: text(&task["priority"]["label"]),
                         origin: None,
                         parent: None,
+                        comments: Vec::new(),
+                        attachments: Vec::new(),
                     })
                 })
                 .collect())

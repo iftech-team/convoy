@@ -702,8 +702,18 @@ pub struct Task {
     pub pr_title: Option<String>,
     #[serde(rename = "prBody", default, skip_serializing_if = "Option::is_none")]
     pub pr_body: Option<String>,
+    /// Its issue's files, downloaded for its agents to open.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<TaskAttachment>,
     #[serde(flatten)]
     pub unknown: Unknown,
+}
+
+/// A file of a task's issue, kept on this machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskAttachment {
+    pub name: String,
+    pub path: PathBuf,
 }
 
 fn is_zero(value: &u32) -> bool {

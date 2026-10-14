@@ -143,6 +143,21 @@ pub(crate) fn related_context(state: &State, task: &Task) -> String {
     )
 }
 
+/// The issue's files, downloaded beside the workspace, for the agent to open.
+pub(crate) fn attached_files(task: &Task) -> String {
+    if task.attachments.is_empty() {
+        return String::new();
+    }
+    format!(
+        "\n\n## Attached files\nThe issue's files, downloaded for you; open them when they help (screenshots show what is wrong):\n{}",
+        task.attachments
+            .iter()
+            .map(|file| format!("- {}: {}", file.name, file.path.display()))
+            .collect::<Vec<_>>()
+            .join("\n")
+    )
+}
+
 pub(crate) fn source_note(source: &IssueSource) -> String {
     let link = source
         .url
@@ -365,6 +380,7 @@ impl Workspace {
                     publish_run: None,
                     pr_title: None,
                     pr_body: None,
+                    attachments: Vec::new(),
                     unknown: Default::default(),
                 }),
             }
@@ -426,6 +442,22 @@ impl Workspace {
             let task = &mut state.tasks[index];
             task.plan_first = plan_first;
             task.plan_auto_approve = auto_approve;
+            Ok(())
+        })
+    }
+
+    /// Records the files downloaded for a task's issue.
+    pub fn set_task_attachments(
+        &mut self,
+        id: &str,
+        attachments: Vec<crate::model::TaskAttachment>,
+    ) -> Result<&State> {
+        let id = id.to_string();
+        self.update(move |state| {
+            let Some(index) = find_task_index(state, &id) else {
+                bail!("Task unavailable.")
+            };
+            state.tasks[index].attachments = attachments;
             Ok(())
         })
     }
@@ -643,6 +675,7 @@ impl Workspace {
                 String::new()
             };
             let context = related_context(state, &task);
+            let files = attached_files(&task);
             let plan = task
                 .plan
                 .as_ref()
@@ -658,7 +691,7 @@ impl Workspace {
                 .map(|text| format!("\n\n## Instructions\n{text}"))
                 .unwrap_or_default();
             let prompt = format!(
-                "{preamble}\n## Current task\n{}\n\n{}{origin}{findings}{context}{plan}{instructions}\n\nVerify the changes and report your results. {publication}\n\n{}",
+                "{preamble}\n## Current task\n{}\n\n{}{origin}{files}{findings}{context}{plan}{instructions}\n\nVerify the changes and report your results. {publication}\n\n{}",
                 task.title,
                 task.details,
                 crate::stage::closing(crate::stage::Stage::Build, &done_file)
@@ -754,7 +787,8 @@ impl Workspace {
                     format!("{}: {}", issue.key, issue.title)
                 };
                 let title: String = title.chars().take(200).collect();
-                let mut details = issue.details.clone();
+                // The description, then its discussion and attachments.
+                let mut details = issue.full_details();
                 if utf16_len(&details) > 12_000 {
                     details = details.chars().take(12_000).collect::<String>()
                         + "\n…(truncated; see the issue)";
@@ -805,6 +839,7 @@ impl Workspace {
                     publish_run: None,
                     pr_title: None,
                     pr_body: None,
+                    attachments: Vec::new(),
                     unknown: Default::default(),
                 });
             }

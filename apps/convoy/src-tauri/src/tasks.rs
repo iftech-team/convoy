@@ -415,7 +415,91 @@ pub async fn issues_import(
         overrides,
     };
     let (created, skipped) = import_into(&workspace, &project_id, &connection, &issues, &options)?;
+    download_attachments(&workspace, &connection, &created, &issues).await;
     Ok(Imported { created, skipped })
+}
+
+/// Downloads the images, PDFs and text files of the issues just imported,
+/// into Convoy's data, for their agents to open. A file that cannot be
+/// downloaded stays a link in the task's details.
+async fn download_attachments(
+    workspace: &Workspace,
+    connection: &Connection,
+    created: &[String],
+    issues: &[Issue],
+) {
+    let Ok(wanted) = workspace.with(|core| {
+        Ok(created
+            .iter()
+            .filter_map(|id| {
+                let task = core.state().tasks.iter().find(|task| &task.id == id)?;
+                let key = task.source.as_ref()?.key.clone();
+                let issue = issues.iter().find(|issue| issue.key == key)?;
+                let files: Vec<_> = issue
+                    .attachments
+                    .iter()
+                    .filter(|file| file.downloadable())
+                    .take(10)
+                    .cloned()
+                    .collect();
+                (!files.is_empty()).then(|| (id.clone(), files))
+            })
+            .collect::<Vec<_>>())
+    }) else {
+        return;
+    };
+    let root = workspace.storage.root().join("attachments");
+    for (task_id, files) in wanted {
+        let (reader, folder) = (connection.clone(), root.join(&task_id));
+        let saved = tauri::async_runtime::spawn_blocking(move || {
+            let mut saved = Vec::new();
+            for file in files {
+                let Ok(request) = integrations::download_request(&reader, &file.url) else {
+                    continue;
+                };
+                let Ok(bytes) = download(&request) else {
+                    continue;
+                };
+                let path = folder.join(integrations::safe_file_name(&file.name));
+                if std::fs::create_dir_all(&folder).is_ok() && std::fs::write(&path, bytes).is_ok()
+                {
+                    saved.push(convoy_core::model::TaskAttachment {
+                        name: file.name.clone(),
+                        path,
+                    });
+                }
+            }
+            saved
+        })
+        .await
+        .unwrap_or_default();
+        if !saved.is_empty() {
+            let _ = workspace.act(|core| core.set_task_attachments(&task_id, saved).map(|_| ()));
+        }
+    }
+}
+
+/// A file's bytes, refused past the attachment limit.
+fn download(request: &HttpRequest) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(60))
+        .build();
+    let mut call = agent.request(request.method, &request.url);
+    for (name, value) in &request.headers {
+        call = call.set(name, value);
+    }
+    let response = call.call().map_err(|error| error.to_string())?;
+    let mut bytes = Vec::new();
+    response
+        .into_reader()
+        .take(integrations::ATTACHMENT_LIMIT + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    if bytes.len() as u64 > integrations::ATTACHMENT_LIMIT {
+        return Err("Too large.".into());
+    }
+    Ok(bytes)
 }
 
 /// Makes tasks of the issues not imported yet. Returns the new tasks, in
@@ -567,6 +651,7 @@ async fn intake_one(
         overrides: BTreeMap::new(),
     };
     let (created, _) = import_into(workspace, project_id, &connection, &issues, &options)?;
+    download_attachments(workspace, &connection, &created, &issues).await;
     Ok(created)
 }
 
