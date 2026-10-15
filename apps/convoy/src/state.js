@@ -50,7 +50,7 @@ export const state = {
   sessionId: null,
   /// A second session shown beside the first. In memory only: which two
   /// terminals someone had open is not worth writing to the workspace.
-  tab: "sessions",
+  tab: "tasks",
   filter: "",
   search: "",
   showArchived: false,

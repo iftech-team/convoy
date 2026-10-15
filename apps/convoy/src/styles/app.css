@@ -393,6 +393,13 @@ select:disabled {
   padding: 16px 28px 0;
 }
 
+/* A crowded header row squeezes its controls, never wraps their words. */
+.section .segmented button,
+.section .check,
+.section .section__count {
+  white-space: nowrap;
+}
+
 /* A header row with no hint under it still needs room before the list's
    border, or its buttons sit on the first row. */
 .section + .list,
@@ -7094,4 +7101,103 @@ select:disabled {
   letter-spacing: normal;
   text-transform: none;
   pointer-events: none;
+}
+
+/* ------------------------------------------------------- task-first nav -- */
+/* The project header's "How tasks run" chip, and the tab bar's labelled
+ * Search, Changes and New task. */
+
+.flow-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.flow-chip:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.flow-chip__label {
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+
+.flow-chip__step {
+  font-weight: 500;
+}
+
+.flow-chip__arrow {
+  color: var(--text-faint);
+}
+
+.tabbar__search,
+.tabbar__changes {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tabbar__search {
+  min-width: 150px;
+  border-color: var(--border);
+  background: var(--bg-subtle);
+}
+
+.tabbar__search kbd {
+  margin-left: auto;
+  padding-left: 10px;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 11px;
+}
+
+.tabbar__search:hover,
+.tabbar__changes:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.tabbar__search svg,
+.tabbar__changes svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tabbar__count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+
+.tabbar__actions .button--primary {
+  height: 28px;
+  margin-left: 4px;
 }

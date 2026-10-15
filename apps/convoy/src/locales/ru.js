@@ -1584,6 +1584,7 @@ export default {
     "Hide": "Скрыть",
     "Waiting for you": "Ждёт вашего ответа",
     "Closed": "Закрыта",
+    "Search sessions, projects and actions": "Поиск сессий, проектов и действий",
     // Glossary
     "Words Convoy uses": "Слова, которые использует Convoy",
     "What is {term}?": "Что такое «{term}»?",

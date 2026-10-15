@@ -355,6 +355,10 @@ try {
   await welcome.locator('.checklist__item--done[data-check="agent"]').waitFor();
   await welcome.locator('[data-checklist-do="open-folder"]').click();
   await page.getByRole("heading", { name: "Example", exact: true }).waitFor();
+  // A project opens on its tasks; its header says how they run.
+  await page.locator('[data-tab="tasks"][aria-selected="true"]').waitFor();
+  assert.equal((await page.locator(".flow-chip").textContent()).replace(/\s+/g, " ").trim(), "How tasks run Build");
+  await page.locator('[data-tab="sessions"]').click();
   await page.locator('[data-open="builder"]').first().click();
   await page.locator('[data-action="session-menu"]').last().click();
   await page.locator('[data-action="start-review"]').click();

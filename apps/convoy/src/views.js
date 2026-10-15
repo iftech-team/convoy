@@ -27,13 +27,26 @@ import { approvalsButton, approvalsPanel, inboxItems } from "./views-inbox.js";
 import { helperActivity, helpersButton, helpersMenu } from "./views-helpers.js";
 import { automationActivity } from "./views-automations.js";
 
+// Tasks first: they are what Convoy is for. Sessions are the agents'
+// runs underneath, there to open when one needs a closer look.
 const TABS = [
+  ["tasks", "Tasks"],
   ["sessions", "Sessions"],
   ["specs", "Specs"],
-  ["tasks", "Tasks"],
   ["docs", "Docs"],
   ["automations", "Automations"],
 ];
+
+/// The steps this project's tasks go through, from what the project list
+/// carries: the header shows them so nobody has to guess.
+export const flowSteps = (project) =>
+  [
+    project?.plan_first_default && "Plan",
+    "Build",
+    project?.review_auto && "Review",
+    project?.qa_auto && "Test",
+    project?.task_mode === "pr" ? "Pull request" : project?.task_mode === "push" ? "Push" : null,
+  ].filter(Boolean);
 
 // ---------------------------------------------------------------- sidebar --
 
@@ -391,7 +404,11 @@ export function header() {
           <div class="header__path" title="${escape(current.path)}">${escape(current.path)}</div>
         </div>
         <div class="header__actions">
-          ${button({ label: t("Settings"), icon: "gear", action: "project-settings", title: t("Project settings…") })}
+          <button class="flow-chip" data-action="project-pipeline" title="${escape(t("How tasks run"))}">
+            <span class="flow-chip__label">${escape(t("How tasks run"))}</span>
+            ${flowSteps(current).map((step) => `<span class="flow-chip__step">${escape(t(step))}</span>`).join('<span class="flow-chip__arrow">→</span>')}
+          </button>
+          ${button({ icon: "gear", kind: "icon", action: "project-settings", title: t("Project settings") })}
         </div>
       </div>
       <nav class="tabs">
@@ -827,7 +844,6 @@ export function quickMenu() {
 
 export function status() {
   const running = state.running.length;
-  const queues = state.queues.size;
   return `
     <footer class="status">
       <button class="status__item status__button" data-action="limits"
@@ -837,7 +853,6 @@ export function status() {
       </button>
       ${accountChip("claude")}${accountChip("codex")}${accountChip("gemini")}
       <span class="status__spacer"></span>
-      ${queues ? `<span class="status__item">${icons.bolt} ${escape(plural(queues, "queue"))}</span><span class="status__sep"></span>` : ""}
       ${needsYouButton()}
       <span class="status__item">${icons.terminal} ${escape(t("{count} running", { count: running }))}</span>
       <span class="status__sep"></span>
@@ -1104,6 +1119,10 @@ export function tabBar() {
     })
     .join("");
   const home = ["home", "dashboard", "usage"].includes(state.page);
+  const sessionTabs = state.tabs.some((id) => !isProjectTab(id));
+  const mac = /mac/i.test(navigator.platform);
+  // The Tasks page has New task in its own header; one is enough.
+  const tasksShown = state.tab === "tasks" && !state.page && !state.sessionId && !state.files;
   return `
     <div class="tabbar">
       <button class="tabbar__home${state.sidebarHidden ? "" : " tabbar__home--on"}" data-action="toggle-sidebar"
@@ -1114,7 +1133,10 @@ export function tabBar() {
         ${tabs || `<span class="tabbar__none">${escape(t("No open terminals"))}</span>`}
       </div>
       <span class="tabbar__actions">
-        <span class="layouts">
+        <button class="tabbar__search" data-action="palette" title="${escape(t("Search sessions, projects and actions"))}">
+          ${icons.search}<span>${escape(t("Search"))}</span><kbd>${mac ? "⌘K" : "Ctrl+K"}</kbd>
+        </button>
+        ${sessionTabs ? `<span class="layouts">`: ""}
           ${[
             [1, "paneOne", "One pane"],
             [2, "split", "Two panes"],
@@ -1125,14 +1147,19 @@ export function tabBar() {
                 `<button class="layouts__button" data-layout="${count}" aria-pressed="${state.layout === count}" title="${escape(t(name))}">${icons[glyph]}</button>`,
             )
             .join("")}
-        </span>
-        <button class="button button--icon counted" data-action="files" title="${escape(t("Files & Changes"))}">
-          ${icons.git}
-          ${state.settings.git_status !== false && state.git?.changed ? `<span class="counted__badge">${Math.min(99, state.git.changed)}</span>` : ""}
-        </button>
+        ${sessionTabs ? "</span>" : ""}
+        ${
+          project() || state.sessionId
+            ? `<button class="tabbar__changes" data-action="files" title="${escape(t("Files & Changes"))}">
+                ${icons.git}<span>${escape(t("Changes"))}</span>
+                ${state.settings.git_status !== false && state.git?.changed ? `<span class="tabbar__count">${Math.min(99, state.git.changed)}</span>` : ""}
+              </button>`
+            : ""
+        }
         ${approvalsButton()}
         ${bell()}
-        ${state.projects.length ? button({ icon: "plus", action: "new-session", kind: "icon", title: t("New session") }) : ""}
+        ${state.projects.length ? button({ icon: "terminal", action: "new-session", kind: "icon", title: t("New session") }) : ""}
+        ${project() && !tasksShown ? button({ label: t("New task"), icon: "plus", action: "new-task", kind: "primary" }) : ""}
       </span>
     </div>`;
 }

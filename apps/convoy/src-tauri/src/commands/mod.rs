@@ -136,6 +136,8 @@ pub struct ProjectView {
     pub auto_run_tasks: bool,
     /// Test commands or a QA agent are set up, so a task moved to testing is tested.
     pub qa: bool,
+    /// Finished tasks here are tested by themselves.
+    pub qa_auto: bool,
     /// New tasks here are reviewed automatically.
     pub review_auto: bool,
     /// New tasks here are planned first.
@@ -266,6 +268,7 @@ pub fn workspace_read(
                     task_mode: project.task_mode.clone(),
                     auto_run_tasks: project.auto_run_tasks == Some(true),
                     qa: convoy_core::qa::configured(project),
+                    qa_auto: project.qa_auto == Some(true) && convoy_core::qa::configured(project),
                     review_auto: project.review_auto == Some(true),
                     plan_first_default: project.plan_first_default == Some(true),
                     docs_auto: project.docs_auto == Some(true),

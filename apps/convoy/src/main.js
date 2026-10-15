@@ -711,6 +711,7 @@ const ACTIONS = {
   "history-sweep-run": runHistorySweep,
   "project-settings": () => openProjectSettings(),
   "project-tracker": () => openProjectSettings("tracker"),
+  "project-pipeline": () => openProjectSettings("pipeline"),
   "sync-suggest": () => {
     const link = state.projectDraft?.link;
     if (link?.sync && state.syncChoices?.suggested) return saveProjectLink({ ...link, sync: { ...link.sync, map: state.syncChoices.suggested } });
@@ -1318,7 +1319,7 @@ const SHORTCUT_ACTIONS = {
   limitsRefresh: () => refreshLimits(true),
 };
 
-const TAB_ORDER = ["sessions", "specs", "tasks", "docs", "automations"];
+const TAB_ORDER = ["tasks", "sessions", "specs", "docs", "automations"];
 
 const withSession = (run) => (session() ? run(session()) : undefined);
 const withProject = (run) => (project() ? run(project()) : undefined);
@@ -2378,6 +2379,8 @@ async function openFolder() {
   // The folder just opened is what to show next.
   if (["home", "dashboard", "usage"].includes(state.page)) state.page = null;
   if (!state.page && !state.sessionId && !state.files) keepProjectTab();
+  render();
+  if (state.tab === "specs" || state.tab === "tasks") await loadPlanning();
   render();
 }
 
