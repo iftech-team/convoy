@@ -365,12 +365,11 @@ export function contextMenu(menu) {
     ].join("");
   }
 
-  // Kept on screen: a menu opened near the bottom or right edge flips.
-  const left = Math.min(menu.x, window.innerWidth - 260);
-  const top = Math.min(menu.y, window.innerHeight - (menu.kind === "project" ? 300 : menu.kind === "task" ? 480 : 360));
+  // Opened where it was asked for; render() keeps it inside the window by
+  // its real size.
   return `
     <div class="scrim scrim--clear" data-dismiss="1">
-      <div class="menu menu--context" role="menu" style="left:${Math.max(8, left)}px;top:${Math.max(8, top)}px">
+      <div class="menu menu--context" role="menu" style="left:${Math.max(8, menu.x)}px;top:${Math.max(8, menu.y)}px">
         ${entries}
       </div>
     </div>`;

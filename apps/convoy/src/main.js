@@ -434,6 +434,13 @@ function render() {
   if (state.menu === "quick") app.insertAdjacentHTML("beforeend", quickMenu());
   if (state.menu === "remote") app.insertAdjacentHTML("beforeend", remoteMenu());
   if (state.menu?.kind) app.insertAdjacentHTML("beforeend", contextMenu(state.menu));
+  // A context menu stays inside the window, measured rather than guessed:
+  // one opened near the bottom rises until all of it shows.
+  for (const menu of app.querySelectorAll(".menu--context")) {
+    const box = menu.getBoundingClientRect();
+    if (box.bottom > window.innerHeight - 8) menu.style.top = `${Math.max(8, window.innerHeight - box.height - 8)}px`;
+    if (box.right > window.innerWidth - 8) menu.style.left = `${Math.max(8, window.innerWidth - box.width - 8)}px`;
+  }
   if (state.dialog) app.insertAdjacentHTML("beforeend", isImportDialog() ? imports.dialog() : dialogView());
   if (state.dialog?.kind === "login") terminal.mount(state.dialog.id, "#login-host");
 

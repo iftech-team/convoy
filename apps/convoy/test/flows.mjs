@@ -865,6 +865,18 @@ try {
   await page.locator('[data-menu-act="project-settings"]').waitFor();
   if (shots) await page.waitForTimeout(250), await page.screenshot({ path: `${shots}/project-menu.png` });
   await page.keyboard.press("Escape");
+  // Opened near the bottom of the window, a menu rises until all of it shows.
+  await page.evaluate(() => {
+    const row = document.querySelector('[data-menu-project="project"]');
+    row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 200, clientY: window.innerHeight - 10 }));
+  });
+  await page.locator('.menu--context [data-menu-act="remove"]').waitFor();
+  const menuFits = await page.evaluate(() => {
+    const box = document.querySelector(".menu--context").getBoundingClientRect();
+    return box.top >= 0 && box.bottom <= window.innerHeight;
+  });
+  assert(menuFits, "the project menu runs off the bottom of the window");
+  await page.keyboard.press("Escape");
   await page.locator('.row[data-menu-session="builder"]').click({ button: "right" });
   await page.locator('[data-menu-act="stop"]').waitFor();
   await page.keyboard.press("Escape");
