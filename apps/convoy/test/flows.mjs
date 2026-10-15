@@ -777,7 +777,9 @@ try {
   await page.locator("#draft-base").fill("origin/main");
   await page.locator('[data-action="confirm-branch"]').click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "files_mutate" && c.args.mutation.action === "branchFrom" && c.args.mutation.base === "origin/main" && c.args.mutation.branch === "hotfix"));
-  await page.locator('[data-action="files-close"]').click();
+  // Escape leaves Files & Changes, as its Back button does.
+  await page.keyboard.press("Escape");
+  await page.locator('[data-action="files-close"]').waitFor({ state: "detached" });
   // Specifications: a search box, and each spec's own work — a task made for
   // it, a session linked as its builder, and the review brief.
   await page.locator('[data-tab="specs"]').click();
@@ -1078,7 +1080,9 @@ try {
   assert.equal((await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "project_edit").at(-1).args.input)).max_parallel, 2);
   // Back as it was for what follows: tested by itself, nothing else.
   await page.evaluate(() => window.__TAURI_INTERNALS__.invoke("project_edit", { id: "project", input: { plan_first_default: false, plan_auto_approve: false, review_auto: false, task_mode: "", convoy_publishes: false, task_worktrees: false, auto_run_tasks: false, max_parallel: 1 } }));
-  await page.locator('[data-action="close-project-settings"]').click();
+  // Escape leaves project settings too.
+  await page.keyboard.press("Escape");
+  await page.locator('[data-action="close-project-settings"]').waitFor({ state: "detached" });
   await page.locator('[data-tab="tasks"]').click();
 
   // A failing check sends the task back, and the findings go straight to

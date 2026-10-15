@@ -2061,6 +2061,8 @@ addEventListener("keydown", async (event) => {
       return;
     }
     if (state.page === "settings") return closeSettings();
+    if (state.page === "project") return closeProjectSettings();
+    if (state.files) return ACTIONS["files-close"]();
     return;
   }
   if (state.dialog?.kind === "palette") {
@@ -4041,7 +4043,7 @@ function paletteEntries() {
     ["Theme: System", "Follow the system appearance", () => savePref({ theme: "system" })],
     ["Theme: Light", "", () => savePref({ theme: "light" })],
     ["Theme: Dark", "", () => savePref({ theme: "dark" })],
-    ["Setup check", "Find missing CLIs and configuration problems", () => openSettings("Setup")],
+    ["Setup check", "Find missing CLIs and configuration problems", () => openSettings("Get started")],
     ["Accounts", "Sign-ins for Claude Code and Codex", openAccounts],
     ["Project settings", "", openProjectSettings],
     ["Import provider history", "Conversations the agent already has for this folder", openTranscripts],

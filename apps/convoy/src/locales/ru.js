@@ -553,7 +553,7 @@ export default {
     "A review runs in the builder's own folder, so it reads exactly what was written there.": "Ревью идёт в папке исполнителя, поэтому агент видит ровно то, что там написано.",
     "Project actions": "Действия с проектом",
     "Session actions": "Действия с сессией",
-    "Branch and changed files": "Ветка и изменённые файлы",
+    "Open Files & Changes": "Открыть файлы и изменения",
     "Claude couldn't find this conversation": "Claude не нашёл этот диалог",
     "It may have closed before the first message. Start fresh; this session is kept.": "Возможно, он закрылся до первого сообщения. Начните заново — эта сессия сохранится.",
     "Start fresh": "Начать заново",

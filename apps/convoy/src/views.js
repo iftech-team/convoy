@@ -602,7 +602,7 @@ export function workbench() {
         <span class="section__spacer"></span>
         ${
           git
-            ? `<span class="bar-git" id="git-status" title="${escape(t("Branch and changed files"))}">${icons.branch} ${escape(git.branch)} · ${escape(t("{count} changed", { count: git.changed }))}</span>`
+            ? `<button type="button" class="bar-git" id="git-status" data-action="files" title="${escape(t("Open Files & Changes"))}">${icons.branch} ${escape(git.branch)} · ${escape(t("{count} changed", { count: git.changed }))}</button>`
             : ""
         }
         ${view === "terminal" ? helpersButton(current.id) : ""}

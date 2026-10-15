@@ -17,6 +17,7 @@ import { icon, icons } from "./icons.js";
 import { highlight, markdown } from "./views-files.js";
 import { helperCards, helperOf } from "./views-helpers.js";
 import { skillsChip } from "./views-skills.js";
+import { agentName } from "./task-defaults.js";
 import { missingConversation, thinOutput } from "./terminal.js";
 
 // ------------------------------------------------------------------ views --
@@ -883,7 +884,7 @@ function sync(host) {
     host.tray.hidden = !images;
   }
   const item = anySession(id);
-  const name = item?.agent === "codex" ? "Codex" : "Claude Code";
+  const name = agentName(item?.agent);
   host.input.placeholder = item?.archived
     ? t("This session is archived. Restore it to continue.")
     : item?.worktree_removed

@@ -400,13 +400,17 @@ function limits(settings) {
     )}`;
 }
 
+/// Gemini CLI has no separate accounts in Convoy, so it is left out here.
+const ACCOUNT_AGENTS = AGENTS.filter(([agent]) => agent !== "gemini");
+
 function accounts() {
   const profiles = state.profiles ?? [];
+  if (!ACCOUNT_AGENTS.some(([agent]) => agent === state.profileAgent)) state.profileAgent = "claude";
   const using = (agent, id) =>
     activeAccount(agent) === id
       ? `<span class="pref-ok">${icons.check} ${escape(t("Active"))}</span>`
       : button({ label: t("Use"), data: { "use-account": `${agent}:${id}` } });
-  const perAgent = AGENTS.map(([agent, name]) => {
+  const perAgent = ACCOUNT_AGENTS.map(([agent, name]) => {
     const own = profiles.filter((profile) => profile.agent === agent);
     const rows =
       row(t("System login"), t("Your normal login in a terminal. Convoy never changes it."), using(agent, "")) +
@@ -442,7 +446,7 @@ function accounts() {
       `<div class="pref-inline">
          ${segmented(
            "profile_agent",
-           AGENTS.map(([value, text]) => [value, text, agentIcon(value, 13)]),
+           ACCOUNT_AGENTS.map(([value, text]) => [value, text, agentIcon(value, 13)]),
            state.profileAgent,
          )}
          <input id="pref-profile-label" placeholder="${escape(t("Label, e.g. work"))}" spellcheck="false" />
