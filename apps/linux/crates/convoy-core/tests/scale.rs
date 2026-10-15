@@ -459,6 +459,7 @@ fn every_repository_is_published_from_its_own_worktree() {
     use convoy_core::publish;
     let fixture = fixture();
     let (mut workspace, admin) = fixture.with_project();
+    std::fs::create_dir_all(fixture.path().join(".git")).unwrap();
     let api_dir = fixture.path().join("api");
     std::fs::create_dir_all(&api_dir).unwrap();
     workspace.add_project(&api_dir).unwrap();

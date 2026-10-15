@@ -748,12 +748,7 @@ const ACTIONS = {
     const actions = await call("task_publish_start", { taskId: id });
     if (actions) await applyPipeline(actions);
   },
-  "task-pr-copy": async () => {
-    const task = state.dialog;
-    if (!task?.pr_title) return;
-    await navigator.clipboard.writeText(`${task.pr_title}\n\n${task.pr_body ?? ""}`);
-    toast(t("Copied"));
-  },
+
   "task-mark-done": async () => {
     const id = state.dialog?.id;
     if (id && (await done("task_status", { id, status: "done" }))) {
@@ -3483,8 +3478,6 @@ function pipelineNotice(action) {
       return toast(t("“{task}” waits for its QA environment: another task is testing in it.", { task }));
     case "published":
       return toast(action.detail ? t("“{task}” is published: {url}", { task, url: action.detail }) : t("“{task}” is pushed.", { task }));
-    case "described":
-      return toast(t("The pull request description for “{task}” is ready to copy.", { task }));
   }
 }
 

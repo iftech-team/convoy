@@ -290,7 +290,6 @@ pub fn summary(workspace: &Workspace, project_id: &str) -> Vec<String> {
                 crate::model::PublishMode::None => "no publishing",
                 crate::model::PublishMode::Pr => "pull request",
                 crate::model::PublishMode::Push => "push",
-                crate::model::PublishMode::Describe => "pull request description",
             };
             let waits = blocked_by(workspace.state(), task);
             format!(

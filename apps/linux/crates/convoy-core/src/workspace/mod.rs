@@ -410,7 +410,7 @@ impl Workspace {
         }
         if let Some(mode) = patch.task_mode.as_deref() {
             ensure!(
-                ["pr", "push", "describe", "none", ""].contains(&mode),
+                ["pr", "push", "none", ""].contains(&mode),
                 "Unknown task mode."
             );
         }

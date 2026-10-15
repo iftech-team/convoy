@@ -50,8 +50,7 @@
   `git push -u origin <branch>`, потом `gh pr create` (GitHub) или
   `glab mr create` (GitLab, в т.ч. self-hosted); CLI выбирается по хосту
   `origin` или настройкой `Project.pr_cli: auto | gh | glab`. URL из вывода →
-  `task.pr_url`, статус `pr`. `describe` → `task.pr_title/pr_body`, кнопка
-  «Скопировать». Сбой → `Attention`.
+  `task.pr_url`, статус `pr`. Сбой → `Attention`.
 - Порядок: … → QA pass → публикация → документация (ссылка на PR попадает
   в документ).
 

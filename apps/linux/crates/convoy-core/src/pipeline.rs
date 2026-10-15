@@ -111,7 +111,8 @@ pub enum Action {
     /// The builder finished a round: a running queue may start the next task.
     Built { task: String, project: String },
     /// Something to tell the person, by name: `ready`, `attention`,
-    /// `fixing`, `plan_ready`, `plan_approved`, `docs_written`.
+    /// `fixing`, `plan_ready`, `plan_approved`, `docs_written`, `published`,
+    /// `qa_queued`.
     Notice {
         task: String,
         event: &'static str,
@@ -390,6 +391,15 @@ fn fix(
     let running = (context.running)(&builder);
     let findings = head(findings, 16_000).to_string();
     change(workspace, task_id, move |task| {
+        // A QA run that waited for this review, or for its environment, is
+        // over: the next round is tested afresh.
+        if task
+            .qa
+            .as_ref()
+            .is_some_and(|run| matches!(run.status, QaStatus::Waiting | QaStatus::Queued))
+        {
+            task.qa = None;
+        }
         task.round = round;
         task.stage_run = Some(run);
         task.findings = findings;
@@ -821,9 +831,7 @@ pub fn poll(workspace: &mut Workspace, context: &Context<'_>) -> Result<Vec<Acti
                 stage::read(Stage::Pr, &stage::file(workspace, Stage::Pr, &run.id))
             {
                 actions.extend(hibernate(context, run.session_id.as_ref()));
-                actions.extend(crate::publish::written(
-                    workspace, context, &task.id, &title, &body,
-                )?);
+                actions.extend(crate::publish::written(workspace, &task.id, &title, &body)?);
                 continue;
             }
         }

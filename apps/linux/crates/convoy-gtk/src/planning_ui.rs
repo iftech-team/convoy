@@ -313,7 +313,6 @@ fn task_row(
                 PublishMode::None => "no publishing",
                 PublishMode::Pr => "pull request",
                 PublishMode::Push => "push",
-                PublishMode::Describe => "pull request description",
             },
             task.last_error
                 .as_deref()

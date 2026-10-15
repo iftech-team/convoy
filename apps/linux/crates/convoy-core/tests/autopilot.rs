@@ -236,6 +236,7 @@ impl ProcessRunner for Remote {
 fn publishing_project(mode: PublishMode) -> (common::Fixture, Workspace, String) {
     let fixture = fixture();
     let (mut workspace, project) = fixture.with_project();
+    std::fs::create_dir_all(fixture.path().join(".git")).unwrap();
     workspace
         .edit_project(
             &project,
@@ -260,7 +261,7 @@ fn a_builder_commits_and_leaves_publishing_to_convoy() {
 }
 
 #[test]
-fn a_ready_task_is_described_then_published_on_gitlab() {
+fn a_ready_task_is_written_up_then_published_on_gitlab() {
     let (_fixture, mut workspace, id) = publishing_project(PublishMode::Pr);
     let actions = pipeline::handle(
         &mut workspace,
@@ -370,36 +371,6 @@ fn uncommitted_work_is_never_published() {
 }
 
 #[test]
-fn a_description_only_task_keeps_it_for_a_person() {
-    let (_fixture, mut workspace, id) = publishing_project(PublishMode::Describe);
-    pipeline::handle(
-        &mut workspace,
-        &context(),
-        &id,
-        Event::Review(Some(true), String::new()),
-    )
-    .unwrap();
-    let run = task(&workspace, &id).publish_run.unwrap();
-    let file = stage::file(&workspace, Stage::Pr, &run.id);
-    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
-    std::fs::write(
-        &file,
-        r#"{"title": "LOYAL-523: tokens", "body": "SEED: none"}"#,
-    )
-    .unwrap();
-    let actions = pipeline::poll(&mut workspace, &context()).unwrap();
-    assert!(!actions
-        .iter()
-        .any(|action| matches!(action, Action::Publish { .. })));
-    let described = task(&workspace, &id);
-    assert_eq!(
-        described.publish_run.unwrap().status,
-        PublishStatus::Described
-    );
-    assert_eq!(described.pr_body.as_deref(), Some("SEED: none"));
-}
-
-#[test]
 fn the_tool_follows_the_remote() {
     assert_eq!(
         publish::cli_for("git@gitlab.eskhata.com:wallet/api.git"),
@@ -408,4 +379,77 @@ fn the_tool_follows_the_remote() {
     assert_eq!(publish::cli_for("https://gitlab.com/a/b.git"), "glab");
     assert_eq!(publish::cli_for("git@github.com:a/b.git"), "gh");
     assert_eq!(publish::cli_for("https://git.corp.example/a/b.git"), "gh");
+}
+
+#[test]
+fn a_folder_of_repositories_is_published_by_its_builder() {
+    let fixture = fixture();
+    let (mut workspace, project) = fixture.with_project();
+    workspace
+        .edit_project(
+            &project,
+            ProjectPatch {
+                convoy_publishes: Some(true),
+                ..ProjectPatch::default()
+            },
+        )
+        .unwrap();
+    let id = add_task(
+        &mut workspace,
+        &project,
+        "Across the folder",
+        PublishMode::Pr,
+    );
+    workspace.prepare_task(&id, None).unwrap();
+    // No git here: the builder is told to publish, and Convoy does not.
+    let builder = task(&workspace, &id).session_id.unwrap();
+    let brief = workspace.session(&builder).unwrap().prompt.clone();
+    assert!(!brief.contains(publish::BUILDER_NOTE));
+    assert!(brief.contains("create a pull request"));
+    assert!(!publish::due(&workspace, &task(&workspace, &id)));
+    let actions = pipeline::handle(
+        &mut workspace,
+        &context(),
+        &id,
+        Event::Review(Some(true), String::new()),
+    )
+    .unwrap();
+    assert!(!actions
+        .iter()
+        .any(|action| matches!(action, Action::Publish { .. } | Action::Start { .. })));
+    assert!(task(&workspace, &id).publish_run.is_none());
+}
+
+#[test]
+fn a_failed_review_ends_the_qa_run_that_waited_for_it() {
+    let fixture = fixture();
+    let (mut workspace, project) = fixture.with_project();
+    let id = add_task(&mut workspace, &project, "Waits", PublishMode::None);
+    workspace.prepare_task(&id, None).unwrap();
+    workspace
+        .update(|state| {
+            state.tasks[0].qa = Some(convoy_core::qa::QaRun {
+                id: "q".into(),
+                status: convoy_core::qa::QaStatus::Waiting,
+                checks: Vec::new(),
+                session_id: None,
+                findings: String::new(),
+                started: String::new(),
+                finished: None,
+            });
+            Ok(())
+        })
+        .unwrap();
+    pipeline::handle(
+        &mut workspace,
+        &context(),
+        &id,
+        Event::Review(Some(false), "1. Wrong.".into()),
+    )
+    .unwrap();
+    assert_eq!(task(&workspace, &id).round, 1);
+    assert!(
+        task(&workspace, &id).qa.is_none(),
+        "no stale QA wait on the card"
+    );
 }

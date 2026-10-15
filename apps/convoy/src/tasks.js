@@ -15,7 +15,7 @@ const MODELS = {
   gemini: [["auto-gemini-3", "Auto · Gemini 3"], ["gemini-3-pro-preview", "Gemini 3 Pro"], ["gemini-2.5-pro", "Gemini 2.5 Pro"], ["gemini-2.5-flash", "Gemini 2.5 Flash"]],
 };
 const AGENTS = [["claude", "Claude Code"], ["codex", "Codex"], ["gemini", "Gemini CLI"]];
-const MODES = [["pr", "Pull request"], ["describe", "PR description only"], ["push", "Push"], ["none", "Commit only"]];
+const MODES = [["pr", "Pull request"], ["push", "Push"], ["none", "Commit only"]];
 const STATUS = {
   queued: ["Queued", "state"],
   building: ["Building", "state state--running"],

@@ -181,9 +181,6 @@ pub enum PublishMode {
     None,
     Pr,
     Push,
-    /// Only the pull request's description is written, for a person to open
-    /// it with.
-    Describe,
 }
 
 impl PublishMode {
@@ -192,19 +189,13 @@ impl PublishMode {
             PublishMode::None => "none",
             PublishMode::Pr => "pr",
             PublishMode::Push => "push",
-            PublishMode::Describe => "describe",
         }
     }
 
     pub fn parse(value: &str) -> Option<Self> {
-        [
-            PublishMode::None,
-            PublishMode::Pr,
-            PublishMode::Push,
-            PublishMode::Describe,
-        ]
-        .into_iter()
-        .find(|mode| mode.as_str() == value)
+        [PublishMode::None, PublishMode::Pr, PublishMode::Push]
+            .into_iter()
+            .find(|mode| mode.as_str() == value)
     }
 }
 

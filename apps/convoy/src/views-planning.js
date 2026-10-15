@@ -24,7 +24,7 @@ const COLUMNS = [
   ["failed", "Failed", "failed"],
 ];
 
-const MODES = { none: "no publishing", pr: "pull request", push: "push", describe: "PR description" };
+const MODES = { none: "no publishing", pr: "pull request", push: "push" };
 
 // ------------------------------------------------------------ tracker sync --
 

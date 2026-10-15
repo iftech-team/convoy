@@ -7,8 +7,7 @@
 //! goes — writes the pull request's title and description to a file
 //! ([`crate::stage`]). Then Convoy pushes the branch and opens the pull or
 //! merge request with `gh` or `glab`, on GitHub, GitLab or their self-hosted
-//! servers. A task set only to describe keeps the description for a person
-//! to open the request with; a task set to push is pushed.
+//! servers. A task set to push is pushed.
 //!
 //! The commands run off the window's thread ([`run`]); what they print is
 //! read for the link. Any failure leaves the task needing attention, with
@@ -33,8 +32,6 @@ pub enum PublishStatus {
     /// Convoy is pushing and opening the request.
     Publishing,
     Published,
-    /// The description is written, for a person to open the request with.
-    Described,
     Failed,
 }
 
@@ -55,19 +52,21 @@ pub struct PublishRun {
 /// What the builder is told about publishing when Convoy does it.
 pub const BUILDER_NOTE: &str = "Commit your work on the current branch with clear messages. Do not push and do not open a pull request: Convoy publishes it after review and QA.";
 
+/// Whether Convoy publishes a project's tasks: it asks to, and it is a git
+/// repository. A folder of repositories has none to push; its builder
+/// publishes in the ones it changed, as before.
+pub fn by_convoy(project: &crate::model::Project) -> bool {
+    project.convoy_publishes == Some(true) && project.path.join(".git").exists()
+}
+
 /// Whether Convoy publishes this task, and has not yet.
 pub fn due(workspace: &Workspace, task: &Task) -> bool {
     task.mode != PublishMode::None
-        && workspace
-            .project(&task.project_id)
-            .is_ok_and(|project| project.convoy_publishes == Some(true))
+        && workspace.project(&task.project_id).is_ok_and(by_convoy)
         && !task.publish_run.as_ref().is_some_and(|run| {
             matches!(
                 run.status,
-                PublishStatus::Writing
-                    | PublishStatus::Publishing
-                    | PublishStatus::Published
-                    | PublishStatus::Described
+                PublishStatus::Writing | PublishStatus::Publishing | PublishStatus::Published
             )
         })
 }
@@ -196,16 +195,13 @@ pub fn begin(
     }])
 }
 
-/// The author wrote the title and description: a request is opened next, a
-/// description is kept for a person.
+/// The author wrote the title and description: the request is opened next.
 pub fn written(
     workspace: &mut Workspace,
-    context: &Context<'_>,
     task_id: &str,
     title: &str,
     body: &str,
 ) -> Result<Vec<Action>> {
-    let task = find(workspace, task_id)?;
     let (title, body) = (
         head(title.trim(), 300).to_string(),
         head(body.trim(), 60_000).to_string(),
@@ -217,31 +213,16 @@ pub fn written(
             "The author wrote no title for the pull request.",
         );
     }
-    let describe = task.mode == PublishMode::Describe;
     pipeline::change(workspace, task_id, move |task| {
         task.pr_title = Some(title);
         task.pr_body = Some(body);
         if let Some(run) = task.publish_run.as_mut() {
-            if describe {
-                run.status = PublishStatus::Described;
-                run.finished = Some(crate::time::now_iso8601());
-            } else {
-                run.status = PublishStatus::Publishing;
-            }
+            run.status = PublishStatus::Publishing;
         }
     })?;
-    if !describe {
-        return Ok(vec![Action::Publish {
-            task: task_id.to_string(),
-        }]);
-    }
-    let mut actions = vec![Action::Notice {
+    Ok(vec![Action::Publish {
         task: task_id.to_string(),
-        event: "described",
-        detail: String::new(),
-    }];
-    actions.extend(after(workspace, context, task_id)?);
-    Ok(actions)
+    }])
 }
 
 /// What publishing runs, read while the workspace is held so the commands

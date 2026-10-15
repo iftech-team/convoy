@@ -719,7 +719,7 @@ const taskForm = (dialog) => {
         t("Publishing"),
         choice(
           "mode",
-          [["none", t("Do not publish")], ["pr", t("Pull request")], ["describe", t("PR description only")], ["push", t("Push")]],
+          [["none", t("Do not publish")], ["pr", t("Pull request")], ["push", t("Push")]],
           dialog.mode,
         ),
       )}
@@ -843,7 +843,6 @@ const PUBLISH_HEADLINES = {
   writing: ["The pull request is being written…", "running"],
   publishing: ["Pushing and opening the request…", "running"],
   published: ["Published", "done"],
-  described: ["The description is ready", "done"],
   failed: ["Not published", "failed"],
 };
 
@@ -860,13 +859,12 @@ function publishPanel(task) {
         <span class="qa-panel__title">${escape(t(headline))}</span>
       </div>
       ${run?.error ? `<div class="qa-panel__findings">${escape(run.error)}</div>` : ""}
-      ${task.pr_title ? `<details${run?.status === "described" ? " open" : ""}><summary>${escape(task.pr_title)}</summary><div class="plan-text docs__render">${markdown(task.pr_body ?? "")}</div></details>` : ""}
+      ${task.pr_title ? `<details><summary>${escape(task.pr_title)}</summary><div class="plan-text docs__render">${markdown(task.pr_body ?? "")}</div></details>` : ""}
       <div class="qa-panel__actions">
         ${task.pr_url ? button({ label: t("Open pull request"), icon: "open", data: { "task-pr": task.id } }) : ""}
         ${(task.extra_pr_urls ?? [])
           .map((url, index) => button({ label: url.replace(/^https?:\/\/[^/]+\//, ""), icon: "open", kind: "quiet", data: { "task-pr-extra": `${task.id}:${index}` } }))
           .join("")}
-        ${task.pr_title ? button({ label: t("Copy title and description"), icon: "copy", action: "task-pr-copy", kind: "quiet" }) : ""}
         ${busy || run?.status === "published" ? "" : button({ label: run ? t("Publish again") : t("Publish now"), icon: "refresh", action: "task-publish", kind: "quiet" })}
       </div>
     </section>`;

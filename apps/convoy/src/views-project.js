@@ -72,7 +72,9 @@ function autopilot(project) {
      )}
      ${row(
        t("Convoy publishes"),
-       t("Builders commit and stop; once review and QA pass, Convoy pushes the branch and opens the request, with a description from the Pull request author role."),
+       repository
+         ? t("Builders commit and stop; once review and QA pass, Convoy pushes the branch and opens the request, with a description from the Pull request author role.")
+         : t("This project is a folder, not a git repository: its builders publish in the repositories they changed, as the task's publishing says. Turn this on in the repositories inside it."),
        `<button class="switch" data-proj-toggle="convoy_publishes" aria-pressed="${!!project.convoy_publishes}"
                 aria-label="${escape(t("Convoy publishes"))}"></button>`,
      )}
@@ -483,7 +485,6 @@ export function projectSettingsPage() {
               [
                 ["none", t("Commit only")],
                 ["pr", t("Pull request")],
-                ["describe", t("PR description only")],
                 ["push", t("Push")],
               ],
               project.task_mode || "none",

@@ -750,15 +750,12 @@ impl Workspace {
                 .projects
                 .iter()
                 .find(|project| project.id == task.project_id)
-                .is_some_and(|project| project.convoy_publishes == Some(true));
+                .is_some_and(crate::publish::by_convoy);
             let publication = match task.mode {
                 PublishMode::None => NO_PUBLISH_NOTE,
                 _ if convoy_publishes => crate::publish::BUILDER_NOTE,
                 PublishMode::Pr => PR_NOTE,
                 PublishMode::Push => PUSH_NOTE,
-                // Only the description is wanted: the builder commits, and a
-                // person opens the request.
-                PublishMode::Describe => crate::publish::BUILDER_NOTE,
             };
             let preamble = spec
                 .as_ref()
