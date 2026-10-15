@@ -878,7 +878,7 @@ export function docsPanel(task) {
       (doc) => `
         <li class="qa-check">
           <div class="qa-check__line">
-            <span class="qa-check__mark">${doc.kind === "pdf" ? "PDF" : "MD"}</span>
+            <span class="doc-kind">${doc.kind === "pdf" ? "PDF" : "MD"}</span>
             <code class="qa-check__command">${escape(doc.title)}</code>
             ${button({ icon: "open", kind: "quiet", title: t("Open in the system viewer"), data: { "task-doc-open": doc.path } })}
             ${button({ icon: "folder", kind: "quiet", title: t("Show in Finder"), data: { "task-doc-reveal": doc.path } })}

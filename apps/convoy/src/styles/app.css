@@ -6339,6 +6339,19 @@ select:disabled {
   text-align: center;
 }
 
+/* A task document's type, as a small tag before its name. */
+.doc-kind {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid color-mix(in srgb, var(--state-done) 45%, var(--border));
+  border-radius: 4px;
+  color: var(--state-done);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+}
+
 .qa-check--failed .qa-check__mark {
   color: var(--state-failed);
 }

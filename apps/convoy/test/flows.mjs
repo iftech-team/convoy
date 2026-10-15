@@ -1109,6 +1109,7 @@ try {
     window.qaStart = (id) => {
       Object.assign(window.mockTasks.find((item) => item.id === id), {
         status: "testing",
+        docs: [{ title: "LOYAL-545", kind: "pdf", path: "/fixture/docs/LOYAL-545.pdf" }],
         qa: { id: "r2", status: "passed", started: new Date().toISOString(), checks: [
           { command: "npm test", ok: true, code: 0, seconds: 40, output: "" },
           { command: "npm run lint", ok: true, code: 0, seconds: 3, output: "" },
@@ -1119,6 +1120,11 @@ try {
   });
   await page.locator('.task-page [data-action="task-qa-run"]').click();
   await page.locator(".task-page .qa-panel", { hasText: "QA passed" }).waitFor();
+  // Its document under Document: the type tag apart from the name.
+  const docLine = page.locator('.task-page .step[data-step="document"] .qa-check__line').first();
+  const [kindRight, nameLeft] = await docLine.evaluate((line) => [line.querySelector(".doc-kind").getBoundingClientRect().right, line.querySelector(".qa-check__command").getBoundingClientRect().left]);
+  assert(nameLeft - kindRight >= 6, `the PDF tag touches the name (${nameLeft - kindRight}px)`);
+  if (shots) await page.locator('.task-page .step[data-step="document"]').screenshot({ path: `${shots}/task-doc.png` });
   // Ready: Mark done is the page's next step.
   await page.locator(".task-page__phase", { hasText: "QA passed" }).waitFor();
   await page.locator('.task-page__actions [data-action="task-mark-done"]').click();
