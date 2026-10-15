@@ -58,6 +58,7 @@ try {
       if (cmd === "doc_read") return window.docs[args.path];
       if (cmd === "doc_write") { window.docs[args.path] = args.text; return null; }
       if (cmd === "spec_create") { const path = ".specdesk/specs/checkout-retries.md"; window.docs[path] = "# Checkout retries\n\n## Problem\n"; return path; }
+      if (cmd === "task_docs_list") return window.taskDocs ?? [];
       if (cmd === "doc_prompts") return { project_doc: "Write the project document", spec: "Draft the specification" };
       if (cmd === "monitor_tick") return { states: [{ id: "builder", state: "waiting", notable: false }], hibernate: [], changed: false };
       if (cmd === "plugin:dialog|open") return "/fixture/Example";
@@ -1158,6 +1159,21 @@ try {
   await page.locator('[data-action="doc-save"]').click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "doc_write" && c.args.text.endsWith("More.")));
   if (shots) await page.screenshot({ path: `${shots}/docs.png` });
+  // Many task documents: the list scrolls, and each two-line row keeps its
+  // height rather than running into the next.
+  await page.evaluate(() => {
+    window.taskDocs = Array.from({ length: 40 }, (_, index) => ({
+      path: `/fixture/docs/LOYAL-${500 + index}.pdf`, title: `LOYAL-${500 + index}`, kind: "pdf", created: "2026-10-15T10:00:00Z",
+    }));
+  });
+  await page.locator('[data-action="doc-reload"]').click();
+  await page.locator(".doc-file--task").nth(39).waitFor({ state: "attached" });
+  // Each row's second line ends above the next row.
+  const overlaps = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll(".doc-file--task")];
+    return rows.slice(1).filter((row, index) => row.getBoundingClientRect().top < rows[index].querySelector(".doc-file__meta").getBoundingClientRect().bottom - 0.5).length;
+  });
+  assert.equal(overlaps, 0, "task document rows overlap");
 
   // Plan first: the plan waits for you to approve it; a comment goes back to
   // the planner, and approving it builds the task.

@@ -2871,6 +2871,12 @@ select:disabled {
   gap: 1px;
 }
 
+/* A long list scrolls; its rows keep their height instead of shrinking
+ * into each other. */
+.docs__files > * {
+  flex: none;
+}
+
 .doc-group {
   padding: 8px 8px 2px;
   font-size: 9.5px;
