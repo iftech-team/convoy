@@ -2214,7 +2214,8 @@ select:disabled {
   color: var(--text-faint);
 }
 
-.sidebar__gear {
+.sidebar__gear,
+.sidebar__help {
   flex: none;
   display: grid;
   place-items: center;
@@ -2225,9 +2226,32 @@ select:disabled {
 }
 
 .sidebar__gear:hover,
+.sidebar__help:hover,
 .sidebar__gear[aria-pressed="true"] {
   background: var(--bg-hover);
   color: var(--accent-text);
+}
+
+.sidebar__help {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Setup is not finished: the gear says so with a dot. */
+.sidebar__gear--setup {
+  position: relative;
+}
+
+.sidebar__gear--setup::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid var(--bg-subtle);
+  border-radius: 50%;
+  background: var(--state-review);
 }
 
 /* Context menus open at the pointer, not in the toolbar corner. */

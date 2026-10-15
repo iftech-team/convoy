@@ -1585,6 +1585,7 @@ export default {
     "Waiting for you": "Ждёт вашего ответа",
     "Closed": "Закрыта",
     "Search sessions, projects and actions": "Поиск сессий, проектов и действий",
+    "Settings · setup is not finished": "Настройки · настройка не завершена",
     // Glossary
     "Words Convoy uses": "Слова, которые использует Convoy",
     "What is {term}?": "Что такое «{term}»?",

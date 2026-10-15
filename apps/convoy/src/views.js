@@ -26,6 +26,7 @@ import { skillsChip, skillsMenu } from "./views-skills.js";
 import { approvalsButton, approvalsPanel, inboxItems } from "./views-inbox.js";
 import { helperActivity, helpersButton, helpersMenu } from "./views-helpers.js";
 import { automationActivity } from "./views-automations.js";
+import { gettingStarted } from "./views-home.js";
 
 // Tasks first: they are what Convoy is for. Sessions are the agents'
 // runs underneath, there to open when one needs a closer look.
@@ -238,7 +239,9 @@ export function sidebar() {
           <button class="sidebar__link" data-action="open-folder">${icons.folder} ${escape(t("Open folder…"))}</button>
           <span class="sidebar__hint">${escape(t("A repository, or a folder of related projects."))}</span>
         </div>
-        <button class="sidebar__gear" data-action="settings" title="${escape(t("Settings"))}"
+        <button class="sidebar__help" data-action="glossary" title="${escape(t("Words Convoy uses"))}">?</button>
+        <button class="sidebar__gear${gettingStarted().complete ? "" : " sidebar__gear--setup"}" data-action="settings"
+                title="${escape(gettingStarted().complete ? t("Settings") : t("Settings · setup is not finished"))}"
                 aria-pressed="${state.page === "settings"}">${icons.gear}</button>
       </div>
     </aside>`;

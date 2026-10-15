@@ -712,6 +712,10 @@ const ACTIONS = {
   "project-settings": () => openProjectSettings(),
   "project-tracker": () => openProjectSettings("tracker"),
   "project-pipeline": () => openProjectSettings("pipeline"),
+  glossary: async () => {
+    await openSettings("Get started");
+    document.querySelector("#glossary")?.scrollIntoView({ block: "start" });
+  },
   "sync-suggest": () => {
     const link = state.projectDraft?.link;
     if (link?.sync && state.syncChoices?.suggested) return saveProjectLink({ ...link, sync: { ...link.sync, map: state.syncChoices.suggested } });
