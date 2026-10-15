@@ -76,6 +76,8 @@ export function tasksView() {
   if (!planning) return `<div class="list__none">${escape(t("Reading…"))}</div>`;
   const running = state.queues.has(state.projectId);
   const tasks = shownTasks();
+  // Which tasks show is one menu, so the header keeps to one line.
+  const filtered = state.taskScope === "all" || !!state.hideDone;
 
   const head = `
     <div class="section">
@@ -86,11 +88,10 @@ export function tasksView() {
         <button data-task-view="list" aria-pressed="${state.taskView === "list"}">${escape(t("List"))}</button>
         <button data-task-view="board" aria-pressed="${state.taskView !== "list"}">${escape(t("Board"))}</button>
       </div>
-      <div class="segmented">
-        <button data-task-scope="project" aria-pressed="${state.taskScope !== "all"}">${escape(t("This project"))}</button>
-        <button data-task-scope="all" aria-pressed="${state.taskScope === "all"}">${escape(t("All projects"))}</button>
-      </div>
-      <label class="check"><input type="checkbox" data-toggle-state="hideDone" ${state.hideDone ? "checked" : ""} /> ${escape(t("Hide done"))}</label>
+      <button class="button${filtered ? " button--on" : ""}" data-action="task-filters" aria-haspopup="menu"
+              aria-expanded="${state.menu?.kind === "task-filters"}">
+        ${icons.sliders}${escape(filtered ? [state.taskScope === "all" ? t("All projects") : "", state.hideDone ? t("Hide done") : ""].filter(Boolean).join(" · ") : t("Filters"))}
+      </button>
       <span class="section__spacer"></span>
       <span class="section__count">${escape(t("{count} waiting", { count: planning.queued }))} ${hint("waiting")}</span>
       ${button({
@@ -101,7 +102,7 @@ export function tasksView() {
         disabled: !running && planning.queued === 0,
       })}
       ${button({ label: t("Import tasks"), action: "import" })}
-      ${button({ label: t("Integrations"), action: "integrations" })}
+      ${button({ icon: "link", action: "integrations", title: t("Integrations") })}
       ${button({ label: t("New task"), icon: "plus", action: "new-task", kind: "primary" })}
     </div>`;
 
@@ -206,5 +207,23 @@ function board(tasks) {
             </div>
           </div>`;
       }).join("")}
+    </div>`;
+}
+
+/// The Tasks header's Filters menu: whose tasks, and whether done ones show.
+export function taskFiltersMenu(anchor) {
+  const scope = (value, label) => `
+    <button class="menu__item" role="menuitemradio" aria-checked="${(state.taskScope === "all") === (value === "all")}" data-task-scope="${value}">
+      <span class="menu__icon">${(state.taskScope === "all") === (value === "all") ? icons.check : ""}</span><span>${escape(t(label))}</span>
+    </button>`;
+  return `
+    <div class="scrim scrim--clear" data-dismiss="1">
+      <div class="menu menu--anchored" role="menu" style="${anchor}">
+        <div class="helpers-menu__label">${escape(t("Show tasks from"))}</div>
+        ${scope("project", "This project")}
+        ${scope("all", "All projects")}
+        <div class="menu__divider"></div>
+        <label class="menu__item menu__check"><input type="checkbox" data-toggle-state="hideDone" ${state.hideDone ? "checked" : ""} /> <span>${escape(t("Hide done"))}</span></label>
+      </div>
     </div>`;
 }

@@ -1047,6 +1047,10 @@ const ACTIONS = {
     state.menu = state.menu?.kind === "skills" && state.menu.id === id ? null : { kind: "skills", id };
     render();
   },
+  "task-filters": () => {
+    state.menu = state.menu?.kind === "task-filters" ? null : { kind: "task-filters" };
+    render();
+  },
   "helpers-menu": () => {
     state.menu = state.menu?.kind === "helpers" ? null : { kind: "helpers", id: state.sessionId };
     render();

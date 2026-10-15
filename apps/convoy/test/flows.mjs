@@ -662,9 +662,12 @@ try {
   await page.locator('[data-task-card="task"]').dragTo(page.locator('[data-task-column="working"]'));
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_prepare" && c.args.id === "task"));
   // Every project's tasks, each marked with its project.
+  await page.locator('[data-action="task-filters"]').click();
   await page.locator('[data-task-scope="all"]').click();
   await page.locator('[data-task-card="task"] .card__project', { hasText: "Example" }).waitFor();
+  await page.locator('[data-action="task-filters"]', { hasText: "All projects" }).waitFor();
   await page.locator('[data-task-scope="project"]').click();
+  await page.keyboard.press("Escape");
   // The list groups by status under a bar per group, one line per task with
   // its issue key; it is remembered, and rows drag onto another group.
   await page.locator('[data-task-view="list"]').click();

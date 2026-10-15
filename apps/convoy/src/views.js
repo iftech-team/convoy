@@ -18,7 +18,7 @@ import { agentName } from "./task-defaults.js";
 import { activeAccount, anySession, isProjectTab, isRunning, phaseOf, project, session, sessionState, state, visibleSessions } from "./state.js";
 import { sessionLabel, sessionTone, sleptBy } from "./session-state.js";
 import { stageIndex } from "./stages.js";
-import { runnable } from "./views-planning.js";
+import { runnable, taskFiltersMenu } from "./views-planning.js";
 import { movable } from "./phase.js";
 import { missingConversation } from "./terminal.js";
 import { shownAsTranscript, viewOf } from "./views-chat.js";
@@ -258,6 +258,7 @@ export function contextMenu(menu) {
   if (menu.kind === "tab") return tabMenu(menu);
   if (menu.kind === "activity") return activityPanel();
   if (menu.kind === "approvals") return approvalsPanel();
+  if (menu.kind === "task-filters") return taskFiltersMenu(anchorStyle());
   const item = (label, act, { icon = "", enabled = true, danger = false, hint = "" } = {}) => `
     <button class="menu__item${danger ? " menu__item--danger" : ""}" data-menu-act="${act}"
             ${enabled ? "" : "disabled"}>

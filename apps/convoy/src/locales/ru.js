@@ -1600,6 +1600,7 @@ export default {
     "Tasks in every project": "Задачи во всех проектах",
     "Recent sessions": "Недавние сессии",
     "No sessions yet. Tasks start them, or start one with New session.": "Сессий пока нет. Их запускают задачи, или начните сессию через «Новая сессия».",
+    "Show tasks from": "Показывать задачи из",
     // Glossary
     "Words Convoy uses": "Слова, которые использует Convoy",
     "What is {term}?": "Что такое «{term}»?",

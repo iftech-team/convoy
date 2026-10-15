@@ -40,6 +40,23 @@
   --state-done: #22c55e;
   --state-failed: #ef4444;
 
+  /* Each state's pill: a soft fill and text dark enough to read on it. The
+   * dot keeps the strong colour; a pill always carries the state's name. */
+  --state-idle-soft: #f1f1f4;
+  --state-idle-text: #55555f;
+  --state-running-soft: #e8f0fe;
+  --state-running-text: #1d4fbf;
+  --state-review-soft: #fff0e5;
+  --state-review-text: #b54708;
+  --state-open-soft: #fbe8fd;
+  --state-open-text: #a21caf;
+  --state-testing-soft: #e3f7f4;
+  --state-testing-text: #0b7a6e;
+  --state-done-soft: #e6f7ec;
+  --state-done-text: #177a3d;
+  --state-failed-soft: #fdecec;
+  --state-failed-text: #b91c1c;
+
   --radius-sm: 6px;
   --radius: 8px;
   --radius-lg: 10px;
@@ -63,6 +80,24 @@
   --term-selection: rgba(91, 91, 214, 0.18);
   --term-find: #fde68a;
   --term-find-active: #f59e0b;
+
+  /* Type scale. New and touched rules use these instead of one-off sizes. */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+
+  /* Spacing, on a 4px step. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
 
   --header-height: 52px;
   --status-height: 34px;
@@ -101,6 +136,20 @@
     --term-selection: rgba(110, 110, 230, 0.3);
     --term-find: #6b5a14;
     --term-find-active: #b45309;
+    --state-idle-soft: #26262c;
+    --state-idle-text: #a8a8b3;
+    --state-running-soft: #172338;
+    --state-running-text: #8fb8ff;
+    --state-review-soft: #33220f;
+    --state-review-text: #fdba74;
+    --state-open-soft: #2f1733;
+    --state-open-text: #f0abfc;
+    --state-testing-soft: #0f2c2a;
+    --state-testing-text: #5eead4;
+    --state-done-soft: #102a1a;
+    --state-done-text: #86efac;
+    --state-failed-soft: #331616;
+    --state-failed-text: #fca5a5;
   }
 }
 
@@ -145,4 +194,18 @@
   --term-selection: rgba(110, 110, 230, 0.3);
   --term-find: #6b5a14;
   --term-find-active: #b45309;
+  --state-idle-soft: #26262c;
+  --state-idle-text: #a8a8b3;
+  --state-running-soft: #172338;
+  --state-running-text: #8fb8ff;
+  --state-review-soft: #33220f;
+  --state-review-text: #fdba74;
+  --state-open-soft: #2f1733;
+  --state-open-text: #f0abfc;
+  --state-testing-soft: #0f2c2a;
+  --state-testing-text: #5eead4;
+  --state-done-soft: #102a1a;
+  --state-done-text: #86efac;
+  --state-failed-soft: #331616;
+  --state-failed-text: #fca5a5;
 }

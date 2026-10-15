@@ -4412,30 +4412,49 @@ select:disabled {
 
 /* Where a task stands, in one line: a dot and a few words. On a card it
  * may wrap; in a row it gives way to the title. */
+/* Where a task stands, as a labelled pill in its state's colours. */
 .phase-tag {
+  --tone-soft: var(--state-idle-soft);
+  --tone-text: var(--state-idle-text);
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  color: var(--text-muted);
-  font-size: 12px;
+  max-width: 100%;
+  padding: 2px var(--space-2) 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--tone-soft);
+  color: var(--tone-text);
+  font-size: var(--text-xs);
+  font-weight: 550;
+  line-height: 1.45;
 }
+
+.phase-tag--running { --tone-soft: var(--state-running-soft); --tone-text: var(--state-running-text); }
+.phase-tag--review { --tone-soft: var(--state-review-soft); --tone-text: var(--state-review-text); }
+.phase-tag--open { --tone-soft: var(--state-open-soft); --tone-text: var(--state-open-text); }
+.phase-tag--testing { --tone-soft: var(--state-testing-soft); --tone-text: var(--state-testing-text); }
+.phase-tag--done { --tone-soft: var(--state-done-soft); --tone-text: var(--state-done-text); }
+.phase-tag--failed { --tone-soft: var(--state-failed-soft); --tone-text: var(--state-failed-text); }
 
 .phase-tag .state__dot {
   flex: none;
 }
 
-.phase-tag--failed .phase-tag__text {
-  color: var(--state-failed);
+.phase-tag__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .card__foot > .phase-tag {
-  flex: 1 1 100%;
-  white-space: normal;
+  flex: 0 1 auto;
 }
 
 .task-row > .phase-tag {
-  flex: 0 1 260px;
+  flex: 0 1 auto;
+  max-width: 260px;
 }
 
 .task-row > .phase-tag .phase-tag__text {
@@ -7288,4 +7307,22 @@ select:disabled {
 
 .task-summary .sheet-disclosure {
   margin: 0;
+}
+
+/* A control whose setting is not the default, such as Filters with a
+   filter on. */
+.button--on {
+  border-color: var(--accent-soft-hover);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+/* A checkbox row inside a menu. */
+.menu__check {
+  gap: 8px;
+  cursor: pointer;
+}
+
+.menu__check input {
+  margin: 0 2px 0 4px;
 }
