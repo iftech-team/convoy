@@ -1225,7 +1225,9 @@ try {
   // `mod` is ⌘ on macOS and Control elsewhere; Control is its own modifier.
   const mod = process.platform === "darwin" ? "Meta" : "Control";
   await page.keyboard.press(`${mod}+Alt+2`);
-  await page.locator('[data-tab="reviews"][aria-selected="true"]').waitFor();
+  // Reviews are a view of Sessions now, not a tab of their own.
+  await page.locator('[data-tab="sessions"][aria-selected="true"]').waitFor();
+  await page.locator('[data-sessions-show="reviews"][aria-pressed="true"]').waitFor();
   // ⌃Tab, the macOS binding for the next session, now that Ctrl-only
   // bindings exist.
   await page.keyboard.press("Control+Tab");
@@ -1389,11 +1391,19 @@ try {
   await pickProject("/fixture/Other");
   await page.locator(".header__name", { hasText: "Other" }).waitFor({ timeout: 5000 });
   // ⌘-click picks sessions; the picked ones are archived together.
-  await page.locator('.side-session[data-open="review"]').click({ modifiers: [primary] });
+  await page.locator('.side-session[data-open="imported"]').click({ modifiers: [primary] });
   await page.locator(".sidebar__selection", { hasText: "1 selected" }).waitFor();
   await page.locator('[data-action="selection-archive"]').click();
-  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "session_archive" && c.args.id === "review" && c.args.archived === true));
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "session_archive" && c.args.id === "imported" && c.args.archived === true));
   await page.locator(".sidebar__selection").waitFor({ state: "detached" });
+  // A task's sessions are one row, its builder's, saying where the task
+  // stands; its reviewer has no row of its own. Its menu opens the task.
+  const taskRow = page.locator('.project-row__sessions:not(.project-row__sessions--pinned) .side-session--task[data-open="builder"]');
+  await taskRow.locator(".side-session__task").waitFor();
+  assert.equal(await page.locator('.project-row__sessions:not(.project-row__sessions--pinned) .side-session[data-open="review"]').count(), 0);
+  await taskRow.click({ button: "right" });
+  await page.locator('[data-menu-act="open-task"]').click();
+  await page.locator(".task-page").waitFor();
   // The status bar says which account new Codex sessions use, and changes it.
   await page.locator('.status [data-action="account-menu"][data-agent="codex"]').click();
   await page.locator('[data-account-pick="codex:"]').click();

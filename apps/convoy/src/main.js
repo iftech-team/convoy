@@ -49,6 +49,7 @@ import {
   header,
   quickMenu,
   reviewsView,
+  taskOfSession,
   sessionMenu,
   pickableKeys,
   sessionsView,
@@ -1319,7 +1320,7 @@ const SHORTCUT_ACTIONS = {
   limitsRefresh: () => refreshLimits(true),
 };
 
-const TAB_ORDER = ["sessions", "reviews", "specs", "tasks", "docs", "automations"];
+const TAB_ORDER = ["sessions", "specs", "tasks", "docs", "automations"];
 
 const withSession = (run) => (session() ? run(session()) : undefined);
 const withProject = (run) => (project() ? run(project()) : undefined);
@@ -1366,7 +1367,7 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon],[data-sync-toggle],[data-intake-toggle]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-inbox-answer],[data-inbox-open],[data-inbox-expand],[data-tab-close],[data-tab-open],[data-related-remove],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day],[data-skill],[data-skill-pick],[data-skill-toggle],[data-usage-days],[data-usage-agent],[data-usage-table],[data-price-add],[data-price-remove],[data-price-reset],[data-price-save],[data-task-doc-open],[data-task-doc-reveal],[data-task-doc],[data-repo-remove],[data-task-pr-extra],[data-import-pick],[data-import-all],[data-import-scope],[data-import-project],[data-import-role],[data-import-auto]",
+      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-sessions-show],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day],[data-skill],[data-skill-pick],[data-skill-toggle],[data-usage-days],[data-usage-agent],[data-usage-table],[data-price-add],[data-price-remove],[data-price-reset],[data-price-save],[data-task-doc-open],[data-task-doc-reveal],[data-task-doc],[data-repo-remove],[data-task-pr-extra],[data-import-pick],[data-import-all],[data-import-scope],[data-import-project],[data-import-role],[data-import-auto]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -1522,6 +1523,12 @@ app.addEventListener("click", async (event) => {
     state.tab = "tasks";
     await loadAllTasks();
     await loadPlanning();
+    return render();
+  }
+  // The Sessions page's All / Reviews switch: the same page, two lists.
+  if (data.sessionsShow) {
+    state.tab = data.sessionsShow === "reviews" ? "reviews" : "sessions";
+    keepProjectTab();
     return render();
   }
   if (data.tab) {
@@ -2973,6 +2980,10 @@ async function runMenu(act) {
   switch (act) {
     case "open":
       return openSession(target.id);
+    case "open-task": {
+      const owned = taskOfSession(target.id);
+      return owned ? openTask(owned.taskId) : render();
+    }
     case "pin":
       if (await done("session_pin", { id: target.id, pinned: !target.pinned })) await loadSessions();
       return render();
@@ -3424,7 +3435,9 @@ async function loadAllTasks() {
 /// Reloads whichever task lists are on screen.
 async function reloadTasks() {
   await loadPlanning();
-  if (state.taskScope === "all") await loadAllTasks();
+  // Every project's tasks fold their sessions in the sidebar, so the list
+  // stays current once loaded.
+  if (state.taskScope === "all" || state.allTasks) await loadAllTasks();
   render();
 }
 
@@ -4541,6 +4554,8 @@ try {
   await loadSettings();
   applyTheme();
   await loadWorkspace({ required: true });
+  // The sidebar folds each task's sessions into one row.
+  await loadAllTasks();
   // The status bar's account chips need them.
   await loadProfiles();
   // The window opens on Home, as the macOS app's does.
@@ -4586,6 +4601,11 @@ try {
   await listen("session:changed", async () => {
     await loadSessions();
     if (state.tab === "tasks") await loadPlanning();
+    // A new reviewer or QA agent folds under its task.
+    if (state.allTasks) {
+      await loadAllTasks();
+      render();
+    }
   });
   // A QA run moved on: a check ended, or the run started or settled.
   for (const name of ["task:qa", "task:qa-check"]) {

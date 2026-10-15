@@ -1540,6 +1540,7 @@ export default {
     "Not used": "Не используется",
     "Not yet": "Ещё не начато",
     "Waits for you": "Ждёт вас",
+    "Open task": "Открыть задачу",
   },
   /// The English singular, then the Russian forms for one, few and many:
   /// 1 задача, 2 задачи, 5 задач.
