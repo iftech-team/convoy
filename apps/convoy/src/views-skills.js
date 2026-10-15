@@ -14,9 +14,9 @@ export const ROLES = [
   ["plan", "Planner", "Writes the plan before anything is built, when a task is planned first."],
   ["build", "Builder", "Builds the task. Added to its brief."],
   ["review", "Reviewer", "Reviews each round of work. Reports a verdict; edits nothing."],
-  ["qa", "QA", "Tests the change end to end after the checks and the review."],
+  ["qa", "Tester", "Tests the change end to end after the checks and the review."],
   ["pr", "Pull request author", "How the pull request is written: by Convoy's author when Convoy publishes, by the builder otherwise. Put the team's template or skill here."],
-  ["docs", "Documentation", "Writes the task's document once QA passes."],
+  ["docs", "Doc writer", "Writes the task's document once QA passes."],
 ];
 
 export const AGENT_SCOPES = [

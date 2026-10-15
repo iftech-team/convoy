@@ -139,7 +139,7 @@ export function homeView() {
                .join("")}
            </div>`,
         )}
-        ${block(t("AI Limits"), `<div class="home-limits">${limitsBlock("Claude", "claude", limits.claude, limits.loading)}${limitsBlock("Codex", "codex", limits.codex, limits.loading)}</div>`)}
+        ${block(t("Usage limits"), `<div class="home-limits">${limitsBlock("Claude", "claude", limits.claude, limits.loading)}${limitsBlock("Codex", "codex", limits.codex, limits.loading)}</div>`)}
         ${block(
           t("Activity"),
           activity.length

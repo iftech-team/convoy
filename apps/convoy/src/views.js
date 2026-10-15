@@ -831,8 +831,8 @@ export function status() {
   return `
     <footer class="status">
       <button class="status__item status__button" data-action="limits"
-              aria-pressed="${state.menu?.kind === "limits"}" title="${escape(t("AI Limits"))}">
-        ${icons.limits} <strong>${escape(t("AI Limits"))}</strong>
+              aria-pressed="${state.menu?.kind === "limits"}" title="${escape(t("Usage limits"))}">
+        ${icons.limits} <strong>${escape(t("Usage limits"))}</strong>
         ${limitsSummary()}
       </button>
       ${accountChip("claude")}${accountChip("codex")}${accountChip("gemini")}
@@ -916,9 +916,9 @@ export function limitsPanel() {
   const limits = state.limits ?? {};
   return `
     <div class="scrim scrim--clear" data-dismiss="1">
-      <div class="menu limits" role="dialog" aria-label="${escape(t("AI Limits"))}">
+      <div class="menu limits" role="dialog" aria-label="${escape(t("Usage limits"))}">
         <div class="limits__header">
-          <strong>${escape(t("AI Limits"))}</strong>
+          <strong>${escape(t("Usage limits"))}</strong>
           <span class="section__spacer"></span>
           ${button({ icon: "refresh", action: "limits-refresh", kind: "quiet", title: t("Refresh"), disabled: !!limits.loading })}
         </div>

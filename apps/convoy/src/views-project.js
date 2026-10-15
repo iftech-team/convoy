@@ -170,7 +170,7 @@ function pipeline(project) {
           project.task_worktrees && repository ? t("How many queued tasks run side by side.") : t("Needs a worktree for each task; one checkout runs one task."),
           select("max_parallel", [1, 2, 3, 4, 6, 8].map((count) => [String(count), String(count)]), String(project.max_parallel ?? 1)),
         )}
-        ${row(t("Auto-run task queue"), t("Start the next queued task when one finishes."), toggle("auto_run_tasks", project.auto_run_tasks, t("Auto-run task queue")))}
+        ${row(t("Start waiting tasks by themselves"), t("The next waiting task starts when one finishes."), toggle("auto_run_tasks", project.auto_run_tasks, t("Start waiting tasks by themselves")))}
         ${row(
           t("Rounds of automatic fixes"),
           t("A failed review or QA goes back to the builder with the findings this many times; after that the task needs you."),
@@ -473,7 +473,7 @@ function identity(project) {
 const PAGE_TABS = [
   ["general", "General"],
   ["pipeline", "How tasks run"],
-  ["tracker", "Tracker"],
+  ["tracker", "Integration"],
   ["advanced", "Advanced"],
 ];
 

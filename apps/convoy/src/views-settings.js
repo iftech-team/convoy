@@ -397,7 +397,7 @@ function limits(settings) {
       "Claude",
       row(
         t("Claude limits integration"),
-        t("Adds a usage status line to new Claude sessions so limits appear in AI Limits."),
+        t("Adds a usage status line to new Claude sessions so limits appear in Usage limits."),
         toggle("claude_usage", settings.claude_usage, t("Claude limits integration")),
       ) + row(t("Current"), summary(reading.claude), ""),
       t("Shows after the next response in a Claude session started from Convoy. Needs a recent Claude Code and an eligible subscription."),

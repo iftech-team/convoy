@@ -63,8 +63,8 @@ export const SHORTCUTS = [
   ["projectRefresh", "mod+alt+shift+r", "Refresh projects in this folder", "Project"],
   ["copyPath", "mod+alt+c", "Copy folder path", "Project"],
   ["gitRefresh", "mod+alt+g", "Refresh Git status", "Project"],
-  ["limits", "mod+shift+l", "AI Limits", "Limits"],
-  ["limitsRefresh", "mod+alt+l", "Refresh AI limits", "Limits"],
+  ["limits", "mod+shift+l", "Usage limits", "Limits"],
+  ["limitsRefresh", "mod+alt+l", "Refresh usage limits", "Limits"],
   ["claudeUsage", "mod+alt+u", "Open Claude /usage", "Limits"],
 ];
 

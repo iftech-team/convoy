@@ -975,7 +975,7 @@ try {
   await page.locator('[data-proj-select="default_agent"]').selectOption("codex");
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.default_agent === "codex"));
   // Four parts: General, How tasks run, Tracker, Advanced.
-  assert.deepEqual(await page.locator(".project-tabs [data-project-tab]").allTextContents(), ["General", "How tasks run", "Tracker", "Advanced"]);
+  assert.deepEqual(await page.locator(".project-tabs [data-project-tab]").allTextContents(), ["General", "How tasks run", "Integration", "Advanced"]);
   await page.locator('[data-project-tab="tracker"]').click();
   // Each project imports from its own workspace and project: the pickers
   // fill from the connection, each one narrowing the next.

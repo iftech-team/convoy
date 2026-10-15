@@ -969,7 +969,7 @@ const queueConfirm = (dialog) =>
       <p class="modal__hint">
         ${escape(t("Runs the installed agents. Publishing happens only for tasks configured for it. A failure pauses the queue."))}
       </p>`,
-    foot: foot(t("Run queue"), "confirm-queue"),
+    foot: foot(t("Start them"), "confirm-queue"),
   });
 
 // ------------------------------------------------------------------- misc --
@@ -1138,7 +1138,7 @@ function macosImport(dialog) {
       ${existing}
       ${setting(
         t("Settings and shortcuts"),
-        t("Theme, notifications, awake mode, AI limits and your shortcuts. Replaces the ones set here."),
+        t("Theme, notifications, awake mode, usage limits and your shortcuts. Replaces the ones set here."),
         toggle("settings", dialog.settings, t("Import settings and shortcuts")),
       )}
       ${warnings ? `<ul class="import-warnings">${warnings}</ul>` : ""}`,

@@ -144,9 +144,9 @@ export function tasksView() {
       </div>
       <label class="check"><input type="checkbox" data-toggle-state="hideDone" ${state.hideDone ? "checked" : ""} /> ${escape(t("Hide done"))}</label>
       <span class="section__spacer"></span>
-      <span class="section__count">${escape(t("{count} queued", { count: planning.queued }))} ${hint("waiting")}</span>
+      <span class="section__count">${escape(t("{count} waiting", { count: planning.queued }))} ${hint("waiting")}</span>
       ${button({
-        label: running ? t("Pause queue") : t("Run queue"),
+        label: running ? t("Pause") : t("Start them"),
         icon: running ? "stop" : "play",
         action: running ? "queue-stop" : "queue-start",
         kind: running ? "danger" : "",
