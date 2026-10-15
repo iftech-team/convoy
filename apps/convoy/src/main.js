@@ -705,6 +705,7 @@ const ACTIONS = {
   "open-folder": openFolder,
   settings: () => (state.page === "settings" ? closeSettings() : openSettings(gettingStarted().complete ? undefined : "Get started")),
   accounts: openAccounts,
+  palette: () => openPalette(),
   "import-history": openTranscripts,
   "import-all-history": openHistorySweep,
   "history-sweep-run": runHistorySweep,

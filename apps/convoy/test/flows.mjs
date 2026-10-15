@@ -470,6 +470,10 @@ try {
   await page.locator("#palette-input").fill("switch");
   assert.equal(await page.locator(".palette__row").first().locator(".palette__kind").textContent(), primary === "Meta" ? "⌘E" : "Ctrl+E");
   await page.keyboard.press("Escape");
+  // The Search button in the tab bar opens the same palette.
+  await page.locator('.tabbar__search').click();
+  await page.locator("#palette-input").waitFor();
+  await page.keyboard.press("Escape");
   // The Dock badge counts the sessions waiting for you.
   await page.waitForFunction(() => window.badge === 1);
   // ⌘F finds in the terminal on screen; Escape closes the bar.
