@@ -245,7 +245,7 @@ function taskRow(task, tone) {
 /// Grouped by status as in Linear: a bar per group that folds shut, empty
 /// groups left out. A group takes rows dropped on it.
 function taskList(tasks) {
-  return `<div class="task-list">${COLUMNS.filter(([key]) => !(state.hideDone && key === "done"))
+  return `<div class="task-list" data-scroll="task-list">${COLUMNS.filter(([key]) => !(state.hideDone && key === "done"))
     .map(([key, label, tone]) => {
       const group = tasks.filter((task) => task.status === key);
       if (!group.length) return "";
@@ -268,7 +268,7 @@ function taskList(tasks) {
 /// it back, and anywhere else sets that status.
 function board(tasks) {
   return `
-    <div class="board">
+    <div class="board" data-scroll="board">
       ${COLUMNS.filter(([key]) => !(state.hideDone && key === "done")).map(([key, label, tone]) => {
         const cards = tasks.filter((task) => task.status === key);
         return `
@@ -278,7 +278,7 @@ function board(tasks) {
               <span class="board__title">${escape(t(label))}</span>
               <span class="board__count">${cards.length}</span>
             </div>
-            <div class="board__cards">
+            <div class="board__cards" data-scroll="board-${key}">
               ${
                 cards.length
                   ? cards

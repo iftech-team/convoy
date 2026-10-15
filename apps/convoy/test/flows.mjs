@@ -1137,6 +1137,47 @@ try {
   await page.locator('.modal [data-action="confirm-queue"]').click();
   await page.waitForFunction(() => ["side-a", "side-b"].every((id) => window.checkCalls.some((c) => c.cmd === "task_prepare" && c.args.id === id)));
 
+  // A card with every badge keeps them inside it, each on one line.
+  await page.evaluate(() => {
+    window.mockTasks.push({
+      id: "badges", project_id: "project", title: "LOYAL-544: Backend / API для показа остатка лимита в 5 букв за день", details: "*Я как Бэкенд-разработчик хочу*",
+      findings: "", agent: "claude", status: "testing", mode: "pr", auto_review: true, round: 1, max_rounds: 2, depends_on: [], related: [], skills: [], docs: [],
+      qa: { id: "q", status: "testing", started: new Date().toISOString(), checks: [] }, review: { id: "r", status: "failed", round: 0, started: "" },
+      extra_projects: ["other"],
+    });
+  });
+  await page.locator('[data-task-view="board"]').click().catch(() => {});
+  await page.evaluate(() => window.emitTauri?.("task:qa", "badges"));
+  await page.locator('[data-tab="specs"]').click();
+  await page.locator('[data-tab="tasks"]').click();
+  const card = page.locator('.card[data-task-card="badges"]');
+  await card.waitFor();
+  const overflow = await card.evaluate((node) => {
+    const foot = node.querySelector(".card__foot");
+    const box = node.getBoundingClientRect();
+    return [...foot.children].filter((badge) => {
+      const r = badge.getBoundingClientRect();
+      return r.right > box.right + 1 || r.height > 24;
+    }).map((badge) => badge.textContent.trim());
+  });
+  assert.deepEqual(overflow, [], "badges stay inside the card, one line each");
+  if (shots) await card.screenshot({ path: `${shots}/card-badges.png` });
+  // Opening a card's menu keeps the board where it was scrolled.
+  const boardLeft = await page.evaluate(() => {
+    const board = document.querySelector(".board");
+    board.scrollLeft = board.scrollWidth;
+    return board.scrollLeft;
+  });
+  assert(boardLeft > 0, "the board scrolls sideways");
+  await page.evaluate(() => {
+    const card = document.querySelector('.card[data-task-card="badges"]');
+    const box = card.getBoundingClientRect();
+    card.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: box.left + 10, clientY: box.top + 10 }));
+  });
+  await page.locator('[data-menu-act="task-edit"]').waitFor();
+  assert.equal(await page.evaluate(() => document.querySelector(".board").scrollLeft), boardLeft, "the board stays scrolled");
+  await page.keyboard.press("Escape");
+
   // AI Limits: the status bar shows the peak reading, and the panel asks
   // Codex on opening.
   await page.locator(".status__limit", { hasText: "Claude 42%" }).waitFor();

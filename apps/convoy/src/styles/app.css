@@ -1557,8 +1557,16 @@ select:disabled {
 
 .card__foot {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
+}
+
+/* A badge keeps its words together; the row wraps instead. */
+.card__foot > *,
+.task-row__tags > * {
+  flex: none;
+  white-space: nowrap;
 }
 
 .state__dot--idle { background: var(--state-idle); }
