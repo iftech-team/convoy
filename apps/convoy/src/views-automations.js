@@ -164,6 +164,7 @@ export function automationEditor(dialog) {
   const agents = [
     ["claude", "Claude Code", agentIcon("claude", 15)],
     ["codex", "Codex", agentIcon("codex", 15)],
+    ["gemini", "Gemini", agentIcon("gemini", 15)],
   ];
   const kind = dialog.schedule_kind;
   const timeInput = (id, value) => `<input id="${id}" type="time" value="${escape(value ?? "")}" required />`;

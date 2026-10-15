@@ -78,7 +78,28 @@ pub fn list(agent: Agent, home: &Path, claude_efforts: Option<&[String]>) -> Vec
             )
         }
         Agent::Codex => codex(home),
+        Agent::Gemini => gemini(),
     }
+}
+
+/// Gemini CLI's models as version 0.32 names them; its own `/model` picker
+/// lists the same. It caches no list to read.
+fn gemini() -> Vec<Model> {
+    [
+        ("auto-gemini-3", "Auto · Gemini 3"),
+        ("gemini-3-pro-preview", "Gemini 3 Pro"),
+        ("gemini-3-flash-preview", "Gemini 3 Flash"),
+        ("auto-gemini-2.5", "Auto · Gemini 2.5"),
+        ("gemini-2.5-pro", "Gemini 2.5 Pro"),
+        ("gemini-2.5-flash", "Gemini 2.5 Flash"),
+    ]
+    .into_iter()
+    .map(|(id, name)| Model {
+        id: id.into(),
+        name: name.into(),
+        efforts: Vec::new(),
+    })
+    .collect()
 }
 
 /// The extra models the server offers this account, as Claude Code caches

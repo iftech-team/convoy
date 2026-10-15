@@ -829,6 +829,7 @@ impl Workspace {
                 manager: None,
                 skills: task.skills.clone(),
                 add_dirs: (!add_dirs.is_empty()).then_some(add_dirs),
+                permission_mode: None,
                 unknown: Default::default(),
             };
             let session_id = session.id.clone();
@@ -1017,6 +1018,10 @@ impl Workspace {
 
     pub fn add_profile(&mut self, label: &str, agent: Agent) -> Result<&State> {
         text(label, 100, true)?;
+        ensure!(
+            agent != Agent::Gemini,
+            "Gemini CLI uses the account it is signed in with; Convoy keeps no others for it."
+        );
         let label = label.trim().to_string();
         self.update(move |state| {
             let taken = state.profiles.iter().any(|profile| {

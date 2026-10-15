@@ -506,7 +506,7 @@ fn validation_names_what_is_wrong() {
             "Project not found",
             Box::new(|d| d.project_id = "nope".into()),
         ),
-        ("Unknown agent", Box::new(|d| d.agent = "gemini".into())),
+        ("Unknown agent", Box::new(|d| d.agent = "llama".into())),
         ("model", Box::new(|d| d.model = "a b".into())),
         ("effort", Box::new(|d| d.effort = "warp".into())),
         (

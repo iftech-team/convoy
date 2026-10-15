@@ -207,7 +207,7 @@ impl Merge<'_> {
                 }) || snapshot
             }
             // Codex's id is only known once it printed its resume line.
-            Agent::Codex => !provider.is_empty() || snapshot,
+            Agent::Codex | Agent::Gemini => !provider.is_empty() || snapshot,
         }
     }
 

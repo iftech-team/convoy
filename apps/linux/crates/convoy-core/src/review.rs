@@ -6,7 +6,7 @@
 //! builder — Convoy never submits on their behalf.
 
 use crate::history::review_brief;
-use crate::model::{Agent, Role, Task};
+use crate::model::{Role, Task};
 use crate::workspace::{NewSession, Workspace};
 use crate::{bail, ensure, json::head, Result};
 use std::path::Path;
@@ -64,10 +64,7 @@ pub fn task_brief(
 /// linked back to the builder.
 pub fn handoff(workspace: &Workspace, id: &str, prompt: String) -> Result<NewSession> {
     let session = workspace.session(id)?.clone();
-    let agent = match session.agent {
-        Agent::Claude => Agent::Codex,
-        Agent::Codex => Agent::Claude,
-    };
+    let agent = session.agent.reviewer();
     let title = head(&format!("Review: {}", session.title), 200).to_string();
     let mut input = NewSession::new(session.project_id.clone(), agent, title);
     input.prompt = prompt;

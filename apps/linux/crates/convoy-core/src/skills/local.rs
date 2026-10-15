@@ -1,10 +1,10 @@
 //! The agents' own skills on this machine, brought into Convoy's library.
 //!
-//! Claude Code, Codex and the shared Agent Skills convention all keep a
+//! Claude Code, Codex, Gemini CLI and the shared Agent Skills convention keep a
 //! skill as a folder with a `SKILL.md` — front matter with a name and a
 //! description, then Markdown — in the user's folder (`~/.claude/skills`,
-//! `~/.codex/skills`, `~/.agents/skills`) and in a repository's own
-//! (`.claude/skills`, `.codex/skills`, `.agents/skills`). Convoy does not
+//! `~/.codex/skills`, `~/.gemini/skills`, `~/.agents/skills`) and in a
+//! repository's own (`.claude/skills` and so on). Convoy does not
 //! read them by itself: a person picks the ones they want and the projects
 //! they are for, and each becomes a Convoy skill, which then reaches either
 //! agent and the task roles.
@@ -89,9 +89,10 @@ pub fn parse(text: &str) -> (Option<String>, String, String) {
 
 /// The folders skills are kept in, by the agent that reads them; each is
 /// under the home folder for the user's own, or a repository for its.
-pub const SOURCES: [(&str, &str); 3] = [
+pub const SOURCES: [(&str, &str); 4] = [
     ("Claude Code", ".claude/skills"),
     ("Codex", ".codex/skills"),
+    ("Gemini CLI", ".gemini/skills"),
     ("Agent Skills", ".agents/skills"),
 ];
 

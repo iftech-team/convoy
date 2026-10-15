@@ -396,6 +396,7 @@ function render() {
   if (state.dialog && isImportDialog()) {
     ensureModels("claude");
     ensureModels("codex");
+    ensureModels("gemini");
   }
   const caret = document.activeElement?.id;
   const position = document.activeElement?.selectionStart;
@@ -2696,6 +2697,7 @@ async function openReview() {
   const brief = await call("review_brief", { id: current.id });
   if (brief === undefined) return;
   // The other agent by default: a second opinion from a different model.
+  // Claude and Codex review each other; Claude reviews Gemini.
   const agent = current.agent === "claude" ? "codex" : "claude";
   openModal({ kind: "review", id: current.id, brief, agent, ...lastChoice(agent), account: activeAccount(agent) });
 }

@@ -209,6 +209,8 @@ pub struct ProjectDetail {
     pub docs_default_dir: String,
     pub docs_auto: bool,
     pub task_worktrees: bool,
+    /// Whether it is a git repository, which a worktree per task needs.
+    pub is_repository: bool,
     pub max_parallel: u32,
     pub convoy_publishes: bool,
     pub pr_cli: String,
@@ -284,6 +286,7 @@ pub fn project_detail(
             .into_owned(),
             docs_auto: project.docs_auto == Some(true),
             task_worktrees: project.task_worktrees == Some(true),
+            is_repository: project.path.join(".git").exists(),
             max_parallel: project.max_parallel.unwrap_or(1),
             convoy_publishes: project.convoy_publishes == Some(true),
             pr_cli: project.pr_cli.clone().unwrap_or_default(),

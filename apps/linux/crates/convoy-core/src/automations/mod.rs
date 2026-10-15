@@ -203,7 +203,7 @@ pub fn validate(input: &AutomationInput, workspace: &Workspace) -> Result<Agent>
     );
     workspace.project(&input.project_id)?;
     let agent = Agent::parse(&input.agent)
-        .ok_or_else(|| ConvoyError::message("Unknown agent. Use claude or codex."))?;
+        .ok_or_else(|| ConvoyError::message("Unknown agent. Use claude, codex or gemini."))?;
     ensure!(
         utf16_len(&input.model) <= 100 && MODEL.is_match(&input.model),
         "Invalid model name."

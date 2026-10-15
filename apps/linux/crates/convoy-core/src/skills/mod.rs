@@ -511,10 +511,7 @@ impl Store {
                 skill.applies(agent, project_id),
                 "The skill “{}” is not for {} in this project.",
                 skill.name,
-                match agent {
-                    Agent::Claude => "Claude Code",
-                    Agent::Codex => "Codex",
-                }
+                agent.label()
             );
             if !ids.contains(&skill.id) {
                 ids.push(skill.id.clone());

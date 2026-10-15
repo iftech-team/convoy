@@ -50,17 +50,20 @@ const TRACKERS = { linear: "Linear", jira: "Jira", peshbar: "Peshbar", notion: "
 /// Tasks in worktrees of their own, several at once, and published by
 /// Convoy after review and QA.
 function autopilot(project) {
+  const repository = project.is_repository !== false;
   return groupBox(
     t("Autopilot"),
     `${row(
       t("A worktree for each task"),
-      t("Each task builds on a branch of its own, set up with the shared paths and setup commands above. Turning this on lets those commands run without asking."),
+      repository
+        ? t("Each task builds on a branch of its own, set up with the shared paths and setup commands above. Turning this on lets those commands run without asking.")
+        : t("This project is a folder, not a git repository, so its tasks work in the folder itself. Turn this on in the repositories inside it."),
       `<button class="switch" data-proj-toggle="task_worktrees" aria-pressed="${!!project.task_worktrees}"
                aria-label="${escape(t("A worktree for each task"))}"></button>`,
     )}
      ${row(
        t("Tasks at once"),
-       project.task_worktrees ? t("How many queued tasks run side by side.") : t("Needs a worktree for each task; one checkout runs one task."),
+       project.task_worktrees && repository ? t("How many queued tasks run side by side.") : t("Needs a worktree for each task; one checkout runs one task."),
        select(
          "max_parallel",
          [1, 2, 3, 4, 6, 8].map((count) => [String(count), String(count)]),
@@ -154,6 +157,7 @@ function testing(project) {
            ["", t("No agent")],
            ["claude", "Claude Code"],
            ["codex", "Codex"],
+           ["gemini", "Gemini CLI"],
          ],
          agent,
        ),
@@ -421,7 +425,7 @@ function identity(project) {
 export function projectSettingsPage() {
   const project = state.projectDraft;
   if (!project) return "";
-  const global = state.settings.default_agent === "codex" ? "Codex" : "Claude Code";
+  const global = { codex: "Codex", gemini: "Gemini CLI" }[state.settings.default_agent] ?? "Claude Code";
   const commands = (state.quickCommands ?? []).filter((command) => command.project_id === project.id);
   return `
     <div class="prefs__page prefs__page--project" data-scroll="project-settings">
@@ -446,6 +450,7 @@ export function projectSettingsPage() {
                 ["", t("Use global ({agent})", { agent: global })],
                 ["claude", "Claude Code"],
                 ["codex", "Codex"],
+                ["gemini", "Gemini CLI"],
               ],
               project.default_agent ?? "",
             ),

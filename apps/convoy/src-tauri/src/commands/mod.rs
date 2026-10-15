@@ -306,6 +306,7 @@ pub struct SettingsView {
     pub sort_projects: bool,
     pub yolo_claude: bool,
     pub yolo_codex: bool,
+    pub yolo_gemini: bool,
     pub review_template: String,
     pub notify_waiting: bool,
     pub notify_done: bool,
@@ -357,6 +358,7 @@ pub fn settings_read(workspace: State<'_, Workspace>) -> Result<SettingsView, St
             sort_projects: settings.sort_projects,
             yolo_claude: settings.yolo_claude,
             yolo_codex: settings.yolo_codex,
+            yolo_gemini: settings.yolo_gemini,
             review_template: settings.review_template.clone(),
             notify_waiting: settings.notify_waiting,
             notify_done: settings.notify_done,
@@ -402,6 +404,8 @@ pub struct SettingsInput {
     pub yolo_claude: Option<bool>,
     #[serde(default)]
     pub yolo_codex: Option<bool>,
+    #[serde(default)]
+    pub yolo_gemini: Option<bool>,
     #[serde(default)]
     pub review_template: Option<String>,
     #[serde(default)]
@@ -465,6 +469,7 @@ pub fn settings_save(input: SettingsInput, workspace: State<'_, Workspace>) -> R
                 sort_projects: input.sort_projects,
                 yolo_claude: input.yolo_claude,
                 yolo_codex: input.yolo_codex,
+                yolo_gemini: input.yolo_gemini,
                 role_instructions: input.role_instructions,
                 review_template: input.review_template,
                 notify_waiting: input.notify_waiting,

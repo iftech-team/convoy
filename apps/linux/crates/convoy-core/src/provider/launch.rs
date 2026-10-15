@@ -51,6 +51,34 @@ pub fn agent_args(session: &Session, resume: bool) -> Vec<String> {
             let flag = if resume { "--resume" } else { "--session-id" };
             vec!["claude".into(), flag.into(), session.provider_id.clone()]
         }
+        // Gemini names its sessions itself; Convoy learns the id from its
+        // files after the first launch (see `provider::gemini`). Its first
+        // message, and anything waiting for a resume, goes with `-i`, which
+        // runs it and stays interactive.
+        Agent::Gemini => {
+            let mut args: Vec<String> = vec!["gemini".into()];
+            if resume {
+                args.push("--resume".into());
+                args.push(if session.provider_id.is_empty() {
+                    "latest".into()
+                } else {
+                    session.provider_id.clone()
+                });
+            }
+            let message = if resume {
+                session
+                    .resume_prompt
+                    .clone()
+                    .filter(|prompt| !prompt.is_empty())
+            } else {
+                Some(session.prompt.clone()).filter(|prompt| !prompt.is_empty())
+            };
+            if let Some(message) = message {
+                args.push("-i".into());
+                args.push(message);
+            }
+            return args;
+        }
         Agent::Codex => {
             let mut args: Vec<String> = vec!["codex".into()];
             if resume {
@@ -177,6 +205,7 @@ fn npm_entry(agent: Agent) -> &'static str {
     match agent {
         Agent::Claude => "@anthropic-ai/claude-code/cli.js",
         Agent::Codex => "@openai/codex/bin/codex.js",
+        Agent::Gemini => "@google/gemini-cli/bundle/gemini.js",
     }
 }
 

@@ -127,6 +127,8 @@ pub struct NewSession {
     /// Other folders it may work in; a session sharing another's folder
     /// takes that one's when this is empty.
     pub add_dirs: Vec<PathBuf>,
+    /// Claude's permission mode, such as `plan`.
+    pub permission_mode: Option<String>,
 }
 
 impl NewSession {
@@ -144,6 +146,7 @@ impl NewSession {
             effort: String::new(),
             skills: Vec::new(),
             add_dirs: Vec::new(),
+            permission_mode: None,
         }
     }
 }
@@ -166,6 +169,7 @@ pub struct SettingsPatch {
     pub sort_projects: Option<bool>,
     pub yolo_claude: Option<bool>,
     pub yolo_codex: Option<bool>,
+    pub yolo_gemini: Option<bool>,
     pub review_template: Option<String>,
     pub notify_waiting: Option<bool>,
     pub notify_done: Option<bool>,
@@ -734,6 +738,7 @@ impl Workspace {
                 } else {
                     Some(input.add_dirs)
                 },
+                permission_mode: input.permission_mode,
                 unknown: Default::default(),
             });
             Ok(())
@@ -962,6 +967,7 @@ impl Workspace {
             sort_projects: patch.sort_projects.unwrap_or(current.sort_projects),
             yolo_claude: patch.yolo_claude.unwrap_or(current.yolo_claude),
             yolo_codex: patch.yolo_codex.unwrap_or(current.yolo_codex),
+            yolo_gemini: patch.yolo_gemini.unwrap_or(current.yolo_gemini),
             review_template: patch.review_template.unwrap_or(current.review_template),
             notify_waiting: patch.notify_waiting.unwrap_or(current.notify_waiting),
             notify_done: patch.notify_done.unwrap_or(current.notify_done),
@@ -1052,7 +1058,8 @@ impl Workspace {
 pub(crate) fn provider_id_for(agent: Agent) -> String {
     match agent {
         Agent::Claude => new_id(),
-        Agent::Codex => String::new(),
+        // Both name their sessions themselves; Convoy learns the id later.
+        Agent::Codex | Agent::Gemini => String::new(),
     }
 }
 

@@ -477,7 +477,7 @@ async fn extra_worktrees(
             .find(|task| task.id == id)
             .cloned()
             .ok_or_else(|| convoy_core::ConvoyError::message("Task not found."))?;
-        let isolated = core.project(&task.project_id)?.task_worktrees == Some(true);
+        let isolated = convoy_core::queue::isolated(core.project(&task.project_id)?);
         if !isolated || convoy_core::plan::needed(&task) {
             return Ok(Vec::new());
         }
@@ -492,6 +492,10 @@ async fn extra_worktrees(
                 continue;
             }
             let project = core.project(project_id)?.clone();
+            // A folder that is not a repository is worked in as it is.
+            if !project.path.join(".git").exists() {
+                continue;
+            }
             let (shared, command) = convoy_core::worktree::setup_parts(core, &project);
             wanted.push((project, shared, command, branch.clone()));
         }

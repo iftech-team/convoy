@@ -35,7 +35,42 @@ pub fn approve(agent: Agent, directory: &Path, env: &BTreeMap<String, String>) {
                 .unwrap_or_else(|| home.join(".codex"));
             approve_codex(&dir.join("config.toml"), &folder)
         }
+        Agent::Gemini => {
+            let dir = env
+                .get("GEMINI_CLI_HOME")
+                .filter(|value| !value.is_empty())
+                .map(|dir| PathBuf::from(dir).join(".gemini"))
+                .unwrap_or_else(|| home.join(".gemini"));
+            approve_gemini(&dir.join("trustedFolders.json"), &folder)
+        }
     };
+}
+
+/// Gemini keeps trusted folders in `trustedFolders.json`, a path to a
+/// verdict; one the person refused (`DO_NOT_TRUST`) is left as it is.
+pub fn approve_gemini(file: &Path, directory: &str) -> std::io::Result<bool> {
+    let mut root: Map<String, Value> = match std::fs::read_to_string(file) {
+        Ok(text) => match serde_json::from_str(&text) {
+            Ok(Value::Object(map)) => map,
+            _ => return Ok(false),
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Map::new(),
+        Err(error) => return Err(error),
+    };
+    if root.get(directory).and_then(Value::as_str).is_some() {
+        return Ok(false);
+    }
+    root.insert(directory.to_string(), Value::String("TRUST_FOLDER".into()));
+    if let Some(parent) = file.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let temporary = file.with_extension("json.convoy-tmp");
+    std::fs::write(
+        &temporary,
+        serde_json::to_string_pretty(&Value::Object(root))?,
+    )?;
+    std::fs::rename(&temporary, file)?;
+    Ok(true)
 }
 
 /// Claude keeps per-project state in `.claude.json`:

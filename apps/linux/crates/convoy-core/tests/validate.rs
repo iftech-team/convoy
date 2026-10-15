@@ -81,7 +81,7 @@ fn sessions_must_reference_a_project_and_carry_a_well_formed_provider_id() {
         "Invalid session record.",
     );
     rejects(
-        session(json!({ "agent": "gemini" })),
+        session(json!({ "agent": "llama" })),
         "Invalid session record.",
     );
     rejects(

@@ -160,6 +160,7 @@ fn a_managers_instructions_and_its_skills_go_in_one_value() {
                 assert_eq!(count(command, "'--append-system-prompt'"), 1, "{command}")
             }
             Agent::Codex => assert_eq!(count(command, "developer_instructions="), 1, "{command}"),
+            Agent::Gemini => unreachable!("only Claude and Codex are looped over"),
         }
         assert!(command.contains("--session spawn") && command.contains("PINEAPPLE"));
 
@@ -196,6 +197,7 @@ fn a_managers_instructions_and_its_skills_go_in_one_value() {
                     "{given}"
                 );
             }
+            Agent::Gemini => unreachable!("only Claude and Codex are looped over"),
         }
     }
 }

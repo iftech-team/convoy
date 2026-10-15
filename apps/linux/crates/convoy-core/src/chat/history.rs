@@ -67,6 +67,8 @@ pub fn read(source: &Source) -> Vec<ChatEvent> {
         Agent::Codex => {
             codex_file(&source.home, &source.provider_id).map(|file| codex_events(&file))
         }
+        // Gemini runs in a terminal; there is no chat to show.
+        Agent::Gemini => None,
     };
     events.unwrap_or_default()
 }

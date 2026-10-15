@@ -628,11 +628,16 @@ fn a_planned_task_is_built_only_after_its_plan_is_approved() {
     let brief = workspace.session(&planner).unwrap().prompt.clone();
     assert!(brief.contains("Do not change anything in the repository"));
     let draft = task(&workspace).plan.unwrap();
-    assert!(brief.contains(
-        &stage::file(&workspace, Stage::Plan, &draft.id)
-            .display()
-            .to_string()
-    ));
+    // Claude plans in its own plan mode and presents the plan.
+    assert!(brief.contains("present the whole plan with ExitPlanMode"));
+    assert_eq!(
+        workspace
+            .session(&planner)
+            .unwrap()
+            .permission_mode
+            .as_deref(),
+        Some("plan")
+    );
 
     // The plan arrives and waits for a person.
     write(
@@ -834,4 +839,58 @@ fn a_finished_task_can_be_reviewed_on_request() {
         pipeline::review_now(&mut workspace, &context(), &id).is_err(),
         "once at a time"
     );
+}
+
+#[test]
+fn a_claude_planner_s_plan_is_read_from_what_it_presented() {
+    let (fixture, mut workspace, _, id) = setup(ProjectPatch {
+        plan_first_default: Some(true),
+        ..ProjectPatch::default()
+    });
+    let planner = plan::begin(&mut workspace, &context(), &id).unwrap();
+    let home = fixture.path().join("claude-home");
+    let session = workspace.session(&planner).unwrap().clone();
+    let (planner_id, provider) = (planner.clone(), session.provider_id.clone());
+    let at = home.clone();
+    workspace
+        .update(move |state| {
+            let session = state
+                .sessions
+                .iter_mut()
+                .find(|s| s.id == planner_id)
+                .unwrap();
+            session.agent_home = Some(at);
+            Ok(())
+        })
+        .unwrap();
+    let directory = workspace.project(&session.project_id).unwrap().path.clone();
+    let folder = home
+        .join("projects")
+        .join(convoy_core::provider::sweep::slug(&directory));
+    std::fs::create_dir_all(&folder).unwrap();
+    let presented = |at: &str, plan: &str| {
+        serde_json::json!({
+            "type": "assistant",
+            "timestamp": at,
+            "message": { "content": [ { "type": "tool_use", "name": "ExitPlanMode", "input": { "plan": plan } } ] }
+        })
+        .to_string()
+    };
+    std::fs::write(
+        folder.join(format!("{provider}.jsonl")),
+        [
+            presented("2000-01-01T00:00:00.000Z", "An old plan."),
+            r#"{"type":"user","message":{"content":"ok"}}"#.to_string(),
+            presented("2999-01-01T00:00:00.000Z", "# Plan\n1. Read the token."),
+        ]
+        .join("\n"),
+    )
+    .unwrap();
+    pipeline::poll(&mut workspace, &context()).unwrap();
+    let plan = task(&workspace).plan.unwrap();
+    assert_eq!(
+        plan.text, "# Plan\n1. Read the token.",
+        "the latest since it was asked"
+    );
+    assert_eq!(task(&workspace).status, TaskStatus::PlanReview);
 }

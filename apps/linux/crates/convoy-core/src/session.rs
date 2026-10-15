@@ -177,8 +177,26 @@ pub fn plan_launch_with(
             crate::trust::approve(session.agent, dir, &account.env);
         }
     }
+    // Gemini has no flag for instructions: on its first launch they open
+    // its first message, ahead of the brief.
+    let gemini_session;
+    let session = match instructions.as_deref() {
+        Some(text) if session.agent == Agent::Gemini && !session.started => {
+            let mut opened = session.clone();
+            opened.prompt = if opened.prompt.trim().is_empty() {
+                format!(
+                    "{text}\n\n---\n\nRead the instructions above, then wait for my first request."
+                )
+            } else {
+                format!("{text}\n\n---\n\n{}", opened.prompt)
+            };
+            gemini_session = opened;
+            &gemini_session
+        }
+        _ => &session,
+    };
     let spec = session_spec_with(
-        &session,
+        session,
         settings_file
             .as_ref()
             .map(|file| file.to_string_lossy())
@@ -186,7 +204,8 @@ pub fn plan_launch_with(
         &account.env,
         &[
             permission_flags(session.agent, workspace.settings()),
-            crate::provider::add_dir_flags(session.add_dirs.as_deref()),
+            crate::provider::permission_mode_flags(session),
+            crate::provider::add_dir_flags(session.agent, session.add_dirs.as_deref()),
             crate::provider::knowledge::flags(session.agent, &storage.knowledge(), &session.id),
             mcp_flags.clone(),
             instructions
@@ -260,6 +279,9 @@ pub fn plan_chat_launch_with(
         .as_deref()
         .filter(|effort| crate::provider::valid_effort(session.agent, effort));
     let (args, driver) = match session.agent {
+        Agent::Gemini => {
+            bail!("Gemini CLI runs in a terminal. Show this session as a terminal to start it.")
+        }
         Agent::Claude => (
             claude::args(
                 &session.provider_id,
@@ -272,7 +294,8 @@ pub fn plan_chat_launch_with(
                     .as_deref(),
                 &[
                     permission_flags(Agent::Claude, settings),
-                    crate::provider::add_dir_flags(session.add_dirs.as_deref()),
+                    crate::provider::permission_mode_flags(session),
+                    crate::provider::add_dir_flags(session.agent, session.add_dirs.as_deref()),
                     crate::provider::effort_flags(Agent::Claude, session.effort.as_deref()),
                     crate::provider::knowledge::flags(
                         Agent::Claude,
@@ -480,13 +503,17 @@ pub fn pull_request_url(text: &str) -> Option<String> {
         .map(|found| found.as_str().to_string())
 }
 
-/// Records the conversation id Codex printed, so the session resumes it
-/// exactly. Only a Codex session that has none yet takes it. Returns whether
+/// Records the conversation id Codex printed, or Gemini wrote, so the
+/// session resumes it exactly. Only a session of theirs with none yet takes
+/// it. Returns whether
 /// anything changed.
 pub fn record_provider_id(workspace: &mut Workspace, session_id: &str, id: &str) -> Result<bool> {
     let wanted = workspace.state().sessions.iter().any(|session| {
         session.id == session_id
-            && session.agent == crate::model::Agent::Codex
+            && matches!(
+                session.agent,
+                crate::model::Agent::Codex | crate::model::Agent::Gemini
+            )
             && session.provider_id.is_empty()
     });
     if !wanted {
@@ -536,4 +563,28 @@ pub fn record_pull_request(workspace: &mut Workspace, session_id: &str, url: &st
         &format!("Pull request: {url}"),
     )?;
     Ok(true)
+}
+
+/// Gemini sessions still without an id: each with the folder it runs in and
+/// when it was last launched, for [`crate::provider::gemini::session_since`].
+pub fn gemini_unnamed(workspace: &Workspace) -> Vec<(String, std::path::PathBuf, String)> {
+    let state = workspace.state();
+    state
+        .sessions
+        .iter()
+        .filter(|session| session.agent == Agent::Gemini && session.provider_id.is_empty())
+        .filter_map(|session| {
+            let launched = state
+                .activity
+                .iter()
+                .filter(|event| {
+                    event.session_id == session.id
+                        && matches!(event.kind, ActivityKind::Started | ActivityKind::Resumed)
+                })
+                .map(|event| event.at.clone())
+                .max()?;
+            let directory = crate::worktree::directory_of(workspace, session).ok()?;
+            Some((session.id.clone(), directory, launched))
+        })
+        .collect()
 }

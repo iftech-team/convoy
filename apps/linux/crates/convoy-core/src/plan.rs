@@ -53,6 +53,59 @@ pub struct PlanRun {
     pub session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approved_at: Option<String>,
+    /// When the current draft was asked for: a plan Claude presented
+    /// before it belongs to an earlier draft.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asked_at: Option<String>,
+}
+
+/// How a Claude planner ends: in plan mode it cannot write files, so it
+/// presents the plan, which Convoy reads from its conversation.
+const PRESENT: &str = "## When you are done\nThis session is in plan mode: it can read but not change anything. When the plan is ready, present the whole plan with ExitPlanMode. Convoy takes it from there, and a person approves it or asks for changes there; do not wait for an answer here.";
+
+/// Whether the planner is Claude, which plans in its own plan mode.
+fn native(agent: crate::model::Agent) -> bool {
+    agent == crate::model::Agent::Claude
+}
+
+/// The latest plan a Claude planner presented since `since`, read from its
+/// conversation: the `plan` of its last `ExitPlanMode` call.
+pub fn presented(workspace: &Workspace, planner: &str, since: &str) -> Option<String> {
+    let storage = stage::storage(workspace);
+    let source = crate::chat::history::source(workspace, &storage, planner).ok()??;
+    if !native(source.agent) {
+        return None;
+    }
+    let file =
+        crate::chat::history::claude_file(&source.home, &source.directory, &source.provider_id)?;
+    let text = std::fs::read_to_string(file).ok()?;
+    let mut latest = None;
+    for line in text
+        .lines()
+        .filter(|line| line.contains("\"ExitPlanMode\""))
+    {
+        let Ok(record) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if record["timestamp"].as_str().is_some_and(|at| at < since) {
+            continue;
+        }
+        for part in record["message"]["content"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            if part["type"] == "tool_use" && part["name"] == "ExitPlanMode" {
+                if let Some(plan) = part["input"]["plan"]
+                    .as_str()
+                    .filter(|plan| !plan.trim().is_empty())
+                {
+                    latest = Some(plan.trim().to_string());
+                }
+            }
+        }
+    }
+    latest
 }
 
 impl PlanRun {
@@ -93,6 +146,11 @@ fn find(workspace: &Workspace, task_id: &str) -> Result<Task> {
 /// The planner's brief: the task as the builder would get it, its role's
 /// instructions, and the rule to change nothing.
 fn brief(workspace: &Workspace, task: &Task, file: &std::path::Path) -> Result<String> {
+    let closing = if native(task.agent) {
+        PRESENT.to_string()
+    } else {
+        stage::closing(Stage::Plan, file)
+    };
     let state = workspace.state();
     let project = workspace.project(&task.project_id)?;
     let instructions = crate::roles::brief(workspace.settings(), project, Role::Plan);
@@ -123,10 +181,9 @@ fn brief(workspace: &Workspace, task: &Task, file: &std::path::Path) -> Result<S
         .map(|list| format!("\n\n## Comments on the earlier draft\n{}", list.join("\n")))
         .unwrap_or_default();
     let prompt = format!(
-        "{instructions}\n\nDo not change anything in the repository, and do not commit: only read, and write the plan.\n\n{spec}\n## Current task\n{}\n\n{}{origin}{repositories}{files}{related}{comments}\n\n{}",
+        "{instructions}\n\nDo not change anything in the repository, and do not commit: only read, and write the plan.\n\n{spec}\n## Current task\n{}\n\n{}{origin}{repositories}{files}{related}{comments}\n\n{closing}",
         task.title,
         task.details,
-        stage::closing(Stage::Plan, file)
     );
     Ok(head(&prompt, 32_000).to_string())
 }
@@ -156,6 +213,10 @@ pub fn begin(workspace: &mut Workspace, context: &Context<'_>, task_id: &str) ->
     input.profile_id = task.profile_id.clone();
     input.skills = context.skills(&task.project_id, task.agent, Role::Plan);
     input.add_dirs = crate::planning::other_repositories(workspace.state(), &task).1;
+    // Claude plans in its own plan mode, which cannot change anything.
+    if native(task.agent) {
+        input.permission_mode = Some("plan".into());
+    }
     let session = workspace
         .add_session(input)?
         .sessions
@@ -176,6 +237,7 @@ pub fn begin(workspace: &mut Workspace, context: &Context<'_>, task_id: &str) ->
             comments,
             session_id: Some(planner),
             approved_at: None,
+            asked_at: Some(crate::time::now_iso8601()),
         });
         task.status = TaskStatus::Planning;
         task.last_error = None;
@@ -281,14 +343,27 @@ pub fn request_changes(
     };
     let run = new_id();
     let file = stage::file(workspace, Stage::Plan, &run);
+    let claude = workspace
+        .session(&planner)
+        .is_ok_and(|session| native(session.agent));
     let text = format!(
-        "Revise the plan. The reviewer of your plan says:\n\n{comment}\n\nWrite the whole revised plan again, not only what changed.\n\n{}",
-        stage::closing(Stage::Plan, &file)
+        "Revise the plan. The reviewer of your plan says:\n\n{comment}\n\n{}",
+        if claude {
+            "Present the whole revised plan with ExitPlanMode again, not only what changed."
+                .to_string()
+        } else {
+            format!(
+                "Write the whole revised plan again, not only what changed.\n\n{}",
+                stage::closing(Stage::Plan, &file)
+            )
+        }
     );
+    let asked = crate::time::now_iso8601();
     pipeline::change(workspace, task_id, move |task| {
         if let Some(plan) = task.plan.as_mut() {
             plan.id = run;
             plan.status = PlanStatus::Drafting;
+            plan.asked_at = Some(asked);
         }
         task.status = TaskStatus::Planning;
     })?;

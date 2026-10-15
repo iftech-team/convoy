@@ -2,6 +2,7 @@
 //! quotas are read.
 
 pub mod codex;
+pub mod gemini;
 pub mod knowledge;
 pub mod launch;
 pub mod mcp;
@@ -101,16 +102,32 @@ pub fn permission_flags(agent: Agent, settings: &crate::model::Settings) -> Vec<
         Agent::Codex if settings.yolo_codex => {
             vec!["--dangerously-bypass-approvals-and-sandbox".into()]
         }
+        Agent::Gemini if settings.yolo_gemini => vec!["--yolo".into()],
         _ => Vec::new(),
     }
 }
 
 /// `--add-dir` for each other folder a session may work in; both agents
 /// take the flag once per folder.
-pub fn add_dir_flags(dirs: Option<&[std::path::PathBuf]>) -> Vec<String> {
+/// `--permission-mode` for a Claude session that asks for one; the others
+/// take no such flag.
+pub fn permission_mode_flags(session: &Session) -> Vec<String> {
+    match (session.agent, session.permission_mode.as_deref()) {
+        (Agent::Claude, Some(mode)) if !mode.is_empty() => {
+            vec!["--permission-mode".into(), mode.to_string()]
+        }
+        _ => Vec::new(),
+    }
+}
+
+pub fn add_dir_flags(agent: Agent, dirs: Option<&[std::path::PathBuf]>) -> Vec<String> {
+    let flag = match agent {
+        Agent::Gemini => "--include-directories",
+        Agent::Claude | Agent::Codex => "--add-dir",
+    };
     dirs.unwrap_or_default()
         .iter()
-        .flat_map(|dir| ["--add-dir".to_string(), dir.to_string_lossy().into_owned()])
+        .flat_map(|dir| [flag.to_string(), dir.to_string_lossy().into_owned()])
         .collect()
 }
 
@@ -127,6 +144,8 @@ pub const CLAUDE_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 pub fn valid_effort(agent: Agent, effort: &str) -> bool {
     match agent {
         Agent::Claude => CLAUDE_EFFORTS.contains(&effort),
+        // Gemini CLI takes no effort setting.
+        Agent::Gemini => false,
         Agent::Codex => {
             !effort.is_empty()
                 && effort.len() <= 32
@@ -147,6 +166,7 @@ pub fn effort_flags(agent: Agent, effort: Option<&str>) -> Vec<String> {
     match agent {
         Agent::Claude => vec!["--effort".into(), effort.into()],
         Agent::Codex => vec!["-c".into(), format!("model_reasoning_effort={effort}")],
+        Agent::Gemini => Vec::new(),
     }
 }
 
@@ -169,7 +189,7 @@ fn session_args(session: &Session, settings_file: Option<&str>, extra: &[String]
     flags.extend(extra.iter().cloned());
     let separator = args
         .iter()
-        .position(|arg| arg == "--")
+        .position(|arg| arg == "--" || (session.agent == Agent::Gemini && arg == "-i"))
         .unwrap_or(args.len());
     args.splice(separator..separator, flags);
     args

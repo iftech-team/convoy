@@ -38,7 +38,7 @@ const TASK_STATUSES: [&str; 11] = [
     "planning",
     "plan_review",
 ];
-const AGENTS: [&str; 2] = ["claude", "codex"];
+const AGENTS: [&str; 3] = ["claude", "codex", "gemini"];
 const ACTIVITY_KINDS: [&str; 7] = [
     "started",
     "resumed",

@@ -17,7 +17,7 @@ export const SECTIONS = [
   ["General", "sliders", ["keep awake", "sleep", "sidebar", "sort", "worktree default", "branch prefix", "new sessions"]],
   ["Appearance", "paint", ["theme", "dark", "light", "system", "language", "russian", "english", "язык", "русский"]],
   ["Terminal", "terminal", ["font", "size", "scrollback", "lines"]],
-  ["Agents", "sparkles", ["claude", "codex", "default agent", "chat", "terminal", "view", "yolo", "permissions", "skip", "review", "template", "brief", "hibernate", "idle", "sleep", "role", "roles", "planner", "builder", "qa", "documentation", "роль"]],
+  ["Agents", "sparkles", ["claude", "codex", "gemini", "default agent", "chat", "terminal", "view", "yolo", "permissions", "skip", "review", "template", "brief", "hibernate", "idle", "sleep", "role", "roles", "planner", "builder", "qa", "documentation", "роль"]],
   ["Accounts", "person", ["account", "profile", "login", "sign in", "claude", "codex"]],
   ["Integrations", "link", ["linear", "jira", "atlassian", "peshbar", "notion", "issues", "import", "api key", "token", "mcp", "integrations"]],
   ["Quick Commands", "bolt", ["prompt", "command", "snippet", "quick"]],
@@ -32,6 +32,7 @@ export const SECTIONS = [
 const AGENTS = [
   ["claude", "Claude Code"],
   ["codex", "Codex"],
+  ["gemini", "Gemini CLI"],
 ];
 
 const visibleSections = () => {
@@ -261,6 +262,7 @@ function agents(settings) {
       t("Permissions"),
       row(t("Claude Code: skip permission prompts (Yolo)"), t("Launches with --dangerously-skip-permissions."), toggle("yolo_claude", settings.yolo_claude, "Claude Yolo")) +
         row(t("Codex: bypass approvals and sandbox (Yolo)"), t("Launches with --dangerously-bypass-approvals-and-sandbox."), toggle("yolo_codex", settings.yolo_codex, "Codex Yolo")) +
+        row(t("Gemini CLI: accept every action (Yolo)"), t("Launches with --yolo."), toggle("yolo_gemini", settings.yolo_gemini, "Gemini Yolo")) +
         row(
           t("Trust project folders automatically"),
           t("Marks the session folder, new worktrees included, as trusted in Claude's .claude.json and Codex's config.toml before launch, so agents never stop on the trust prompt."),

@@ -29,6 +29,7 @@ pub fn home_key(agent: Agent) -> &'static str {
     match agent {
         Agent::Claude => "CLAUDE_CONFIG_DIR",
         Agent::Codex => "CODEX_HOME",
+        Agent::Gemini => "GEMINI_CLI_HOME",
     }
 }
 
@@ -65,6 +66,7 @@ pub fn account_environment(
                         default_home_root(source).join(match session.agent {
                             Agent::Claude => ".claude",
                             Agent::Codex => ".codex",
+                            Agent::Gemini => ".gemini",
                         })
                     });
                 resolve(&fallback)
@@ -80,6 +82,7 @@ pub fn account_environment(
     let standard = default_home_root(source).join(match session.agent {
         Agent::Claude => ".claude",
         Agent::Codex => ".codex",
+        Agent::Gemini => ".gemini",
     });
     if profile.is_some() || home != standard || source.contains_key(key) {
         env.insert(key.to_string(), home.to_string_lossy().into_owned());

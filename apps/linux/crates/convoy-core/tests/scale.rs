@@ -393,7 +393,7 @@ fn a_task_over_several_repositories_reaches_them_all() {
         .contains(&format!("at {} (branch convoy/task-x)", checkout.display())));
     assert_eq!(session.add_dirs.as_deref(), Some(&[checkout.clone()][..]));
     assert_eq!(
-        convoy_core::provider::add_dir_flags(session.add_dirs.as_deref()),
+        convoy_core::provider::add_dir_flags(session.agent, session.add_dirs.as_deref()),
         [
             "--add-dir".to_string(),
             checkout.to_string_lossy().into_owned()

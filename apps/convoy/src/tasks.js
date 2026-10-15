@@ -12,8 +12,9 @@ import { catalog, storageNote } from "./integrations-catalog.js";
 const MODELS = {
   claude: [["fable", "Fable · most capable"], ["opus", "Opus"], ["sonnet", "Sonnet · balanced"], ["haiku", "Haiku · fastest"]],
   codex: [["gpt-5-codex", "GPT-5 Codex"], ["gpt-5", "GPT-5"], ["o3", "o3"]],
+  gemini: [["auto-gemini-3", "Auto · Gemini 3"], ["gemini-3-pro-preview", "Gemini 3 Pro"], ["gemini-2.5-pro", "Gemini 2.5 Pro"], ["gemini-2.5-flash", "Gemini 2.5 Flash"]],
 };
-const AGENTS = [["claude", "Claude Code"], ["codex", "Codex"]];
+const AGENTS = [["claude", "Claude Code"], ["codex", "Codex"], ["gemini", "Gemini CLI"]];
 const MODES = [["pr", "Pull request"], ["describe", "PR description only"], ["push", "Push"], ["none", "Commit only"]];
 const STATUS = {
   queued: ["Queued", "state"],
@@ -433,7 +434,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
           <select id="imp-mode">${MODES.map(([id, name]) => `<option value="${id}"${id === draft.mode ? " selected" : ""}>${escape(t(name))}</option>`).join("")}</select>
         </label>
       </div>
-      ${modelList("claude")}${modelList("codex")}`;
+      ${modelList("claude")}${modelList("codex")}${modelList("gemini")}`;
 
     const foot = `
       <label class="import__check"><input type="checkbox" id="imp-review"${draft.autoReview ? " checked" : ""} /> ${escape(t("Auto-review"))}</label>
@@ -544,7 +545,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         ${modelInput('id="task-model"', draft.agent, draft.model)}
         <span class="field__note">${escape(t("Passed as --model; leave empty for the CLI default."))}</span>
       </label>
-      ${modelList("claude")}${modelList("codex")}`,
+      ${modelList("claude")}${modelList("codex")}${modelList("gemini")}`,
       `<button class="button" data-dismiss="1">${escape(t("Cancel"))}</button>
        <button class="button button--primary" data-action="task-save">${escape(t("Save"))}</button>`);
   }

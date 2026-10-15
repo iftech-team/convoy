@@ -25,6 +25,7 @@ import { autoSkills, skillEditor, skillImport, skillPicker } from "./views-skill
 const AGENTS = [
   ["claude", "Claude Code", agentIcon("claude", 15)],
   ["codex", "Codex", agentIcon("codex", 15)],
+  ["gemini", "Gemini", agentIcon("gemini", 15)],
 ];
 
 export function dialogView() {

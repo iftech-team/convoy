@@ -71,6 +71,14 @@ pub fn next_step(workspace: &Workspace, project_id: &str, running: Running<'_>) 
     }
 }
 
+/// Whether a project gives each task a worktree of its own: it asks for
+/// that, and it is a git repository. A folder of repositories — a group
+/// such as `Eskhata` — has nothing to make a worktree of; its tasks work in
+/// the folder.
+pub fn isolated(project: &crate::model::Project) -> bool {
+    project.task_worktrees == Some(true) && project.path.join(".git").exists()
+}
+
 /// The tasks the queue starts now in a project, in order: queued, waiting
 /// for nothing that is not done, as many as its free slots. A project runs
 /// `maxParallel` at once only when each task has a worktree of its own;
@@ -84,7 +92,7 @@ pub fn next_tasks(workspace: &Workspace, project_id: &str, running: Running<'_>)
     else {
         return Vec::new();
     };
-    let limit = if project.task_worktrees == Some(true) {
+    let limit = if isolated(project) {
         project.max_parallel.unwrap_or(1).max(1) as usize
     } else {
         1
@@ -167,7 +175,7 @@ pub fn wants_worktree(workspace: &Workspace, task_id: &str) -> Option<String> {
         .projects
         .iter()
         .find(|project| project.id == task.project_id)?;
-    if project.task_worktrees != Some(true) {
+    if !isolated(project) {
         return None;
     }
     let session = state

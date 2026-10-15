@@ -42,6 +42,8 @@ fn turns(agent: Agent, file: &Path) -> Vec<(Speaker, String)> {
                 line.contains(r#""type":"user""#) || line.contains(r#""type":"assistant""#)
             }
             Agent::Codex => line.contains(r#""type":"message""#),
+            // Gemini keeps a conversation as one JSON file, not lines.
+            Agent::Gemini => false,
         };
         if !wanted {
             continue;
@@ -52,6 +54,7 @@ fn turns(agent: Agent, file: &Path) -> Vec<(Speaker, String)> {
         if let Some(turn) = match agent {
             Agent::Claude => claude_turn(&record),
             Agent::Codex => codex_turn(&record),
+            Agent::Gemini => None,
         } {
             turns.push(turn);
         }
@@ -143,10 +146,7 @@ fn strip_tags(raw: &str) -> String {
 
 /// One conversation as Markdown, cut down in the middle when it is long.
 fn section(source: &Source) -> String {
-    let agent = match source.agent {
-        Agent::Claude => "Claude Code",
-        Agent::Codex => "Codex",
-    };
+    let agent = source.agent.label();
     let mut body = String::new();
     let mut last = None;
     for (speaker, text) in turns(source.agent, &source.file) {

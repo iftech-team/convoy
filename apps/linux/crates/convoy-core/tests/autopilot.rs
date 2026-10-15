@@ -58,6 +58,8 @@ fn task(workspace: &Workspace, id: &str) -> convoy_core::model::Task {
 fn the_queue_respects_dependencies_and_its_slots() {
     let fixture = fixture();
     let (mut workspace, project) = fixture.with_project();
+    // A worktree per task needs a repository.
+    std::fs::create_dir_all(fixture.path().join(".git")).unwrap();
     let first = add_task(&mut workspace, &project, "First", PublishMode::None);
     let second = add_task(&mut workspace, &project, "Second", PublishMode::None);
     let third = add_task(&mut workspace, &project, "Third", PublishMode::None);
@@ -175,7 +177,7 @@ fn a_task_branch_is_named_after_its_issue() {
         queue::task_branch(&workspace, &task(&workspace, &id)).starts_with("feature/LOYAL-523-")
     );
 
-    // Only a project that asks for them gives tasks worktrees.
+    // Only a repository that asks for them gives tasks worktrees.
     workspace.prepare_task(&id, None).unwrap();
     assert_eq!(queue::wants_worktree(&workspace, &id), None);
     workspace
@@ -187,6 +189,10 @@ fn a_task_branch_is_named_after_its_issue() {
             },
         )
         .unwrap();
+    // A folder of repositories has nothing to make a worktree of: its tasks
+    // work in the folder, one at a time.
+    assert_eq!(queue::wants_worktree(&workspace, &id), None);
+    std::fs::create_dir_all(fixture.path().join(".git")).unwrap();
     assert!(queue::wants_worktree(&workspace, &id).is_some());
 }
 

@@ -1355,6 +1355,9 @@ export default {
     "No tasks": "Нет задач",
     // Task pipeline: stages, roles, plans and documents
     "Make a plan": "Составить план",
+    "This project is a folder, not a git repository, so its tasks work in the folder itself. Turn this on in the repositories inside it.": "Этот проект — папка, а не git-репозиторий, поэтому его задачи работают прямо в папке. Включите это в репозиториях внутри неё.",
+    "Gemini CLI: accept every action (Yolo)": "Gemini CLI: принимать все действия (Yolo)",
+    "Launches with --yolo.": "Запускается с --yolo.",
     "Only a queued, failed or returned task can be planned.": "Спланировать можно только задачу в очереди, упавшую или возвращённую.",
     "A task gets here by itself once its planner has written the plan.": "Задача попадает сюда сама, когда планировщик напишет план.",
     "Import agent skills…": "Импорт навыков агентов…",

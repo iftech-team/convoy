@@ -798,8 +798,14 @@ pub fn poll(workspace: &mut Workspace, context: &Context<'_>) -> Result<Vec<Acti
             .as_ref()
             .filter(|run| run.status == crate::plan::PlanStatus::Drafting)
         {
-            if let Some(StageResult::Plan(text)) =
-                stage::read(Stage::Plan, &stage::file(workspace, Stage::Plan, &run.id))
+            // A Claude planner presents its plan in plan mode; the others
+            // write it to their file.
+            let presented = run.session_id.as_deref().and_then(|planner| {
+                crate::plan::presented(workspace, planner, run.asked_at.as_deref().unwrap_or(""))
+            });
+            if let Some(StageResult::Plan(text)) = presented
+                .map(StageResult::Plan)
+                .or_else(|| stage::read(Stage::Plan, &stage::file(workspace, Stage::Plan, &run.id)))
             {
                 actions.extend(hibernate(context, run.session_id.as_ref()));
                 actions.extend(crate::plan::written(workspace, &task.id, &text)?);
