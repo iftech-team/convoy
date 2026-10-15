@@ -172,7 +172,8 @@ try {
         const p = projects.find((item) => item.id === args.id);
         return { id: p.id, title: p.title, path: p.path, group: "", icon: p.icon ?? "", setup_command: "", shared_paths: "", review_template: "",
                  color: p.color ?? "", default_agent: p.default_agent ?? "", base_ref: "", branch_prefix: "", task_mode: "", auto_run_tasks: false,
-                 test_commands: p.test_commands ?? "", qa_agent: p.qa_agent ?? "", qa_auto: !!p.qa_auto, qa_timeout: p.qa_timeout ?? 15 };
+                 test_commands: p.test_commands ?? "", qa_agent: p.qa_agent ?? "", qa_auto: !!p.qa_auto, qa_timeout: p.qa_timeout ?? 15,
+                 ...Object.fromEntries(["task_mode", "review_auto", "plan_first_default", "plan_auto_approve", "convoy_publishes", "task_worktrees", "auto_run_tasks", "max_parallel", "docs_auto"].filter((key) => key in p).map((key) => [key, p[key]])) };
       }
       if (cmd === "project_edit") {
         const p = projects.find((item) => item.id === args.id);
@@ -930,6 +931,9 @@ try {
   await page.locator('.project-row .project-icon__dot').first().waitFor();
   await page.locator('[data-proj-select="default_agent"]').selectOption("codex");
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.default_agent === "codex"));
+  // Four parts: General, How tasks run, Tracker, Advanced.
+  assert.deepEqual(await page.locator(".project-tabs [data-project-tab]").allTextContents(), ["General", "How tasks run", "Tracker", "Advanced"]);
+  await page.locator('[data-project-tab="tracker"]').click();
   // Each project imports from its own workspace and project: the pickers
   // fill from the connection, each one narrowing the next.
   await page.locator("#link-connection").selectOption("peshbar");
@@ -1015,6 +1019,10 @@ try {
   // The project's QA: commands found in its files, an agent, automatic runs.
   // Reached from the Settings button in the project's header.
   await page.locator('.header__actions [data-action="project-settings"]').click();
+  await page.locator('[data-project-tab="pipeline"]').click();
+  // The steps in the order a task takes them.
+  assert.deepEqual(await page.locator(".step-card__title").allTextContents(), ["Plan", "Build", "Review", "Test", "Publish", "Document"]);
+  await page.locator('[data-preset="simple"][aria-checked="true"]').waitFor();
   await page.locator('[data-action="qa-detect"]').click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.test_commands === "npm test\nnpm run lint"));
   await page.locator('[data-proj-select="qa_agent"]').selectOption("codex");
@@ -1027,6 +1035,23 @@ try {
     await page.locator('[data-action="qa-detect"]').scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${shots}/qa-settings.png` });
   }
+  // Testing on by itself is no preset: Custom. A preset writes its settings
+  // in one change; Autopilot asks first.
+  await page.locator(".preset--custom").waitFor();
+  const editsBefore = await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "project_edit").length);
+  await page.locator('[data-preset="reviewed"]').click();
+  await page.locator('[data-preset="reviewed"][aria-checked="true"]').waitFor();
+  const reviewed = await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "project_edit"));
+  assert.equal(reviewed.length, editsBefore + 1, "one change");
+  assert.deepEqual(reviewed.at(-1).args.input, { plan_first_default: false, review_auto: true, qa_auto: true, task_mode: "pr", convoy_publishes: true, task_worktrees: true, auto_run_tasks: false });
+  await page.locator('[data-preset="autopilot"]').click();
+  await page.locator(".modal", { hasText: "Run this project's tasks on autopilot?" }).waitFor();
+  if (shots) await page.screenshot({ path: `${shots}/presets.png` });
+  await page.locator(".modal .button--primary").click();
+  await page.locator('[data-preset="autopilot"][aria-checked="true"]').waitFor();
+  assert.equal((await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "project_edit").at(-1).args.input)).max_parallel, 2);
+  // Back as it was for what follows: tested by itself, nothing else.
+  await page.evaluate(() => window.__TAURI_INTERNALS__.invoke("project_edit", { id: "project", input: { plan_first_default: false, plan_auto_approve: false, review_auto: false, task_mode: "", convoy_publishes: false, task_worktrees: false, auto_run_tasks: false, max_parallel: 1 } }));
   await page.locator('[data-action="close-project-settings"]').click();
   await page.locator('[data-tab="tasks"]').click();
 

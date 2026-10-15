@@ -3,6 +3,7 @@
 import { installTasks } from "./tasks.js";
 import { agentName, newTaskDefaults } from "./task-defaults.js";
 import { dropStatus, movable } from "./phase.js";
+import { presetPatch } from "./presets.js";
 import { sessionLabel } from "./session-state.js";
 import { icons } from "./icons.js";
 import { listen } from "@tauri-apps/api/event";
@@ -699,7 +700,8 @@ const ACTIONS = {
   "import-history": openTranscripts,
   "import-all-history": openHistorySweep,
   "history-sweep-run": runHistorySweep,
-  "project-settings": openProjectSettings,
+  "project-settings": () => openProjectSettings(),
+  "project-tracker": () => openProjectSettings("tracker"),
   "sync-suggest": () => {
     const link = state.projectDraft?.link;
     if (link?.sync && state.syncChoices?.suggested) return saveProjectLink({ ...link, sync: { ...link.sync, map: state.syncChoices.suggested } });
@@ -1367,7 +1369,7 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon],[data-sync-toggle],[data-intake-toggle]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-inbox-answer],[data-inbox-open],[data-inbox-expand],[data-tab-close],[data-tab-open],[data-related-remove],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-sessions-show],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day],[data-skill],[data-skill-pick],[data-skill-toggle],[data-usage-days],[data-usage-agent],[data-usage-table],[data-price-add],[data-price-remove],[data-price-reset],[data-price-save],[data-task-doc-open],[data-task-doc-reveal],[data-task-doc],[data-repo-remove],[data-task-pr-extra],[data-import-pick],[data-import-all],[data-import-scope],[data-import-project],[data-import-role],[data-import-auto]",
+      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-sessions-show],[data-project-tab],[data-preset],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day],[data-skill],[data-skill-pick],[data-skill-toggle],[data-usage-days],[data-usage-agent],[data-usage-table],[data-price-add],[data-price-remove],[data-price-reset],[data-price-save],[data-task-doc-open],[data-task-doc-reveal],[data-task-doc],[data-repo-remove],[data-task-pr-extra],[data-import-pick],[data-import-all],[data-import-scope],[data-import-project],[data-import-role],[data-import-auto]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -1524,6 +1526,27 @@ app.addEventListener("click", async (event) => {
     await loadAllTasks();
     await loadPlanning();
     return render();
+  }
+  if (data.projectTab) {
+    state.projectSettingsTab = data.projectTab;
+    return render();
+  }
+  // A preset writes its settings in one go; Autopilot says first what it
+  // will let run by itself.
+  if (data.preset) {
+    const draft = state.projectDraft;
+    const patch = draft && presetPatch(data.preset, draft);
+    if (!patch) return;
+    if (data.preset !== "autopilot") return saveProjectField(patch);
+    return openModal({
+      kind: "confirm",
+      title: t("Run this project's tasks on autopilot?"),
+      body: patch.qa_auto
+        ? t("New tasks are planned and their plans approved by themselves, then built, reviewed, tested and published as pull requests, {count} at a time. The queue starts the next task when one finishes.", { count: patch.max_parallel })
+        : t("New tasks are planned and their plans approved by themselves, then built, reviewed and published as pull requests, {count} at a time. The queue starts the next task when one finishes.", { count: patch.max_parallel }),
+      confirmLabel: t("Use Autopilot"),
+      run: () => saveProjectField(patch),
+    });
   }
   // The Sessions page's All / Reviews switch: the same page, two lists.
   if (data.sessionsShow) {
@@ -2359,7 +2382,10 @@ async function reconnectProject() {
 }
 
 /// Project settings is a page in the main area, as on macOS.
-async function openProjectSettings() {
+/// The project's settings, on one of its four parts (views-project.js); by
+/// default the part last shown.
+async function openProjectSettings(tab) {
+  if (typeof tab === "string") state.projectSettingsTab = tab;
   if (!(await reloadProjectDraft())) return;
   await loadProjectLink();
   const icon = state.projectDraft.icon ?? "";

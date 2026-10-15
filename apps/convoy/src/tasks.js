@@ -253,7 +253,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
     const path = [link?.workspace?.name, link?.project?.name].filter(Boolean).join(" › ");
     return `<span class="field__note">
         ${escape(path ? t("Searching in {path}.", { path }) : t("Searching all of {name}.", { name: current.name }))}
-        <button class="link-button" data-action="project-settings">${escape(path ? t("Change") : t("Link this project…"))}</button>
+        <button class="link-button" data-action="project-tracker">${escape(path ? t("Change") : t("Link this project…"))}</button>
       </span>`;
   };
 

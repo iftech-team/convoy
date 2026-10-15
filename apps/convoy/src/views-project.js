@@ -1,6 +1,7 @@
-// Project settings, laid out as the macOS app's page: identity (name,
-// colour, icon), agent, Git & worktrees, review & tasks, quick commands and
-// removal. Each change is saved as it is made.
+// Project settings, in four parts: General (name, colour, icon, agent,
+// folder), How tasks run (a preset, then each step), Tracker, and Advanced
+// (git, roles, skills, quick commands, removal). Each change is saved as it
+// is made.
 
 import { SYMBOLS, agentIcon, icon, projectIcon } from "./icons.js";
 import { icons } from "./icons.js";
@@ -8,6 +9,7 @@ import { button, escape, shorten } from "./ui.js";
 import { state } from "./state.js";
 import { t } from "./i18n.js";
 import { TASK_MODES, taskModeOf } from "./task-defaults.js";
+import { CUSTOM, PRESETS, PRESET_ORDER, canTest, isRepository, presetOf } from "./presets.js";
 import { ROLES, projectSkills } from "./views-skills.js";
 
 /// The macOS app's palette and emoji choices, in its order.
@@ -48,53 +50,6 @@ const select = (key, options, selected) =>
 const TRACKERS = { linear: "Linear", jira: "Jira", peshbar: "Peshbar", notion: "Notion" };
 
 
-/// Tasks in worktrees of their own, several at once, and published by
-/// Convoy after review and QA.
-function autopilot(project) {
-  const repository = project.is_repository !== false;
-  return groupBox(
-    t("Autopilot"),
-    `${row(
-      t("A worktree for each task"),
-      repository
-        ? t("Each task builds on a branch of its own, set up with the shared paths and setup commands above. Turning this on lets those commands run without asking.")
-        : t("This project is a folder, not a git repository, so its tasks work in the folder itself. Turn this on in the repositories inside it."),
-      `<button class="switch" data-proj-toggle="task_worktrees" aria-pressed="${!!project.task_worktrees}"
-               aria-label="${escape(t("A worktree for each task"))}"></button>`,
-    )}
-     ${row(
-       t("Tasks at once"),
-       project.task_worktrees && repository ? t("How many queued tasks run side by side.") : t("Needs a worktree for each task; one checkout runs one task."),
-       select(
-         "max_parallel",
-         [1, 2, 3, 4, 6, 8].map((count) => [String(count), String(count)]),
-         String(project.max_parallel ?? 1),
-       ),
-     )}
-     ${row(
-       t("Convoy publishes"),
-       repository
-         ? t("Builders commit and stop; once review and QA pass, Convoy pushes the branch and opens the request, with a description from the Pull request author role.")
-         : t("This project is a folder, not a git repository: its builders publish in the repositories they changed, as the task's publishing says. Turn this on in the repositories inside it."),
-       `<button class="switch" data-proj-toggle="convoy_publishes" aria-pressed="${!!project.convoy_publishes}"
-                aria-label="${escape(t("Convoy publishes"))}"></button>`,
-     )}
-     ${row(
-       t("Requests open with"),
-       t("Read from the remote's host when automatic: glab for GitLab, gh otherwise."),
-       select(
-         "pr_cli",
-         [
-           ["", t("Automatic")],
-           ["gh", "gh (GitHub)"],
-           ["glab", "glab (GitLab)"],
-         ],
-         project.pr_cli ?? "",
-       ),
-     )}`,
-  );
-}
-
 /// Each role's instructions in this project; an empty field follows the
 /// global ones, shown as its placeholder.
 function roles(project) {
@@ -111,38 +66,50 @@ function roles(project) {
                   placeholder="${escape(fallback[role] || t("No instructions"))}">${escape(own[role] ?? "")}</textarea>
       </div>`,
     ).join(""),
-    t("Empty fields follow Settings → Roles. Skills reach a role when they are marked for it in the skill's editor."),
+    t("Empty fields follow Settings → Agents → Roles. Skills reach a role when they are marked for it in the skill's editor."),
   );
 }
 
-/// Where task documents go, and whether they are written by themselves.
-function documents(project) {
-  return groupBox(
-    t("Task documents"),
-    `${row(
-      t("Write the document when QA passes"),
-      t("A documentation writer, with the Documentation role's instructions, writes it as the last stage."),
-      `<button class="switch" data-proj-toggle="docs_auto" aria-pressed="${!!project.docs_auto}"
-               aria-label="${escape(t("Write the document when QA passes"))}"></button>`,
-    )}
-     <div class="pref-block pref-stack">
-       <div class="pref-row__title">${escape(t("Documents folder"))}</div>
-       <input class="pref-text pref-text--wide" data-proj-text="docs_dir" spellcheck="false"
-              value="${escape(project.docs_dir ?? "")}" placeholder="${escape(project.docs_default_dir ?? "")}" />
-       <div class="pref-row__detail">${escape(t("A full path outside the repository, such as ~/Desktop/EskhataDocs. Empty keeps documents in Convoy's own data."))}</div>
-     </div>`,
-  );
+const toggle = (key, on, label) =>
+  `<button class="switch" data-proj-toggle="${key}" aria-pressed="${!!on}" aria-label="${escape(label)}"></button>`;
+
+/// One step of the road a task takes: its switch, what it does, and its
+/// options while it is on. `forNew` says the switch sets new tasks only.
+function stepCard({ key, title, about, control, on, options = "", forNew = false, open = false }) {
+  return `
+    <section class="step-card step-card--${on ? "on" : "off"}" data-step-card="${key}">
+      <div class="step-card__head">
+        <div class="pref-row__text">
+          <div class="step-card__title">${escape(title)}</div>
+          <div class="pref-row__detail">${escape(about)}${forNew ? ` <em>${escape(t("Applies to new tasks."))}</em>` : ""}</div>
+        </div>
+        <div class="pref-row__control">${control}</div>
+      </div>
+      ${(on || open) && options ? `<div class="step-card__options">${options}</div>` : ""}
+    </section>`;
 }
 
-/// How this project's tasks are tested when they move to In testing: its
-/// own checks first, then a QA agent.
-function testing(project) {
-  const agent = project.qa_agent ?? "";
+/// Presets, then the steps: how this project's tasks run, in the order they
+/// run.
+function pipeline(project) {
+  const repository = isRepository(project);
+  const chosen = presetOf(project);
+  const presets = `
+    <div class="presets" role="radiogroup" aria-label="${escape(t("How tasks run"))}">
+      ${PRESET_ORDER.map((name) => {
+        const [label, about] = PRESETS[name];
+        return `<button class="preset" role="radio" data-preset="${name}" aria-checked="${chosen === name}">
+            <span class="preset__name">${escape(t(label))}</span>
+            <span class="preset__about">${escape(t(about))}</span>
+          </button>`;
+      }).join("")}
+      ${chosen === "custom" ? `<div class="preset preset--custom" aria-checked="true"><span class="preset__name">${escape(t(CUSTOM[0]))}</span><span class="preset__about">${escape(t(CUSTOM[1]))}</span></div>` : ""}
+    </div>`;
+
   const timeouts = [5, 10, 15, 30, 60, 120];
-  if (!timeouts.includes(project.qa_timeout)) timeouts.push(project.qa_timeout);
-  return groupBox(
-    t("Testing & QA"),
-    `<div class="pref-block pref-stack">
+  if (project.qa_timeout && !timeouts.includes(project.qa_timeout)) timeouts.push(project.qa_timeout);
+  const testOptions = `
+     <div class="pref-block pref-stack">
        <div class="pref-row__title">${escape(t("Test commands (one per line)"))}</div>
        <textarea class="pref-area pref-area--mono" data-proj-text="test_commands" rows="3" spellcheck="false"
                  placeholder="npm test&#10;npm run lint">${escape(project.test_commands ?? "")}</textarea>
@@ -154,21 +121,7 @@ function testing(project) {
      ${row(
        t("Then test with an agent"),
        t("Tests the change end to end against the task and reports a verdict. It does not edit code."),
-       select(
-         "qa_agent",
-         [
-           ["", t("No agent")],
-           ["claude", "Claude Code"],
-           ["codex", "Codex"],
-           ["gemini", "Gemini CLI"],
-         ],
-         agent,
-       ),
-     )}
-     ${row(
-       t("Test tasks when they finish"),
-       t("A task whose builder finishes cleanly moves to In testing by itself."),
-       `<button class="switch" data-proj-toggle="qa_auto" aria-pressed="${!!project.qa_auto}" aria-label="${escape(t("Test tasks when they finish"))}"></button>`,
+       select("qa_agent", [["", t("No agent")], ["claude", "Claude Code"], ["codex", "Codex"], ["gemini", "Gemini CLI"]], project.qa_agent ?? ""),
      )}
      <div class="pref-block pref-stack">
        <div class="pref-row__title">${escape(t("Shared QA environment"))}</div>
@@ -179,14 +132,104 @@ function testing(project) {
      ${row(
        t("Time limit per check"),
        "",
-       select(
-         "qa_timeout",
-         timeouts.sort((a, b) => a - b).map((minutes) => [String(minutes), t("{minutes} min", { minutes })]),
-         String(project.qa_timeout ?? 15),
-       ),
-     )}`,
-    t("Moving a task to In testing starts its QA: the checks, the review when it is due, then the QA agent. A failure goes back to the builder with the findings; a pass waits for you to mark it done."),
-  );
+       select("qa_timeout", timeouts.sort((a, b) => a - b).map((minutes) => [String(minutes), t("{minutes} min", { minutes })]), String(project.qa_timeout ?? 15)),
+     )}`;
+
+  const mode = taskModeOf(project);
+  return `
+    ${presets}
+    <div class="step-cards">
+      ${stepCard({
+        key: "plan",
+        title: t("Plan"),
+        about: t("A planner writes the plan before anything is built; you approve it or ask for changes."),
+        control: toggle("plan_first_default", project.plan_first_default, t("Plan new tasks first")),
+        on: !!project.plan_first_default,
+        forNew: true,
+        options: row(
+          t("Approve plans automatically"),
+          t("The builder starts as soon as the plan is written. A task can say otherwise."),
+          toggle("plan_auto_approve", project.plan_auto_approve, t("Approve plans automatically")),
+        ),
+      })}
+      ${stepCard({
+        key: "build",
+        title: t("Build"),
+        about: t("The task's agent writes the change. Always on."),
+        control: "",
+        on: true,
+        options: `${row(
+          t("A worktree for each task"),
+          repository
+            ? t("Each task builds on a branch of its own, set up with the shared paths and setup commands in Advanced. Turning this on lets those commands run without asking.")
+            : t("This project is a folder, not a git repository, so its tasks work in the folder itself. Turn this on in the repositories inside it."),
+          toggle("task_worktrees", project.task_worktrees, t("A worktree for each task")),
+        )}
+        ${row(
+          t("Tasks at once"),
+          project.task_worktrees && repository ? t("How many queued tasks run side by side.") : t("Needs a worktree for each task; one checkout runs one task."),
+          select("max_parallel", [1, 2, 3, 4, 6, 8].map((count) => [String(count), String(count)]), String(project.max_parallel ?? 1)),
+        )}
+        ${row(t("Auto-run task queue"), t("Start the next queued task when one finishes."), toggle("auto_run_tasks", project.auto_run_tasks, t("Auto-run task queue")))}
+        ${row(
+          t("Rounds of automatic fixes"),
+          t("A failed review or QA goes back to the builder with the findings this many times; after that the task needs you."),
+          select("max_fix_rounds", [0, 1, 2, 3, 4, 5].map((rounds) => [String(rounds), rounds === 0 ? t("None") : String(rounds)]), String(project.max_fix_rounds ?? 2)),
+        )}`,
+      })}
+      ${stepCard({
+        key: "review",
+        title: t("Review"),
+        about: t("The other agent reviews each round before testing; what it finds goes back to the builder."),
+        control: toggle("review_auto", project.review_auto, t("Review tasks automatically")),
+        on: !!project.review_auto,
+        forNew: true,
+      })}
+      ${stepCard({
+        key: "test",
+        title: t("Test"),
+        about: canTest(project)
+          ? t("The project's checks run, then a QA agent if one is chosen. A failure goes back to the builder.")
+          : t("Add test commands or choose a QA agent to test tasks."),
+        control: toggle("qa_auto", project.qa_auto, t("Test tasks when they finish")),
+        on: !!project.qa_auto,
+        open: true,
+        options: testOptions,
+      })}
+      ${stepCard({
+        key: "publish",
+        title: t("Publish"),
+        about: t("How a finished task leaves this machine."),
+        control: select("task_mode", TASK_MODES.map(([id, name]) => [id, t(name)]), mode),
+        on: mode !== "none",
+        forNew: true,
+        options: `${row(
+          t("Convoy publishes"),
+          repository
+            ? t("Builders commit and stop; once review and QA pass, Convoy pushes the branch and opens the request, with a description from the Pull request author role.")
+            : t("This project is a folder, not a git repository: its builders publish in the repositories they changed, as the task's publishing says. Turn this on in the repositories inside it."),
+          toggle("convoy_publishes", project.convoy_publishes, t("Convoy publishes")),
+        )}
+        ${row(
+          t("Requests open with"),
+          t("Read from the remote's host when automatic: glab for GitLab, gh otherwise."),
+          select("pr_cli", [["", t("Automatic")], ["gh", "gh (GitHub)"], ["glab", "glab (GitLab)"]], project.pr_cli ?? ""),
+        )}`,
+      })}
+      ${stepCard({
+        key: "document",
+        title: t("Document"),
+        about: t("A documentation writer, with the Documentation role's instructions, writes it once QA passes."),
+        control: toggle("docs_auto", project.docs_auto, t("Write the document when QA passes")),
+        on: !!project.docs_auto,
+        options: `<div class="pref-block pref-stack">
+           <div class="pref-row__title">${escape(t("Documents folder"))}</div>
+           <input class="pref-text pref-text--wide" data-proj-text="docs_dir" spellcheck="false"
+                  value="${escape(project.docs_dir ?? "")}" placeholder="${escape(project.docs_default_dir ?? "")}" />
+           <div class="pref-row__detail">${escape(t("A full path outside the repository, such as ~/Desktop/EskhataDocs. Empty keeps documents in Convoy's own data."))}</div>
+         </div>`,
+      })}
+    </div>`;
 }
 
 /// One level's picker: what the tracker listed, the saved choice even when
@@ -425,11 +468,21 @@ function identity(project) {
   );
 }
 
+/// The page's four parts: who the project is, how its tasks run, which
+/// tracker it follows, and the rest.
+const PAGE_TABS = [
+  ["general", "General"],
+  ["pipeline", "How tasks run"],
+  ["tracker", "Tracker"],
+  ["advanced", "Advanced"],
+];
+
 export function projectSettingsPage() {
   const project = state.projectDraft;
   if (!project) return "";
   const global = { codex: "Codex", gemini: "Gemini CLI" }[state.settings.default_agent] ?? "Claude Code";
   const commands = (state.quickCommands ?? []).filter((command) => command.project_id === project.id);
+  const tab = PAGE_TABS.some(([key]) => key === state.projectSettingsTab) ? state.projectSettingsTab : "general";
   return `
     <div class="prefs__page prefs__page--project" data-scroll="project-settings">
       <div class="prefs__content">
@@ -441,7 +494,14 @@ export function projectSettingsPage() {
             <div class="pref-row__detail">${escape(t("Project settings"))}</div>
           </div>
         </div>
-        ${identity(project)}
+        <div class="segmented project-tabs" role="tablist">
+          ${PAGE_TABS.map(([key, label]) => `<button role="tab" data-project-tab="${key}" aria-pressed="${tab === key}">${escape(t(label))}</button>`).join("")}
+        </div>
+        ${tab === "pipeline" ? pipeline(project) : ""}
+        ${tab === "tracker" ? integration(project) : ""}
+        ${
+          tab === "general"
+            ? `${identity(project)}
         ${groupBox(
           t("Agent"),
           row(
@@ -461,6 +521,19 @@ export function projectSettingsPage() {
           t("Preselected for new sessions and tasks in this project. Global default: {agent}.", { agent: global }),
         )}
         ${groupBox(
+          t("Folder"),
+          row(
+            project.path,
+            "",
+            `${button({ label: t("Show"), icon: "folder", action: "reveal-project" })}
+             ${button({ label: t("Reconnect…"), icon: "link", action: "reconnect-project" })}`,
+          ),
+        )}`
+            : ""
+        }
+        ${
+          tab === "advanced"
+            ? `${groupBox(
           t("Git & worktrees"),
           `${row(t("Base ref for worktrees"), t("Empty starts from the current HEAD."), text("base_ref", project.base_ref, "main"))}
            ${row(t("Branch prefix"), t("Global: {prefix}", { prefix: state.settings.branch_prefix || "convoy" }), text("branch_prefix", project.branch_prefix, "feature"))}
@@ -476,56 +549,7 @@ export function projectSettingsPage() {
            </div>`,
           t("Shared paths are gitignored files copied into each new worktree; existing files are never replaced. Setup commands run once, after you confirm, following the global ones in Settings → Git."),
         )}
-        ${groupBox(
-          t("Review & tasks"),
-          `${row(
-            t("Publish"),
-            t("How new tasks are published once they are done."),
-            select(
-              "task_mode",
-              TASK_MODES.map(([id, name]) => [id, t(name)]),
-              taskModeOf(project),
-            ),
-          )}
-           ${row(
-             t("Auto-run task queue"),
-             t("Start the next queued task when one finishes."),
-             `<button class="switch" data-proj-toggle="auto_run_tasks" aria-pressed="${!!project.auto_run_tasks}"
-                      aria-label="${escape(t("Auto-run task queue"))}"></button>`,
-           )}
-           ${row(
-             t("Review tasks automatically"),
-             t("New tasks start with automatic review switched on: the other agent reviews each round before QA."),
-             `<button class="switch" data-proj-toggle="review_auto" aria-pressed="${!!project.review_auto}"
-                      aria-label="${escape(t("Review tasks automatically"))}"></button>`,
-           )}
-           ${row(
-             t("Rounds of automatic fixes"),
-             t("A failed review or QA goes back to the builder with the findings this many times; after that the task needs your attention."),
-             select(
-               "max_fix_rounds",
-               [0, 1, 2, 3, 4, 5].map((rounds) => [String(rounds), rounds === 0 ? t("None") : String(rounds)]),
-               String(project.max_fix_rounds ?? 2),
-             ),
-           )}
-           ${row(
-             t("Plan new tasks first"),
-             t("A planner writes the plan before anything is built; you approve it or ask for changes."),
-             `<button class="switch" data-proj-toggle="plan_first_default" aria-pressed="${!!project.plan_first_default}"
-                      aria-label="${escape(t("Plan new tasks first"))}"></button>`,
-           )}
-           ${row(
-             t("Approve plans automatically"),
-             t("The builder starts as soon as the plan is written. A task can say otherwise."),
-             `<button class="switch" data-proj-toggle="plan_auto_approve" aria-pressed="${!!project.plan_auto_approve}"
-                      aria-label="${escape(t("Approve plans automatically"))}"></button>`,
-           )}`,
-        )}
-        ${autopilot(project)}
         ${roles(project)}
-        ${documents(project)}
-        ${testing(project)}
-        ${integration(project)}
         ${projectSkills(project.id)}
         ${groupBox(
           t("Quick commands for this project"),
@@ -544,15 +568,6 @@ export function projectSettingsPage() {
           t("Sent to a terminal from the ⚡ menu. Global commands are managed in Settings → Quick Commands."),
         )}
         ${groupBox(
-          t("Folder"),
-          row(
-            project.path,
-            "",
-            `${button({ label: t("Show"), icon: "folder", action: "reveal-project" })}
-             ${button({ label: t("Reconnect…"), icon: "link", action: "reconnect-project" })}`,
-          ),
-        )}
-        ${groupBox(
           t("Remove"),
           row(
             t("Remove project from Convoy"),
@@ -560,7 +575,9 @@ export function projectSettingsPage() {
             button({ label: t("Remove…"), kind: "danger", action: "remove-project", disabled: project.running > 0 }),
           ),
           t("Stop this project's running sessions first. Files, worktrees and the agents' own history stay on disk."),
-        )}
+        )}`
+            : ""
+        }
       </div>
     </div>`;
 }
