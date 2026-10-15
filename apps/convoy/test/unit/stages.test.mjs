@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { foldStages, stageIndex } from "../../src/stages.js";
+import { stageIndex } from "../../src/stages.js";
 
 const tasks = [
   {
@@ -32,14 +32,4 @@ test("a task's sessions, from its runs, links and titles", () => {
   // A session of no task, and a review of one, stay their own.
   assert.equal(of("lone"), undefined);
   assert.equal(of("manual"), undefined);
-});
-
-test("the sidebar folds a task's sessions into its builder's row", () => {
-  const sessions = [session("b1"), session("rev2"), session("qa2"), session("lone"), session("plan2")];
-  const rows = foldStages(sessions, stageIndex(tasks, sessions));
-  assert.deepEqual(rows.map(({ item }) => item.id), ["b1", "lone", "plan2"]);
-  assert.deepEqual(rows[0].task, { taskId: "t1", stages: [sessions[1], sessions[2]] });
-  // Before it is built, a task's row is its newest session: here its planner.
-  assert.deepEqual(rows[2].task, { taskId: "t2", stages: [] });
-  assert.equal(rows[1].task, null);
 });

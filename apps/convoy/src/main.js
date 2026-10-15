@@ -817,29 +817,6 @@ const ACTIONS = {
     state.menu = { kind: "account", agent };
     render();
   },
-  "selection-archive": async () => {
-    const ids = [...state.selected];
-    const running = ids.filter((id) => isRunning(id));
-    for (const id of ids.filter((id) => !isRunning(id))) await done("session_archive", { id, archived: true });
-    state.selected = new Set(running);
-    await loadWorkspace();
-    if (running.length)
-      toast(
-        running.length === 1
-          ? t("{count} kept — stop it first.", { count: plural(running.length, "running session") })
-          : t("{count} kept — stop them first.", { count: plural(running.length, "running session") }),
-      );
-    render();
-  },
-  "selection-close": () => {
-    for (const id of state.selected) if (state.tabs.includes(id)) closeTab(id);
-    state.selected = new Set();
-    render();
-  },
-  "selection-clear": () => {
-    state.selected = new Set();
-    render();
-  },
   "awake-menu": () => {
     state.menu = state.menu?.kind === "awake" ? null : { kind: "awake" };
     render();
@@ -1386,9 +1363,10 @@ app.addEventListener("click", async (event) => {
   if (await automations.onClick(target)) return;
   if (await skills.onClick(target)) return;
   if (usage.onClick(target)) return;
-  // A double click on a session's name renames it, in the sidebar and the
-  // Sessions list (the header's menu has Rename). Counted from the click itself, since the
-  // first click redraws the list and a dblclick never reaches the new row.
+  // A double click on a session's name renames it, in the Sessions list and
+  // a pinned row (the header's menu has Rename). Counted from the click
+  // itself, since the first click redraws the list and a dblclick never
+  // reaches the new row.
   if (event.detail === 2 && !state.picked) {
     const rename = target.classList.contains("side-session")
       ? data.open
@@ -1597,12 +1575,6 @@ app.addEventListener("click", async (event) => {
     return startSession(data.start);
   }
   if (data.stop) return terminal.stop(data.stop);
-  // ⌘-click (Ctrl-click elsewhere) picks sessions in the sidebar.
-  if (data.open && (event.metaKey || event.ctrlKey) && target.classList.contains("side-session")) {
-    if (state.selected.has(data.open)) state.selected.delete(data.open);
-    else state.selected.add(data.open);
-    return render();
-  }
   if (data.open) {
     // Opened from the helpers menu: the menu has done its job.
     if (state.menu?.kind === "helpers") state.menu = null;

@@ -1,6 +1,6 @@
 // Which sessions belong to a task, and as which step. A task runs as several
 // sessions — its builder, and a planner, reviewer, QA agent, PR author and
-// doc writer — and the sidebar shows them as one row, the task's.
+// doc writer — and a session's menu offers to open its task.
 //
 // Only the builder carries the task's id. The others are found from the
 // task's own runs, from the links a reviewer (review_of) and a QA agent
@@ -48,25 +48,4 @@ export function stageIndex(tasks, sessions) {
     }
   }
   return index;
-}
-
-/// A list of sessions with each task's sessions folded into one: the task's
-/// builder when it is listed, else its newest session listed. Returns the
-/// sessions to show, each with the task's other sessions under `stages`.
-export function foldStages(sessions, index) {
-  const groups = new Map();
-  for (const item of sessions) {
-    const stage = index.get(item.id);
-    if (!stage) continue;
-    if (!groups.has(stage.taskId)) groups.set(stage.taskId, []);
-    groups.get(stage.taskId).push(item);
-  }
-  const shown = new Map();
-  for (const [taskId, members] of groups) {
-    const lead = members.find((item) => index.get(item.id).stage === "build") ?? members[members.length - 1];
-    shown.set(lead.id, { taskId, stages: members.filter((item) => item !== lead) });
-  }
-  return sessions
-    .filter((item) => !index.has(item.id) || shown.has(item.id))
-    .map((item) => ({ item, task: shown.get(item.id) ?? null }));
 }

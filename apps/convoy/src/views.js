@@ -17,14 +17,14 @@ import { language, t } from "./i18n.js";
 import { agentName } from "./task-defaults.js";
 import { activeAccount, anySession, isProjectTab, isRunning, phaseOf, project, session, sessionState, state, visibleSessions } from "./state.js";
 import { sessionLabel, sessionTone, sleptBy } from "./session-state.js";
-import { foldStages, stageIndex } from "./stages.js";
-import { phaseLine, runnable } from "./views-planning.js";
+import { stageIndex } from "./stages.js";
+import { runnable } from "./views-planning.js";
 import { movable } from "./phase.js";
 import { missingConversation } from "./terminal.js";
 import { shownAsTranscript, viewOf } from "./views-chat.js";
 import { skillsChip, skillsMenu } from "./views-skills.js";
 import { approvalsButton, approvalsPanel, inboxItems } from "./views-inbox.js";
-import { helperActivity, helpersButton, helpersMenu, helpersSummary } from "./views-helpers.js";
+import { helperActivity, helpersButton, helpersMenu } from "./views-helpers.js";
 import { automationActivity } from "./views-automations.js";
 
 const TABS = [
@@ -51,59 +51,29 @@ function stateDot(item, running = item.running) {
   return `<span class="dot dot--${sessionTone(now)}" title="${escape(t(sessionLabel(now)))}"></span>`;
 }
 
-/// A task's row: the dot of whichever of its sessions most needs looking at.
-const BUSIEST = ["needs_you", "working", "finished", "idle", "asleep", "stopped", "not_started"];
-function taskDot(group) {
-  const now = group.map((entry) => sessionState(entry, !!entry.running)).sort((a, b) => BUSIEST.indexOf(a) - BUSIEST.indexOf(b))[0];
-  return `<span class="dot dot--${sessionTone(now)}" title="${escape(t(sessionLabel(now)))}"></span>`;
-}
-
-function sidebarSession(item, { showProject = false, helper = false, task = null } = {}) {
-  const owner = showProject ? state.projects.find((entry) => entry.id === item.project_id) : null;
-  // A manager says how many helpers it has, even in the compact sidebar.
-  const helpers = showProject ? "" : helpersSummary(item.id);
-  // A task's row stands for all its sessions, and says where the task is.
-  const group = task ? [item, ...task.stages] : [item];
-  const record = task ? knownTask(task.taskId) : null;
+/// A pinned session, from any project, with its project's name.
+function sidebarSession(item) {
+  const owner = state.projects.find((entry) => entry.id === item.project_id);
   return `
-    <button class="side-session${helper ? " side-session--helper" : ""}${record ? " side-session--task" : ""}${state.selected?.has(item.id) ? " side-session--selected" : ""}" data-open="${escape(item.id)}"
-            data-menu-session="${escape(item.id)}"${record ? ` data-side-task="${escape(record.id)}"` : ""}
-            aria-current="${group.some((entry) => entry.id === state.sessionId)}"
-            title="${escape(item.notes || record?.title || item.title)}">
-      ${helper ? `<span class="side-session__branch" aria-label="${escape(t("Helper"))}">↳</span>` : ""}
-      ${task ? taskDot(group) : stateDot(item)}
-      ${item.pinned && !showProject ? `<span class="side-session__pin">${icons.pin}</span>` : ""}
+    <button class="side-session" data-open="${escape(item.id)}"
+            data-menu-session="${escape(item.id)}"
+            aria-current="${item.id === state.sessionId}"
+            title="${escape(item.notes || item.title)}">
+      ${stateDot(item)}
       <span class="side-session__text">
-        <span class="side-session__title">${escape(record?.title ?? item.title)}</span>
-        ${
-          owner
-            ? `<span class="side-session__detail">${escape(owner.title)}</span>`
-            : record
-              ? `<span class="side-session__detail side-session__task">${escape(phaseLine(phaseOf(record)))}</span>`
-            : helpers
-              ? `<span class="side-session__detail side-session__helpers">${escape(helpers)}</span>`
-            : state.settings.compact_sidebar === false
-              ? `<span class="side-session__detail">${escape(
-                  [
-                    t(sessionLabel(sessionState(item, !!item.running))),
-                    agentName(item.agent),
-                  ].join(" · "),
-                )}</span>`
-              : ""
-        }
+        <span class="side-session__title">${escape(item.title)}</span>
+        ${owner ? `<span class="side-session__detail">${escape(owner.title)}</span>` : ""}
       </span>
       ${
-        // A helper's row is indented and narrow: its agent says more than
-        // its generated branch name.
-        item.branch && !helper
+        item.branch
           ? `<span class="chip chip--branch">${icons.branch}${escape(item.branch)}</span>`
           : `${agentIcon(item.agent, 11)}${item.review_of ? `<span class="side-session__tag">${escape(t("review"))}</span>` : ""}`
       }
     </button>`;
 }
 
-/// A project's sessions as the sidebar lists them: the selected project's
-/// come from its own, fresher list.
+/// A project's sessions, for its row's dot: the selected project's come
+/// from its own, fresher list.
 function sessionsOf(id) {
   const source = id === state.projectId ? state.sessions : state.allSessions;
   return source.filter((entry) => entry.project_id === id && !entry.archived);
@@ -123,15 +93,6 @@ function knownTasks() {
   for (const task of [...(state.allTasks ?? []), ...(state.planning?.tasks ?? [])]) tasks.set(task.id, task);
   return tasks;
 }
-let taskTable = new Map();
-let stages = new Map();
-const knownTask = (id) => taskTable.get(id) ?? null;
-
-/// Which session belongs to which task, worked out once per sidebar.
-function indexStages() {
-  taskTable = knownTasks();
-  stages = stageIndex([...taskTable.values()], [...state.allSessions, ...state.sessions]);
-}
 
 /// The task a session belongs to, if any.
 export const taskOfSession = (id) => {
@@ -139,28 +100,7 @@ export const taskOfSession = (id) => {
   return stage ? { ...stage, task: knownTasks().get(stage.taskId) } : null;
 };
 
-/// A project's sessions as rows: a task's sessions folded into one row, the
-/// task's, and each manager's helpers under it. A helper whose manager is
-/// not listed — archived, removed — is an ordinary row.
-function nestedSessions(sessions) {
-  const folded = foldStages(sessions, stages);
-  const listed = new Set(folded.map(({ item }) => item.id));
-  const nested = (entry) => entry.parent_id && entry.parent_id !== entry.id && listed.has(entry.parent_id);
-  return folded
-    .filter(({ item }) => !nested(item))
-    .map(
-      ({ item, task }) =>
-        sidebarSession(item, { task }) +
-        folded
-          .filter(({ item: child }) => nested(child) && child.parent_id === item.id)
-          .map(({ item: child }) => sidebarSession(child, { helper: true }))
-          .join(""),
-    )
-    .join("");
-}
-
 export function sidebar() {
-  indexStages();
   const needle = state.search.toLowerCase();
   const groups = new Map();
   const loose = [];
@@ -196,11 +136,11 @@ export function sidebar() {
 
   const row = (item, depth = 0) => {
     const current = item.id === state.projectId;
-    // Every project lists its sessions, as on macOS, unless folded shut; a
-    // group also folds away the projects inside it.
+    // A project is one row: its sessions are on its Sessions page, in the
+    // tabs and on Home. A folder still folds away the projects inside it.
     const sessions = sessionsOf(item.id);
     const kids = depth < 12 ? (children.get(item.id) ?? []) : [];
-    const foldable = sessions.length > 0 || kids.length > 0;
+    const foldable = kids.length > 0;
     const expanded = foldable && !state.collapsed.has(item.id) && !needle;
     const waiting = sessions.some((entry) => entry.running && state.agentState.get(entry.id) === "waiting");
     return `
@@ -231,10 +171,6 @@ export function sidebar() {
                 title="${escape(t("Actions for {name}", { name: item.title }))}">${icons.more}</button>
       </div>
       ${
-        expanded && sessions.length
-          ? `<div class="project-row__sessions">${nestedSessions(sessions)}</div>`
-          : ""
-      }${
         expanded && kids.length
           ? `<div class="sidebar__children sidebar__children--nested">${kids.map((kid) => row(kid, depth + 1)).join("")}</div>`
           : ""
@@ -246,7 +182,7 @@ export function sidebar() {
     pinned.length
       ? `<div class="sidebar__group">${escape(t("Pinned"))}</div>
          <div class="project-row__sessions project-row__sessions--pinned">${pinned
-           .map((entry) => sidebarSession(entry, { showProject: true }))
+           .map((entry) => sidebarSession(entry))
            .join("")}</div>`
       : "",
     // With the hierarchy on, a group is a row that folds its projects away,
@@ -264,7 +200,6 @@ export function sidebar() {
         })),
     ...loose.map((item) => row(item)),
   ].join("");
-  const selected = state.selected?.size ?? 0;
 
   return `
     <aside class="sidebar">
@@ -285,16 +220,6 @@ export function sidebar() {
       <div class="sidebar__list" data-scroll="sidebar">
         ${body || `<div class="sidebar__none">${escape(state.search ? t("No matching projects") : t("No projects yet."))}</div>`}
       </div>
-      ${
-        selected
-          ? `<div class="sidebar__selection">
-               <span>${escape(t("{count} selected", { count: selected }))}</span>
-               ${button({ label: t("Archive"), action: "selection-archive", kind: "quiet" })}
-               ${button({ label: t("Close tabs"), action: "selection-close", kind: "quiet" })}
-               ${button({ icon: "close", action: "selection-clear", kind: "quiet", title: t("Clear selection") })}
-             </div>`
-          : ""
-      }
       <div class="sidebar__footer">
         <div class="sidebar__open">
           <button class="sidebar__link" data-action="open-folder">${icons.folder} ${escape(t("Open folder…"))}</button>
@@ -512,7 +437,7 @@ function sessionRow(item, { picking = false } = {}) {
   const key = `s:${item.id}`;
   const opener = picking
     ? `class="row row--picking"${item.running ? "" : ` data-pick-row="${escape(key)}"`}`
-    : `class="row" data-open="${escape(item.id)}"`;
+    : `class="row" data-open="${escape(item.id)}" data-menu-session="${escape(item.id)}"`;
   return `
     <div ${opener} title="${escape(item.running && picking ? t("Stop it to delete it") : item.provider_id)}">
       ${picking ? pickBox(key, item.title, item.running) : ""}

@@ -853,28 +853,31 @@ try {
   await page.locator('.modal [data-action="confirm-generic"]').click();
   await page.locator('.task-row[data-task="task"]').waitFor({ state: "detached" });
 
-  // Sidebar: the project shows its icon, its sessions show the agent's mark,
-  // and right-click offers the project's and the session's actions.
+  // Sidebar: a project is one row with its icon; its sessions are on its
+  // Sessions page, not listed under it. Right-click offers the project's
+  // actions, and a session's in the list.
   const shots = process.env.CONVOY_TEST_SHOTS;
   await page.locator('.project-row .project-icon svg').first().waitFor();
-  assert(await page.locator('.side-session .agent-icon').count() >= 1, "sessions show the agent's mark");
+  assert.equal(await page.locator(".project-row__sessions:not(.project-row__sessions--pinned)").count(), 0, "no session lists under projects");
+  await page.locator('[data-tab="sessions"]').click();
+  assert(await page.locator('.list .row .agent-icon').count() >= 1, "sessions show the agent's mark");
   await page.locator('[data-menu-project="project"]').click({ button: "right" });
   await page.locator('[data-menu-act="project-settings"]').waitFor();
   if (shots) await page.waitForTimeout(250), await page.screenshot({ path: `${shots}/project-menu.png` });
   await page.keyboard.press("Escape");
-  await page.locator('.side-session[data-menu-session="builder"]').click({ button: "right" });
+  await page.locator('.row[data-menu-session="builder"]').click({ button: "right" });
   await page.locator('[data-menu-act="stop"]').waitFor();
   await page.keyboard.press("Escape");
   // Rename: from the menu, the name selected, Enter saves; a double-click on
   // a name opens the same sheet, and Escape leaves it unchanged.
-  await page.locator('.side-session[data-menu-session="builder"]').click({ button: "right" });
+  await page.locator('.row[data-menu-session="builder"]').click({ button: "right" });
   await page.locator('[data-menu-act="rename"]').click();
   assert.equal(await page.evaluate(() => { const box = document.querySelector("#rename-title"); return document.activeElement === box && box.selectionEnd - box.selectionStart === box.value.length; }), true, "the name is selected");
   await page.keyboard.type("Payments builder");
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "session_edit" && c.args.id === "builder" && c.args.input.title === "Payments builder"));
   await page.locator("#rename-title").waitFor({ state: "detached" });
-  await page.locator('.side-session[data-menu-session="builder"] .side-session__title').dblclick();
+  await page.locator('.project-row__sessions--pinned [data-open="notes"] .side-session__title').dblclick();
   await page.locator("#rename-title").waitFor();
   await page.keyboard.press("Escape");
   await page.locator("#rename-title").waitFor({ state: "detached" });
@@ -886,6 +889,7 @@ try {
 
   // A click inside an open dialog re-renders it, and must not replay its
   // entrance: the whole modal blinked on every toggle.
+  await page.locator('.project-row [data-project="project"]').click();
   await page.locator('.tabbar [data-action="new-session"]').click();
   await page.locator('.choice [data-value="codex"]').click();
   await page.locator(".scrim--settled .modal").waitFor();
@@ -1452,22 +1456,14 @@ try {
   await page.locator(".home__greeting").waitFor();
   await pickProject("/fixture/Other");
   await page.locator(".header__name", { hasText: "Other" }).waitFor({ timeout: 5000 });
-  await page.locator('.project-row__sessions [data-open="notes"]').first().click();
+  await page.locator('.project-row__sessions--pinned [data-open="notes"]').first().click();
   await page.locator('.tab-item--selected[data-tab-open="notes"]').waitFor();
   await pickProject("/fixture/Other");
   await page.locator(".header__name", { hasText: "Other" }).waitFor({ timeout: 5000 });
-  // ⌘-click picks sessions; the picked ones are archived together.
-  await page.locator('.side-session[data-open="imported"]').click({ modifiers: [primary] });
-  await page.locator(".sidebar__selection", { hasText: "1 selected" }).waitFor();
-  await page.locator('[data-action="selection-archive"]').click();
-  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "session_archive" && c.args.id === "imported" && c.args.archived === true));
-  await page.locator(".sidebar__selection").waitFor({ state: "detached" });
-  // A task's sessions are one row, its builder's, saying where the task
-  // stands; its reviewer has no row of its own. Its menu opens the task.
-  const taskRow = page.locator('.project-row__sessions:not(.project-row__sessions--pinned) .side-session--task[data-open="builder"]');
-  await taskRow.locator(".side-session__task").waitFor();
-  assert.equal(await page.locator('.project-row__sessions:not(.project-row__sessions--pinned) .side-session[data-open="review"]').count(), 0);
-  await taskRow.click({ button: "right" });
+  // A task's builder, in its project's Sessions list: its menu opens the task.
+  await page.locator('.project-row [data-project="project"]').click();
+  await page.locator('[data-tab="sessions"]').click();
+  await page.locator('.row[data-menu-session="builder"]').click({ button: "right" });
   await page.locator('[data-menu-act="open-task"]').click();
   await page.locator(".task-page").waitFor();
   // The status bar says which account new Codex sessions use, and changes it.
@@ -1475,15 +1471,11 @@ try {
   await page.locator('[data-account-pick="codex:"]').click();
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("convoy.activeAccount")).codex), "");
   await page.locator('.status [data-action="account-menu"][data-agent="codex"]', { hasText: "System" }).waitFor();
-  // Pinned sessions from every project sit above the projects, and every
-  // project lists its sessions; opening one selects its project.
+  // Pinned sessions from every project sit above the projects; opening one
+  // selects its project.
   await page.locator(".sidebar__group", { hasText: "Pinned" }).waitFor();
   const pinnedRow = page.locator('.project-row__sessions--pinned [data-open="notes"]');
   await pinnedRow.getByText("Other").waitFor();
-  assert.equal(await page.locator('.project-row__sessions:not(.project-row__sessions--pinned) [data-open="notes"]').count(), 1);
-  await page.locator('[data-expand="other"]').click();
-  assert.equal(await page.locator('.project-row__sessions:not(.project-row__sessions--pinned) [data-open="notes"]').count(), 0);
-  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem("convoy.collapsedProjects"))), ["other"]);
   await pinnedRow.click();
   await page.locator('.project-row--current [data-project="other"]').waitFor();
   await page.locator('.tab-item--selected[data-tab-open="notes"]').waitFor();
@@ -1673,7 +1665,9 @@ try {
     window.mockSessions.push({ id: "dozy", project_id: "project", title: "Dozy", agent: "claude", provider_id: "p-dozy", started: true, running: false, pinned: false, review_of: null });
     window.emitTauri("terminal:exit", { id: "dozy", cause: "hibernated", code: 0 });
   });
-  await page.locator('.side-session[data-open="dozy"] .dot--asleep[title="Asleep"]').waitFor();
+  await page.locator('[data-action="home"]').first().click();
+  await page.locator('.home-card[data-open="dozy"] .dot--asleep').waitFor();
+  await page.locator('.home-card[data-open="dozy"] .home-card__meta', { hasText: "Asleep" }).waitFor();
   // Opened after a restart, a stopped session shows its saved output as a
   // terminal; only one with next to nothing saved shows its conversation.
   await page.evaluate(() => {
@@ -1815,18 +1809,6 @@ try {
     );
     window.emitTauri("session:spawned", { id: "helper-2", parent: "lead" });
   });
-  const leadRow = page.locator('.project-row__sessions .side-session[data-open="lead"]');
-  await page.locator('.side-session--helper[data-open="helper-1"]').waitFor();
-  await leadRow.locator(".side-session__helpers", { hasText: "2 helpers · 2 working" }).waitFor();
-  assert.deepEqual(
-    await page.evaluate(() => {
-      const lead = document.querySelector('.project-row__sessions .side-session[data-open="lead"]');
-      return [lead.nextElementSibling?.dataset.open, lead.nextElementSibling?.nextElementSibling?.dataset.open];
-    }),
-    ["helper-1", "helper-2"],
-    "helpers sit right under their manager",
-  );
-  assert.equal(await page.locator('.side-session--helper[data-open="helper-1"] .side-session__branch').textContent(), "↳");
   // The manager's chat: one card per helper, updated by the helpers' events.
   const leadChat = page.locator('.chat[data-chat="lead"]');
   await leadChat.locator(".helper-card").nth(1).waitFor();
@@ -1839,7 +1821,6 @@ try {
   await leadChat.locator('.helper-card--waiting[data-helper="helper-1"] .helper-card__status', { hasText: "Needs you" }).waitFor();
   await emitHelper([{ type: "approval_resolved", request: "h1" }, { type: "text_done", id: "m1", text: "Added 6 tests; all pass." }, { type: "turn_ended", usage: { input: 1, output: 1, cache_read: 0, cache_write: 0 }, error: null }]);
   await cardOne.locator(".helper-card__status", { hasText: "Finished" }).waitFor();
-  await leadRow.locator(".side-session__helpers", { hasText: "2 helpers · 1 working" }).waitFor();
   await leadChat.locator(".helpers__count", { hasText: "2 · 1 working" }).waitFor();
   if (shots) {
     for (const theme of ["light", "dark"]) {
