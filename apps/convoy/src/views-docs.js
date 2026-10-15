@@ -1,5 +1,7 @@
 // The Docs tab, as the macOS app has it: the project doc and specs kept in
 // the repository under `.specdesk`, beside the repository's own Markdown.
+// Specifications from the workspace, as older Convoy kept them, are listed
+// here too: Docs is the one place for specs.
 // A list on the left, the rendered file (or its editor) on the right.
 
 import { icons } from "./icons.js";
@@ -9,7 +11,7 @@ import { markdown } from "./views-files.js";
 import { state } from "./state.js";
 
 export const PROJECT_DOC = ".specdesk/PROJECT.md";
-const SPECS = ".specdesk/specs/";
+export const SPECS = ".specdesk/specs/";
 
 const nameOf = (file) => file.replace(SPECS, "").replace(".specdesk/", "");
 
@@ -21,6 +23,22 @@ function fileRow(file) {
             aria-current="${docs.selected === file}" title="${escape(file)}">
       ${glyph}<span>${escape(nameOf(file))}</span>
     </button>`;
+}
+
+/// Specifications kept in the workspace, from before specs were files: still
+/// readable and approvable, and each can be turned into a file.
+function olderSpecs() {
+  const specs = state.planning?.specs ?? [];
+  if (!specs.length) return "";
+  return `<div class="doc-group">${escape(t("Older specifications"))}</div>${specs
+    .map(
+      (spec) => `
+      <button class="doc-file doc-file--older" data-spec="${escape(spec.id)}" title="${escape(spec.title)}">
+        ${icons.doc}<span class="doc-file__name">${escape(spec.title)}</span>
+        <span class="doc-file__meta">${escape(spec.approved ? t("approved") : t("draft"))}</span>
+      </button>`,
+    )
+    .join("")}`;
 }
 
 function group(title, files) {
@@ -126,6 +144,7 @@ export function docsView() {
           ${docs.taskDocs?.length ? `<div class="doc-group">${escape(t("Task documents"))}</div>${docs.taskDocs.map(taskDocRow).join("")}` : ""}
           ${group(t("Project doc"), hasDoc ? [PROJECT_DOC] : [])}
           ${group(t("Specs"), specs)}
+          ${olderSpecs()}
           ${group(t("Other docs"), others)}
           ${docs.files.length ? "" : `<p class="docs__none">${escape(t("Nothing here yet."))}</p>`}
         </div>

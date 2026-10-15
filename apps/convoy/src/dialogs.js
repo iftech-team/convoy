@@ -23,6 +23,7 @@ import { agentIcon, icons } from "./icons.js";
 import { t } from "./i18n.js";
 import { automationEditor } from "./views-automations.js";
 import { installedAgents } from "./onboarding.js";
+import { SPECS } from "./views-docs.js";
 import { autoSkills, skillEditor, skillImport, skillPicker } from "./views-skills.js";
 
 const ALL_AGENTS = [
@@ -579,6 +580,7 @@ const specForm = (dialog) =>
       ${dialog.id ? specWork(dialog) : ""}`,
     foot: `
       ${button({ label: t("Cancel"), data: { dismiss: "1" } })}
+      ${dialog.id ? button({ label: t("Convert to file"), icon: "doc", action: "spec-to-file", title: t("Write it to .specdesk/specs in the repository") }) : ""}
       ${dialog.id ? button({ label: t("New task for this spec"), icon: "plus", action: "spec-new-task" }) : ""}
       ${dialog.id && !dialog.approved ? button({ label: t("Approve revision"), action: "approve-spec" }) : ""}
       ${button({ label: t("Save"), action: "save-spec", kind: "primary" })}`,
@@ -723,6 +725,9 @@ const taskForm = (dialog) => {
   const specs = state.planning?.specs ?? [];
   const projectId = dialog.project_id ?? state.projectId;
   const project = state.projects.find((item) => item.id === projectId);
+  // Spec files in the repository come first; a task names the one it
+  // implements in its details. Older specifications follow.
+  const specFiles = state.docs?.projectId === projectId ? state.docs.files.filter((file) => file.startsWith(SPECS)) : [];
   // A new task starts with the automatic skills.
   if (!Array.isArray(dialog.skills)) dialog.skills = autoSkills(dialog.agent, projectId);
   // A new task asks for a title and what to do; the rest follows the
@@ -734,12 +739,16 @@ const taskForm = (dialog) => {
       ${skillPicker(dialog.skills, dialog.agent, projectId)}
       ${
         // A list, not a row of buttons: a project may have a hundred specs.
-        specs.length
+        specs.length || (specFiles.length && !dialog.id)
           ? field(
               t("Specification"),
               select(
                 "task-spec",
-                [["", t("None")], ...specs.map((spec) => [spec.id, `${spec.title}${spec.approved ? "" : ` · ${t("draft")}`}`])],
+                [
+                  ["", t("None")],
+                  ...(dialog.id ? [] : specFiles.map((file) => [`file:${file}`, file.replace(SPECS, "")])),
+                  ...specs.map((spec) => [spec.id, `${spec.title}${spec.approved ? "" : ` · ${t("draft")}`}`]),
+                ],
                 dialog.spec_id ?? "",
                 !!dialog.id,
               ),

@@ -33,7 +33,6 @@ import { gettingStarted } from "./views-home.js";
 const TABS = [
   ["tasks", "Tasks"],
   ["sessions", "Sessions"],
-  ["specs", "Specs"],
   ["docs", "Docs"],
   ["automations", "Automations"],
 ];

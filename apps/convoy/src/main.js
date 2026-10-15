@@ -66,7 +66,7 @@ import { pageTask, taskPage } from "./views-task.js";
 import { settingsPage, settingsSectionOf } from "./views-settings.js";
 import { projectSettingsPage } from "./views-project.js";
 import { forgetIcon, onIconLoaded } from "./icons.js";
-import { runnable, specsView, tasksView } from "./views-planning.js";
+import { runnable, tasksView } from "./views-planning.js";
 import { checklistCard, dashboardView, gettingStarted, homeView } from "./views-home.js";
 import { welcomeView } from "./views-welcome.js";
 import { toggleHistoryCollapsed } from "./views-history.js";
@@ -142,8 +142,6 @@ function content() {
   switch (state.tab) {
     case "reviews":
       return reviewsView();
-    case "specs":
-      return specsView();
     case "tasks":
       return pageTask() ? taskPage() : tasksView();
     case "docs":
@@ -530,7 +528,7 @@ async function selectProject(id) {
   state.files = null;
   state.planning = null;
   await loadSessions();
-  if (state.tab === "specs" || state.tab === "tasks") await loadPlanning();
+  if (["tasks", "docs"].includes(state.tab)) await loadPlanning();
 }
 
 /// Shows a project's own page, from the sidebar or the palette: off Home,
@@ -1087,15 +1085,18 @@ const ACTIONS = {
     }),
   "save-spec": saveSpec,
   "approve-spec": approveSpec,
-  "new-task": () =>
-    openModal({
+  "new-task": () => {
+    // Its spec picker lists the project's spec files.
+    if (state.projectId && state.docs?.projectId !== state.projectId) loadDocs().then(render);
+    return openModal({
       kind: "task",
       title: "",
       details: "",
       findings: "",
       ...newTask(),
       spec_id: "",
-    }),
+    });
+  },
   "save-task": () => saveTask(false),
   "spec-new-task": () => {
     const spec = state.dialog;
@@ -1289,8 +1290,8 @@ const SHORTCUT_ACTIONS = {
     ACTIONS["new-task"]();
   }),
   newSpec: () => withProject(async () => {
-    await showTab("specs");
-    ACTIONS["new-spec"]();
+    await showTab("docs");
+    ACTIONS["doc-new-spec"]();
   }),
   importIssues: () => withProject(async () => {
     await showTab("tasks");
@@ -1299,7 +1300,7 @@ const SHORTCUT_ACTIONS = {
   }),
   sessionsTab: () => withProject(() => showTab("sessions")),
   reviewsTab: () => withProject(() => showTab("reviews")),
-  specsTab: () => withProject(() => showTab("specs")),
+  specsTab: () => withProject(() => showTab("docs")),
   tasksTab: () => withProject(() => showTab("tasks")),
   docsTab: () => withProject(() => showTab("docs")),
   activity: () => ACTIONS.activity(),
@@ -1323,13 +1324,15 @@ const SHORTCUT_ACTIONS = {
   limitsRefresh: () => refreshLimits(true),
 };
 
-const TAB_ORDER = ["tasks", "sessions", "specs", "docs", "automations"];
+const TAB_ORDER = ["tasks", "sessions", "docs", "automations"];
 
 const withSession = (run) => (session() ? run(session()) : undefined);
 const withProject = (run) => (project() ? run(project()) : undefined);
 
 /// Shows a project tab, leaving a session, Files or the settings page.
 async function showTab(tab) {
+  // Specs live in Docs now; the old tab's shortcut lands there.
+  if (tab === "specs") tab = "docs";
   state.page = null;
   state.tab = tab;
   state.taskId = null;
@@ -1337,7 +1340,7 @@ async function showTab(tab) {
   state.files = null;
   keepProjectTab();
   render();
-  if (tab === "specs" || tab === "tasks") await loadPlanning();
+  if (["tasks", "docs"].includes(tab)) await loadPlanning();
   if (tab === "docs") await loadDocs();
   if (tab === "automations") await automations.reload();
 }
@@ -1579,8 +1582,8 @@ app.addEventListener("click", async (event) => {
     state.files = null;
     keepProjectTab();
     render();
-    if (data.tab === "specs" || data.tab === "tasks") await loadPlanning();
-    if (data.tab === "docs") await loadDocs();
+    if (data.tab === "tasks") await loadPlanning();
+    if (data.tab === "docs") await Promise.all([loadDocs(), loadPlanning()]);
     if (data.tab === "automations") await automations.reload();
     return;
   }
@@ -1878,10 +1881,6 @@ app.addEventListener("input", (event) => {
     }
     return;
   }
-  if (field.id === "spec-filter") {
-    state.specFilter = field.value;
-    return render();
-  }
   if (field.id === "sweep-filter" && state.dialog?.kind === "history-sweep") {
     state.dialog.query = field.value;
     return render();
@@ -1927,7 +1926,7 @@ app.addEventListener("change", async (event) => {
     state.dialog.depends_on = picked;
     return;
   }
-  if (event.target.id === "spec-filter" || event.target.id === "sweep-filter") return;
+  if (event.target.id === "sweep-filter") return;
   if (event.target.dataset?.pick && state.picked) {
     togglePick(event.target.dataset.pick, event.target.checked);
     return render();
@@ -2386,7 +2385,7 @@ async function openFolder() {
   if (["home", "dashboard", "usage"].includes(state.page)) state.page = null;
   if (!state.page && !state.sessionId && !state.files) keepProjectTab();
   render();
-  if (state.tab === "specs" || state.tab === "tasks") await loadPlanning();
+  if (["tasks", "docs"].includes(state.tab)) await loadPlanning();
   render();
   if (first && state.projectId && !state.dialog) ACTIONS["new-task"]();
 }
@@ -3288,6 +3287,21 @@ Object.assign(ACTIONS, {
     toast(t("Path copied"));
   },
   "doc-new-spec": () => openModal({ kind: "doc-spec", title: "" }),
+  // An older specification, kept in the workspace, becomes a spec file in
+  // the repository; the record stays, so tasks linked to it keep their link.
+  "spec-to-file": async () => {
+    const spec = state.dialog;
+    if (!spec?.id) return;
+    const text = await call("spec_markdown", { id: spec.id });
+    if (text === undefined) return;
+    const path = await call("spec_create", { projectId: state.projectId, title: spec.title || t("Specification") });
+    if (!path) return;
+    if (!(await done("doc_write", { projectId: state.projectId, path, text }))) return;
+    closeDialog();
+    await showTab("docs");
+    await openDoc(path);
+    toast(t("Saved as {path}", { path }));
+  },
   "doc-create-spec": async () => {
     captureDraft();
     const title = state.dialog.title?.trim();
@@ -3408,6 +3422,16 @@ const panelTaskId = () => (state.dialog?.kind === "task" ? state.dialog.id : nul
 async function saveTask(run = false) {
   captureDraft();
   const dialog = state.dialog;
+  // A spec file is named in the details, as Task from spec does; only an
+  // older specification is linked by id.
+  if (String(dialog.spec_id ?? "").startsWith("file:")) {
+    const path = dialog.spec_id.slice(5);
+    if (!(dialog.details ?? "").includes(path)) {
+      const line = `Implement the specification in ${path}. Read it first and treat its acceptance criteria as the definition of done.`;
+      dialog.details = dialog.details ? `${line}\n\n${dialog.details}` : line;
+    }
+    dialog.spec_id = "";
+  }
   const id = await call("task_save", {
     input: {
       id: dialog.id ?? null,
@@ -4032,12 +4056,11 @@ function paletteEntries() {
     ["Refresh usage limits", "Reads the current usage from your login", "limitsRefresh"],
     ["Go to Sessions", "", "sessionsTab"],
     ["Go to Reviews", "", "reviewsTab"],
-    ["Go to Specs", "", "specsTab"],
     ["Go to Tasks", "", "tasksTab"],
     ["Go to Docs & Specs", "", "docsTab"],
     ["Next section", "", "nextTab"],
     ["Previous section", "", "previousTab"],
-    ["New specification", "", "newSpec"],
+    ["New spec…", "A Markdown spec in the repository, in Docs", "newSpec"],
     ["New task", "Queue work for an agent in the current project", "newTask"],
     ["Import tasks", "From an integration into the current project", "importIssues"],
     ["Show project folder", "", "reveal"],

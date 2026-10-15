@@ -57,6 +57,7 @@ try {
       if (cmd === "docs_list") return Object.keys(window.docs).sort((a, b) => (a.startsWith(".specdesk") ? -1 : 1));
       if (cmd === "doc_read") return window.docs[args.path];
       if (cmd === "doc_write") { window.docs[args.path] = args.text; return null; }
+      if (cmd === "spec_markdown") return "# Checkout retries\n\n## Problem\nPayments time out\n";
       if (cmd === "spec_create") { const path = ".specdesk/specs/checkout-retries.md"; window.docs[path] = "# Checkout retries\n\n## Problem\n"; return path; }
       if (cmd === "task_docs_list") return window.taskDocs ?? [];
       if (cmd === "doc_prompts") return { project_doc: "Write the project document", spec: "Draft the specification" };
@@ -806,17 +807,17 @@ try {
   // Escape leaves Files & Changes, as its Back button does.
   await page.keyboard.press("Escape");
   await page.locator('[data-action="files-close"]').waitFor({ state: "detached" });
-  // Specifications: a search box, and each spec's own work — a task made for
-  // it, a session linked as its builder, and the review brief.
-  await page.locator('[data-tab="specs"]').click();
-  await page.locator("#spec-filter").fill("nothing");
-  await page.locator('.row[data-spec="spec1"]').waitFor({ state: "detached" });
-  await page.locator("#spec-filter").fill("retries");
-  await page.locator('.row[data-spec="spec1"]').click();
+  // Specs live in Docs. An older specification, kept in the workspace, is
+  // listed there with its own work — a task made for it, a session linked as
+  // its builder, and the review brief.
+  assert.equal(await page.locator('[data-tab="specs"]').count(), 0, "no Specs tab");
+  await page.locator('[data-tab="docs"]').click();
+  await page.locator('.docs__list [data-spec="spec1"]').click();
+  await page.locator('.modal [data-action="spec-to-file"]').waitFor();
   await page.locator('[data-action="spec-new-task"]').click();
   assert.equal(await page.locator("#task-title").inputValue(), "Checkout retries");
   await page.locator('[data-action="save-task"]').click();
-  await page.locator('.row[data-spec="spec1"]').click();
+  await page.locator('.docs__list [data-spec="spec1"]').click();
   const work = page.locator(".spec-work", { hasText: "Checkout retries" });
   await work.locator("select").selectOption("builder");
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_link_session" && c.args.sessionId === "builder"));
@@ -1224,6 +1225,19 @@ try {
   await page.locator('[data-action="doc-save"]').click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "doc_write" && c.args.text.endsWith("More.")));
   if (shots) await page.screenshot({ path: `${shots}/docs.png` });
+  // An older specification becomes a spec file in the repository.
+  await page.locator('.docs__list [data-spec="spec1"]').click();
+  await page.locator('.modal [data-action="spec-to-file"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "doc_write" && c.args.text.includes("Payments time out")));
+  await page.locator(".docs__path", { hasText: ".specdesk/specs/checkout-retries.md" }).waitFor();
+  // A new task can name a spec file; its details then say to implement it.
+  await page.locator('.tabbar [data-action="new-task"]').click();
+  await page.locator("#task-title").fill("Retry checkout");
+  await page.locator('.modal [data-toggle="more"]').click();
+  await page.locator('#task-spec option[value="file:.specdesk/specs/checkout-retries.md"]').waitFor({ state: "attached" });
+  await page.locator("#task-spec").selectOption("file:.specdesk/specs/checkout-retries.md");
+  await page.locator('.modal [data-action="save-task"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_save" && c.args.input.title === "Retry checkout" && c.args.input.spec_id === null && c.args.input.details.startsWith("Implement the specification in .specdesk/specs/checkout-retries.md")));
   // Many task documents: the list scrolls, and each two-line row keeps its
   // height rather than running into the next.
   await page.evaluate(() => {
@@ -1295,7 +1309,7 @@ try {
   });
   await page.locator('[data-task-view="board"]').click().catch(() => {});
   await page.evaluate(() => window.emitTauri?.("task:qa", "badges"));
-  await page.locator('[data-tab="specs"]').click();
+  await page.locator('[data-tab="docs"]').click();
   await page.locator('[data-tab="tasks"]').click();
   const card = page.locator('.card[data-task-card="badges"]');
   await card.waitFor();
