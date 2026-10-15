@@ -113,6 +113,5 @@ export function taskPage() {
           ? `<section class="task-page__section"><h3 class="task-page__heading">${escape(t("Details"))}</h3><div class="task-page__text">${escape(task.details)}</div></section>`
           : ""
       }
-      <p class="task-page__internal">${escape(t("Internal status: {status}", { status: task.status }))}</p>
     </div>`;
 }

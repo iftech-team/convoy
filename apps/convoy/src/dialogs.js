@@ -194,7 +194,7 @@ function newSession(dialog) {
       ${skillPicker(dialog.skills ?? [], dialog.agent, dialog.projectId)}
       <div class="sheet-box sheet-box--manager">
         ${setting(
-          t("Manager — can start helper sessions"),
+          t("Can start helper sessions"),
           t("The agent can hand work to other agents in this project from its shell, wait for them and read their answers. At most 4 run at once."),
           toggle("manager", dialog.manager, t("Manager")),
           "helpers",
@@ -226,11 +226,11 @@ function newSession(dialog) {
 const editSession = (dialog) =>
   modal({
     title: t("Edit session"),
-    hint: dialog.running ? t("Running — the provider ID is fixed until it stops.") : "",
+    hint: dialog.running ? t("Running — the conversation ID is fixed until it stops.") : "",
     body: `
       ${field(t("Name"), textInput("draft-title", dialog.title))}
       ${field(
-        t("Provider session ID"),
+        t("Agent's conversation ID"),
         `<input id="draft-provider" value="${escape(dialog.provider_id)}"
                 spellcheck="false" ${dialog.running ? "disabled" : ""} />`,
         t("What makes an exact resume possible."),

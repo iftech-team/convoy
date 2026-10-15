@@ -1693,7 +1693,7 @@ try {
   await page.waitForFunction(() => document.querySelector("#terminal-host .xterm-rows")?.textContent.includes("session stopped"));
   assert.equal(await page.locator("#terminal-host").count(), 1);
   assert.equal(await page.locator(".chat-slot--readonly").count(), 0);
-  // Put to sleep, a session says so wherever it shows, not just "Stopped".
+  // Put to sleep, a session says so wherever it shows, not just "Closed".
   await page.evaluate(() => {
     window.mockSessions.push({ id: "dozy", project_id: "project", title: "Dozy", agent: "claude", provider_id: "p-dozy", started: true, running: false, pinned: false, review_of: null });
     window.emitTauri("terminal:exit", { id: "dozy", cause: "hibernated", code: 0 });
@@ -1824,7 +1824,7 @@ try {
   const managerToggle = page.locator('.modal [data-toggle="manager"]');
   await managerToggle.waitFor();
   assert.equal(await managerToggle.getAttribute("aria-pressed"), "false", "not a manager unless asked");
-  await page.locator('.modal .setting', { hasText: "Manager — can start helper sessions" }).waitFor();
+  await page.locator('.modal .setting', { hasText: "Can start helper sessions" }).waitFor();
   await managerToggle.click();
   assert.equal(await page.locator('.modal [data-toggle="manager"]').getAttribute("aria-pressed"), "true");
   if (shots) await page.screenshot({ path: `${shots}/new-session-manager.png` });
@@ -1851,9 +1851,9 @@ try {
   await cardOne.locator(".helper-card__status", { hasText: "Working" }).waitFor();
   const emitHelper = (events) => page.evaluate((list) => list.forEach((event) => window.emitTauri("chat:event", { id: "helper-1", event })), events);
   await emitHelper([{ type: "turn_started" }, { type: "approval", request: "h1", kind: "command", title: "Run `cargo test`", detail: "cargo test", always: true }]);
-  await leadChat.locator('.helper-card--waiting[data-helper="helper-1"] .helper-card__status', { hasText: "Needs you" }).waitFor();
+  await leadChat.locator('.helper-card--waiting[data-helper="helper-1"] .helper-card__status', { hasText: "Waiting for you" }).waitFor();
   await emitHelper([{ type: "approval_resolved", request: "h1" }, { type: "text_done", id: "m1", text: "Added 6 tests; all pass." }, { type: "turn_ended", usage: { input: 1, output: 1, cache_read: 0, cache_write: 0 }, error: null }]);
-  await cardOne.locator(".helper-card__status", { hasText: "Finished" }).waitFor();
+  await cardOne.locator(".helper-card__status", { hasText: "Idle" }).waitFor();
   await leadChat.locator(".helpers__count", { hasText: "2 · 1 working" }).waitFor();
   if (shots) {
     for (const theme of ["light", "dark"]) {
@@ -1901,7 +1901,7 @@ try {
   // Every string the helpers show has its Russian.
   const helpersSource = await readFile(new URL("../src/views-helpers.js", import.meta.url), "utf8");
   const helperKeys = [...helpersSource.matchAll(/\bt\("((?:[^"\\]|\\.)*)"/g)].map((match) => match[1]);
-  helperKeys.push("Working", "Needs you", "Finished", "Stopped", "Starting", "Helper", "Manager", "Manager — can start helper sessions",
+  helperKeys.push("Working", "Waiting for you", "Idle", "Closed", "Starting", "Helper", "Manager", "Can start helper sessions",
     "The agent can hand work to other agents in this project from its shell, wait for them and read their answers. At most 4 run at once.",
     "started helper", "helper finished", "helper failed", "helper stopped");
   assert.deepEqual(helperKeys.filter((key) => !(key in ru)), [], "untranslated helper strings");

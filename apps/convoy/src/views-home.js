@@ -182,7 +182,7 @@ export function dashboardView() {
   const columns = [
     ["Needs you", "waiting", sessions.filter((item) => sessionState(item) === "needs_you")],
     ["Working", "running", sessions.filter((item) => sessionState(item) === "working")],
-    ["Finished", "done", sessions.filter((item) => ["finished", "idle"].includes(sessionState(item)))],
+    ["Idle", "done", sessions.filter((item) => ["finished", "idle"].includes(sessionState(item)))],
     ["Not running", "stopped", sessions.filter((item) => !isRunning(item.id))],
   ];
   return `

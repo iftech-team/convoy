@@ -9,10 +9,14 @@
 export const SESSION_STATES = {
   not_started: ["Not started", "idle"],
   working: ["Working", "running"],
-  needs_you: ["Needs you", "waiting"],
-  finished: ["Finished", "done"],
+  // "Needs you" names the task phase and the inbox; a session is waiting.
+  needs_you: ["Waiting for you", "waiting"],
+  // A finished turn and an idle agent look the same from outside: the agent
+  // is there, doing nothing until it is given more.
+  finished: ["Idle", "done"],
   idle: ["Idle", "done"],
-  stopped: ["Stopped", "stopped"],
+  // Closed, not stopped: Resume opens it again where it left off.
+  stopped: ["Closed", "stopped"],
   asleep: ["Asleep", "asleep"],
 };
 

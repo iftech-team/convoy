@@ -774,7 +774,7 @@ export function sessionMenu() {
         ${item("Edit session…", "edit-session")}
         ${item(current.pinned ? "Unpin" : "Pin", "pin-session")}
         ${item(current.archived ? "Restore" : "Archive", "archive-session", !busy, busy ? "stop it first" : "")}
-        ${item("Fresh recovery session", "recover-session", !busy && !current.worktree_removed)}
+        ${item("Start a new session from this one", "recover-session", !busy && !current.worktree_removed)}
         <div class="menu__divider"></div>
         ${item("Start review…", "start-review")}
         ${item("Send feedback to builder…", "send-feedback", !!current.review_of)}
