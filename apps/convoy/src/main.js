@@ -2376,6 +2376,8 @@ async function copyCommit(what) {
 async function openFolder() {
   const chosen = await openDialogNative({ directory: true, multiple: false });
   if (!chosen) return;
+  // The first project opened goes straight on to its first task.
+  const first = !state.projects.length;
   const added = await call("project_open", { path: chosen });
   if (added === undefined) return;
   if (added > 1) toast(t("Added {count}", { count: plural(added, "project") }));
@@ -2386,6 +2388,7 @@ async function openFolder() {
   render();
   if (state.tab === "specs" || state.tab === "tasks") await loadPlanning();
   render();
+  if (first && state.projectId && !state.dialog) ACTIONS["new-task"]();
 }
 
 async function reconnectProject() {

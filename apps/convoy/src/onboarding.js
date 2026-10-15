@@ -85,6 +85,11 @@ export function checklist({ diagnostics, setupChecks, projects, tasks } = {}) {
   return { items, done, total: items.length, complete: done === items.length };
 }
 
+/// The agents found on this machine, or null while the tools are not read
+/// yet — then every agent is offered.
+export const installedAgents = (diagnostics) =>
+  diagnostics ? AGENTS.filter((agent) => diagnostics.some((tool) => tool.name === agent && tool.found)) : null;
+
 // The welcome screen's words: what Convoy is, and how a task moves through it.
 
 /// What Convoy does, in one sentence. Home repeats it.

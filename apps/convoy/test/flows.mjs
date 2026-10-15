@@ -158,6 +158,8 @@ try {
       }
       if (cmd === "diagnostics_run") return [
         { name: "claude", found: true, path: "/usr/local/bin/claude", version: "2.1.0", purpose: "Runs Claude Code sessions.", install: "npm i -g" },
+        { name: "codex", found: true, path: "/usr/local/bin/codex", version: "0.9.0", purpose: "Runs Codex sessions.", install: "npm i -g @openai/codex" },
+        { name: "gemini", found: false, path: null, version: null, purpose: "Runs Gemini CLI sessions.", install: "npm i -g @google/gemini-cli" },
         { name: "gh", found: false, path: null, version: null, purpose: "Opens pull requests.", install: "Install the GitHub CLI." },
       ];
       if (cmd === "worktrees_path") return "/fixture/worktrees";
@@ -355,6 +357,11 @@ try {
   await welcome.locator('.checklist__item--done[data-check="agent"]').waitFor();
   await welcome.locator('[data-checklist-do="open-folder"]').click();
   await page.getByRole("heading", { name: "Example", exact: true }).waitFor();
+  // The first project opened goes straight on to its first task.
+  const firstTask = page.locator('.modal[aria-label="New task"]');
+  await firstTask.locator("#task-title").waitFor();
+  await page.keyboard.press("Escape");
+  await firstTask.waitFor({ state: "detached" });
   // A project opens on its tasks; its header says how they run.
   await page.locator('[data-tab="tasks"][aria-selected="true"]').waitFor();
   assert.equal((await page.locator(".flow-chip").textContent()).replace(/\s+/g, " ").trim(), "How tasks run Build");
@@ -851,9 +858,18 @@ try {
   await page.locator(".task-page__phase", { hasText: "Waits for Checkout retries" }).waitFor();
   await page.locator('[data-action="task-back"]').click();
   await page.locator('.task-row[data-task="task"] .phase-tag[title="Waits for Checkout retries"]').waitFor();
-  // New tasks publish nothing unless the project says otherwise.
+  // A new task asks for a title and details; one line says how it will run,
+  // and Run now is what the sheet is for.
   await page.locator('[data-action="new-task"]').click();
+  await page.locator(".modal .task-summary", { hasText: "Claude Code · Build" }).waitFor();
+  assert.equal(await page.locator('.modal [data-action="run-task-now"]').getAttribute("class").then((name) => name.includes("button--primary")), true);
+  assert.equal(await page.locator('.modal .choice [data-set="agent"]').count(), 0, "options wait behind More options");
+  if (process.env.CONVOY_TEST_SHOTS) await page.waitForTimeout(400), await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/task-form-new.png` });
+  // New tasks publish nothing unless the project says otherwise.
+  await page.locator('.modal [data-toggle="more"]').click();
   await page.locator('.modal .choice [data-value="none"][aria-pressed="true"]').waitFor();
+  // Only the agents found on this machine are offered.
+  assert.deepEqual(await page.locator('.modal .choice [data-set="agent"]').evaluateAll((nodes) => nodes.map((node) => node.dataset.value)), ["claude", "codex"]);
   // Specs are a list to pick from, however many there are; Codex brings its
   // own models and accounts under Advanced.
   assert.deepEqual(await page.locator("#task-spec option").allTextContents(), ["None", "Checkout retries"]);
@@ -924,7 +940,11 @@ try {
   // entrance: the whole modal blinked on every toggle.
   await page.locator('.project-row [data-project="project"]').click();
   await page.locator('.tabbar [data-action="new-session"]').click();
+  // A new session asks for the agent and a first message; the rest waits
+  // behind More options.
+  assert.equal(await page.locator(".modal #draft-account").count(), 0);
   await page.locator('.choice [data-value="codex"]').click();
+  await page.locator('.modal [data-toggle="more"]').click();
   await page.locator(".scrim--settled .modal").waitFor();
   assert.equal(await page.evaluate(() => document.querySelector(".modal").getAnimations().length), 0, "no animation after a toggle");
   assert(await page.locator('.choice [data-value="codex"] .agent-icon').count(), "agent choices carry their marks");
@@ -1825,6 +1845,7 @@ try {
   // and as a menu in its terminal's header.
   await page.locator('[data-project="project"]').first().click();
   await page.locator('.tabbar [data-action="new-session"]').click();
+  await page.locator('.modal [data-toggle="more"]').click();
   const managerToggle = page.locator('.modal [data-toggle="manager"]');
   await managerToggle.waitFor();
   assert.equal(await managerToggle.getAttribute("aria-pressed"), "false", "not a manager unless asked");
@@ -2149,6 +2170,7 @@ try {
   await page.locator('[data-project="project"]').first().click();
   await page.locator('.tabbar [data-action="new-session"]').click();
   const sheet = page.locator('.modal[aria-label="New session"]');
+  await sheet.locator('[data-toggle="more"]').click();
   await sheet.locator(".skill-picker").waitFor();
   await sheet.locator('.choice [data-value="claude"]').click();
   const chip = (name) => sheet.locator(`.skill-chip[data-skill-pick="${ids[name]}"]`);

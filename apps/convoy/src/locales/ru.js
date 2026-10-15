@@ -1586,6 +1586,12 @@ export default {
     "Closed": "Закрыта",
     "Search sessions, projects and actions": "Поиск сессий, проектов и действий",
     "Settings · setup is not finished": "Настройки · настройка не завершена",
+    "More options": "Другие параметры",
+    "Save for later": "Сохранить на потом",
+    "Reviewer's findings": "Замечания ревьюера",
+    "e.g. Fix the login error when a password has a space": "например, исправить ошибку входа, когда в пароле есть пробел",
+    "What to change, where, and how to know it is done. Optional for a small task.": "Что изменить, где и как понять, что готово. Для небольшой задачи необязательно.",
+    "Gemini CLI runs in a terminal.": "Gemini CLI работает в терминале.",
     // Glossary
     "Words Convoy uses": "Слова, которые использует Convoy",
     "What is {term}?": "Что такое «{term}»?",

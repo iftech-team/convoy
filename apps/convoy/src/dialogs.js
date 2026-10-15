@@ -22,13 +22,22 @@ import { sessionLabel } from "./session-state.js";
 import { agentIcon, icons } from "./icons.js";
 import { t } from "./i18n.js";
 import { automationEditor } from "./views-automations.js";
+import { installedAgents } from "./onboarding.js";
 import { autoSkills, skillEditor, skillImport, skillPicker } from "./views-skills.js";
 
-const AGENTS = [
+const ALL_AGENTS = [
   ["claude", "Claude Code", agentIcon("claude", 15)],
   ["codex", "Codex", agentIcon("codex", 15)],
   ["gemini", "Gemini", agentIcon("gemini", 15)],
 ];
+
+/// The agents a sheet offers: the installed ones, and the one already
+/// chosen so a choice never disappears from under it.
+const agentChoices = (chosen) => {
+  const found = installedAgents(state.diagnostics);
+  const offered = ALL_AGENTS.filter(([agent]) => !found?.length || found.includes(agent) || agent === chosen);
+  return offered.length ? offered : ALL_AGENTS;
+};
 
 export function dialogView() {
   const dialog = state.dialog;
@@ -179,18 +188,22 @@ function newSession(dialog) {
         ${setting(t("Keep this dialog open to create more"), "", toggle("keepOpen", dialog.keepOpen, t("Keep open")))}
       </div>`
     : "";
-  return modal({
-    title: t("New session"),
-    hint: target?.path ?? "",
-    body: `
+  // Gemini CLI runs in a terminal only.
+  if (dialog.agent === "gemini") dialog.view = "terminal";
+  const more = `
       ${field(
         t("Project"),
         select("draft-project", state.projects.map((item) => [item.id, item.title]), dialog.projectId),
       )}
       ${field(t("Name (optional)"), textInput("draft-title", dialog.title, t("Leave empty to name it after the first message")))}
+      ${field(
+        t("Open in"),
+        dialog.agent === "gemini"
+          ? choice("view", [["terminal", t("Terminal")]], "terminal")
+          : choice("view", [["chat", t("Chat")], ["terminal", t("Terminal")]], dialog.view ?? "terminal"),
+        dialog.agent === "gemini" ? t("Gemini CLI runs in a terminal.") : "",
+      )}
       ${worktree}
-      ${field(t("Agent"), choice("agent", AGENTS, dialog.agent))}
-      ${field(t("Open in"), choice("view", [["chat", t("Chat")], ["terminal", t("Terminal")]], dialog.view ?? "terminal"))}
       ${skillPicker(dialog.skills ?? [], dialog.agent, dialog.projectId)}
       <div class="sheet-box sheet-box--manager">
         ${setting(
@@ -200,20 +213,30 @@ function newSession(dialog) {
           "helpers",
         )}
       </div>
-      ${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
+      ${dialog.agent === "gemini" ? "" : field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
       <div class="field-row">
         ${field(t("Model"), modelSelect("draft-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}
         ${field(t("Effort"), effortSelect("draft-effort", dialog.agent, dialog.account ?? "", dialog.model ?? "", dialog.effort ?? ""))}
       </div>
-      ${field(
-        t("First message (optional)"),
-        textArea("draft-prompt", dialog.prompt, t("Sent once, when the agent starts. Resuming never replays it.")),
-      )}
       ${knowledgeField(dialog)}
       <button class="sheet-disclosure" data-toggle="advanced" aria-expanded="${!!dialog.advanced}">
         ${dialog.advanced ? "▾" : "▸"} ${escape(t("Advanced"))}
       </button>
-      ${advanced}`,
+      ${advanced}`;
+  return modal({
+    title: t("New session"),
+    hint: target ? t("In {project}", { project: target.title }) : "",
+    body: `
+      ${field(t("Agent"), choice("agent", agentChoices(dialog.agent), dialog.agent))}
+      ${field(
+        t("First message (optional)"),
+        textArea("draft-prompt", dialog.prompt, t("Sent once, when the agent starts. Resuming never replays it.")),
+      )}
+      ${
+        dialog.more
+          ? more
+          : `<button class="sheet-disclosure" data-toggle="more" aria-expanded="false">▸ ${escape(t("More options"))}</button>`
+      }`,
     note: escape(
       yolo
         ? t("Starts without permission prompts (Yolo is on in Settings → Agents).")
@@ -258,7 +281,7 @@ const startReview = (dialog) =>
     }),
     wide: true,
     body: `
-      ${field(t("Reviewer"), choice("agent", AGENTS, dialog.agent))}
+      ${field(t("Reviewer"), choice("agent", agentChoices(dialog.agent), dialog.agent))}
       ${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
       <div class="field-row">
         ${field(t("Model"), modelSelect("draft-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}
@@ -419,7 +442,7 @@ const accounts = (dialog) =>
         t("New profile"),
         `
         ${field(t("Label"), textInput("draft-label", dialog.label))}
-        ${field(t("Provider"), choice("agent", AGENTS, dialog.agent))}`,
+        ${field(t("Provider"), choice("agent", agentChoices(dialog.agent), dialog.agent))}`,
       )}`,
     note: escape(t("Removing a profile removes only Convoy's record of it. Credential files stay where they are.")),
     foot: `
@@ -433,7 +456,7 @@ const transcripts = (dialog) =>
     hint: t("Conversations the provider already saved for this folder."),
     wide: true,
     body: `
-      ${field(t("Provider"), choice("agent", AGENTS, dialog.agent))}
+      ${field(t("Provider"), choice("agent", agentChoices(dialog.agent), dialog.agent))}
       ${field(
         t("Account"),
         choice(
@@ -685,18 +708,29 @@ function attachmentList(dialog) {
     </div>`;
 }
 
+/// The steps a task will go through, as the form is set: the line a new
+/// task shows instead of every option.
+const taskSteps = (dialog, project) =>
+  [
+    dialog.plan_first && "Plan",
+    "Build",
+    dialog.auto_review && "Review",
+    project?.qa_auto && "Test",
+    dialog.mode === "pr" ? "Pull request" : dialog.mode === "push" ? "Push" : null,
+  ].filter(Boolean);
+
 const taskForm = (dialog) => {
   const specs = state.planning?.specs ?? [];
   const projectId = dialog.project_id ?? state.projectId;
+  const project = state.projects.find((item) => item.id === projectId);
   // A new task starts with the automatic skills.
   if (!Array.isArray(dialog.skills)) dialog.skills = autoSkills(dialog.agent, projectId);
-  return modal({
-    title: dialog.id ? t("Edit task") : t("New task"),
-    hint: dialog.id ? phaseLine(phaseOf(dialog)) : "",
-    wide: true,
-    body: `
-      ${field(t("Title"), textInput("task-title", dialog.title))}
-      ${field(t("Agent"), choice("agent", AGENTS, dialog.agent))}
+  // A new task asks for a title and what to do; the rest follows the
+  // project's settings until More options is opened. Editing shows it all.
+  const more = !!dialog.id || !!dialog.more;
+  const runLabel = dialog.plan_first && dialog.plan?.status !== "approved" ? t("Plan now") : t("Run now");
+  const options = `
+      ${field(t("Agent"), choice("agent", agentChoices(dialog.agent), dialog.agent))}
       ${skillPicker(dialog.skills, dialog.agent, projectId)}
       ${
         // A list, not a row of buttons: a project may have a hundred specs.
@@ -745,8 +779,12 @@ const taskForm = (dialog) => {
       ${relatedTasks(dialog)}
       ${otherRepositories(dialog)}
       ${attachmentList(dialog)}
-      ${field(t("Details"), textArea("task-details", dialog.details, "", 4))}
-      ${field(t("Findings"), textArea("task-findings", dialog.findings, "", 3))}
+      ${
+        // What a reviewer or QA sent back; a new task has none to show.
+        dialog.id || dialog.findings
+          ? field(t("Reviewer's findings"), textArea("task-findings", dialog.findings, "", 3))
+          : ""
+      }
       <button class="sheet-disclosure" data-toggle="advanced" aria-expanded="${!!dialog.advanced}">
         ${dialog.advanced ? "▾" : "▸"} ${escape(t("Advanced"))}
       </button>
@@ -759,12 +797,37 @@ const taskForm = (dialog) => {
              ${field(t("Account"), select("task-account", accountOptions(dialog.agent), dialog.profile_id ?? ""))}
              </div>`
           : ""
+      }`;
+  return modal({
+    title: dialog.id ? t("Edit task") : t("New task"),
+    hint: dialog.id ? phaseLine(phaseOf(dialog)) : project ? t("In {project}", { project: project.title }) : "",
+    wide: true,
+    body: `
+      ${field(t("Title"), textInput("task-title", dialog.title, t("e.g. Fix the login error when a password has a space")))}
+      ${field(
+        t("Details"),
+        textArea("task-details", dialog.details, t("What to change, where, and how to know it is done. Optional for a small task."), 4),
+      )}
+      ${
+        more
+          ? options
+          : `<div class="task-summary">
+               <span class="task-summary__text">${escape(agentName(dialog.agent))} · ${taskSteps(dialog, project)
+                 .map((step) => escape(t(step)))
+                 .join(" → ")}</span>
+               <button class="sheet-disclosure" data-toggle="more" aria-expanded="false">▸ ${escape(t("More options"))}</button>
+             </div>`
       }`,
-    foot: `
-      ${dialog.id ? button({ icon: "trash", kind: "quiet", title: t("Delete task"), action: "delete-task", disabled: phaseOf(dialog).phase === "working" }) : ""}
+    foot: dialog.id
+      ? `
+      ${button({ icon: "trash", kind: "quiet", title: t("Delete task"), action: "delete-task", disabled: phaseOf(dialog).phase === "working" })}
       ${button({ label: t("Cancel"), data: { dismiss: "1" } })}
-      ${!dialog.id || ["queued", "failed", "changes", "attention"].includes(dialog.status) ? button({ label: dialog.plan_first && dialog.plan?.status !== "approved" ? t("Plan now") : t("Run now"), icon: "play", action: "run-task-now" }) : ""}
-      ${button({ label: t("Save"), action: "save-task", kind: "primary" })}`,
+      ${["queued", "failed", "changes", "attention"].includes(dialog.status) ? button({ label: runLabel, icon: "play", action: "run-task-now" }) : ""}
+      ${button({ label: t("Save"), action: "save-task", kind: "primary" })}`
+      : `
+      ${button({ label: t("Cancel"), data: { dismiss: "1" } })}
+      ${button({ label: t("Save for later"), action: "save-task" })}
+      ${button({ label: runLabel, icon: "play", action: "run-task-now", kind: "primary" })}`,
   });
 };
 
