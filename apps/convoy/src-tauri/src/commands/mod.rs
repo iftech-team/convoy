@@ -140,6 +140,8 @@ pub struct ProjectView {
     pub review_auto: bool,
     /// New tasks here are planned first.
     pub plan_first_default: bool,
+    /// A document is written for each task once QA passes.
+    pub docs_auto: bool,
     pub sessions: usize,
     pub running: usize,
 }
@@ -266,6 +268,7 @@ pub fn workspace_read(
                     qa: convoy_core::qa::configured(project),
                     review_auto: project.review_auto == Some(true),
                     plan_first_default: project.plan_first_default == Some(true),
+                    docs_auto: project.docs_auto == Some(true),
                     sessions: own.iter().filter(|session| !session.is_archived()).count(),
                     running: own
                         .iter()

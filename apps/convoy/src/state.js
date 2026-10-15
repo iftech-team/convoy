@@ -5,7 +5,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { sessionStateOf, sleptBy } from "./session-state.js";
-import { taskPhase } from "./phase.js";
+import { taskPhase, taskSteps } from "./phase.js";
 
 const COLLAPSED = "convoy.collapsedProjects";
 
@@ -196,6 +196,8 @@ const live = {
 
 /// Where a task stands, in five phases (phase.js), from what is running now.
 export const phaseOf = (task) => taskPhase(task, live);
+/// Its six steps (phase.js), from what is running now.
+export const stepsOf = (task, project) => taskSteps(task, project, live);
 
 /// Which stopped sessions are asleep, from each one's newest start or stop in
 /// the activity feed (newest first). A session the feed says nothing about

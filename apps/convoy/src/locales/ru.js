@@ -1534,6 +1534,12 @@ export default {
     "Move to To do": "Вернуть в «К выполнению»",
     "Mark ready": "Отметить готовой к проверке",
     "Send back for changes": "Вернуть на доработку",
+    "Edit task": "Изменить задачу",
+    "Findings sent back": "Замечания, отправленные на доработку",
+    "Internal status: {status}": "Внутренний статус: {status}",
+    "Not used": "Не используется",
+    "Not yet": "Ещё не начато",
+    "Waits for you": "Ждёт вас",
   },
   /// The English singular, then the Russian forms for one, few and many:
   /// 1 задача, 2 задачи, 5 задач.

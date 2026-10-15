@@ -571,7 +571,16 @@ try {
   assert.deepEqual(await page.locator(".board--phases .board__title").allTextContents(), ["To do", "Working", "Needs you", "Ready", "Done"]);
   await page.locator('[data-task-column="todo"] [data-task-card="task"] .phase-tag', { hasText: "Waiting to start" }).waitFor();
   await page.locator('[data-task-column="todo"] [data-task-card="task"]').click();
-  // The form keeps its work to Save and Run now: no Accept or Back to queue.
+  // A click opens the task's page: where it stands, and its steps in order,
+  // the ones it does not use greyed.
+  await page.locator('.task-page[data-task-page="task"] .task-page__phase', { hasText: "To do" }).waitFor();
+  assert.deepEqual(await page.locator(".task-page .step__label").allTextContents(), ["Plan", "Build", "Review", "Test", "Publish", "Document"]);
+  await page.locator('.task-page .step--current[data-step="build"]').waitFor();
+  await page.locator('.task-page .step--off[data-step="plan"]').waitFor();
+  if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/task-page.png` });
+  // Its form is Edit…, and keeps its work to Save and Run now: no Accept or
+  // Back to queue.
+  await page.locator('[data-action="task-page-edit"]').click();
   assert.equal(await page.locator(".modal [data-status]").count(), 0);
   // Model and account sit under Advanced; the models are the agent's own.
   await page.locator('.modal [data-toggle="advanced"]').click();
@@ -579,6 +588,9 @@ try {
   assert.deepEqual(await page.locator("#task-model option").allTextContents(), ["Default", "Opus · most capable", "Sonnet · balanced"]);
   await page.locator("#task-model").selectOption("opus");
   await page.locator('[data-action="save-task"]').click();
+  await page.locator(".modal").waitFor({ state: "detached" });
+  // Back goes to the board.
+  await page.locator('[data-action="task-back"]').click();
   await page.locator('[data-task-card="task"]').waitFor();
   // A card dragged onto Ready says you will check it yourself, and the drop
   // does not open the task.
@@ -773,10 +785,11 @@ try {
   await page.locator(".toast", { hasText: "Review brief copied" }).waitFor();
   if (await readClipboard() !== null) assert.match(await readClipboard(), /Review the login changes/);
   await page.keyboard.press("Escape");
-  // A task with a session opens that session on a click; its form is in its
-  // menu.
+  // A task with a session opens its page; its builder's session is in the
+  // Build step.
   await page.locator('[data-tab="tasks"]').click();
   await page.locator(".task-row", { hasText: "Checkout retries" }).click();
+  await page.locator('.task-page .step[data-step="build"] .step__session[data-open="builder"]').click();
   await page.locator('.tab-item--selected[data-tab-open="builder"]').waitFor();
   assert.equal(await page.locator(".modal").count(), 0);
   // Escape is always the page's, so the macOS window never takes it as
@@ -787,9 +800,9 @@ try {
   );
   await page.locator('.project-row [data-project="project"]').click();
   await page.locator('[data-tab="tasks"]').click();
-  // "Blocked by": the task waits for another, and says so. One that has
-  // never run opens its form.
+  // "Blocked by": the task waits for another, and says so.
   await page.locator('.task-row[data-task="task"]').click();
+  await page.locator('[data-action="task-page-edit"]').click();
   await page.locator('.modal [data-depends-on]').first().check();
   // Related tasks: picked from a list, shown as chips, linked on save.
   await page.locator("#task-title").fill("ENG-7: Test imported task, edited");
@@ -803,6 +816,8 @@ try {
     (other) => window.checkCalls.some((c) => c.cmd === "task_related" && c.args.id === "task" && c.args.related.includes(other)),
     relatedId,
   );
+  await page.locator(".task-page__phase", { hasText: "Waits for Checkout retries" }).waitFor();
+  await page.locator('[data-action="task-back"]').click();
   await page.locator('.task-row[data-task="task"] .phase-tag[title="Waits for Checkout retries"]').waitFor();
   // New tasks publish nothing unless the project says otherwise.
   await page.locator('[data-action="new-task"]').click();
@@ -1043,10 +1058,10 @@ try {
   // Its builder runs and waits on a question, so the task needs you there.
   await page.locator('.task-row[data-task="synced"][data-phase="needs_you"] .phase-tag', { hasText: "Builder is asking you" }).waitFor();
 
-  // The task form shows each check, the failed one's output open.
-  await page.locator('[data-task="synced"] [data-task-more="synced"]').click();
-  await page.locator('[data-menu-act="task-edit"]').click();
-  await page.locator(".qa-panel", { hasText: "QA failed" }).waitFor();
+  // The task's page shows each check under Test, the failed one's output open.
+  await page.locator('.task-row[data-task="synced"]').click();
+  await page.locator('.task-page .step--failed[data-step="test"] .qa-panel', { hasText: "QA failed" }).waitFor();
+  if (shots) await page.screenshot({ path: `${shots}/task-page-qa.png` });
   assert.deepEqual(await page.locator(".qa-check__command").allTextContents(), ["npm test", "npm run lint"]);
   await page.locator(".qa-check--failed details[open] .qa-check__output", { hasText: "unused variable" }).waitFor();
   if (shots) {
@@ -1067,11 +1082,14 @@ try {
       return [{ kind: "notice", task: id, event: "ready", detail: "" }];
     };
   });
-  await page.locator('.modal [data-action="task-qa-run"]').click();
-  await page.locator(".qa-panel", { hasText: "QA passed" }).waitFor();
-  await page.locator('.modal [data-action="task-mark-done"]').click();
+  await page.locator('.task-page [data-action="task-qa-run"]').click();
+  await page.locator(".task-page .qa-panel", { hasText: "QA passed" }).waitFor();
+  // Ready: Mark done is the page's next step.
+  await page.locator(".task-page__phase", { hasText: "QA passed" }).waitFor();
+  await page.locator('.task-page__actions [data-action="task-mark-done"]').click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_status" && c.args.id === "synced" && c.args.status === "done"));
-  await page.locator(".modal").waitFor({ state: "detached" });
+  await page.locator(".task-page__phase", { hasText: "Done" }).waitFor();
+  await page.locator('[data-action="task-back"]').click();
 
   // A QA agent's verdict, when its session ends: a failure with no running
   // builder waits for the builder's next resume.
@@ -1120,17 +1138,17 @@ try {
   await page.locator('[data-task-column="needs_you"] [data-task="planned"] .phase-tag:has-text("Approve the plan")').first().waitFor();
   await page.locator('[data-task="planned"]').first().click({ button: "right" });
   await page.locator('[data-menu-act="task-plan"]').click();
-  await page.locator(".plan-text h1", { hasText: "Plan" }).waitFor();
+  await page.locator('.task-page .step--you[data-step="plan"] .plan-text h1', { hasText: "Plan" }).waitFor();
   if (shots) await page.waitForTimeout(300), await page.screenshot({ path: `${shots}/plan-review.png` });
   await page.locator("#plan-comment").fill("Cover logout too.");
-  await page.locator('.modal [data-action="plan-changes"]').click();
+  await page.locator('.task-page [data-action="plan-changes"]').click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "plan_request_changes" && c.args.comment === "Cover logout too."));
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "terminal_paste" && c.args.text === "Revise the plan: Cover logout too."));
   await page.evaluate(() => Object.assign(window.mockTasks.find((item) => item.id === "planned"), { status: "plan_review", plan: { id: "p2", status: "waiting", text: "1. Read the token.\n2. Cover logout.", comments: [{ at: "", text: "Cover logout too." }], session_id: "builder" } }));
-  await page.keyboard.press("Escape");
+  await page.locator('[data-action="task-back"]').click();
   await page.locator('[data-task="planned"]').first().click({ button: "right" });
   await page.locator('[data-menu-act="task-plan"]').click();
-  await page.locator('.modal [data-action="plan-approve"]').click();
+  await page.locator('.task-page [data-action="plan-approve"]').click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "plan_approve" && c.args.taskId === "planned"));
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_prepare" && c.args.id === "planned"));
 
@@ -1146,7 +1164,7 @@ try {
       return `q-${id}`;
     };
   });
-  await page.keyboard.press("Escape");
+  await page.locator('[data-tab="tasks"]').click();
   await page.locator('[data-action="queue-start"]').click();
   await page.locator('.modal [data-action="confirm-queue"]').click();
   await page.waitForFunction(() => ["side-a", "side-b"].every((id) => window.checkCalls.some((c) => c.cmd === "task_prepare" && c.args.id === id)));

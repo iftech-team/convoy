@@ -60,6 +60,7 @@ import {
   workbench,
 } from "./views.js";
 import { filesView, remoteMenu } from "./views-files.js";
+import { pageTask, taskPage } from "./views-task.js";
 import { settingsPage } from "./views-settings.js";
 import { projectSettingsPage } from "./views-project.js";
 import { forgetIcon, onIconLoaded } from "./icons.js";
@@ -137,7 +138,7 @@ function content() {
     case "specs":
       return specsView();
     case "tasks":
-      return tasksView();
+      return pageTask() ? taskPage() : tasksView();
     case "docs":
       return docsView();
     case "automations":
@@ -702,63 +703,71 @@ const ACTIONS = {
     const link = state.projectDraft?.link;
     if (link?.sync && state.syncChoices?.suggested) return saveProjectLink({ ...link, sync: { ...link.sync, map: state.syncChoices.suggested } });
   },
+  "task-back": () => {
+    state.taskId = null;
+    render();
+  },
+  "task-page-edit": () => editTask(findTask(state.taskId)),
   "task-qa-open": () => {
-    const session = state.dialog?.qa?.session_id;
+    const session = findTask(panelTaskId())?.qa?.session_id;
     if (!session) return;
     closeDialog();
     return openAnywhere(session);
   },
   "task-qa-run": () => {
-    const id = state.dialog?.id;
+    const id = panelTaskId();
     if (id) return startQa(id);
   },
-  "plan-approve": () => approvePlan(state.dialog?.id),
+  "plan-approve": () => approvePlan(panelTaskId()),
   "plan-changes": async () => {
     captureDraft();
-    const id = state.dialog?.id;
-    const comment = (state.dialog?.plan_comment ?? "").trim();
+    const id = panelTaskId();
+    const box = document.querySelector("#plan-comment");
+    const comment = (box?.value ?? state.dialog?.plan_comment ?? "").trim();
     if (!id) return;
     if (!comment) return toast(t("Say what should change in the plan."));
     const actions = await call("plan_request_changes", { taskId: id, comment });
     if (!actions) return;
-    state.dialog.plan_comment = "";
+    if (state.dialog) state.dialog.plan_comment = "";
+    if (box) box.value = "";
     toast(t("Sent to the planner. The new plan shows here when it is written."));
     await applyPipeline(actions);
     refreshTaskDialog(id);
     render();
   },
   "plan-open": () => {
-    const session = state.dialog?.plan?.session_id;
+    const session = findTask(panelTaskId())?.plan?.session_id;
     if (!session) return;
     closeDialog();
     return openAnywhere(session);
   },
   "review-open": () => {
-    const session = state.dialog?.review_session_id;
+    const task = findTask(panelTaskId());
+    const session = task?.review?.session_id ?? task?.review_session_id;
     if (!session) return;
     closeDialog();
     return openAnywhere(session);
   },
   "review-skip": async () => {
-    const id = state.dialog?.id;
+    const id = panelTaskId();
     if (!id) return;
     const actions = await call("review_skip", { taskId: id });
     if (actions) await applyPipeline(actions);
     refreshTaskDialog(id);
     render();
   },
-  "task-docs-write": () => writeTaskDoc(state.dialog?.id),
+  "task-docs-write": () => writeTaskDoc(panelTaskId()),
   "task-publish": async () => {
-    const id = state.dialog?.id;
+    const id = panelTaskId();
     if (!id) return;
     const actions = await call("task_publish_start", { taskId: id });
     if (actions) await applyPipeline(actions);
   },
 
   "task-mark-done": async () => {
-    const id = state.dialog?.id;
+    const id = panelTaskId();
     if (id && (await done("task_status", { id, status: "done" }))) {
-      closeDialog();
+      if (state.dialog) closeDialog();
       await reloadTasks();
       render();
     }
@@ -772,7 +781,7 @@ const ACTIONS = {
     toast(t("Found {commands}", { commands: found.join(", ") }));
   },
   "task-sync-retry": async () => {
-    const id = state.dialog?.id;
+    const id = panelTaskId();
     if (id && (await done("task_sync_retry", { id }))) {
       toast(t("Sending to the tracker again…"));
       await reloadTasks();
@@ -1319,6 +1328,7 @@ const withProject = (run) => (project() ? run(project()) : undefined);
 async function showTab(tab) {
   state.page = null;
   state.tab = tab;
+  state.taskId = null;
   state.sessionId = null;
   state.files = null;
   keepProjectTab();
@@ -1517,6 +1527,7 @@ app.addEventListener("click", async (event) => {
   if (data.tab) {
     if (state.page === "project") state.page = null;
     state.tab = data.tab;
+    state.taskId = null;
     state.sessionId = null;
     state.files = null;
     keepProjectTab();
@@ -3324,17 +3335,22 @@ async function exportSpec(id) {
   }
 }
 
-/// A click on a task opens its session and resumes the agent there if it
-/// has stopped; a task that has never run opens its form. Editing one that
-/// has run is in its menu.
+/// A click on a task opens its page: where it stands and each step, with
+/// the sessions that ran them. Its form is Edit… there.
 async function openTask(id) {
   const task = findTask(id);
   if (!task) return;
-  const sessionId = task.session_id && anySession(task.session_id) ? task.session_id : null;
-  if (!sessionId) return openModal({ kind: "task", ...task, skills: task.skills ?? [], skillsTouched: true });
-  await openAnywhere(sessionId);
-  if (!isRunning(sessionId)) await startSession(sessionId);
+  if (task.project_id !== state.projectId) await showProject(task.project_id);
+  await showTab("tasks");
+  state.taskId = id;
+  render();
 }
+
+/// The open task's form.
+const editTask = (task) => task && openModal({ kind: "task", ...task, skills: task.skills ?? [], skillsTouched: true });
+
+/// The task a step's button acts on: the open form's, or the page's.
+const panelTaskId = () => (state.dialog?.kind === "task" ? state.dialog.id : null) ?? state.taskId;
 
 /// Saves the form; with `run`, starts the task straight away, as the macOS
 /// sheet's "Run now" does.
@@ -3648,7 +3664,7 @@ async function runTaskMenu(act, id) {
       render();
       return startQa(id);
     case "task-plan":
-      return openModal({ kind: "task", ...task });
+      return openTask(id);
     case "task-planner":
       return openAnywhere(task.plan?.session_id);
     case "task-review-now": {
@@ -3670,7 +3686,7 @@ async function runTaskMenu(act, id) {
       if (await done("task_sync_retry", { id })) await reloadTasks();
       return render();
     case "task-edit":
-      return openModal({ kind: "task", ...task });
+      return editTask(task);
     case "task-delete":
       return openModal({
         kind: "confirm",

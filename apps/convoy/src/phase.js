@@ -46,6 +46,12 @@ export const PHASE_LABELS = [
   ...PHASES.map(([, label]) => label),
   ...STEPS.map(([, label]) => label),
   ...Object.values(STALLED).flat(),
+  "Not used",
+  "Not yet",
+  "Running",
+  "Waits for you",
+  "Failed",
+  "Skipped",
   "Done · PR #{number}",
   "Planner stopped without a plan",
   "Not published",
@@ -226,4 +232,63 @@ export function dropStatus(task, target) {
     default:
       return null;
   }
+}
+
+// ----------------------------------------------------------------- steps --
+
+const RUN_STATES = {
+  plan: { drafting: "active", waiting: "you", approved: "passed", changes_requested: "pending" },
+  review: { reviewing: "active", passed: "passed", failed: "failed", no_verdict: "failed", skipped: "skipped" },
+  test: { checking: "active", queued: "active", waiting: "pending", testing: "active", passed: "passed", failed: "failed", no_verdict: "failed" },
+  publish: { writing: "active", publishing: "active", published: "passed", failed: "failed" },
+  document: { writing: "active", written: "passed", failed: "failed" },
+};
+
+/// What each step state is called on the task's page.
+export const STEP_STATES = {
+  off: "Not used",
+  pending: "Not yet",
+  active: "Running",
+  you: "Waits for you",
+  passed: "Done",
+  failed: "Failed",
+  skipped: "Skipped",
+};
+
+/// The task's six steps, each `{ key, label, on, state, session }`: whether
+/// it is part of this task, how far it got, and the session that ran it. A
+/// step that is off still shows, greyed, so the whole road is visible.
+export function taskSteps(task, project = null, live = null) {
+  const now = taskPhase(task, live);
+  const builderRuns = !!live?.session?.(task.session_id)?.running;
+  const build = (() => {
+    if (task.status === "building") return "active";
+    if (task.status === "failed") return "failed";
+    if (task.status === "changes") return builderRuns ? "active" : "you";
+    if (["queued", "planning", "plan_review"].includes(task.status)) return "pending";
+    return "passed";
+  })();
+  const steps = [
+    { key: "plan", on: !!(task.plan_first || task.plan), state: RUN_STATES.plan[task.plan?.status] ?? "pending", session: task.plan?.session_id ?? null },
+    { key: "build", on: true, state: build, session: task.session_id ?? null },
+    { key: "review", on: !!(task.auto_review || task.review), state: RUN_STATES.review[task.review?.status] ?? "pending", session: task.review?.session_id ?? task.review_session_id ?? null },
+    { key: "test", on: !!(project?.qa || task.qa), state: RUN_STATES.test[task.qa?.status] ?? "pending", session: task.qa?.session_id ?? null },
+    {
+      key: "publish",
+      on: (task.mode && task.mode !== "none") || !!task.publish_run || !!task.pr_url,
+      state: RUN_STATES.publish[task.publish_run?.status] ?? (task.pr_url ? "passed" : "pending"),
+      session: task.publish_run?.session_id ?? null,
+    },
+    {
+      key: "document",
+      on: !!(project?.docs_auto || task.docs?.length || task.docs_run),
+      state: RUN_STATES.document[task.docs_run?.status] ?? (task.docs?.length ? "passed" : "pending"),
+      session: task.docs_run?.session_id ?? null,
+    },
+  ];
+  return steps.map((step) => {
+    // The phase knows when a stage stalled or asks something.
+    const state = !step.on ? "off" : now.step === step.key && now.phase === "needs_you" ? (now.tone === "failed" ? "failed" : "you") : step.state;
+    return { ...step, label: STEPS.find(([key]) => key === step.key)[1], state, current: now.step === step.key && now.phase !== "done" };
+  });
 }

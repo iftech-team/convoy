@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PHASES, PHASE_LABELS, dropStatus, movable, prNumber, taskPhase } from "../../src/phase.js";
+import { PHASES, PHASE_LABELS, STEP_STATES, dropStatus, movable, prNumber, taskPhase, taskSteps } from "../../src/phase.js";
 import { untranslated } from "./helpers.mjs";
 
 const task = (status, extra = {}) => ({ id: "t", status, round: 0, max_rounds: 2, session_id: "builder", ...extra });
@@ -125,4 +125,29 @@ test("pull request numbers", () => {
 test("every phase label has its Russian", () => {
   assert.equal(PHASES.length, 5);
   assert.deepEqual(untranslated(PHASE_LABELS), []);
+});
+
+test("a task's steps: which it uses, how far each got, which is current", () => {
+  const states = (steps) => Object.fromEntries(steps.map((step) => [step.key, step.state]));
+  // A plain task: only Build, not yet.
+  assert.deepEqual(states(taskSteps(task("queued", { mode: "none" }))), { plan: "off", build: "pending", review: "off", test: "off", publish: "off", document: "off" });
+  // Planned, reviewed, tested, published, documented.
+  const full = taskSteps(
+    task("testing", { mode: "pr", plan_first: true, auto_review: true, plan: { status: "approved" }, review: { status: "passed", round: 0 }, qa: { status: "passed" }, pr_url: "https://github.com/a/b/pull/1", docs: [{}] }),
+    { qa: true, docs_auto: true },
+  );
+  assert.deepEqual(states(full), { plan: "passed", build: "passed", review: "passed", test: "passed", publish: "passed", document: "passed" });
+  // The plan waits for you, and that step is the current one.
+  const plan = taskSteps(task("plan_review", { plan_first: true, plan: { status: "waiting", session_id: "p" } }));
+  assert.equal(plan[0].state, "you");
+  assert.equal(plan.find((step) => step.current).key, "plan");
+  // A QA agent that stopped shows as failed where it stopped.
+  const stalled = taskSteps(task("testing", { qa: { status: "testing", session_id: "q" } }), { qa: true }, live({ q: { running: false, started: true } }));
+  assert.equal(stalled.find((step) => step.key === "test").state, "failed");
+  // Sent back and not running: Build waits for you.
+  assert.equal(taskSteps(task("changes")).find((step) => step.key === "build").state, "you");
+});
+
+test("every step state has its Russian", () => {
+  assert.deepEqual(untranslated(Object.values(STEP_STATES)), []);
 });

@@ -689,16 +689,10 @@ const taskForm = (dialog) => {
   // A new task starts with the automatic skills.
   if (!Array.isArray(dialog.skills)) dialog.skills = autoSkills(dialog.agent, projectId);
   return modal({
-    title: dialog.id ? t("Task") : t("New task"),
-    hint: dialog.id ? `${t(dialog.status)}${dialog.last_error ? ` · ${dialog.last_error}` : ""}` : "",
+    title: dialog.id ? t("Edit task") : t("New task"),
+    hint: dialog.id ? phaseLine(phaseOf(dialog)) : "",
     wide: true,
     body: `
-      ${syncNotice(dialog)}
-      ${planPanel(dialog)}
-      ${reviewPanel(dialog)}
-      ${qaPanel(dialog)}
-      ${publishPanel(dialog)}
-      ${docsPanel(dialog)}
       ${field(t("Title"), textInput("task-title", dialog.title))}
       ${field(t("Agent"), choice("agent", AGENTS, dialog.agent))}
       ${skillPicker(dialog.skills, dialog.agent, projectId)}
@@ -763,7 +757,7 @@ const taskForm = (dialog) => {
           : ""
       }`,
     foot: `
-      ${dialog.id ? button({ icon: "trash", kind: "quiet", title: t("Delete task"), action: "delete-task", disabled: dialog.status === "building" }) : ""}
+      ${dialog.id ? button({ icon: "trash", kind: "quiet", title: t("Delete task"), action: "delete-task", disabled: phaseOf(dialog).phase === "working" }) : ""}
       ${button({ label: t("Cancel"), data: { dismiss: "1" } })}
       ${!dialog.id || ["queued", "failed", "changes", "attention"].includes(dialog.status) ? button({ label: dialog.plan_first && dialog.plan?.status !== "approved" ? t("Plan now") : t("Run now"), icon: "play", action: "run-task-now" }) : ""}
       ${button({ label: t("Save"), action: "save-task", kind: "primary" })}`,
@@ -779,7 +773,7 @@ const PLAN_HEADLINES = {
 
 /// The plan: what the planner wrote, and approving it or asking for
 /// changes.
-function planPanel(task) {
+export function planPanel(task) {
   const plan = task.plan;
   if (!plan) return "";
   const [headline, tone] = PLAN_HEADLINES[plan.status] ?? [plan.status, "idle"];
@@ -817,7 +811,7 @@ const REVIEW_HEADLINES = {
 };
 
 /// The latest review, which round it was, and going on without it.
-function reviewPanel(task) {
+export function reviewPanel(task) {
   const run = task.review;
   if (!run && !task.round) return "";
   const [headline, tone] = run ? REVIEW_HEADLINES[run.status] ?? [run.status, "idle"] : ["", "idle"];
@@ -849,7 +843,7 @@ const PUBLISH_HEADLINES = {
 };
 
 /// Publishing by Convoy: how it went, the request, and the description.
-function publishPanel(task) {
+export function publishPanel(task) {
   const run = task.publish_run;
   if (!task.id || task.mode === "none" || (!run && !["review", "testing", "attention"].includes(task.status))) return "";
   const [headline, tone] = run ? PUBLISH_HEADLINES[run.status] ?? [run.status, "idle"] : ["Not published yet", "idle"];
@@ -873,7 +867,7 @@ function publishPanel(task) {
 }
 
 /// The documents written for the task, and writing one now.
-function docsPanel(task) {
+export function docsPanel(task) {
   if (!task.id) return "";
   const docs = task.docs ?? [];
   const writing = task.docs_run?.status === "writing";
@@ -916,7 +910,7 @@ const QA_HEADLINES = {
 
 /// The task's latest QA run: each check with its output, what the QA agent
 /// found, and what to do next.
-function qaPanel(task) {
+export function qaPanel(task) {
   const run = task.qa;
   if (!run) return "";
   const [headline, tone] = QA_HEADLINES[run.status] ?? [run.status, "idle"];
@@ -952,7 +946,7 @@ function qaPanel(task) {
 }
 
 /// How the task's tracker heard of it last, and Retry when it did not.
-function syncNotice(task) {
+export function syncNotice(task) {
   const kind = syncState(task);
   if (!kind) return "";
   return `<div class="sync-notice sync-notice--${kind}">

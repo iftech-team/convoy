@@ -6520,3 +6520,212 @@ select:disabled {
   width: 100%;
   margin-bottom: 8px;
 }
+
+/* ------------------------------------------------------------ task page -- */
+/* A task's page: where it stands, then its steps down a line, each with its
+ * session and what it found. */
+
+.task-page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 32px 40px;
+}
+
+.task-page__head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 880px;
+  margin-bottom: 20px;
+}
+
+.task-page__back {
+  align-self: flex-start;
+  margin: 0;
+  font-size: 12px;
+}
+
+.task-page__title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.task-page__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-wrap: pretty;
+}
+
+.task-page__key {
+  margin-right: 6px;
+  color: var(--text-muted);
+  font-size: 0.8em;
+  font-weight: 500;
+}
+
+.task-page__actions {
+  flex: none;
+  display: flex;
+  gap: 8px;
+}
+
+.task-page__phase {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.task-page__phase strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.task-page__phase--needs_you strong {
+  color: var(--state-review);
+}
+
+.steps {
+  max-width: 880px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  position: relative;
+  display: flex;
+  gap: 14px;
+  padding-bottom: 14px;
+}
+
+/* The line from one step's mark to the next. */
+.step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: 20px;
+  bottom: 0;
+  left: 9px;
+  width: 2px;
+  background: var(--border);
+}
+
+.step__mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 4px;
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--bg);
+  color: #fff;
+}
+
+.step__mark svg {
+  width: 11px;
+  height: 11px;
+}
+
+.step--passed .step__mark { border-color: var(--state-done); background: var(--state-done); }
+.step--active .step__mark { border-color: var(--state-running); border-right-color: transparent; animation: spin 1.2s linear infinite; }
+.step--you .step__mark { border-color: var(--state-review); background: color-mix(in srgb, var(--state-review) 25%, var(--bg)); }
+.step--failed .step__mark { border-color: var(--state-failed); background: var(--state-failed); }
+.step--skipped .step__mark { border-style: dashed; }
+.step--off .step__mark { border-style: dotted; opacity: 0.6; }
+
+@media (prefers-reduced-motion: reduce) {
+  .step--active .step__mark { animation: none; }
+}
+
+.step__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.step__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+}
+
+.step__label {
+  font-weight: 600;
+}
+
+.step--off .step__label,
+.step--off .step__state {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.step__state {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.step--current .step__label::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+
+.step__session {
+  gap: 6px;
+  font-size: 12px;
+}
+
+.step__session-state {
+  color: var(--text-muted);
+}
+
+.step__detail {
+  margin-top: 8px;
+}
+
+.step__detail .qa-panel {
+  margin-bottom: 0;
+}
+
+.step__detail > details {
+  margin-top: 4px;
+}
+
+.task-page__section {
+  max-width: 880px;
+  margin-top: 12px;
+}
+
+.task-page__heading {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.task-page__text {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.task-page__internal {
+  max-width: 880px;
+  margin-top: 24px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
