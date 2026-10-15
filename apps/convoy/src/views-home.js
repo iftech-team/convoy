@@ -36,7 +36,7 @@ export function checklistCard({ dismissible = true } = {}) {
           <span class="checklist__label">${escape(t(item.label))}</span>
           <span class="checklist__detail">${escape(t(item.detail[0], item.detail[1]))}</span>
         </span>
-        ${item.done ? "" : button({ label: t(item.label), kind: "quiet", data: { "checklist-do": item.action } })}
+        ${item.done ? "" : button({ label: item.button ? t(item.button[0], item.button[1]) : t(item.label), kind: "quiet", data: { "checklist-do": item.action, "checklist-agent": item.agent ?? "" } })}
       </li>`,
     )
     .join("");

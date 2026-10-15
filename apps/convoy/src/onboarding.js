@@ -1,6 +1,6 @@
 // The four things a first run needs, as a checklist: an agent installed, it
-// logged in, a project, and a first task. Shown on Home, in the empty
-// window and atop Settings → Get started until it is done or put away.
+// logged in, a project, and a first task. Shown on the welcome screen, on
+// Home and atop Settings → Get started until it is done or put away.
 //
 // Pure: no imports. Labels are English keys; views call t().
 
@@ -16,12 +16,14 @@ export const CHECKLIST_LABELS = [
   "Log in to it",
   "Checking…",
   "Run the agent once in a terminal and sign in.",
+  "Sign in to {agent} here, in its own login.",
+  "Log in to {agent}",
   "Logged in.",
   "Open a project",
   "A repository, or a folder of related ones.",
   "{count} open.",
   "Create a task",
-  "Write one, or import one from your tracker; an agent runs it.",
+  "One sentence is enough; it starts right away.",
   "{count} so far.",
   "{done} of {total} done",
 ];
@@ -37,6 +39,9 @@ export function checklist({ diagnostics, setupChecks, projects, tasks } = {}) {
     .filter(Boolean);
   // Gemini has no login check of its own: found is enough.
   const loggedIn = found.includes("gemini") || logins.some((check) => check.status === "ok");
+  // The agent to sign in from the window: the first found one whose login
+  // check failed. Gemini signs in on its own first run.
+  const signIn = loggedIn ? null : found.find((agent) => agent !== "gemini" && logins.some((check) => check.id === `login.${agent}`));
   const items = [
     {
       key: "agent",
@@ -48,9 +53,18 @@ export function checklist({ diagnostics, setupChecks, projects, tasks } = {}) {
     {
       key: "login",
       label: "Log in to it",
-      detail: !setupChecks && found.length ? ["Checking…", {}] : loggedIn ? ["Logged in.", {}] : ["Run the agent once in a terminal and sign in.", {}],
+      detail: !setupChecks && found.length
+        ? ["Checking…", {}]
+        : loggedIn
+          ? ["Logged in.", {}]
+          : signIn
+            ? ["Sign in to {agent} here, in its own login.", { agent: NAMES[signIn] }]
+            : ["Run the agent once in a terminal and sign in.", {}],
       done: found.length > 0 && loggedIn,
-      action: "setup",
+      action: signIn ? "login" : "setup",
+      // What the step's button says and signs in to, when it can.
+      agent: signIn,
+      button: signIn ? ["Log in to {agent}", { agent: NAMES[signIn] }] : null,
     },
     {
       key: "project",
@@ -62,7 +76,7 @@ export function checklist({ diagnostics, setupChecks, projects, tasks } = {}) {
     {
       key: "task",
       label: "Create a task",
-      detail: tasks?.length ? ["{count} so far.", { count: tasks.length }] : ["Write one, or import one from your tracker; an agent runs it.", {}],
+      detail: tasks?.length ? ["{count} so far.", { count: tasks.length }] : ["One sentence is enough; it starts right away.", {}],
       done: (tasks?.length ?? 0) > 0,
       action: "first-task",
     },
@@ -70,3 +84,27 @@ export function checklist({ diagnostics, setupChecks, projects, tasks } = {}) {
   const done = items.filter((item) => item.done).length;
   return { items, done, total: items.length, complete: done === items.length };
 }
+
+// The welcome screen's words: what Convoy is, and how a task moves through it.
+
+/// What Convoy does, in one sentence. Home repeats it.
+export const PITCH =
+  "Convoy runs coding agents on your tasks: they plan, build, review and test the work and open a pull request, and you approve and merge.";
+
+/// How one task moves through Convoy, in three steps.
+export const FLOW = [
+  ["edit", "You write a task", "One sentence is enough: fix a bug, add a page, update the docs."],
+  ["sparkles", "Agents do the work", "Claude Code, Codex or Gemini CLI plan, build, review each other and test, each in a session you can open."],
+  ["checkCircle", "You approve and merge", "Look at the change, then merge the pull request or send it back with notes."],
+];
+
+/// Every label this screen shows, for the translation check.
+export const WELCOME_LABELS = [
+  PITCH,
+  ...FLOW.flatMap(([, title, text]) => [title, text]),
+  "Welcome to Convoy",
+  "How it works",
+  "Open a project…",
+  "A repository, or a folder of related ones. Nothing in it changes until you run a task.",
+  "Used Convoy for macOS? Import its workspace…",
+];

@@ -320,13 +320,24 @@ try {
     } };
   });
   await page.goto("http://127.0.0.1:1421");
-  // An empty workspace on a Mac with the macOS app's data is offered it once.
+  // A first run opens on the welcome screen: what Convoy does and how a task
+  // moves through it.
+  const welcome = page.locator(".welcome");
+  await welcome.getByText("Convoy runs coding agents on your tasks").waitFor();
+  assert.equal(await welcome.locator(".flow__step").count(), 3);
+  if (process.env.CONVOY_TEST_SHOTS) {
+    await welcome.locator(".checklist__count").waitFor();
+    await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/welcome.png` });
+  }
+  // The macOS app's data is never offered unasked; the welcome screen links to it.
   const offer = page.locator(".modal", { hasText: "Import from the macOS app" });
+  await page.waitForTimeout(100);
+  assert.equal(await offer.count(), 0);
+  await welcome.locator('[data-action="mac-import-offer"]').click();
   await offer.getByText("3 projects").waitFor();
   assert.equal(await offer.locator('[data-toggle="settings"]').getAttribute("aria-pressed"), "true");
   await offer.getByRole("button", { name: "Not now" }).click();
   await offer.waitFor({ state: "detached" });
-  assert.equal(await page.evaluate(() => localStorage.getItem("convoy.macImportOffered")), "1");
   // Approvals asked before the window listened are read from the backend
   // and wait in the inbox like any other, with how long they have waited.
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "chat_approvals"));
@@ -339,11 +350,10 @@ try {
   await adopted.waitFor({ state: "detached" });
   await page.keyboard.press("Escape");
   await inbox.waitFor({ state: "detached" });
-  // A first run: the empty window lists what is left to set up, and its
-  // project step opens a folder.
-  await page.locator(".empty .checklist__count", { hasText: "2 of 4 done" }).waitFor();
-  await page.locator('.empty .checklist__item--done[data-check="agent"]').waitFor();
-  await page.locator('.empty [data-checklist-do="open-folder"]').click();
+  // It lists what is left to set up, and its project step opens a folder.
+  await welcome.locator(".checklist__count", { hasText: "2 of 4 done" }).waitFor();
+  await welcome.locator('.checklist__item--done[data-check="agent"]').waitFor();
+  await welcome.locator('[data-checklist-do="open-folder"]').click();
   await page.getByRole("heading", { name: "Example", exact: true }).waitFor();
   await page.locator('[data-open="builder"]').first().click();
   await page.locator('[data-action="session-menu"]').last().click();

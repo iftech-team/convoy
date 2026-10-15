@@ -830,27 +830,39 @@ pub fn login_terminal(profile_id: &str) -> String {
 
 /// Runs the provider's own login inside a profile's account folder, in a
 /// terminal the page shows — `claude /login` or `codex login`, as the macOS
-/// app does. Returns the terminal's id.
+/// app does. With no profile it signs in the system login of `agent`, the
+/// one a first run checks. Returns the terminal's id.
 #[tauri::command]
 pub fn account_login(
     app: AppHandle,
     profile_id: String,
+    agent: Option<String>,
     cols: u16,
     rows: u16,
     workspace: State<'_, Workspace>,
     terminals: State<'_, Arc<Terminals>>,
 ) -> Result<String, String> {
     let storage = workspace.storage.clone();
+    let system = match agent.as_deref().filter(|_| profile_id.is_empty()) {
+        Some(name) => Some(Agent::parse(name).ok_or("Unknown agent.")?),
+        None => None,
+    };
     let (agent, account) = workspace.act(|core| {
-        let profile = core
-            .state()
-            .profiles
-            .iter()
-            .find(|profile| profile.id == profile_id)
-            .cloned()
-            .ok_or_else(|| convoy_core::ConvoyError::message("This account no longer exists."))?;
-        let mut probe = convoy_core::model::Session::new(String::new(), profile.agent, "login");
-        probe.profile_id = Some(profile.id.clone());
+        let probe = match system {
+            Some(agent) => convoy_core::model::Session::new(String::new(), agent, "login"),
+            None => {
+                let profile = core
+                    .state()
+                    .profiles
+                    .iter()
+                    .find(|profile| profile.id == profile_id)
+                    .cloned()
+                    .ok_or_else(|| convoy_core::ConvoyError::message("This account no longer exists."))?;
+                let mut probe = convoy_core::model::Session::new(String::new(), profile.agent, "login");
+                probe.profile_id = Some(profile.id.clone());
+                probe
+            }
+        };
         let account = convoy_core::accounts::account_environment(
             &probe,
             &core.state().profiles,
@@ -858,7 +870,7 @@ pub fn account_login(
             &convoy_core::provider::launch::current_environment(),
         )?;
         std::fs::create_dir_all(&account.home)?;
-        Ok((profile.agent, account))
+        Ok((probe.agent, account))
     })?;
 
     let login: &[&str] = match agent {
@@ -881,7 +893,10 @@ pub fn account_login(
         ))
     };
 
-    let id = login_terminal(&profile_id);
+    let id = match system {
+        Some(agent) => login_terminal(&format!("system-{}", agent.as_str())),
+        None => login_terminal(&profile_id),
+    };
     if terminals.running(&id) {
         return Ok(id);
     }

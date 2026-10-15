@@ -6909,3 +6909,150 @@ select:disabled {
   width: min(560px, 100%);
   margin-top: 20px;
 }
+
+/* -------------------------------------------------------------- welcome -- */
+/* The window before any project: what Convoy is, how a task moves through
+ * it, and what is still to set up. */
+
+.welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  padding: 56px 32px 40px;
+  overflow-y: auto;
+}
+
+.welcome__intro {
+  max-width: 620px;
+  text-align: center;
+}
+
+.welcome__title {
+  margin: 0 0 10px;
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.welcome__lead {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.welcome__start {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.welcome__start .button {
+  height: 36px;
+  padding: 0 18px;
+  font-size: 14px;
+}
+
+.welcome__note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.welcome__checklist {
+  width: min(620px, 100%);
+}
+
+.welcome__import {
+  font-size: 12px;
+}
+
+/* How a task moves through Convoy: three numbered steps, joined by a line. */
+.flow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  width: min(760px, 100%);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: none;
+}
+
+.flow__step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+}
+
+.flow__step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 33px;
+  right: -13px;
+  width: 14px;
+  height: 1px;
+  background: var(--border-strong);
+}
+
+.flow__mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 4px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.flow__mark svg {
+  width: 17px;
+  height: 17px;
+}
+
+.flow__number {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--bg-subtle);
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.flow__title {
+  font-weight: 600;
+}
+
+.flow__text {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .flow {
+    grid-template-columns: 1fr;
+  }
+
+  .flow__step:not(:last-child)::after {
+    display: none;
+  }
+}

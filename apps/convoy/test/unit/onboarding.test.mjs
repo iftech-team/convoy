@@ -31,6 +31,15 @@ test("found but not logged in, or still checking", () => {
   assert.equal(done(checklist({ diagnostics: [{ name: "gemini", found: true }], setupChecks: [] })).login, true);
 });
 
+test("a found agent that is not signed in is signed in from the window", () => {
+  const login = checklist({ diagnostics: [{ name: "claude", found: true }], setupChecks: [{ id: "login.claude", status: "failed" }] }).items[1];
+  assert.equal(login.action, "login");
+  assert.equal(login.agent, "claude");
+  assert.deepEqual(login.button, ["Log in to {agent}", { agent: "Claude Code" }]);
+  // Nothing found yet: the step points at setup instead.
+  assert.equal(checklist({ diagnostics: [], setupChecks: [] }).items[1].action, "setup");
+});
+
 test("every checklist label has its Russian", () => {
   assert.deepEqual(untranslated(CHECKLIST_LABELS), []);
 });

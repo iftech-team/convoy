@@ -68,6 +68,7 @@ import { projectSettingsPage } from "./views-project.js";
 import { forgetIcon, onIconLoaded } from "./icons.js";
 import { runnable, specsView, tasksView } from "./views-planning.js";
 import { checklistCard, dashboardView, gettingStarted, homeView } from "./views-home.js";
+import { welcomeView } from "./views-welcome.js";
 import { toggleHistoryCollapsed } from "./views-history.js";
 import { PROJECT_DOC, docsView } from "./views-docs.js";
 import { installAutomations } from "./automations.js";
@@ -125,6 +126,7 @@ function content() {
   if (state.page === "dashboard") return dashboardView();
   if (state.page === "usage") return usageView();
   if (state.files) return filesView();
+  if (!state.projects.length) return welcomeView();
   if (!project()) {
     return `<div class="empty">
       <span class="empty__mark">📁</span>
@@ -641,12 +643,8 @@ const closeDialog = () => {
     call("session_stop", { id });
     terminal.forget(id);
     loadProfiles().then(render);
-  }
-  // Turning the offer down once is an answer; Settings → Get started still has it.
-  if (state.dialog?.kind === "macos-import") {
-    try {
-      localStorage.setItem(MAC_OFFERED, "1");
-    } catch {}
+    // A system login is what the first-run checklist checks.
+    if (state.dialog.system) loadSetup().then(render);
   }
   state.dialog = null;
   state.menu = null;
@@ -703,7 +701,7 @@ function captureDraft() {
 const ACTIONS = {
   // projects
   "open-folder": openFolder,
-  settings: () => (state.page === "settings" ? closeSettings() : openSettings()),
+  settings: () => (state.page === "settings" ? closeSettings() : openSettings(gettingStarted().complete ? undefined : "Get started")),
   accounts: openAccounts,
   "import-history": openTranscripts,
   "import-all-history": openHistorySweep,
@@ -977,6 +975,7 @@ const ACTIONS = {
   },
   refresh: () => loadWorkspace(),
   "macos-import": () => offerMacImport(false),
+  "mac-import-offer": () => offerMacImport(true),
   "pick-start": () => {
     state.picked = new Set();
     render();
@@ -1231,7 +1230,7 @@ const SHORTCUT_ACTIONS = {
   next: () => stepTabs(1),
   previous: () => stepTabs(-1),
   closeTab: () => state.sessionId && closeTab(state.sessionId),
-  settings: () => (state.page === "settings" ? closeSettings() : openSettings()),
+  settings: () => (state.page === "settings" ? closeSettings() : openSettings(gettingStarted().complete ? undefined : "Get started")),
   // ⌘F finds in the terminal on screen, and in the sidebar otherwise.
   search: () => (terminalShown() ? openFind() : document.querySelector("#project-search")?.focus()),
   switcher: () => openPalette("terminals"),
@@ -1527,6 +1526,7 @@ app.addEventListener("click", async (event) => {
   // the first task in the first project.
   if (data.checklistDo) {
     if (data.checklistDo === "setup") return openSettings("Get started");
+    if (data.checklistDo === "login") return openLogin("", data.checklistAgent);
     if (data.checklistDo === "open-folder") return openFolder();
     if (data.checklistDo === "first-task") {
       if (!state.projectId && state.projects[0]) await showProject(state.projects[0].id);
@@ -2852,10 +2852,8 @@ async function openSettings(section) {
   checkMacImport().then(render);
 }
 
-/// The macOS app's workspace, when this Mac has one. Offered once on its own
-/// when this workspace is still empty; Settings → Get started offers it any time.
-const MAC_OFFERED = "convoy.macImportOffered";
-
+/// The macOS app's workspace, when this Mac has one. The welcome screen and
+/// Settings → Get started offer it; nothing opens it unasked.
 async function checkMacImport() {
   state.macImport = (await call("macos_import_preview", { settings: false })) ?? null;
   return state.macImport;
@@ -2874,9 +2872,6 @@ async function runMacImport() {
   dialog.busy = true;
   render();
   const report = await call("macos_import_run", { settings: !!dialog.settings });
-  try {
-    localStorage.setItem(MAC_OFFERED, "1");
-  } catch {}
   if (!report) {
     dialog.busy = false;
     return render();
@@ -2946,15 +2941,16 @@ async function addPageProfile() {
 }
 
 /// The provider's own login for an account, in a terminal of its own. It is
-/// not a session: closing the dialog ends it, and nothing is saved.
-async function openLogin(profileId) {
-  const profile = (state.profiles ?? []).find((item) => item.id === profileId);
-  if (!profile) return;
-  const id = `login:${profileId}`;
-  openModal({ kind: "login", id, label: profile.label, agent: profile.agent, finished: false });
+/// not a session: closing the dialog ends it, and nothing is saved. With no
+/// account it signs in `agent`'s system login, from the first-run checklist.
+async function openLogin(profileId, agent) {
+  const profile = profileId ? (state.profiles ?? []).find((item) => item.id === profileId) : null;
+  if (profileId ? !profile : !agent) return;
+  const id = profile ? `login:${profileId}` : `login:system-${agent}`;
+  openModal({ kind: "login", id, label: profile?.label ?? agentName(agent), agent: profile?.agent ?? agent, system: !profile, finished: false });
   terminal.mount(id, "#login-host");
   const { terminal: xterm } = terminal.terminalFor(id);
-  const started = await call("account_login", { profileId, cols: xterm.cols || 100, rows: xterm.rows || 28 });
+  const started = await call("account_login", { profileId: profile ? profileId : "", agent: profile ? null : agent, cols: xterm.cols || 100, rows: xterm.rows || 28 });
   if (started === undefined && state.dialog?.id === id) closeDialog();
   xterm.focus();
 }
@@ -4653,13 +4649,9 @@ try {
     if (state.tab === "tasks" || state.taskScope === "all") await reloadTasks();
     render();
   });
-  let offered = false;
-  try {
-    offered = localStorage.getItem(MAC_OFFERED) === "1";
-  } catch {}
-  if (!offered && !state.projects.length && (await checkMacImport())?.projects && !state.dialog) {
-    await offerMacImport(true);
-  }
+  // The welcome screen links to the macOS app's workspace when there is one;
+  // it is never offered unasked.
+  if (!state.projects.length) checkMacImport().then(render);
 } catch (error) {
   fatal(error?.stack ?? String(error));
 }
