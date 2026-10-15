@@ -578,6 +578,14 @@ try {
   assert.equal(await page.locator(".chip--warn").count(), 0);
   if (process.env.CONVOY_TEST_SHOTS) await page.locator(".home .checklist").screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/checklist.png` });
   if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/home.png` });
+  // Home leads with the tasks of every project, by phase, and explains how
+  // they move until there are some.
+  assert.deepEqual(await page.locator(".home .pipeline__phase span").allTextContents(), ["To do", "Working", "Needs you", "Ready", "Done"]);
+  await page.locator(".home .home-flow .flow__step").first().waitFor();
+  // New task from Home asks which project it is for.
+  await page.locator('.home [data-action="home-new-task"]').click();
+  await page.locator('.modal #task-project option[value="project"]').waitFor({ state: "attached" });
+  await page.keyboard.press("Escape");
   await page.keyboard.press(`${primary}+Alt+d`);
   await page.locator(".home__greeting", { hasText: "Agent Dashboard" }).waitFor();
   await page.locator(".board__column", { hasText: "Needs you" }).locator('[data-open="builder"]').waitFor();

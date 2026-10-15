@@ -1123,8 +1123,8 @@ export function tabBar() {
   const home = ["home", "dashboard", "usage"].includes(state.page);
   const sessionTabs = state.tabs.some((id) => !isProjectTab(id));
   const mac = /mac/i.test(navigator.platform);
-  // The Tasks page has New task in its own header; one is enough.
-  const tasksShown = state.tab === "tasks" && !state.page && !state.sessionId && !state.files;
+  // The Tasks page and Home have New task in their own headers; one is enough.
+  const tasksShown = (state.tab === "tasks" && !state.page && !state.sessionId && !state.files) || state.page === "home";
   return `
     <div class="tabbar">
       <button class="tabbar__home${state.sidebarHidden ? "" : " tabbar__home--on"}" data-action="toggle-sidebar"

@@ -1597,6 +1597,9 @@ export default {
     "Saved as {path}": "Сохранено как {path}",
     "Go to Docs & specs": "Перейти к документам и спецификациям",
     "A Markdown spec in the repository, in Docs": "Спецификация в Markdown в репозитории, в документах",
+    "Tasks in every project": "Задачи во всех проектах",
+    "Recent sessions": "Недавние сессии",
+    "No sessions yet. Tasks start them, or start one with New session.": "Сессий пока нет. Их запускают задачи, или начните сессию через «Новая сессия».",
     // Glossary
     "Words Convoy uses": "Слова, которые использует Convoy",
     "What is {term}?": "Что такое «{term}»?",

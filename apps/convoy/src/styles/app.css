@@ -4647,18 +4647,22 @@ select:disabled {
   gap: 0 18px;
 }
 
-.home-stats {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
+/* Every project's tasks by phase, left to right as a task moves. */
+.pipeline {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
 }
 
-.home-stat {
+.pipeline__phase {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 10px 12px;
   border: 1px solid var(--border);
+  border-left: 3px solid var(--phase-tone, var(--border-strong));
   border-radius: var(--radius-lg);
   background: var(--bg-subtle);
   color: var(--text-muted);
@@ -4668,9 +4672,47 @@ select:disabled {
   cursor: pointer;
 }
 
-.home-stat strong {
+.pipeline__phase:hover {
+  background: var(--bg-hover);
+}
+
+.pipeline__phase strong {
   font-size: 20px;
+  font-weight: 650;
   color: var(--text);
+}
+
+.pipeline__phase--none strong {
+  color: var(--text-faint);
+}
+
+.pipeline__phase--idle { --phase-tone: var(--state-idle); }
+.pipeline__phase--running { --phase-tone: var(--state-running); }
+.pipeline__phase--review { --phase-tone: var(--state-review); }
+.pipeline__phase--testing { --phase-tone: var(--state-testing); }
+.pipeline__phase--done { --phase-tone: var(--state-done); }
+
+.pipeline__arrow {
+  align-self: center;
+  color: var(--text-faint);
+}
+
+/* Home's "How it works": the product in a sentence, and its three steps. */
+.home-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.home-flow__lead {
+  max-width: 70ch;
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.home-flow .flow {
+  width: 100%;
 }
 
 .home-limits {

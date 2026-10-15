@@ -684,6 +684,7 @@ const DRAFT_FIELDS = {
   "task-spec": "spec_id",
   "plan-comment": "plan_comment",
   "task-account": "profile_id",
+  "task-project": "project_id",
   ...Object.fromEntries(["title", "problem", "requirements", "acceptance", "constraints", "plan"].map((key) => [`spec-${key}`, key])),
   ...Object.fromEntries(["title", "details", "findings", "model", "effort"].map((key) => [`task-${key}`, key])),
 };
@@ -710,6 +711,19 @@ const ACTIONS = {
   "project-settings": () => openProjectSettings(),
   "project-tracker": () => openProjectSettings("tracker"),
   "project-pipeline": () => openProjectSettings("pipeline"),
+  // Home's "How it works": the three steps, shown or put away.
+  "home-flow": () => {
+    state.homeFlow = !(state.homeFlow ?? !(state.allTasks ?? []).length);
+    render();
+  },
+  // New task from Home: the form asks which project it is for.
+  "home-new-task": () => {
+    const projectId = state.projectId ?? state.projects.find((item) => !item.is_group)?.id;
+    if (!projectId) return toast(t("Open a folder first."));
+    ACTIONS["new-task"]();
+    Object.assign(state.dialog, { project_id: projectId, pickProject: true });
+    render();
+  },
   glossary: async () => {
     await openSettings("Get started");
     document.querySelector("#glossary")?.scrollIntoView({ block: "start" });

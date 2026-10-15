@@ -4,7 +4,7 @@
 // was written against; a session is prepared from both. A finished task
 // reaches review, never done — accepting work stays a decision a person makes.
 
-import { button, empty, escape, hint, plural } from "./ui.js";
+import { button, empty, escape, hint } from "./ui.js";
 import { phaseOf, state } from "./state.js";
 import { LIST_ORDER, PHASES } from "./phase.js";
 import { agentIcon, icons } from "./icons.js";

@@ -8,7 +8,10 @@ import { sessionLabel, sessionTone } from "./session-state.js";
 import { limitsBlock } from "./views.js";
 import { t } from "./i18n.js";
 import { exact, nextAutomation, relative } from "./views-automations.js";
-import { checklist } from "./onboarding.js";
+import { checklist, PITCH } from "./onboarding.js";
+import { PHASES } from "./phase.js";
+import { phaseLine } from "./views-planning.js";
+import { flow } from "./views-welcome.js";
 
 const ownerOf = (item) => state.projects.find((entry) => entry.id === item.project_id);
 const reported = (item) => (isRunning(item.id) ? state.agentState.get(item.id) : null);
@@ -86,6 +89,35 @@ function block(title, body, count = null) {
 const cards = (items, none) =>
   items.length ? `<div class="home-grid">${items.map(sessionCard).join("")}</div>` : `<p class="home-none">${escape(none)}</p>`;
 
+/// A task that needs you, as a card: where it stands and its project.
+function taskCard(task) {
+  const owner = ownerOf(task);
+  return `
+    <div class="home-card home-card--task" data-task="${escape(task.id)}">
+      <div class="home-card__head">
+        <span class="dot dot--review"></span>
+        <span class="home-card__title">${escape(task.title)}</span>
+        ${agentIcon(task.agent, 13)}
+      </div>
+      <div class="home-card__meta">${escape([owner?.title, phaseLine(phaseOf(task))].filter(Boolean).join(" · "))}</div>
+    </div>`;
+}
+
+/// Every project's tasks by phase, left to right as a task moves: the
+/// factory floor at a glance. Each phase opens the task list.
+function pipeline(tasks) {
+  const count = (phase) => tasks.filter((task) => phaseOf(task).phase === phase).length;
+  return `
+    <div class="pipeline" role="list" aria-label="${escape(t("Tasks in every project"))}">
+      ${PHASES.map(
+        ([phase, name, tone]) => `
+        <button class="pipeline__phase pipeline__phase--${tone}${count(phase) ? "" : " pipeline__phase--none"}" role="listitem" data-home-tasks="${phase}">
+          <strong>${count(phase)}</strong><span>${escape(t(name))}</span>
+        </button>`,
+      ).join('<span class="pipeline__arrow" aria-hidden="true">→</span>')}
+    </div>`;
+}
+
 export function homeView() {
   const sessions = state.allSessions;
   const needs = sessions.filter(waiting);
@@ -93,8 +125,7 @@ export function homeView() {
   // Most recently created first; the ones on screen above are left out.
   const recent = [...sessions].reverse().filter((item) => !isRunning(item.id)).slice(0, 6);
   const tasks = state.allTasks ?? [];
-  const phases = tasks.map((task) => phaseOf(task).phase);
-  const count = (phase) => phases.filter((key) => key === phase).length;
+  const waitingTasks = tasks.filter((task) => phaseOf(task).phase === "needs_you");
   // Tools not found, and every other check that is not fine, as on macOS.
   // A missing gh is counted once, not again as a missing gh login.
   const noGh = (state.diagnostics ?? []).some((check) => check.name === "gh" && !check.found);
@@ -103,42 +134,42 @@ export function homeView() {
     (state.setupChecks ?? []).filter((check) => check.status !== "ok" && !(noGh && check.id === "gh")).length;
   // Until the first run is done, its checklist stands in for the problems.
   const showChecklist = !state.checklistDismissed && !gettingStarted().complete;
+  // How a task moves through Convoy, until there are tasks to show it.
+  const showFlow = state.homeFlow ?? !tasks.length;
   const limits = state.limits ?? {};
   const activity = (state.activity ?? []).slice(0, 6);
   const upcoming = nextAutomation();
+  const needCount = needs.length + waitingTasks.length;
 
   return `
     <div class="home" data-scroll="home">
       <div class="home__head">
         <h1 class="home__greeting">${escape(greeting())}</h1>
         <div class="home__summary">
-          ${escape(t("{agents} running", { agents: plural(running.length + needs.length, "agent") }))}${needs.length ? ` · <strong>${escape(plural(needs.length, "needs you", "need you"))}</strong>` : ""}
+          ${escape(t("{agents} running", { agents: plural(running.length + needs.length, "agent") }))}${needCount ? ` · <strong>${escape(plural(needCount, "needs you", "need you"))}</strong>` : ""}
           ${missing && !showChecklist ? `<button class="chip chip--warn" data-settings-open="Get started">${icons.warn} ${escape(plural(missing, "setup problem"))}</button>` : ""}
           ${upcoming ? `<button class="home__next" data-auto="tab" data-auto-project="${escape(upcoming.project_id)}" title="${escape(exact(upcoming.next_run))}">${icons.clock}<span>${escape(t("Next automation: {title}, {when}", { title: upcoming.title, when: relative(upcoming.next_run) }))}</span></button>` : ""}
         </div>
         <span class="section__spacer"></span>
+        ${button({ label: t("How it works"), kind: "quiet", action: "home-flow" })}
         ${button({ label: t("Usage"), icon: "limits", action: "usage-page" })}
         ${button({ label: t("Agent Dashboard"), icon: "board", action: "dashboard" })}
-        ${button({ label: t("New session"), icon: "plus", action: "new-session", kind: "primary" })}
+        ${state.projects.length ? button({ label: t("New task"), icon: "plus", action: "home-new-task", kind: "primary" }) : ""}
       </div>
+      ${showFlow ? `<section class="home-flow"><p class="home-flow__lead">${escape(t(PITCH))}</p>${flow()}</section>` : ""}
       ${showChecklist ? checklistCard() : ""}
-      ${needs.length ? block(t("Needs you"), cards(needs, ""), needs.length) : ""}
+      ${block(t("Tasks"), pipeline(tasks), tasks.length)}
+      ${
+        needCount
+          ? block(
+              t("Needs you"),
+              `<div class="home-grid">${waitingTasks.map(taskCard).join("")}${needs.map(sessionCard).join("")}</div>`,
+              needCount,
+            )
+          : ""
+      }
       ${block(t("Running"), cards(running, t("Nothing is running.")), running.length)}
-      ${block(t("Recent"), cards(recent, t("No sessions yet. Start one with New session.")))}
       <div class="home-columns">
-        ${block(
-          t("Tasks"),
-          `<div class="home-stats">
-             ${[
-               ["Needs you", count("needs_you")],
-               ["Working", count("working")],
-               ["Ready", count("ready")],
-               ["To do", count("todo")],
-             ]
-               .map(([name, value]) => `<button class="home-stat" data-home-tasks="1"><strong>${value}</strong><span>${escape(t(name))}</span></button>`)
-               .join("")}
-           </div>`,
-        )}
         ${block(t("Usage limits"), `<div class="home-limits">${limitsBlock("Claude", "claude", limits.claude, limits.loading)}${limitsBlock("Codex", "codex", limits.codex, limits.loading)}</div>`)}
         ${block(
           t("Activity"),
@@ -155,6 +186,7 @@ export function homeView() {
             : `<p class="home-none">${escape(t("Nothing yet."))}</p>`,
         )}
       </div>
+      ${block(t("Recent sessions"), cards(recent, t("No sessions yet. Tasks start them, or start one with New session.")))}
       ${block(
         t("Projects"),
         state.projects.length

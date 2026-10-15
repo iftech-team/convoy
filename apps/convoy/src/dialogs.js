@@ -809,9 +809,14 @@ const taskForm = (dialog) => {
       }`;
   return modal({
     title: dialog.id ? t("Edit task") : t("New task"),
-    hint: dialog.id ? phaseLine(phaseOf(dialog)) : project ? t("In {project}", { project: project.title }) : "",
+    hint: dialog.id ? phaseLine(phaseOf(dialog)) : project && !dialog.pickProject ? t("In {project}", { project: project.title }) : "",
     wide: true,
     body: `
+      ${
+        dialog.pickProject && !dialog.id
+          ? field(t("Project"), select("task-project", state.projects.filter((item) => !item.is_group).map((item) => [item.id, item.title]), projectId))
+          : ""
+      }
       ${field(t("Title"), textInput("task-title", dialog.title, t("e.g. Fix the login error when a password has a space")))}
       ${field(
         t("Details"),
