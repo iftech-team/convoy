@@ -338,7 +338,11 @@ try {
   await adopted.waitFor({ state: "detached" });
   await page.keyboard.press("Escape");
   await inbox.waitFor({ state: "detached" });
-  await page.locator('[data-action="open-folder"]').first().click();
+  // A first run: the empty window lists what is left to set up, and its
+  // project step opens a folder.
+  await page.locator(".empty .checklist__count", { hasText: "2 of 4 done" }).waitFor();
+  await page.locator('.empty .checklist__item--done[data-check="agent"]').waitFor();
+  await page.locator('.empty [data-checklist-do="open-folder"]').click();
   await page.getByRole("heading", { name: "Example", exact: true }).waitFor();
   await page.locator('[data-open="builder"]').first().click();
   await page.locator('[data-action="session-menu"]').last().click();
@@ -544,7 +548,12 @@ try {
   await page.locator('[data-action="home"]').click();
   await page.locator(".home__greeting").waitFor();
   await page.locator(".home-block", { hasText: "Needs you" }).locator('[data-open="builder"]').waitFor();
-  await page.locator(".chip--warn", { hasText: "1 setup problem" }).waitFor();
+  // Until a first task exists, Home shows what is left of the first run,
+  // in place of the setup problems.
+  await page.locator(".home .checklist__count", { hasText: "3 of 4 done" }).waitFor();
+  await page.locator('.home .checklist__item:not(.checklist__item--done)[data-check="task"] [data-checklist-do="first-task"]').waitFor();
+  assert.equal(await page.locator(".chip--warn").count(), 0);
+  if (process.env.CONVOY_TEST_SHOTS) await page.locator(".home .checklist").screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/checklist.png` });
   if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/home.png` });
   await page.keyboard.press(`${primary}+Alt+d`);
   await page.locator(".home__greeting", { hasText: "Agent Dashboard" }).waitFor();

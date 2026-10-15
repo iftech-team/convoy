@@ -67,7 +67,7 @@ import { settingsPage, settingsSectionOf } from "./views-settings.js";
 import { projectSettingsPage } from "./views-project.js";
 import { forgetIcon, onIconLoaded } from "./icons.js";
 import { runnable, specsView, tasksView } from "./views-planning.js";
-import { dashboardView, homeView } from "./views-home.js";
+import { checklistCard, dashboardView, gettingStarted, homeView } from "./views-home.js";
 import { toggleHistoryCollapsed } from "./views-history.js";
 import { PROJECT_DOC, docsView } from "./views-docs.js";
 import { installAutomations } from "./automations.js";
@@ -130,6 +130,7 @@ function content() {
       <span class="empty__mark">📁</span>
       <h2 class="empty__title">${escape(t("No project selected"))}</h2>
       <p class="empty__text">${escape(t("Open a folder to begin."))}</p>
+      ${gettingStarted().complete ? "" : `<div class="empty__checklist">${checklistCard({ dismissible: false })}</div>`}
     </div>`;
   }
   if (state.page === "project" && state.projectDraft) return projectSettingsPage();
@@ -705,6 +706,15 @@ const ACTIONS = {
   "sync-suggest": () => {
     const link = state.projectDraft?.link;
     if (link?.sync && state.syncChoices?.suggested) return saveProjectLink({ ...link, sync: { ...link.sync, map: state.syncChoices.suggested } });
+  },
+  "checklist-dismiss": () => {
+    state.checklistDismissed = true;
+    try {
+      localStorage.setItem("convoy.onboarding.dismissed", "1");
+    } catch {
+      /* not remembered */
+    }
+    render();
   },
   "task-back": () => {
     state.taskId = null;
@@ -1369,7 +1379,7 @@ app.addEventListener("click", async (event) => {
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon],[data-sync-toggle],[data-intake-toggle]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
       "[data-inbox-answer],[data-inbox-open],[data-inbox-expand],[data-tab-close],[data-tab-open],[data-related-remove],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
-      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-sessions-show],[data-project-tab],[data-preset],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day],[data-skill],[data-skill-pick],[data-skill-toggle],[data-usage-days],[data-usage-agent],[data-usage-table],[data-price-add],[data-price-remove],[data-price-reset],[data-price-save],[data-task-doc-open],[data-task-doc-reveal],[data-task-doc],[data-repo-remove],[data-task-pr-extra],[data-import-pick],[data-import-all],[data-import-scope],[data-import-project],[data-import-role],[data-import-auto]",
+      "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-checklist-do],[data-sessions-show],[data-project-tab],[data-preset],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day],[data-skill],[data-skill-pick],[data-skill-toggle],[data-usage-days],[data-usage-agent],[data-usage-table],[data-price-add],[data-price-remove],[data-price-reset],[data-price-save],[data-task-doc-open],[data-task-doc-reveal],[data-task-doc],[data-repo-remove],[data-task-pr-extra],[data-import-pick],[data-import-all],[data-import-scope],[data-import-project],[data-import-role],[data-import-auto]",
   );
   if (!target) return;
   const data = target.dataset;
@@ -1527,6 +1537,19 @@ app.addEventListener("click", async (event) => {
     await loadAllTasks();
     await loadPlanning();
     return render();
+  }
+  // A first-run step's button: set up the agent, open a folder, or write
+  // the first task in the first project.
+  if (data.checklistDo) {
+    if (data.checklistDo === "setup") return openSettings("Get started");
+    if (data.checklistDo === "open-folder") return openFolder();
+    if (data.checklistDo === "first-task") {
+      if (!state.projectId && state.projects[0]) await showProject(state.projects[0].id);
+      if (!state.projectId) return openFolder();
+      await showTab("tasks");
+      return ACTIONS["new-task"]();
+    }
+    return;
   }
   if (data.projectTab) {
     state.projectSettingsTab = data.projectTab;
@@ -4585,8 +4608,10 @@ try {
   await loadAllTasks();
   // The status bar's account chips need them.
   await loadProfiles();
-  // The window opens on Home, as the macOS app's does.
+  // The window opens on Home, as the macOS app's does. A first run shows
+  // what is still to set up.
   if (state.projects.length) openHome();
+  else loadSetup().then(render);
   await applyKeepAwake();
   setInterval(monitorTick, 2000);
   setInterval(pipelineTick, 2000);

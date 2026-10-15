@@ -10,6 +10,7 @@ import { SHORTCUTS, SHORTCUT_GROUPS, label } from "./shortcuts.js";
 import { LANGUAGES, languageChoice, t } from "./i18n.js";
 import { ROLES, skillsSection } from "./views-skills.js";
 import { pricesSection } from "./views-usage.js";
+import { checklistCard, gettingStarted } from "./views-home.js";
 
 /// Ten sections, what is set most first. Each keeps the search words of the
 /// older sections folded into it.
@@ -132,6 +133,7 @@ function setup() {
         )
         .join("");
   return `
+    ${gettingStarted().complete ? "" : checklistCard({ dismissible: false })}
     ${groupBox(
       t("Tools"),
       rows,

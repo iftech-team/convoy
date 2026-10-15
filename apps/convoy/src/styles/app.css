@@ -6818,3 +6818,100 @@ select:disabled {
 .step-card__options .pref-row:last-child {
   border-bottom: none;
 }
+
+/* ------------------------------------------------------------ checklist -- */
+/* The first run's four steps: on Home, in the empty window, atop Settings →
+ * Get started. */
+
+.checklist {
+  max-width: 720px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  text-align: left;
+}
+
+.checklist__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.checklist__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.checklist__count {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.checklist__items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checklist__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+}
+
+.checklist__mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 50%;
+  color: #fff;
+}
+
+.checklist__mark svg {
+  width: 11px;
+  height: 11px;
+}
+
+.checklist__item--done .checklist__mark {
+  border-color: var(--state-done);
+  background: var(--state-done);
+}
+
+.checklist__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.checklist__label {
+  font-weight: 500;
+}
+
+.checklist__item--done .checklist__label {
+  color: var(--text-muted);
+}
+
+.checklist__detail {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.home .checklist,
+.prefs__content .checklist {
+  margin-bottom: 16px;
+}
+
+.empty__checklist {
+  width: min(560px, 100%);
+  margin-top: 20px;
+}

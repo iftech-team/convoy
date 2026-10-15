@@ -64,6 +64,14 @@ export const state = {
   queues: new Set(),
   /// What each running agent last reported, from its hooks.
   agentState: new Map(),
+  /// The first-run checklist was put away, on this machine.
+  checklistDismissed: (() => {
+    try {
+      return localStorage.getItem("convoy.onboarding.dismissed") === "1";
+    } catch {
+      return false;
+    }
+  })(),
   /// Sessions Convoy put to sleep, which stopped but keep their conversation.
   asleep: new Set(),
   /// When each terminal session started waiting, for the approvals inbox.

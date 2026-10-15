@@ -8,6 +8,7 @@ import { sessionLabel, sessionTone } from "./session-state.js";
 import { limitsBlock } from "./views.js";
 import { t } from "./i18n.js";
 import { exact, nextAutomation, relative } from "./views-automations.js";
+import { checklist } from "./onboarding.js";
 
 const ownerOf = (item) => state.projects.find((entry) => entry.id === item.project_id);
 const reported = (item) => (isRunning(item.id) ? state.agentState.get(item.id) : null);
@@ -16,6 +17,39 @@ const waiting = (item) => reported(item) === "waiting";
 function greeting() {
   const hour = new Date().getHours();
   return t(hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening");
+}
+
+/// The first-run checklist from what the window has read.
+export const gettingStarted = () =>
+  checklist({ diagnostics: state.diagnostics, setupChecks: state.setupChecks, projects: state.projects, tasks: state.allTasks });
+
+/// The checklist as a card: each step, done or with the button that does
+/// it. `dismissible` offers to put it away.
+export function checklistCard({ dismissible = true } = {}) {
+  const list = gettingStarted();
+  const steps = list.items
+    .map(
+      (item) => `
+      <li class="checklist__item${item.done ? " checklist__item--done" : ""}" data-check="${item.key}">
+        <span class="checklist__mark" aria-label="${escape(item.done ? t("Done") : t("Not yet"))}">${item.done ? icons.check : ""}</span>
+        <span class="checklist__text">
+          <span class="checklist__label">${escape(t(item.label))}</span>
+          <span class="checklist__detail">${escape(t(item.detail[0], item.detail[1]))}</span>
+        </span>
+        ${item.done ? "" : button({ label: t(item.label), kind: "quiet", data: { "checklist-do": item.action } })}
+      </li>`,
+    )
+    .join("");
+  return `
+    <section class="checklist" aria-label="${escape(t("Get started"))}">
+      <div class="checklist__head">
+        <h3 class="checklist__title">${escape(t("Get started"))}</h3>
+        <span class="checklist__count">${escape(t("{done} of {total} done", { done: list.done, total: list.total }))}</span>
+        <span class="section__spacer"></span>
+        ${dismissible ? button({ icon: "close", kind: "quiet", title: t("Hide"), action: "checklist-dismiss" }) : ""}
+      </div>
+      <ol class="checklist__items">${steps}</ol>
+    </section>`;
 }
 
 /// One session as a card: its state, project and agent, and the one action
@@ -67,6 +101,8 @@ export function homeView() {
   const missing =
     (state.diagnostics ?? []).filter((check) => !check.found).length +
     (state.setupChecks ?? []).filter((check) => check.status !== "ok" && !(noGh && check.id === "gh")).length;
+  // Until the first run is done, its checklist stands in for the problems.
+  const showChecklist = !state.checklistDismissed && !gettingStarted().complete;
   const limits = state.limits ?? {};
   const activity = (state.activity ?? []).slice(0, 6);
   const upcoming = nextAutomation();
@@ -77,7 +113,7 @@ export function homeView() {
         <h1 class="home__greeting">${escape(greeting())}</h1>
         <div class="home__summary">
           ${escape(t("{agents} running", { agents: plural(running.length + needs.length, "agent") }))}${needs.length ? ` · <strong>${escape(plural(needs.length, "needs you", "need you"))}</strong>` : ""}
-          ${missing ? `<button class="chip chip--warn" data-settings-open="Setup">${icons.warn} ${escape(plural(missing, "setup problem"))}</button>` : ""}
+          ${missing && !showChecklist ? `<button class="chip chip--warn" data-settings-open="Get started">${icons.warn} ${escape(plural(missing, "setup problem"))}</button>` : ""}
           ${upcoming ? `<button class="home__next" data-auto="tab" data-auto-project="${escape(upcoming.project_id)}" title="${escape(exact(upcoming.next_run))}">${icons.clock}<span>${escape(t("Next automation: {title}, {when}", { title: upcoming.title, when: relative(upcoming.next_run) }))}</span></button>` : ""}
         </div>
         <span class="section__spacer"></span>
@@ -85,6 +121,7 @@ export function homeView() {
         ${button({ label: t("Agent Dashboard"), icon: "board", action: "dashboard" })}
         ${button({ label: t("New session"), icon: "plus", action: "new-session", kind: "primary" })}
       </div>
+      ${showChecklist ? checklistCard() : ""}
       ${needs.length ? block(t("Needs you"), cards(needs, ""), needs.length) : ""}
       ${block(t("Running"), cards(running, t("Nothing is running.")), running.length)}
       ${block(t("Recent"), cards(recent, t("No sessions yet. Start one with New session.")))}
