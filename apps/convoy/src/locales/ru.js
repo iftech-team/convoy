@@ -1355,6 +1355,7 @@ export default {
     "No tasks": "Нет задач",
     // Task pipeline: stages, roles, plans and documents
     "Make a plan": "Составить план",
+    "How the pull request is written: by Convoy's author when Convoy publishes, by the builder otherwise. Put the team's template or skill here.": "Как пишется PR: автором Convoy, когда публикует Convoy, иначе строителем. Сюда — шаблон или навык команды.",
     "This project is a folder, not a git repository: its builders publish in the repositories they changed, as the task's publishing says. Turn this on in the repositories inside it.": "Этот проект — папка, а не git-репозиторий: его строители публикуют в репозиториях, которые изменили, как указано в публикации задачи. Включите это в репозиториях внутри неё.",
     "This project is a folder, not a git repository, so its tasks work in the folder itself. Turn this on in the repositories inside it.": "Этот проект — папка, а не git-репозиторий, поэтому его задачи работают прямо в папке. Включите это в репозиториях внутри неё.",
     "Gemini CLI: accept every action (Yolo)": "Gemini CLI: принимать все действия (Yolo)",
@@ -1396,7 +1397,6 @@ export default {
     "Another task is testing in the same environment. This one is next in line.": "В том же окружении тестируется другая задача. Эта — следующая в очереди.",
     "“{task}” waits for its QA environment: another task is testing in it.": "«{task}» ждёт QA-окружение: в нём тестируется другая задача.",
     "Pull request author": "Автор PR",
-    "Writes the pull request's title and description when Convoy publishes. Put the team's template here.": "Пишет заголовок и описание PR, когда публикует Convoy. Сюда — шаблон команды.",
     "Autopilot": "Автопилот",
     "A worktree for each task": "Своя ворктри для каждой задачи",
     "Each task builds on a branch of its own, set up with the shared paths and setup commands above. Turning this on lets those commands run without asking.": "Каждая задача собирается на своей ветке, подготовленной общими путями и командами настройки выше. Включая это, вы разрешаете запускать эти команды без вопроса.",
