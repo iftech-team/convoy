@@ -11,23 +11,35 @@ import { LANGUAGES, languageChoice, t } from "./i18n.js";
 import { ROLES, skillsSection } from "./views-skills.js";
 import { pricesSection } from "./views-usage.js";
 
-/// The macOS app's sections, in its order.
+/// Ten sections, what is set most first. Each keeps the search words of the
+/// older sections folded into it.
 export const SECTIONS = [
-  ["Setup", "check", ["check", "diagnostics", "doctor", "missing", "install", "path", "login", "gh", "git", "node", "problem"]],
-  ["General", "sliders", ["keep awake", "sleep", "sidebar", "sort", "worktree default", "branch prefix", "new sessions"]],
-  ["Appearance", "paint", ["theme", "dark", "light", "system", "language", "russian", "english", "язык", "русский"]],
-  ["Terminal", "terminal", ["font", "size", "scrollback", "lines"]],
+  ["Get started", "check", ["setup", "check", "diagnostics", "doctor", "missing", "install", "path", "login", "gh", "git", "node", "problem", "first", "start", "macos"]],
+  ["General", "sliders", ["keep awake", "sleep", "sidebar", "sort", "compact", "notifications", "notify", "sound", "waiting", "finished", "done", "focus"]],
+  ["Appearance", "paint", ["theme", "dark", "light", "system", "language", "russian", "english", "язык", "русский", "terminal", "font", "size", "scrollback", "lines"]],
   ["Agents", "sparkles", ["claude", "codex", "gemini", "default agent", "chat", "terminal", "view", "yolo", "permissions", "skip", "review", "template", "brief", "hibernate", "idle", "sleep", "role", "roles", "planner", "builder", "qa", "documentation", "роль"]],
   ["Accounts", "person", ["account", "profile", "login", "sign in", "claude", "codex"]],
+  ["Worktrees", "git", ["git", "branch", "worktree", "worktree default", "branch prefix", "new sessions", "setup", "shared", "location", "status", "changes"]],
   ["Integrations", "link", ["linear", "jira", "atlassian", "peshbar", "notion", "issues", "import", "api key", "token", "mcp", "integrations"]],
-  ["Quick Commands", "bolt", ["prompt", "command", "snippet", "quick"]],
   ["Skills", "book", ["skill", "skills", "instructions", "system prompt", "template", "markdown", "навык"]],
-  ["Git", "git", ["branch", "worktree", "setup", "shared", "location"]],
-  ["Notifications", "bell", ["notify", "sound", "waiting", "finished", "done", "focus"]],
-  ["AI Limits", "limits", ["usage", "limits", "codex", "claude", "quota", "status line"]],
-  ["Usage prices", "limits", ["price", "prices", "cost", "usage", "tokens", "model", "estimate", "dollars", "цены", "стоимость"]],
-  ["Shortcuts", "keyboard", ["keyboard", "keys", "bindings", "palette"]],
+  ["Commands & shortcuts", "keyboard", ["prompt", "command", "snippet", "quick", "keyboard", "keys", "bindings", "palette", "shortcuts"]],
+  ["Usage & limits", "limits", ["usage", "limits", "codex", "claude", "quota", "status line", "price", "prices", "cost", "tokens", "model", "estimate", "dollars", "цены", "стоимость"]],
 ];
+
+/// Where the older sections went, so links to them still land.
+const SECTION_ALIASES = {
+  Setup: "Get started",
+  Terminal: "Appearance",
+  Notifications: "General",
+  Git: "Worktrees",
+  "Quick Commands": "Commands & shortcuts",
+  Shortcuts: "Commands & shortcuts",
+  "AI Limits": "Usage & limits",
+  "Usage prices": "Usage & limits",
+};
+
+/// A section's current name, from its own or an older one.
+export const settingsSectionOf = (name) => SECTION_ALIASES[name] ?? name;
 
 const AGENTS = [
   ["claude", "Claude Code"],
@@ -183,20 +195,7 @@ function general(settings) {
       ),
       t("A running session may be waiting for input; keeping the computer awake lets it finish."),
     )}
-    ${groupBox(
-      t("New sessions"),
-      row(
-        t("Run new sessions in a git worktree by default"),
-        t("Each new session in a repository gets its own checkout on a new branch."),
-        toggle("worktree_by_default", settings.worktree_by_default, t("Worktree by default")),
-      ) +
-        row(
-          t("Branch prefix"),
-          t("Prepended to generated branch names, e.g. feature → feature/fix-delivery-status."),
-          text("branch_prefix", settings.branch_prefix, "convoy"),
-        ),
-      t("Worktrees live beside the workspace file, never inside your repository."),
-    )}`;
+    ${notifications(settings)}`;
 }
 
 function appearance(settings) {
@@ -312,6 +311,20 @@ function agents(settings) {
 
 function git(settings) {
   return `
+    ${groupBox(
+      t("New sessions"),
+      row(
+        t("Run new sessions in a git worktree by default"),
+        t("Each new session in a repository gets its own checkout on a new branch."),
+        toggle("worktree_by_default", settings.worktree_by_default, t("Worktree by default")),
+      ) +
+        row(
+          t("Branch prefix"),
+          t("Prepended to generated branch names, e.g. feature → feature/fix-delivery-status."),
+          text("branch_prefix", settings.branch_prefix, "convoy"),
+        ),
+      t("Worktrees live beside the workspace file, never inside your repository."),
+    )}
     ${groupBox(
       t("Branch & changes"),
       row(t("Show branch and changed-file counts"), t("In the session bar, and under projects when rows are not compact."), toggle("git_status", settings.git_status !== false, t("Git status"))) +
@@ -498,25 +511,21 @@ function shortcuts(settings) {
 }
 
 const PAGES = {
-  Setup: setup,
+  "Get started": setup,
   General: general,
-  Git: git,
-  Notifications: notifications,
-  "AI Limits": limits,
-  "Usage prices": pricesSection,
-  Appearance: appearance,
-  Terminal: terminalSection,
+  Appearance: (settings) => appearance(settings) + terminalSection(settings),
   Agents: agents,
   Accounts: accounts,
-  "Integrations": integrations,
-  "Quick Commands": quickCommands,
+  Worktrees: git,
+  Integrations: integrations,
   Skills: skillsSection,
-  Shortcuts: shortcuts,
+  "Commands & shortcuts": (settings) => quickCommands(settings) + shortcuts(settings),
+  "Usage & limits": (settings) => limits(settings) + pricesSection(settings),
 };
 
 export function settingsPage() {
   const sections = visibleSections();
-  const current = PAGES[state.settingsSection] ? state.settingsSection : "General";
+  const current = PAGES[settingsSectionOf(state.settingsSection)] ? settingsSectionOf(state.settingsSection) : "General";
   const version = state.version ? `Convoy ${escape(state.version)}` : "Convoy";
   return `
     <div class="prefs">

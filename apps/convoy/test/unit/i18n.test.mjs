@@ -19,3 +19,11 @@ test("every t() key is in ru.js", () => {
   }
   assert.deepEqual(missing, []);
 });
+
+test("every settings section has its Russian", () => {
+  const text = readFileSync(new URL("views-settings.js", src), "utf8");
+  const block = text.slice(text.indexOf("export const SECTIONS = ["), text.indexOf("];", text.indexOf("export const SECTIONS = [")));
+  const names = [...block.matchAll(/^\s+\["([^"]+)", "/gm)].map((match) => match[1]);
+  assert.equal(names.length, 10);
+  assert.deepEqual(names.filter((name) => !(name in ru.strings)), []);
+});

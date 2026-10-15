@@ -63,7 +63,7 @@ import {
 } from "./views.js";
 import { filesView, remoteMenu } from "./views-files.js";
 import { pageTask, taskPage } from "./views-task.js";
-import { settingsPage } from "./views-settings.js";
+import { settingsPage, settingsSectionOf } from "./views-settings.js";
 import { projectSettingsPage } from "./views-project.js";
 import { forgetIcon, onIconLoaded } from "./icons.js";
 import { runnable, specsView, tasksView } from "./views-planning.js";
@@ -634,7 +634,7 @@ const closeDialog = () => {
     terminal.forget(id);
     loadProfiles().then(render);
   }
-  // Turning the offer down once is an answer; Settings → Setup still has it.
+  // Turning the offer down once is an answer; Settings → Get started still has it.
   if (state.dialog?.kind === "macos-import") {
     try {
       localStorage.setItem(MAC_OFFERED, "1");
@@ -1471,12 +1471,13 @@ app.addEventListener("click", async (event) => {
   }
   if (state.page === "settings" && !state.dialog) {
     if (data.settingsSection) {
-      state.settingsSection = data.settingsSection;
+      const section = settingsSectionOf(data.settingsSection);
+      state.settingsSection = section;
       state.capturing = null;
       render();
-      if (data.settingsSection === "Usage prices") usage.loadPrices();
-      if (data.settingsSection === "Setup" && !state.diagnostics) await runDiagnostics();
-      if (data.settingsSection === "Setup") checkMacImport().then(render);
+      if (section === "Usage & limits") usage.loadPrices();
+      if (section === "Get started" && !state.diagnostics) await runDiagnostics();
+      if (section === "Get started") checkMacImport().then(render);
       return;
     }
     if (data.prefSet === "language") {
@@ -2826,7 +2827,7 @@ async function openRemoveWorktree() {
 /// Settings is a page, as on macOS, and every change is saved as it is made.
 async function openSettings(section) {
   state.page = "settings";
-  if (section) state.settingsSection = section;
+  if (section) state.settingsSection = settingsSectionOf(section);
   state.capturing = null;
   state.menu = null;
   state.dialog = null;
@@ -2842,13 +2843,13 @@ async function openSettings(section) {
     }),
   ]);
   render();
-  if (state.settingsSection === "Setup") runDiagnostics();
-  if (state.settingsSection === "Usage prices") usage.loadPrices();
+  if (state.settingsSection === "Get started") runDiagnostics();
+  if (state.settingsSection === "Usage & limits") usage.loadPrices();
   checkMacImport().then(render);
 }
 
 /// The macOS app's workspace, when this Mac has one. Offered once on its own
-/// when this workspace is still empty; Settings → Setup offers it any time.
+/// when this workspace is still empty; Settings → Get started offers it any time.
 const MAC_OFFERED = "convoy.macImportOffered";
 
 async function checkMacImport() {

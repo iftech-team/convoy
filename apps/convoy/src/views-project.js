@@ -547,7 +547,7 @@ export function projectSettingsPage() {
                        placeholder="pnpm install">${escape(project.setup_command ?? "")}</textarea>
              <div class="pref-row__detail">${escape(t("e.g. {examples}", { examples: "pnpm install · composer install · direnv allow" }))}</div>
            </div>`,
-          t("Shared paths are gitignored files copied into each new worktree; existing files are never replaced. Setup commands run once, after you confirm, following the global ones in Settings → Git."),
+          t("Shared paths are gitignored files copied into each new worktree; existing files are never replaced. Setup commands run once, after you confirm, following the global ones in Settings → Worktrees."),
         )}
         ${roles(project)}
         ${projectSkills(project.id)}
@@ -565,7 +565,7 @@ export function projectSettingsPage() {
                 .join("")
             : `<div class="pref-empty">${escape(t("None yet."))}</div>`) +
             `<div class="pref-inline">${button({ label: t("Add"), icon: "plus", action: "manage-commands" })}</div>`,
-          t("Sent to a terminal from the ⚡ menu. Global commands are managed in Settings → Quick Commands."),
+          t("Sent to a terminal from the ⚡ menu. Global commands are managed in Settings → Commands & shortcuts."),
         )}
         ${groupBox(
           t("Remove"),

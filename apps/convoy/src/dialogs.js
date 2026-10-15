@@ -170,7 +170,7 @@ function newSession(dialog) {
                  ${
                    dialog.setupPreview
                      ? `<pre class="sheet-preview">${escape(dialog.setupPreview)}</pre>`
-                     : `<span class="field__note">${escape(t("None configured. Add it in Project settings or Settings → Git."))}</span>`
+                     : `<span class="field__note">${escape(t("None configured. Add it in Project settings or Settings → Worktrees."))}</span>`
                  }`,
               )
             : ""
@@ -1040,7 +1040,7 @@ const palette = (dialog) => `
                 dialog.mode === "terminals" && !dialog.query
                   ? t("No open terminals. Pick a session in the sidebar, or start a new one.")
                   : dialog.mode === "quick" && !dialog.query
-                    ? t("No quick commands yet — add them in Settings → Quick Commands.")
+                    ? t("No quick commands yet — add them in Settings → Commands & shortcuts.")
                     : t("Nothing matches."),
               )}</div>`
         }

@@ -1271,7 +1271,11 @@ try {
   await page.waitForFunction(() => window.savedSettings.default_view === "chat");
   await page.locator('[data-pref-set="default_view"][data-value="terminal"]').click();
   await page.waitForFunction(() => window.savedSettings.default_view === "terminal");
+  // Old names still land: Setup is part of Get started now.
+  await page.evaluate(() => document.querySelector('[data-settings-section="Agents"]').setAttribute("data-settings-section", "Setup"));
   await page.locator('[data-settings-section="Setup"]').click();
+  await page.locator(".prefs__title", { hasText: "Get started" }).waitFor();
+  assert.equal(await page.locator(".prefs__item").count(), 10, "ten sections");
   await page.locator(".pref-row", { has: page.locator(".pref-row__title", { hasText: /^gh$/ }) }).locator(".pref-missing").waitFor();
   // Past the tools: logins and Convoy's own pieces, as on macOS.
   await page.locator(".pref-row", { hasText: "Claude login" }).locator(".pref-ok").waitFor();
@@ -1284,7 +1288,7 @@ try {
   await page.locator(".modal", { hasText: "Imported, with notes" }).waitFor();
   assert.deepEqual(await page.evaluate(() => window.checkCalls.find((c) => c.cmd === "macos_import_run").args), { settings: false });
   await page.keyboard.press("Escape");
-  await page.locator('[data-settings-section="Shortcuts"]').click();
+  await page.locator('[data-settings-section="Commands & shortcuts"]').click();
   await page.locator(".pref-group__title", { hasText: "Project" }).waitFor();
   assert(await page.locator(".shortcut").count() >= 30, "the macOS set of shortcuts is listed");
   // Backspace leaves a shortcut unbound; the row can go back to its default;
@@ -1320,9 +1324,15 @@ try {
   await page.locator('[data-pref-role="review"]').fill("Check the migrations too.");
   await page.locator('[data-pref-role="review"]').blur();
   await page.waitForFunction(() => window.savedSettings.role_instructions?.review === "Check the migrations too." && window.savedSettings.review_template === "");
-  await page.locator('[data-settings-section="Notifications"]').click();
+  // Notifications are part of General.
+  await page.locator('[data-settings-section="General"]').click();
   await page.locator('[data-pref-toggle="notifications"]').click();
   await page.waitForFunction(() => window.savedSettings.notifications === true);
+  // A folded section is still found by the words of the one it was.
+  await page.locator("#settings-search").fill("font");
+  assert.deepEqual((await page.locator(".prefs__item").allTextContents()).map((name) => name.trim()), ["Appearance"]);
+  await page.locator("#settings-search").fill("price");
+  assert.deepEqual((await page.locator(".prefs__item").allTextContents()).map((name) => name.trim()), ["Usage & limits"]);
   await page.locator("#settings-search").fill("jira");
   assert.equal(await page.locator(".prefs__item").count(), 1, "search narrows the sections");
   await page.locator('[data-settings-section="Integrations"]').click();
@@ -2250,9 +2260,9 @@ try {
   // Prices: from the notice to the editor; an edit saves, a model seen with
   // no price is one click to add, and the defaults come back.
   await page.locator(".usage-notice [data-settings-open]").click();
-  await page.getByRole("heading", { name: "Usage prices" }).waitFor();
+  await page.getByRole("heading", { name: "Usage & limits" }).waitFor();
   await page.locator("#settings-search").fill("");
-  await page.locator('.prefs__item[data-settings-section="Usage prices"][aria-current="true"]').waitFor();
+  await page.locator('.prefs__item[data-settings-section="Usage & limits"][aria-current="true"]').waitFor();
   const priceRows = page.locator(".usage-prices__table tbody tr");
   await priceRows.nth(1).waitFor();
   assert.equal(await priceRows.count(), 2);
