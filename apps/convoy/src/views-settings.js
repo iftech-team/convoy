@@ -4,7 +4,8 @@
 
 import { catalog, storageNote } from "./integrations-catalog.js";
 import { agentIcon, icons } from "./icons.js";
-import { button, escape, plural, shorten } from "./ui.js";
+import { button, escape, hint, plural, shorten } from "./ui.js";
+import { GLOSSARY, GLOSSARY_ORDER } from "./glossary.js";
 import { activeAccount, state } from "./state.js";
 import { SHORTCUTS, SHORTCUT_GROUPS, label } from "./shortcuts.js";
 import { LANGUAGES, languageChoice, t } from "./i18n.js";
@@ -61,9 +62,9 @@ const visibleSections = () => {
 
 // ------------------------------------------------------------ building blocks
 
-const groupBox = (title, rows, footer = "") => `
+const groupBox = (title, rows, footer = "", term = "") => `
   <section class="pref-group">
-    <h3 class="pref-group__title">${escape(title)}</h3>
+    <h3 class="pref-group__title">${escape(title)}${term ? ` ${hint(term)}` : ""}</h3>
     <div class="pref-group__box">${rows}</div>
     ${footer ? `<p class="pref-group__footer">${escape(footer)}</p>` : ""}
   </section>`;
@@ -170,7 +171,13 @@ function setup() {
         button({ label: t("Import…"), action: "macos-import" }),
       ),
       t("Projects, sessions, tasks, quick commands and saved terminal output. Run it again later to pick up what changed there."),
-    ) : ""}`;
+    ) : ""}
+    <div id="glossary">
+      ${groupBox(
+        t("Words Convoy uses"),
+        GLOSSARY_ORDER.map((term) => row(t(GLOSSARY[term][0]), t(GLOSSARY[term][1]), "")).join(""),
+      )}
+    </div>`;
 }
 
 function general(settings) {
@@ -270,6 +277,7 @@ function agents(settings) {
           toggle("auto_trust", settings.auto_trust !== false, t("Trust folders")),
         ),
       t("Yolo lets agents edit files and run commands without asking. Applies to sessions launched afterwards."),
+      "yolo",
     )}
     ${groupBox(
       t("Roles"),
@@ -294,6 +302,7 @@ function agents(settings) {
         number("hibernate_minutes", settings.hibernate_minutes, 0, 1440, 5),
       ),
       t("Frees memory; opening a sleeping session resumes the same conversation."),
+      "sleep",
     )}
     ${groupBox(
       "Claude Code",

@@ -4,7 +4,7 @@
 
 import { icons } from "./icons.js";
 import { t } from "./i18n.js";
-import { button, escape } from "./ui.js";
+import { button, escape, hint } from "./ui.js";
 import { markdown } from "./views-files.js";
 import { state } from "./state.js";
 
@@ -129,7 +129,7 @@ export function docsView() {
           ${group(t("Other docs"), others)}
           ${docs.files.length ? "" : `<p class="docs__none">${escape(t("Nothing here yet."))}</p>`}
         </div>
-        <p class="docs__note">${escape(t("Stored in the repo under .specdesk so agents read them as files."))}</p>
+        <p class="docs__note">${escape(t("Stored in the repo under .specdesk so agents read them as files."))} ${hint("specdesk")}</p>
       </aside>
       <section class="docs__view">${viewer()}</section>
     </div>`;

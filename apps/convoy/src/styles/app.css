@@ -7056,3 +7056,48 @@ select:disabled {
     display: none;
   }
 }
+
+/* ---------------------------------------------------------------- hints -- */
+/* A "?" beside a term, and the tip that explains it (hints.js). */
+
+.hint {
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  margin-left: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: 1px;
+  cursor: help;
+  user-select: none;
+}
+
+.hint:hover,
+.hint:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent-text);
+  outline: none;
+}
+
+.hint-tip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 280px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  box-shadow: var(--shadow-lg);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: normal;
+  text-transform: none;
+  pointer-events: none;
+}

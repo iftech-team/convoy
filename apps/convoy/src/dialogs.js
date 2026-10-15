@@ -141,6 +141,7 @@ function newSession(dialog) {
           t("Isolated git worktree"),
           t("Own checkout and branch, so parallel sessions never touch each other's files."),
           toggle("worktree", dialog.worktree, t("Isolated git worktree")),
+          "worktree",
         )}
         ${
           dialog.worktree
@@ -196,6 +197,7 @@ function newSession(dialog) {
           t("Manager — can start helper sessions"),
           t("The agent can hand work to other agents in this project from its shell, wait for them and read their answers. At most 4 run at once."),
           toggle("manager", dialog.manager, t("Manager")),
+          "helpers",
         )}
       </div>
       ${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
@@ -718,9 +720,11 @@ const taskForm = (dialog) => {
           TASK_MODES.map(([id, name]) => [id, t(name)]),
           dialog.mode,
         ),
+        "",
+        "publish",
       )}
-      ${setting(t("Review each round with the other agent"), t("Findings go back to the builder by themselves, a few rounds at most."), toggle("auto_review", dialog.auto_review, t("Automatic review")))}
-      ${setting(t("Plan first"), t("A planner writes the plan; the task is built once it is approved."), toggle("plan_first", dialog.plan_first, t("Plan first")))}
+      ${setting(t("Review each round with the other agent"), t("Findings go back to the builder by themselves, a few rounds at most."), toggle("auto_review", dialog.auto_review, t("Automatic review")), "review")}
+      ${setting(t("Plan first"), t("A planner writes the plan; the task is built once it is approved."), toggle("plan_first", dialog.plan_first, t("Plan first")), "planFirst")}
       ${
         dialog.plan_first
           ? field(

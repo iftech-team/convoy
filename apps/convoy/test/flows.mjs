@@ -582,6 +582,11 @@ try {
   await page.locator(".header").waitFor();
 
   await page.locator('[data-tab="tasks"]').click();
+  // A "?" explains a term on hover, in a tip outside the page.
+  await page.locator(".section .hint").hover();
+  await page.locator(".hint-tip:not([hidden])", { hasText: "Tasks saved for later" }).waitFor();
+  await page.mouse.move(0, 0);
+  await page.locator(".hint-tip[hidden]").waitFor({ state: "attached" });
   await page.locator('[data-action="import"]').click();
   await page.locator("#imp-manual").fill("ENG-7 Test imported task");
   await page.locator("#imp-model").fill("sonnet");
@@ -1342,6 +1347,8 @@ try {
   await page.locator(".pref-row", { hasText: "Claude login" }).locator(".pref-ok").waitFor();
   await page.locator(".pref-row", { hasText: "GitHub CLI login" }).getByText("Run gh auth login.").waitFor();
   if (shots) await page.screenshot({ path: `${shots}/setup.png` });
+  // Get started ends with the words Convoy uses.
+  await page.locator("#glossary .pref-row", { hasText: "Worktree" }).getByText("its own git branch").waitFor();
   await page.locator('[data-action="macos-import"]').click();
   await page.locator('.modal [data-toggle="settings"][aria-pressed="false"]').waitFor();
   if (shots) await page.screenshot({ path: `${shots}/macos-import.png` });

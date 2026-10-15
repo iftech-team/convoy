@@ -71,6 +71,7 @@ import { checklistCard, dashboardView, gettingStarted, homeView } from "./views-
 import { welcomeView } from "./views-welcome.js";
 import { toggleHistoryCollapsed } from "./views-history.js";
 import { PROJECT_DOC, docsView } from "./views-docs.js";
+import { installHints } from "./hints.js";
 import { installAutomations } from "./automations.js";
 import { automationsView } from "./views-automations.js";
 import { fitSkills, installSkills } from "./skills.js";
@@ -97,6 +98,7 @@ const skills = installSkills({
   loadWorkspace: () => loadWorkspace(),
 });
 const usage = installUsage({ render: () => render() });
+const hints = installHints();
 const isImportDialog = () => ["import", "integrations", "connection", "task-model"].includes(state.dialog?.kind);
 
 // A thrown error used to leave a black window and no clue about it. Painting
@@ -432,6 +434,7 @@ function render() {
           ${status()}
         </div>`;
 
+  hints.afterRender();
   if (state.menu === "session") app.insertAdjacentHTML("beforeend", sessionMenu());
   if (state.menu === "quick") app.insertAdjacentHTML("beforeend", quickMenu());
   if (state.menu === "remote") app.insertAdjacentHTML("beforeend", remoteMenu());

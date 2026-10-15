@@ -4,7 +4,7 @@
 // was written against; a session is prepared from both. A finished task
 // reaches review, never done — accepting work stays a decision a person makes.
 
-import { button, empty, escape, plural } from "./ui.js";
+import { button, empty, escape, hint, plural } from "./ui.js";
 import { phaseOf, state } from "./state.js";
 import { LIST_ORDER, PHASES } from "./phase.js";
 import { agentIcon, icons } from "./icons.js";
@@ -144,7 +144,7 @@ export function tasksView() {
       </div>
       <label class="check"><input type="checkbox" data-toggle-state="hideDone" ${state.hideDone ? "checked" : ""} /> ${escape(t("Hide done"))}</label>
       <span class="section__spacer"></span>
-      <span class="section__count">${escape(t("{count} queued", { count: planning.queued }))}</span>
+      <span class="section__count">${escape(t("{count} queued", { count: planning.queued }))} ${hint("waiting")}</span>
       ${button({
         label: running ? t("Pause queue") : t("Run queue"),
         icon: running ? "stop" : "play",

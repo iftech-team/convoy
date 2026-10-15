@@ -2,6 +2,7 @@
 
 import { icons } from "./icons.js";
 import { countWord, t } from "./i18n.js";
+import { GLOSSARY } from "./glossary.js";
 
 export const escape = (value) =>
   String(value ?? "").replace(
@@ -44,6 +45,14 @@ export const button = ({
   </button>`;
 };
 
+/// A "?" that explains a glossary term on hover or focus (hints.js).
+export const hint = (term) => {
+  const [title, line] = GLOSSARY[term] ?? [];
+  if (!line) return "";
+  return `<span class="hint" tabindex="0" role="note" data-hint="${escape(t(line))}"
+                aria-label="${escape(t("What is {term}?", { term: t(title) }))}">?</span>`;
+};
+
 export const empty = (icon, title, text) => `
   <div class="empty">
     <span class="empty__mark">${icons[icon] ?? icons.folder}</span>
@@ -51,9 +60,9 @@ export const empty = (icon, title, text) => `
     <p class="empty__text">${escape(text)}</p>
   </div>`;
 
-export const field = (label, control, note = "") => `
+export const field = (label, control, note = "", term = "") => `
   <label class="field">
-    <span class="field__label">${escape(label)}</span>
+    <span class="field__label">${escape(label)}${term ? ` ${hint(term)}` : ""}</span>
     ${control}
     ${note ? `<span class="field__note">${escape(note)}</span>` : ""}
   </label>`;
@@ -93,11 +102,11 @@ export const toggle = (key, on, label) =>
   `<button class="switch" data-toggle="${escape(key)}" aria-pressed="${!!on}"
            aria-label="${escape(label)}"></button>`;
 
-export const setting = (title, hint, control) => `
+export const setting = (title, note, control, term = "") => `
   <div class="setting">
     <div class="setting__text">
-      <div class="setting__title">${escape(title)}</div>
-      ${hint ? `<div class="setting__hint">${escape(hint)}</div>` : ""}
+      <div class="setting__title">${escape(title)}${term ? ` ${hint(term)}` : ""}</div>
+      ${note ? `<div class="setting__hint">${escape(note)}</div>` : ""}
     </div>
     <div class="setting__control">${control}</div>
   </div>`;
