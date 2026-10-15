@@ -179,3 +179,22 @@ pub fn closing(stage: Stage, path: &Path) -> String {
         "## When you are done\nWhen you have finished, {what}. The file is outside the repository: never commit it. Then end your reply; Convoy reads the file and takes it from there."
     )
 }
+
+/// The most a brief may hold, as sessions take it.
+pub const BRIEF_LIMIT: usize = 32_000;
+
+/// A brief within [`BRIEF_LIMIT`], shortened before its closing paragraph
+/// (the one [`closing`] writes) and never through it: an agent that never
+/// reads where its file goes never writes it.
+pub fn fit(text: &str) -> String {
+    if crate::json::head(text, BRIEF_LIMIT).len() == text.len() {
+        return text.to_string();
+    }
+    let Some(at) = text.rfind("## When you are done") else {
+        return crate::json::head(text, BRIEF_LIMIT).to_string();
+    };
+    let (body, end) = text.split_at(at);
+    let note = "\n…(shortened)\n\n";
+    let room = BRIEF_LIMIT.saturating_sub(end.chars().count() + note.chars().count());
+    format!("{}{note}{end}", crate::json::head(body, room).trim_end())
+}

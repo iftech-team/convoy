@@ -411,7 +411,7 @@ pub fn brief(workspace: &Workspace, task_id: &str, verdict: &Path) -> Result<Str
         },
         crate::stage::closing(crate::stage::Stage::Qa, verdict),
     );
-    Ok(head(&prompt, 32_000).to_string())
+    Ok(crate::stage::fit(&prompt))
 }
 
 /// The QA session: the project's QA agent, in the builder's folder and

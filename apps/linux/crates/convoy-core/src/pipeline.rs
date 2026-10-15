@@ -600,18 +600,20 @@ pub fn review_now(
         ),
         "Review a task once its builder has finished."
     );
-    crate::ensure!(
-        !task
-            .review
-            .as_ref()
-            .is_some_and(|run| run.status == ReviewStatus::Reviewing),
-        "This task is already being reviewed."
-    );
+    // A review under way is replaced: one that went quiet, or wrote the
+    // wrong file, is put to sleep and a fresh reviewer starts.
+    let stale = task
+        .review
+        .as_ref()
+        .filter(|run| run.status == ReviewStatus::Reviewing)
+        .and_then(|run| run.session_id.clone());
     change(workspace, task_id, |task| {
         task.stage_run = None;
         task.last_error = None;
     })?;
-    start_review(workspace, context, task_id)
+    let mut actions: Vec<Action> = hibernate(context, stale.as_ref());
+    actions.extend(start_review(workspace, context, task_id)?);
+    Ok(actions)
 }
 
 /// A person goes on without the review.

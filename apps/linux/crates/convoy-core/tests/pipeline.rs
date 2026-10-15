@@ -291,6 +291,8 @@ fn a_review_fail_fixes_and_a_pass_finishes_by_files_alone() {
         .contains("Refreshed the token"));
     let brief = workspace.session(&reviewer).unwrap().prompt.clone();
     assert!(brief.contains("Refreshed the token"));
+    // Never the builder's own closing, which names the builder's file.
+    assert!(!brief.contains(".done.json"), "{brief}");
     assert!(brief.contains(
         &stage::file(&workspace, Stage::Review, &review.id)
             .display()
@@ -835,10 +837,11 @@ fn a_finished_task_can_be_reviewed_on_request() {
         ReviewStatus::Reviewing
     );
     assert_eq!(task(&workspace).stage_run, None);
-    assert!(
-        pipeline::review_now(&mut workspace, &context(), &id).is_err(),
-        "once at a time"
-    );
+    // A stuck review is replaced by a fresh one.
+    let first = task(&workspace).review.unwrap();
+    let again = pipeline::review_now(&mut workspace, &context(), &id).unwrap();
+    assert_eq!(started(&again).len(), 1);
+    assert_ne!(task(&workspace).review.unwrap().id, first.id);
 }
 
 #[test]
@@ -893,4 +896,17 @@ fn a_claude_planner_s_plan_is_read_from_what_it_presented() {
         "the latest since it was asked"
     );
     assert_eq!(task(&workspace).status, TaskStatus::PlanReview);
+}
+
+#[test]
+fn a_long_brief_is_shortened_before_its_closing() {
+    let file = std::path::Path::new("/data/stages/run.verdict.json");
+    let closing = stage::closing(Stage::Review, file);
+    let long = format!("{}\n\n{closing}", "detail ".repeat(10_000));
+    let fitted = stage::fit(&long);
+    assert!(fitted.chars().count() <= stage::BRIEF_LIMIT);
+    assert!(fitted.ends_with(&closing), "the closing survives whole");
+    assert!(fitted.contains("…(shortened)"));
+    let short = format!("Short.\n\n{closing}");
+    assert_eq!(stage::fit(&short), short);
 }

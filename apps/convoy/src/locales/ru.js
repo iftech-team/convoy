@@ -1355,6 +1355,7 @@ export default {
     "No tasks": "Нет задач",
     // Task pipeline: stages, roles, plans and documents
     "Make a plan": "Составить план",
+    "Restart the review": "Перезапустить ревью",
     "How the pull request is written: by Convoy's author when Convoy publishes, by the builder otherwise. Put the team's template or skill here.": "Как пишется PR: автором Convoy, когда публикует Convoy, иначе строителем. Сюда — шаблон или навык команды.",
     "This project is a folder, not a git repository: its builders publish in the repositories they changed, as the task's publishing says. Turn this on in the repositories inside it.": "Этот проект — папка, а не git-репозиторий: его строители публикуют в репозиториях, которые изменили, как указано в публикации задачи. Включите это в репозиториях внутри неё.",
     "This project is a folder, not a git repository, so its tasks work in the folder itself. Turn this on in the repositories inside it.": "Этот проект — папка, а не git-репозиторий, поэтому его задачи работают прямо в папке. Включите это в репозиториях внутри неё.",

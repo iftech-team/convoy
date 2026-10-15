@@ -185,7 +185,7 @@ fn brief(workspace: &Workspace, task: &Task, file: &std::path::Path) -> Result<S
         task.title,
         task.details,
     );
-    Ok(head(&prompt, 32_000).to_string())
+    Ok(crate::stage::fit(&prompt))
 }
 
 /// Starts a planner for the task. Returns its session, to be started.

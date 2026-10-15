@@ -124,7 +124,7 @@ fn brief(workspace: &Workspace, task: &Task, file: &std::path::Path) -> Result<S
         pipeline::task_context(task),
         stage::closing(Stage::Pr, file)
     );
-    Ok(head(&prompt, 32_000).to_string())
+    Ok(crate::stage::fit(&prompt))
 }
 
 /// Starts publishing a task: the author for a request or a description, the

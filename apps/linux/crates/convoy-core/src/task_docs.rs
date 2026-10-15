@@ -165,7 +165,7 @@ fn brief(workspace: &Workspace, task: &Task, folder: &Path, file: &Path) -> Resu
         pipeline::task_context(task),
         stage::closing(Stage::Docs, file)
     );
-    Ok(head(&prompt, 32_000).to_string())
+    Ok(crate::stage::fit(&prompt))
 }
 
 /// Starts the documentation writer for a task. Returns what the window has
