@@ -1121,7 +1121,6 @@ export function tabBar() {
     })
     .join("");
   const home = ["home", "dashboard", "usage"].includes(state.page);
-  const sessionTabs = state.tabs.some((id) => !isProjectTab(id));
   const mac = /mac/i.test(navigator.platform);
   // The Tasks page and Home have New task in their own headers; one is enough.
   const tasksShown = (state.tab === "tasks" && !state.page && !state.sessionId && !state.files) || state.page === "home";
@@ -1138,7 +1137,7 @@ export function tabBar() {
         <button class="tabbar__search" data-action="palette" title="${escape(t("Search sessions, projects and actions"))}">
           ${icons.search}<span>${escape(t("Search"))}</span><kbd>${mac ? "⌘K" : "Ctrl+K"}</kbd>
         </button>
-        ${sessionTabs ? `<span class="layouts">`: ""}
+        <span class="layouts">
           ${[
             [1, "paneOne", "One pane"],
             [2, "split", "Two panes"],
@@ -1149,7 +1148,7 @@ export function tabBar() {
                 `<button class="layouts__button" data-layout="${count}" aria-pressed="${state.layout === count}" title="${escape(t(name))}">${icons[glyph]}</button>`,
             )
             .join("")}
-        ${sessionTabs ? "</span>" : ""}
+        </span>
         ${
           project() || state.sessionId
             ? `<button class="tabbar__changes" data-action="files" title="${escape(t("Files & Changes"))}">
