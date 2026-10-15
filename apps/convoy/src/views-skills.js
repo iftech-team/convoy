@@ -184,11 +184,24 @@ export function projectSkills(projectId) {
 
 const check = (on) => `<span class="import-check" aria-hidden="true">${on ? "✓" : ""}</span>`;
 
+/// The skills the search leaves: by name, description, where they are from
+/// and the project they are in.
+export function importMatches(dialog) {
+  const needle = (dialog.query ?? "").trim().toLowerCase();
+  const found = dialog.found ?? [];
+  if (!needle) return found;
+  const names = new Map(state.projects.map((item) => [item.id, item.title]));
+  return found.filter((item) =>
+    [item.name, item.description, item.source, names.get(item.project_id) ?? ""].join(" ").toLowerCase().includes(needle),
+  );
+}
+
 /// The agents' skills found on this machine: pick some, then the
 /// projects and roles they are for.
 export function skillImport(dialog) {
   const names = new Map(state.projects.map((item) => [item.id, item.title]));
-  const found = dialog.found ?? [];
+  const all = dialog.found ?? [];
+  const found = importMatches(dialog);
   const rows = found.length
     ? found
         .map(
@@ -206,7 +219,9 @@ export function skillImport(dialog) {
         </button>`,
         )
         .join("")
-    : `<div class="pref-empty">${escape(t("No skills found in Claude Code's, Codex's or the shared Agent Skills folders, yours or the projects'."))}</div>`;
+    : all.length
+      ? `<div class="pref-empty">${escape(t("No skill matches “{query}”.", { query: dialog.query ?? "" }))}</div>`
+      : `<div class="pref-empty">${escape(t("No skills found in Claude Code's, Codex's or the shared Agent Skills folders, yours or the projects'."))}</div>`;
   // Projects in the sidebar's order, each folder's children under it.
   const ordered = [];
   for (const project of state.projects.filter((item) => !item.parent_id)) {
@@ -229,9 +244,11 @@ export function skillImport(dialog) {
     body: `
       <div class="field">
         <span class="field__label">${escape(t("Skills"))}
-          ${found.length > 1 ? `<button class="link-button" data-import-all="1">${escape(dialog.picked.length === found.length ? t("None") : t("All"))}</button>` : ""}
+          ${found.length > 1 ? `<button class="link-button" data-import-all="1">${escape(found.every((item) => dialog.picked.includes(item.path)) ? t("None") : t("All"))}</button>` : ""}
+          ${dialog.picked.length ? `<span class="section__count">${escape(t("{count} picked", { count: dialog.picked.length }))}</span>` : ""}
         </span>
-        <div class="import-list">${rows}</div>
+        ${all.length > 6 ? `<input id="skill-import-search" class="import-search" type="search" placeholder="${escape(t("Find a skill"))}" value="${escape(dialog.query ?? "")}" spellcheck="false" />` : ""}
+        <div class="import-list" data-scroll="skill-import">${rows}</div>
       </div>
       <div class="field">
         <span class="field__label">${escape(t("For"))}</span>
@@ -239,7 +256,7 @@ export function skillImport(dialog) {
           <button data-import-scope="everywhere" aria-pressed="${!!dialog.everywhere}">${escape(t("Every project"))}</button>
           <button data-import-scope="chosen" aria-pressed="${!dialog.everywhere}">${escape(t("Chosen projects"))}</button>
         </div>
-        ${dialog.everywhere ? "" : `<div class="import-list import-list--projects">${projects}</div>`}
+        ${dialog.everywhere ? "" : `<div class="import-list import-list--projects" data-scroll="skill-import-projects">${projects}</div>`}
       </div>
       <div class="field">
         <span class="field__label">${escape(t("Roles in a task"))}</span>

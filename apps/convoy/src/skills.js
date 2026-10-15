@@ -5,7 +5,7 @@
 import { attempt, done, state, toast } from "./state.js";
 import { plural } from "./ui.js";
 import { t } from "./i18n.js";
-import { TEMPLATES, autoSkills, findSkill, skillsFor } from "./views-skills.js";
+import { TEMPLATES, autoSkills, findSkill, importMatches, skillsFor } from "./views-skills.js";
 
 const FIELDS = {
   "skill-name": "name",
@@ -83,7 +83,12 @@ export function installSkills({ render, openModal, closeDialog, openSettings, lo
         ? dialog.picked.filter((path) => path !== data.importPick)
         : [...dialog.picked, data.importPick];
     } else if (data.importAll) {
-      dialog.picked = dialog.picked.length === dialog.found.length ? [] : dialog.found.map((item) => item.path);
+      // All or none of what the search shows; picks hidden by it stay.
+      const shown = importMatches(dialog).map((item) => item.path);
+      const every = shown.every((path) => dialog.picked.includes(path));
+      dialog.picked = every
+        ? dialog.picked.filter((path) => !shown.includes(path))
+        : [...new Set([...dialog.picked, ...shown])];
     } else if (data.importScope) {
       dialog.everywhere = data.importScope === "everywhere";
     } else if (data.importProject) {
@@ -263,6 +268,11 @@ export function installSkills({ render, openModal, closeDialog, openSettings, lo
   }
 
   function onInput(field) {
+    if (state.dialog?.kind === "skill-import" && field.id === "skill-import-search") {
+      state.dialog.query = field.value;
+      render();
+      return true;
+    }
     if (!editing() || !field.closest?.(".modal")) return false;
     const key = FIELDS[field.id];
     if (!key) return false;

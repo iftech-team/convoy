@@ -262,6 +262,7 @@ try {
       if (cmd === "skills_discover") return [
         { name: "eskhata-qa", description: "Test an Eskhata task on the local stack.", path: "/home/me/.claude/skills/eskhata-qa/SKILL.md", project_id: null, source: "Claude Code", imported: false },
         { name: "api-style", description: "How the API is written.", path: "/fixture/Example/.claude/skills/api-style/SKILL.md", project_id: "project", source: "Agent Skills", imported: true },
+        ...["better-ui", "better-colors", "better-layout", "careful", "freeze", "guard"].map((name) => ({ name, description: `The ${name} skill.`, path: `/home/me/.agents/skills/${name}/SKILL.md`, project_id: null, source: "Agent Skills", imported: false })),
       ];
       if (cmd === "skills_import") return args.paths.length;
       if (cmd === "skill_delete") {
@@ -1985,7 +1986,21 @@ try {
   // The agents' own skills: picked, for chosen projects and roles.
   await page.locator('[data-skill="import"]').first().click();
   await page.locator(".modal", { hasText: "Import skills from your agents" }).waitFor();
+  // Ticking a skill keeps the list where it was scrolled.
+  const listTop = await page.evaluate(() => {
+    const list = document.querySelector('[data-scroll="skill-import"]');
+    list.scrollTop = list.scrollHeight;
+    return list.scrollTop;
+  });
+  assert(listTop > 0, "the list scrolls");
+  await page.locator('[data-import-pick="/home/me/.agents/skills/guard/SKILL.md"]').click();
+  assert.equal(await page.evaluate(() => document.querySelector('[data-scroll="skill-import"]').scrollTop), listTop, "the list keeps its place");
+  await page.locator('[data-import-pick="/home/me/.agents/skills/guard/SKILL.md"]').click();
   await page.locator('[data-import-pick="/home/me/.claude/skills/eskhata-qa/SKILL.md"]').click();
+  // The search narrows the list by name, description or source.
+  await page.locator("#skill-import-search").fill("eskhata");
+  assert.deepEqual(await page.locator(".import-row:not(.import-row--project) .import-row__name").evaluateAll((rows) => rows.map((row) => row.firstChild.textContent.trim())), ["eskhata-qa"]);
+  await page.locator("#skill-import-search").fill("");
   await page.locator('[data-import-scope="chosen"]').click();
   await page.locator('[data-import-project="project"]').click();
   await page.locator('[data-import-role="qa"]').click();
