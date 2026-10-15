@@ -1,6 +1,7 @@
 // Bootstrap, rendering and every action the window offers.
 
 import { installTasks } from "./tasks.js";
+import { newTaskDefaults } from "./task-defaults.js";
 import { icons } from "./icons.js";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialogNative, save as saveDialogNative } from "@tauri-apps/plugin-dialog";
@@ -1074,12 +1075,7 @@ const ACTIONS = {
       title: "",
       details: "",
       findings: "",
-      agent: project()?.default_agent || state.settings.default_agent,
-      mode: project()?.task_mode || "pr",
-      ...lastChoice(project()?.default_agent || state.settings.default_agent),
-      profile_id: activeAccount(project()?.default_agent || state.settings.default_agent),
-      auto_review: !!project()?.review_auto,
-      plan_first: !!project()?.plan_first_default,
+      ...newTask(),
       spec_id: "",
     }),
   "save-task": () => saveTask(false),
@@ -1090,10 +1086,7 @@ const ACTIONS = {
       title: spec.title,
       details: "",
       findings: "",
-      agent: project()?.default_agent || state.settings.default_agent,
-      mode: project()?.task_mode || "pr",
-      ...lastChoice(project()?.default_agent || state.settings.default_agent),
-      auto_review: true,
+      ...newTask(),
       spec_id: spec.id,
     });
   },
@@ -3258,14 +3251,18 @@ Object.assign(ACTIONS, {
       title,
       details: `Implement the specification in ${path}. Read it first and treat its acceptance criteria as the definition of done.`,
       findings: "",
-      agent: project()?.default_agent || state.settings.default_agent,
-      mode: project()?.task_mode || "none",
-      ...lastChoice(project()?.default_agent || state.settings.default_agent),
-      auto_review: false,
+      ...newTask(),
       spec_id: "",
     });
   },
 });
+
+/// What a new task's form starts with: the project's defaults, then this
+/// machine's last model and account for its agent.
+function newTask() {
+  const defaults = newTaskDefaults(project(), state.settings);
+  return { ...defaults, ...lastChoice(defaults.agent), profile_id: activeAccount(defaults.agent) };
+}
 
 // ------------------------------------------------------------- planning ---
 

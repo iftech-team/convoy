@@ -7,6 +7,7 @@ import { icons } from "./icons.js";
 import { button, escape, shorten } from "./ui.js";
 import { state } from "./state.js";
 import { t } from "./i18n.js";
+import { TASK_MODES, taskModeOf } from "./task-defaults.js";
 import { ROLES, projectSkills } from "./views-skills.js";
 
 /// The macOS app's palette and emoji choices, in its order.
@@ -478,16 +479,12 @@ export function projectSettingsPage() {
         ${groupBox(
           t("Review & tasks"),
           `${row(
-            t("Tasks finish with"),
-            "",
+            t("Publish"),
+            t("How new tasks are published once they are done."),
             select(
               "task_mode",
-              [
-                ["none", t("Commit only")],
-                ["pr", t("Pull request")],
-                ["push", t("Push")],
-              ],
-              project.task_mode || "none",
+              TASK_MODES.map(([id, name]) => [id, t(name)]),
+              taskModeOf(project),
             ),
           )}
            ${row(

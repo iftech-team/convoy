@@ -792,9 +792,9 @@ try {
     relatedId,
   );
   await page.locator('.task-row[data-task="task"] .task-blocked[title="Waits for Checkout retries"]').waitFor();
-  // New tasks publish as a pull request unless the project says otherwise.
+  // New tasks publish nothing unless the project says otherwise.
   await page.locator('[data-action="new-task"]').click();
-  await page.locator('.modal .choice [data-value="pr"][aria-pressed="true"]').waitFor();
+  await page.locator('.modal .choice [data-value="none"][aria-pressed="true"]').waitFor();
   // Specs are a list to pick from, however many there are; Codex brings its
   // own models and accounts under Advanced.
   assert.deepEqual(await page.locator("#task-spec option").allTextContents(), ["None", "Checkout retries"]);

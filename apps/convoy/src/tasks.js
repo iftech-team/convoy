@@ -8,6 +8,7 @@ import { agentIcon } from "./icons.js";
 import { t } from "./i18n.js";
 import { plural } from "./ui.js";
 import { catalog, storageNote } from "./integrations-catalog.js";
+import { TASK_MODES, taskModeLabel, taskModeOf } from "./task-defaults.js";
 
 const MODELS = {
   claude: [["fable", "Fable · most capable"], ["opus", "Opus"], ["sonnet", "Sonnet · balanced"], ["haiku", "Haiku · fastest"]],
@@ -15,7 +16,6 @@ const MODELS = {
   gemini: [["auto-gemini-3", "Auto · Gemini 3"], ["gemini-3-pro-preview", "Gemini 3 Pro"], ["gemini-2.5-pro", "Gemini 2.5 Pro"], ["gemini-2.5-flash", "Gemini 2.5 Flash"]],
 };
 const AGENTS = [["claude", "Claude Code"], ["codex", "Codex"], ["gemini", "Gemini CLI"]];
-const MODES = [["pr", "Pull request"], ["push", "Push"], ["none", "Commit only"]];
 const STATUS = {
   queued: ["Queued", "state"],
   building: ["Building", "state state--running"],
@@ -181,7 +181,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
       overrides: {},
       agent: state.projects.find((item) => item.id === state.projectId)?.default_agent || state.settings.default_agent || "claude",
       model: "",
-      mode: state.projects.find((item) => item.id === state.projectId)?.task_mode || "pr",
+      mode: taskModeOf(state.projects.find((item) => item.id === state.projectId)),
       autoReview: !!state.projects.find((item) => item.id === state.projectId)?.review_auto,
       planFirst: !!state.projects.find((item) => item.id === state.projectId)?.plan_first_default,
       runNow: false,
@@ -274,7 +274,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         const meta = [
           task.agent === "claude" ? "Claude Code" : "Codex",
           task.model ? `<code>${escape(task.model)}</code>` : escape(t("default model")),
-          escape(t(MODES.find(([id]) => id === task.mode)?.[1] ?? "")),
+          escape(t(taskModeLabel(task.mode))),
           task.last_error ? escape(task.last_error) : null,
         ]
           .filter(Boolean)
@@ -430,8 +430,8 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
           ${modelInput('id="imp-model"', draft.agent, draft.model)}
         </label>
         <label class="field">
-          <span class="field__label">${escape(t("When done"))}</span>
-          <select id="imp-mode">${MODES.map(([id, name]) => `<option value="${id}"${id === draft.mode ? " selected" : ""}>${escape(t(name))}</option>`).join("")}</select>
+          <span class="field__label">${escape(t("Publish"))}</span>
+          <select id="imp-mode">${TASK_MODES.map(([id, name]) => `<option value="${id}"${id === draft.mode ? " selected" : ""}>${escape(t(name))}</option>`).join("")}</select>
         </label>
       </div>
       ${modelList("claude")}${modelList("codex")}${modelList("gemini")}`;

@@ -8,6 +8,7 @@ import { button, empty, escape, plural } from "./ui.js";
 import { state } from "./state.js";
 import { agentIcon, icons } from "./icons.js";
 import { t } from "./i18n.js";
+import { taskModeLabel } from "./task-defaults.js";
 import { when } from "./views-history.js";
 
 const COLUMNS = [
@@ -24,7 +25,6 @@ const COLUMNS = [
   ["failed", "Failed", "failed"],
 ];
 
-const MODES = { none: "no publishing", pr: "pull request", push: "push" };
 
 // ------------------------------------------------------------ tracker sync --
 
@@ -223,7 +223,7 @@ function taskRow(task, tone) {
       ? `<span class="badge task-blocked" title="${escape(t("Waits for {tasks}", { tasks: task.blocked_by.join(", ") }))}">${escape(t("blocked"))}</span>`
       : "",
     task.auto_review ? `<span class="badge badge--muted">${escape(t("auto review"))}</span>` : "",
-    `<span class="badge badge--muted">${escape(t(MODES[task.mode] ?? task.mode))}</span>`,
+    `<span class="badge badge--muted">${escape(t(taskModeLabel(task.mode)))}</span>`,
   ].join("");
   return `
     <div class="task-row" data-task="${escape(task.id)}" data-task-menu="${escape(task.id)}" data-task-card="${escape(task.id)}">
@@ -292,7 +292,7 @@ function board(tasks) {
                   <div class="card__foot">
                     ${qaBadge(task)}
                     ${syncChip(task)}
-                    <span class="badge--muted badge">${escape(t(MODES[task.mode] ?? task.mode))}</span>
+                    <span class="badge--muted badge">${escape(t(taskModeLabel(task.mode)))}</span>
                     ${task.auto_review ? `<span class="badge--muted badge">${escape(t("auto review"))}</span>` : ""}
                     ${task.pr_url ? '<span class="badge--muted badge">PR</span>' : ""}
                     ${task.blocked_by?.length ? `<span class="badge task-blocked" title="${escape(t("Waits for {tasks}", { tasks: task.blocked_by.join(", ") }))}">${escape(t("blocked"))}</span>` : ""}

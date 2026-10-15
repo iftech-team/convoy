@@ -14,6 +14,7 @@ import {
   toggle,
 } from "./ui.js";
 import { markdown } from "./views-files.js";
+import { TASK_MODES } from "./task-defaults.js";
 import { TASK_STATUSES, syncState, syncSummary } from "./views-planning.js";
 import { when } from "./views-history.js";
 import { state, project, session } from "./state.js";
@@ -716,10 +717,10 @@ const taskForm = (dialog) => {
           : ""
       }
       ${field(
-        t("Publishing"),
+        t("Publish"),
         choice(
           "mode",
-          [["none", t("Do not publish")], ["pr", t("Pull request")], ["push", t("Push")]],
+          TASK_MODES.map(([id, name]) => [id, t(name)]),
           dialog.mode,
         ),
       )}
