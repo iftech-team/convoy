@@ -1355,6 +1355,8 @@ export default {
     "No tasks": "Нет задач",
     // Task pipeline: stages, roles, plans and documents
     "Make a plan": "Составить план",
+    "Only a queued, failed or returned task can be planned.": "Спланировать можно только задачу в очереди, упавшую или возвращённую.",
+    "A task gets here by itself once its planner has written the plan.": "Задача попадает сюда сама, когда планировщик напишет план.",
     "Import agent skills…": "Импорт навыков агентов…",
     "Import skills from your agents": "Импорт навыков ваших агентов",
     "Your skills": "Ваши навыки",

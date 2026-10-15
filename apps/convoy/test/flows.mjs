@@ -585,6 +585,11 @@ try {
   await page.locator('[data-task-card="task"]').click({ button: "right" });
   await page.locator('[data-menu-act="task-status:changes"]').click();
   await page.locator('[data-task-column="changes"] [data-task-card="task"]').waitFor();
+  // Onto Planning: planned first from now on, and a planner starts.
+  await page.locator('[data-task-card="task"]').dragTo(page.locator('[data-task-column="planning"]'));
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_plan" && c.args.id === "task" && c.args.planFirst === true));
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_prepare" && c.args.id === "task"));
+  assert(!(await page.evaluate(() => window.checkCalls.some((c) => c.cmd === "task_status" && c.args.status === "planning"))));
   // Every project's tasks, each marked with its project.
   await page.locator('[data-task-scope="all"]').click();
   await page.locator('[data-task-card="task"] .card__project', { hasText: "Example" }).waitFor();

@@ -3427,6 +3427,14 @@ async function moveTask(id, status) {
   const task = findTask(id);
   if (!task || task.status === status) return;
   if (status === "building") return runnable(task) ? runTask(id) : toast(t("Only a queued, failed or returned task can run."));
+  // Onto Planning: a planner starts, the task planned first from now on.
+  if (status === "planning") {
+    if (!runnable(task)) return toast(t("Only a queued, failed or returned task can be planned."));
+    if (!task.plan_first && !(await done("task_plan", { id, planFirst: true, autoApprove: task.plan_auto_approve ?? null }))) return;
+    await reloadTasks();
+    return runTask(id);
+  }
+  if (status === "plan_review") return toast(t("A task gets here by itself once its planner has written the plan."));
   // Into testing where the project tests its tasks: that is a QA run.
   if (status === "testing" && state.projects.find((item) => item.id === task.project_id)?.qa) return startQa(id);
   if (await done("task_status", { id, status })) {
