@@ -234,7 +234,7 @@ fn model_name(model: &str) -> Result<Option<String>> {
     Ok((!model.is_empty()).then(|| model.to_string()))
 }
 
-const PR_NOTE: &str = "Commit your changes, push the current branch and create a pull request with gh pr create --fill. Report its URL. Do not merge.";
+const PR_NOTE: &str = "Commit your changes, push the current branch and open a pull request for it: a merge request with glab on GitLab, a pull request with gh on GitHub. Report its URL. Do not merge.";
 const PUSH_NOTE: &str = "Commit and push the current branch to its configured upstream. Never force push. Report the commit.";
 const NO_PUBLISH_NOTE: &str = "Do not publish, push, or open a PR.";
 
@@ -752,10 +752,29 @@ impl Workspace {
                 .find(|project| project.id == task.project_id)
                 .is_some_and(crate::publish::by_convoy);
             let publication = match task.mode {
-                PublishMode::None => NO_PUBLISH_NOTE,
-                _ if convoy_publishes => crate::publish::BUILDER_NOTE,
-                PublishMode::Pr => PR_NOTE,
-                PublishMode::Push => PUSH_NOTE,
+                PublishMode::None => NO_PUBLISH_NOTE.to_string(),
+                _ if convoy_publishes => crate::publish::BUILDER_NOTE.to_string(),
+                // The builder opens the request itself: the way the project
+                // writes one — its template, its skill — comes with it.
+                PublishMode::Pr => {
+                    let own = state
+                        .projects
+                        .iter()
+                        .find(|project| project.id == task.project_id)
+                        .and_then(|project| {
+                            crate::roles::project_instructions(project, crate::model::Role::Pr)
+                        })
+                        .or_else(|| {
+                            crate::roles::global_instructions(&state.settings, crate::model::Role::Pr)
+                        });
+                    match own {
+                        Some(text) => format!(
+                            "{PR_NOTE}\n\n## The pull request\nWrite and open it as follows; this comes before any other way you know:\n{text}"
+                        ),
+                        None => PR_NOTE.to_string(),
+                    }
+                }
+                PublishMode::Push => PUSH_NOTE.to_string(),
             };
             let preamble = spec
                 .as_ref()

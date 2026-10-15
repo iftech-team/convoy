@@ -390,6 +390,10 @@ fn a_folder_of_repositories_is_published_by_its_builder() {
             &project,
             ProjectPatch {
                 convoy_publishes: Some(true),
+                role_instructions: Some(std::collections::BTreeMap::from([(
+                    convoy_core::model::Role::Pr,
+                    "Use the eskhata-pr skill: the house template, in Russian.".to_string(),
+                )])),
                 ..ProjectPatch::default()
             },
         )
@@ -405,7 +409,11 @@ fn a_folder_of_repositories_is_published_by_its_builder() {
     let builder = task(&workspace, &id).session_id.unwrap();
     let brief = workspace.session(&builder).unwrap().prompt.clone();
     assert!(!brief.contains(publish::BUILDER_NOTE));
-    assert!(brief.contains("create a pull request"));
+    assert!(brief.contains("a merge request with glab on GitLab"));
+    assert!(!brief.contains("--fill"));
+    // It opens the request the project's way.
+    assert!(brief.contains("## The pull request"));
+    assert!(brief.contains("Use the eskhata-pr skill: the house template, in Russian."));
     assert!(!publish::due(&workspace, &task(&workspace, &id)));
     let actions = pipeline::handle(
         &mut workspace,
