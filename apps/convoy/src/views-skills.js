@@ -20,7 +20,7 @@ export const ROLES = [
 ];
 
 export const AGENT_SCOPES = [
-  ["both", "Both agents"],
+  ["both", "All agents"],
   ["claude", "Claude Code"],
   ["codex", "Codex"],
 ];

@@ -2089,7 +2089,7 @@ try {
   const templateTexts = [...templateBlock.matchAll(/(?:name|description|body): "((?:[^"\\]|\\.)*)"/g)].map((match) => JSON.parse(`"${match[1]}"`));
   assert.equal(templateTexts.length, 12, "four templates, each with a name, description and body");
   skillKeys.push("Skills", "Skills…", "New skill…", "Instructions you attach to sessions, tasks and automations", "Write instructions once and attach them to sessions",
-    "Both agents", "Give the skill a name.", "Write what the skill tells the agent.", "A skill with this name already exists.", "Pick Claude, Codex or both.");
+    "All agents", "Give the skill a name.", "Write what the skill tells the agent.", "A skill with this name already exists.", "Pick Claude, Codex or both.");
   skillKeys.push(...templateTexts);
   assert(skillKeys.length > 50, "the skills' strings were found");
   assert.deepEqual(skillKeys.filter((key) => !(key.replace(/\\n/g, "\n") in ru)), [], "untranslated skill strings");

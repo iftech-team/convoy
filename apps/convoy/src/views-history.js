@@ -120,7 +120,7 @@ export function historySection() {
     ${
       collapsed
         ? ""
-        : `<p class="section__hint">${escape(t("Saved by Claude Code or Codex for this folder. Resume one to add it to your sessions."))}</p>
+        : `<p class="section__hint">${escape(t("Saved by the agents for this folder. Resume one to add it to your sessions."))}</p>
            <div class="list">
              ${rows || `<div class="list__none">${escape(t("Nothing matches “{filter}”.", { filter: state.filter }))}</div>`}
            </div>`

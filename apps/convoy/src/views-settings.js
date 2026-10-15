@@ -193,7 +193,7 @@ function general(settings) {
         row(
           t("Branch prefix"),
           t("Prepended to generated branch names, e.g. feature → feature/fix-delivery-status."),
-          text("branch_prefix", settings.branch_prefix, t("none")),
+          text("branch_prefix", settings.branch_prefix, "convoy"),
         ),
       t("Worktrees live beside the workspace file, never inside your repository."),
     )}`;

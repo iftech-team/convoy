@@ -14,7 +14,7 @@ import {
   toggle,
 } from "./ui.js";
 import { markdown } from "./views-files.js";
-import { TASK_MODES } from "./task-defaults.js";
+import { TASK_MODES, agentName } from "./task-defaults.js";
 import { TASK_STATUSES, syncState, syncSummary } from "./views-planning.js";
 import { when } from "./views-history.js";
 import { state, project, session } from "./state.js";
@@ -132,8 +132,8 @@ function knowledgeField(dialog) {
 function newSession(dialog) {
   const target = state.projects.find((item) => item.id === dialog.projectId);
   const refs = dialog.refs ?? [];
-  const agentName = dialog.agent === "claude" ? "Claude Code" : "Codex";
-  const yolo = dialog.agent === "claude" ? state.settings.yolo_claude : state.settings.yolo_codex;
+  const agentLabel = agentName(dialog.agent);
+  const yolo = !!state.settings[`yolo_${dialog.agent}`];
   const worktree = dialog.repo
     ? `<div class="sheet-box">
         ${setting(
@@ -216,7 +216,7 @@ function newSession(dialog) {
         ? t("Starts without permission prompts (Yolo is on in Settings → Agents).")
         : t("Uses your installed agent, its login and its approval settings."),
     ),
-    foot: foot(dialog.busy ? t("Starting…") : t("Start {agent}", { agent: agentName }), "create-session"),
+    foot: foot(dialog.busy ? t("Starting…") : t("Start {agent}", { agent: agentLabel }), "create-session"),
   });
 }
 
@@ -251,7 +251,7 @@ const startReview = (dialog) =>
   modal({
     title: t("Start review"),
     hint: t("A {agent} session will review this work in the same folder. It is told not to edit files.", {
-      agent: dialog.agent === "claude" ? "Claude Code" : "Codex",
+      agent: agentName(dialog.agent),
     }),
     wide: true,
     body: `
@@ -395,7 +395,7 @@ const accounts = (dialog) =>
               .map((profile) =>
                 setting(
                   profile.label,
-                  `${profile.agent === "claude" ? "Claude Code" : "Codex"} · ${
+                  `${agentName(profile.agent)} · ${
                     profile.sessions === 0
                       ? t("not in use")
                       : plural(profile.sessions, "session")
@@ -1161,7 +1161,7 @@ const login = (dialog) =>
   modal({
     title: t("Log in: {label}", { label: dialog.label }),
     hint: t("{agent} runs its own login here. Nothing you type is kept by Convoy.", {
-      agent: dialog.agent === "claude" ? "Claude Code" : "Codex",
+      agent: agentName(dialog.agent),
     }),
     wide: true,
     body: '<div class="login-term" id="login-host"></div>',

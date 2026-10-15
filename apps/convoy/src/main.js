@@ -1,7 +1,7 @@
 // Bootstrap, rendering and every action the window offers.
 
 import { installTasks } from "./tasks.js";
-import { newTaskDefaults } from "./task-defaults.js";
+import { agentName, newTaskDefaults } from "./task-defaults.js";
 import { icons } from "./icons.js";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialogNative, save as saveDialogNative } from "@tauri-apps/plugin-dialog";
@@ -2186,7 +2186,7 @@ function confirmRemove(ids) {
     title: name
       ? t('Remove "{name}" from Convoy?', { name })
       : t("Remove {count} from Convoy?", { count: plural(ids.length, "session") }),
-    body: t("Only Convoy forgets them. The conversations stay with Claude Code or Codex and show under “Not in Convoy yet”."),
+    body: t("Only Convoy forgets them. The conversations stay with their agent and show under “Not in Convoy yet”."),
     confirmLabel: t("Remove"),
     run: async () => {
       const report = await call("sessions_remove", { ids });
@@ -2523,7 +2523,7 @@ function autoTitle(agent, prompt) {
     ?.replace(/^[#*>\-\s]+/, "");
   if (first) return first.length > 60 ? `${first.slice(0, 57).trim()}…` : first;
   const when = new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
-  return `${agent === "claude" ? "Claude Code" : "Codex"} · ${when}`;
+  return `${agentName(agent)} · ${when}`;
 }
 
 async function openNewSession(projectId) {
@@ -3913,7 +3913,7 @@ function paletteEntries() {
       title: item.title,
       subtitle: [
         owner?.title,
-        item.agent === "claude" ? "Claude Code" : "Codex",
+        agentName(item.agent),
         item.branch ? `⎇ ${item.branch}` : "",
         item.review_of ? t("review") : "",
         reported ? t(reported) : "",
@@ -3937,7 +3937,7 @@ function paletteEntries() {
     ["Home", "Every project at once", "home"],
     ["Agent Dashboard", "Every session by what its agent is doing", "dashboard"],
     ["Usage", "Tokens and estimated cost by day, model and project", "usagePage"],
-    ["New session", "Creates a Claude Code or Codex session", "newSession"],
+    ["New session", "Starts an agent session", "newSession"],
     ["Open folder…", "Add a repository or a folder of projects", "openFolder"],
     ["Resume current session", "Reconnect to the selected agent", "resume"],
     ["Stop current session", "Interrupts the running agent", "stop"],

@@ -4,11 +4,10 @@
 // convoy-core. This file draws state and passes input back, as main.js does.
 
 import { invoke } from "@tauri-apps/api/core";
-import { agentIcon } from "./icons.js";
 import { t } from "./i18n.js";
 import { plural } from "./ui.js";
 import { catalog, storageNote } from "./integrations-catalog.js";
-import { TASK_MODES, taskModeLabel, taskModeOf } from "./task-defaults.js";
+import { TASK_MODES, taskModeOf } from "./task-defaults.js";
 
 const MODELS = {
   claude: [["fable", "Fable · most capable"], ["opus", "Opus"], ["sonnet", "Sonnet · balanced"], ["haiku", "Haiku · fastest"]],
@@ -16,19 +15,6 @@ const MODELS = {
   gemini: [["auto-gemini-3", "Auto · Gemini 3"], ["gemini-3-pro-preview", "Gemini 3 Pro"], ["gemini-2.5-pro", "Gemini 2.5 Pro"], ["gemini-2.5-flash", "Gemini 2.5 Flash"]],
 };
 const AGENTS = [["claude", "Claude Code"], ["codex", "Codex"], ["gemini", "Gemini CLI"]];
-const STATUS = {
-  queued: ["Queued", "state"],
-  building: ["Building", "state state--running"],
-  review: ["Needs review", "state"],
-  changes: ["Changes requested", "state state--failed"],
-  attention: ["Needs attention", "state state--failed"],
-  planning: ["Planning", "state state--running"],
-  plan_review: ["Plan to approve", "state"],
-  testing: ["In testing", "state"],
-  pr: ["Pull request", "state"],
-  done: ["Done", "state state--done"],
-  failed: ["Failed", "state state--failed"],
-};
 const AUTH = {
   apiKey: { linear: "API key", jira: "API token", peshbar: "API token", notion: "Integration token" },
   password: { linear: "Login & password", jira: "Login & password", peshbar: "Login & password", notion: "Login & password" },
@@ -65,14 +51,6 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
 
   const modelInput = (attrs, agent, value) =>
     `<input ${attrs} list="models-${agent}" value="${escape(value || "")}" placeholder="${escape(t("Agent default"))}" spellcheck="false" />`;
-
-  const sourceBadge = (source) => {
-    if (!source) return "";
-    const label = `${trackerName(source.tracker)} ${source.key}`;
-    return source.url
-      ? `<a class="badge badge--muted" href="${escape(source.url)}" target="_blank" rel="noreferrer" title="${escape(t("Open {name}", { name: label }))}">${escape(source.key)}</a>`
-      : `<span class="badge badge--muted" title="${escape(source.viaMCP ? t("{name} — fetched by the agent via MCP", { name: label }) : label)}">${escape(source.key)}</span>`;
-  };
 
   // Keys of issues already imported into this project from the same site.
   const importedKeys = () => {
@@ -267,65 +245,6 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
 
   // --------------------------------------------------------------- views --
 
-  function taskList() {
-    const rows = state.tasks
-      .map((task) => {
-        const [label, css] = STATUS[task.status] ?? [task.status, "state"];
-        const meta = [
-          task.agent === "claude" ? "Claude Code" : "Codex",
-          task.model ? `<code>${escape(task.model)}</code>` : escape(t("default model")),
-          escape(t(taskModeLabel(task.mode))),
-          task.last_error ? escape(task.last_error) : null,
-        ]
-          .filter(Boolean)
-          .join(" · ");
-        const runnable = ["queued", "failed", "changes"].includes(task.status);
-        return `
-        <div class="row">
-          <span class="row__mark">${agentIcon(task.agent, 16)}</span>
-          <div class="row__body">
-            <div class="row__title">${escape(task.title)}</div>
-            <div class="row__meta">${meta}</div>
-          </div>
-          <div class="row__actions">
-            ${sourceBadge(task.source)}
-            <span class="${css}"><span class="state__dot"></span>${escape(t(label))}</span>
-            ${runnable ? `<button class="button" data-task-edit="${escape(task.id)}" title="${escape(t("Agent and model"))}">${icons.gear}</button>` : ""}
-            ${
-              runnable
-                ? `<button class="button button--primary" data-task-run="${escape(task.id)}">${icons.play} ${escape(t("Run"))}</button>`
-                : task.session_id
-                  ? `<button class="button button--quiet" data-open="${escape(task.session_id)}" title="${escape(t("Open the terminal"))}">${icons.open}</button>`
-                  : ""
-            }
-            ${
-              task.status === "review"
-                ? `<button class="button" data-task-done="${escape(task.id)}">${escape(t("Mark done"))}</button>`
-                : ""
-            }
-          </div>
-        </div>`;
-      })
-      .join("");
-
-    return `
-      <div class="section">
-        <h2 class="section__title">${escape(t("Tasks"))} <span class="section__count">${state.tasks.length}</span></h2>
-        <span class="section__spacer"></span>
-        <button class="button button--icon" data-action="tasks-refresh" title="${escape(t("Refresh"))}">${icons.refresh}</button>
-        <button class="button" data-action="integrations">${escape(t("Integrations…"))}</button>
-        <button class="button button--primary" data-action="import">${icons.plus} ${escape(t("Import tasks"))}</button>
-      </div>
-      <p class="section__hint">
-        ${escape(t("Import tasks from Linear, Jira, Peshbar or Notion, choose the agent and model for all of them or per task, then run each in its own session."))}
-      </p>
-      <div class="list">${
-        rows ||
-        `<div class="empty"><h2 class="empty__title">${escape(t("No tasks yet"))}</h2>
-           <p class="empty__text">${escape(t("Import tasks from an integration to start."))}</p></div>`
-      }</div>`;
-  }
-
   /// Where the search runs: the project's linked workspace and project, or
   /// the whole connection.
   const linkNote = (draft, current) => {
@@ -369,7 +288,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         ? `<label class="field">
              <span class="field__label">${escape(t("Issue keys or links"))}</span>
              <textarea id="imp-manual" spellcheck="false" placeholder="ENG-123 Optional title&#10;https://linear.app/acme/issue/ENG-124/…">${escape(draft.manual)}</textarea>
-             <span class="field__note">${escape(t("The agent reads each issue itself through its {tracker} MCP server, which must be configured in Claude Code or Codex.", { tracker: trackerName(current.kind) }))}</span>
+             <span class="field__note">${escape(t("The agent reads each issue itself through its {tracker} MCP server, which must be configured in the agent.", { tracker: trackerName(current.kind) }))}</span>
            </label>`
         : `<div class="import__search">
              <input id="imp-query" value="${escape(draft.query)}" spellcheck="false"
@@ -757,5 +676,5 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
     state.dialog = { kind: "task-model", id: task.id, title: task.title, agent: task.agent, model: task.model || "", effort: task.effort || "" };
     render();
   };
-  return { taskList, dialog, loadTasks, onClick, onInput, onChange, onEnter, editModel };
+  return { dialog, loadTasks, onClick, onInput, onChange, onEnter, editModel };
 }

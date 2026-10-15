@@ -26,7 +26,7 @@ export function saveCollapsed() {
 
 export const state = {
   settings: {
-    theme: "system",
+    theme: "dark",
     default_agent: "claude",
     font_size: 13,
     scrollback: 10000,

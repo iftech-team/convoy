@@ -463,7 +463,7 @@ export function projectSettingsPage() {
         ${groupBox(
           t("Git & worktrees"),
           `${row(t("Base ref for worktrees"), t("Empty starts from the current HEAD."), text("base_ref", project.base_ref, "main"))}
-           ${row(t("Branch prefix"), t("Global: {prefix}", { prefix: state.settings.branch_prefix || t("none") }), text("branch_prefix", project.branch_prefix, "feature"))}
+           ${row(t("Branch prefix"), t("Global: {prefix}", { prefix: state.settings.branch_prefix || "convoy" }), text("branch_prefix", project.branch_prefix, "feature"))}
            <div class="pref-block pref-stack">
              <div class="pref-row__title">${escape(t("Shared paths (one per line)"))}</div>
              <textarea class="pref-area" data-proj-text="shared_paths" rows="3" spellcheck="false"

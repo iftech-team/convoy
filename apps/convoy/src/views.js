@@ -14,6 +14,7 @@ import {
   toggle,
 } from "./ui.js";
 import { language, t } from "./i18n.js";
+import { agentName } from "./task-defaults.js";
 import { activeAccount, anySession, isProjectTab, isRunning, project, session, state, visibleSessions } from "./state.js";
 import { TASK_STATUSES, runnable } from "./views-planning.js";
 import { missingConversation } from "./terminal.js";
@@ -87,7 +88,7 @@ function sidebarSession(item, { showProject = false, helper = false } = {}) {
               ? `<span class="side-session__detail">${escape(
                   [
                     t(item.running ? (state.agentState.get(item.id) ?? "Running") : item.started ? "Stopped" : "Saved"),
-                    item.agent === "claude" ? "Claude Code" : "Codex",
+                    agentName(item.agent),
                   ].join(" · "),
                 )}</span>`
               : ""
@@ -453,7 +454,6 @@ export function header() {
 
 // --------------------------------------------------------------- sessions --
 
-const agentName = (agent) => (agent === "claude" ? "Claude Code" : "Codex");
 
 /// Every row the Sessions list shows that can be deleted: its sessions that
 /// are not running, then its saved conversations.
@@ -534,7 +534,7 @@ export function sessionsView() {
         ${button({ label: t("Import all history…"), icon: "history", action: "import-all-history" })}
         ${button({ label: t("New session"), icon: "plus", action: "new-session", kind: "primary" })}
       </div>
-      ${empty("review", t("No sessions yet"), t("Start one to run Claude Code or Codex in this folder."))}`;
+      ${empty("review", t("No sessions yet"), t("Start one to run an agent in this folder."))}`;
     }
     return `
       <div class="section">
@@ -651,7 +651,7 @@ export function workbench() {
         ${view === "terminal" ? helpersButton(current.id) : ""}
         ${view === "terminal" ? skillsChip(current.id) : ""}
         ${viewToggle(view)}
-        <span class="bar-agent">${current.agent === "claude" ? "Claude Code" : "Codex"}</span>
+        <span class="bar-agent">${agentName(current.agent)}</span>
         <span class="state ${tone}"><span class="state__dot"></span>${escape(label.replace(/^./, (c) => c.toUpperCase()))}</span>
         ${
           current.running
@@ -878,7 +878,7 @@ export function status() {
         ${icons.limits} <strong>${escape(t("AI Limits"))}</strong>
         ${limitsSummary()}
       </button>
-      ${accountChip("claude")}${accountChip("codex")}
+      ${accountChip("claude")}${accountChip("codex")}${accountChip("gemini")}
       <span class="status__spacer"></span>
       ${queues ? `<span class="status__item">${icons.bolt} ${escape(plural(queues, "queue"))}</span><span class="status__sep"></span>` : ""}
       ${needsYouButton()}
@@ -1126,7 +1126,7 @@ export function tabBar() {
       const selected = state.sessionId === id && !state.files && state.page !== "project";
       return `
         <div class="tab-item${selected ? " tab-item--selected" : ""}" data-tab-open="${escape(id)}"
-             draggable="true" title="${escape(`${owner?.title ?? ""} · ${info.agent === "claude" ? "Claude Code" : "Codex"}${running ? "" : ` · ${t("not running")}`}`)}">
+             draggable="true" title="${escape(`${owner?.title ?? ""} · ${agentName(info.agent)}${running ? "" : ` · ${t("not running")}`}`)}">
           <span class="tab-item__bar" style="background:${owner ? projectTint(owner) : "var(--border-strong)"}"></span>
           ${tabGlyph(id, running, info)}
           ${agentIcon(info.agent, 12)}
@@ -1256,7 +1256,7 @@ function accountMenu(agent) {
   return `
     <div class="scrim scrim--clear" data-dismiss="1">
       <div class="menu menu--status" role="menu" style="left:${Math.max(8, state.anchor?.left ?? 8)}px">
-        <div class="menu__heading">${escape(t("{agent} account", { agent: agent === "claude" ? "Claude Code" : "Codex" }))}</div>
+        <div class="menu__heading">${escape(t("{agent} account", { agent: agentName(agent) }))}</div>
         ${item("", t("System login"))}
         ${(state.profiles ?? []).filter((profile) => profile.agent === agent).map((profile) => item(profile.id, profile.label)).join("")}
         <div class="menu__divider"></div>
@@ -1272,7 +1272,7 @@ function accountChip(agent) {
   const name = id ? state.profiles.find((profile) => profile.id === id)?.label : t("System");
   return `
     <button class="status__item status__button" data-action="account-menu" data-agent="${agent}"
-            title="${escape(t("Account for new {agent} sessions", { agent: agent === "claude" ? "Claude Code" : "Codex" }))}">
+            title="${escape(t("Account for new {agent} sessions", { agent: agentName(agent) }))}">
       ${agentIcon(agent, 12)} ${escape(name ?? t("System"))} ${icons.chevronDown}
     </button>`;
 }
