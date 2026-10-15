@@ -22,6 +22,7 @@ fn input(name: &str, body: &str) -> SkillInput {
         agents: "both".into(),
         auto: false,
         roles: None,
+        projects: None,
     }
 }
 
@@ -35,6 +36,7 @@ fn skill(id: &str, name: &str, body: &str, agents: Agents, project: Option<&str>
         agents,
         auto: false,
         roles: None,
+        projects: None,
         created: 0,
         updated: 0,
         unknown: Map::new(),

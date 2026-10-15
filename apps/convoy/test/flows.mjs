@@ -259,6 +259,11 @@ try {
         window.skills.push({ id, ...record, created: 1, updated: 1 });
         return id;
       }
+      if (cmd === "skills_discover") return [
+        { name: "eskhata-qa", description: "Test an Eskhata task on the local stack.", path: "/home/me/.claude/skills/eskhata-qa/SKILL.md", project_id: null, source: "Claude Code", imported: false },
+        { name: "api-style", description: "How the API is written.", path: "/fixture/Example/.claude/skills/api-style/SKILL.md", project_id: "project", source: "Agent Skills", imported: true },
+      ];
+      if (cmd === "skills_import") return args.paths.length;
       if (cmd === "skill_delete") {
         window.skills = window.skills.filter((item) => item.id !== args.id);
         for (const item of sessions) if (item.skills) item.skills = item.skills.filter((id) => id !== args.id);
@@ -1916,7 +1921,7 @@ try {
   await skillEditor.locator('[data-skill="save"]').click();
   await skillEditor.waitFor({ state: "detached" });
   const written = await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "skill_save").at(-1).args.input);
-  assert.deepEqual(written, { id: null, name: "Pineapple sign-off", description: "A visible check that skills reach the agent", body: "Always end your reply with the word **PINEAPPLE**.", project_id: null, agents: "both", auto: true, roles: null });
+  assert.deepEqual(written, { id: null, name: "Pineapple sign-off", description: "A visible check that skills reach the agent", body: "Always end your reply with the word **PINEAPPLE**.", project_id: null, agents: "both", auto: true, roles: null, projects: null });
   // A Codex-only one in this project, for the agent filter.
   await page.locator('[data-skill="new"]').first().click();
   await page.locator("#skill-name").fill("Codex review style");
@@ -1930,6 +1935,20 @@ try {
   await page.locator(".skill-row", { hasText: "Pineapple sign-off" }).locator(".skill-tag--auto").waitFor();
   await page.locator(".skill-row", { hasText: "Codex review style" }).locator(".skill-tag", { hasText: "Example" }).waitFor();
   await bothThemes("skills-settings");
+
+  // The agents' own skills: picked, for chosen projects and roles.
+  await page.locator('[data-skill="import"]').first().click();
+  await page.locator(".modal", { hasText: "Import skills from your agents" }).waitFor();
+  await page.locator('[data-import-pick="/home/me/.claude/skills/eskhata-qa/SKILL.md"]').click();
+  await page.locator('[data-import-scope="chosen"]').click();
+  await page.locator('[data-import-project="project"]').click();
+  await page.locator('[data-import-role="qa"]').click();
+  if (shots) await page.waitForTimeout(300), await page.screenshot({ path: `${shots}/skill-import.png` });
+  await page.locator('.modal [data-skill="import-run"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "skills_import"
+    && c.args.paths.length === 1 && c.args.paths[0].endsWith("eskhata-qa/SKILL.md")
+    && c.args.projects.includes("project") && c.args.roles.includes("qa") && c.args.roles.includes("build")));
+  await page.locator(".toast", { hasText: "Imported 1 skill" }).waitFor();
   const ids = await page.evaluate(() => Object.fromEntries(window.skills.map((item) => [item.name, item.id])));
   await page.locator('[data-action="close-settings"]').click();
 

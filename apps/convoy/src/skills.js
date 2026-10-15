@@ -3,6 +3,7 @@
 // skills from its chip. main.js passes clicks, typing and changes here first.
 
 import { attempt, done, state, toast } from "./state.js";
+import { plural } from "./ui.js";
 import { t } from "./i18n.js";
 import { TEMPLATES, autoSkills, findSkill, skillsFor } from "./views-skills.js";
 
@@ -35,6 +36,79 @@ export function installSkills({ render, openModal, closeDialog, openSettings, lo
     if (list.ok) state.skills = list.value ?? [];
   }
 
+  /// The agents' skills on this machine, to pick from: those of the
+  /// project it was opened from are picked to begin with.
+  async function openImport(projectId = null) {
+    const found = await attempt("skills_discover");
+    if (!found.ok) return toast(t(found.error), "error");
+    openModal({
+      kind: "skill-import",
+      found: found.value ?? [],
+      picked: (found.value ?? []).filter((item) => projectId && item.project_id === projectId).map((item) => item.path),
+      everywhere: !projectId,
+      projects: projectId ? [projectId] : [],
+      roles: ["build"],
+      auto: false,
+    });
+  }
+
+  async function runImport() {
+    const dialog = state.dialog;
+    if (!dialog?.picked.length || dialog.busy) return;
+    if (!dialog.everywhere && !dialog.projects.length) return toast(t("Pick the projects these skills are for."));
+    dialog.busy = true;
+    render();
+    const count = await attempt("skills_import", {
+      paths: dialog.picked,
+      projects: dialog.everywhere ? [] : dialog.projects,
+      roles: dialog.roles.some((role) => role !== "build") ? dialog.roles : null,
+      auto: !!dialog.auto,
+    });
+    if (state.dialog !== dialog) return;
+    dialog.busy = false;
+    if (!count.ok) {
+      toast(t(count.error), "error");
+      return render();
+    }
+    closeDialog();
+    await reload();
+    toast(t("Imported {skills}.", { skills: plural(count.value, "skill") }));
+  }
+
+  /// Clicks inside the import dialog.
+  function onImportClick(data) {
+    const dialog = state.dialog;
+    if (data.importPick) {
+      dialog.picked = dialog.picked.includes(data.importPick)
+        ? dialog.picked.filter((path) => path !== data.importPick)
+        : [...dialog.picked, data.importPick];
+    } else if (data.importAll) {
+      dialog.picked = dialog.picked.length === dialog.found.length ? [] : dialog.found.map((item) => item.path);
+    } else if (data.importScope) {
+      dialog.everywhere = data.importScope === "everywhere";
+    } else if (data.importProject) {
+      // A folder of projects picks or drops its children with it.
+      const id = data.importProject;
+      const family = [id, ...state.projects.filter((item) => item.parent_id === id).map((item) => item.id)];
+      const on = !dialog.projects.includes(id);
+      dialog.projects = on
+        ? [...new Set([...dialog.projects, ...family])]
+        : dialog.projects.filter((other) => !family.includes(other));
+      dialog.everywhere = false;
+    } else if (data.importRole) {
+      const roles = new Set(dialog.roles);
+      if (roles.has(data.importRole)) roles.delete(data.importRole);
+      else roles.add(data.importRole);
+      dialog.roles = roles.size ? [...roles] : ["build"];
+    } else if (data.importAuto) {
+      dialog.auto = !dialog.auto;
+    } else {
+      return false;
+    }
+    render();
+    return true;
+  }
+
   async function reload() {
     await load();
     render();
@@ -51,6 +125,7 @@ export function installSkills({ render, openModal, closeDialog, openSettings, lo
       agents: item?.agents ?? "both",
       auto: item?.auto ?? false,
       roles: item?.roles ?? ["build"],
+      projects: item?.projects ?? null,
       preview: false,
     });
   }
@@ -68,6 +143,7 @@ export function installSkills({ render, openModal, closeDialog, openSettings, lo
       auto: !!dialog.auto,
       // The builder alone is what a skill always was: kept as none.
       roles: dialog.roles?.some((role) => role !== "build") ? dialog.roles : null,
+      projects: dialog.projects?.length ? dialog.projects : null,
     };
     dialog.busy = true;
     render();
@@ -138,8 +214,11 @@ export function installSkills({ render, openModal, closeDialog, openSettings, lo
       render();
       return true;
     }
+    if (state.dialog?.kind === "skill-import" && onImportClick(data)) return true;
     if (data.skill) {
       const act = data.skill;
+      if (act === "import") return openImport(data.skillProject || null), true;
+      if (act === "import-run") return runImport(), true;
       if (act === "new") return open(null, data.skillProject || null), true;
       if (act === "edit") return open(findSkill(data.skillId)), true;
       if (act === "delete") return remove(data.skillId), true;
@@ -198,7 +277,10 @@ export function installSkills({ render, openModal, closeDialog, openSettings, lo
   function onChange(field) {
     if (!editing()) return false;
     if (field.id === "skill-project") {
+      // "Several projects" keeps the list it was imported with.
+      if (field.value === "__several") return true;
       state.dialog.project_id = field.value;
+      state.dialog.projects = null;
       return true;
     }
     return field.id in FIELDS ? onInput(field) : false;

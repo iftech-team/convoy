@@ -85,6 +85,10 @@ pub struct Skill {
     /// always were.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub roles: Option<Vec<Role>>,
+    /// The projects it belongs to, when there are several; then
+    /// `project_id` is none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projects: Option<Vec<String>>,
     pub created: Instant,
     #[serde(default)]
     pub updated: Instant,
@@ -95,9 +99,21 @@ pub struct Skill {
 impl Skill {
     /// Whether a session of this project may have it.
     pub fn in_scope(&self, project_id: &str) -> bool {
+        if let Some(projects) = self.projects.as_ref().filter(|list| !list.is_empty()) {
+            return projects.iter().any(|own| own == project_id);
+        }
         self.project_id
             .as_deref()
             .is_none_or(|own| own == project_id)
+    }
+
+    /// The projects it is limited to; empty is every project.
+    pub fn scope(&self) -> Vec<String> {
+        match (&self.projects, &self.project_id) {
+            (Some(projects), _) if !projects.is_empty() => projects.clone(),
+            (_, Some(project)) => vec![project.clone()],
+            _ => Vec::new(),
+        }
     }
 
     /// Whether it is given to this agent in this project.
@@ -133,6 +149,25 @@ pub struct SkillInput {
     /// The task roles it is for; none or empty is the builder only.
     #[serde(default)]
     pub roles: Option<Vec<Role>>,
+    /// Several projects it belongs to; when given, `project_id` is ignored.
+    #[serde(default)]
+    pub projects: Option<Vec<String>>,
+}
+
+/// The scope a skill is saved with: one project in `project_id`, several in
+/// `projects`, none for every project.
+fn scope_kept(input: &SkillInput) -> (Option<String>, Option<Vec<String>>) {
+    let mut projects: Vec<String> = Vec::new();
+    for id in input.projects.clone().unwrap_or_default() {
+        if !id.is_empty() && !projects.contains(&id) {
+            projects.push(id);
+        }
+    }
+    match projects.len() {
+        0 => (input.project_id.clone().filter(|id| !id.is_empty()), None),
+        1 => (projects.pop(), None),
+        _ => (None, Some(projects)),
+    }
 }
 
 /// A role list as kept: none for the builder alone, without repeats.
@@ -166,6 +201,9 @@ fn validate(input: &SkillInput, workspace: &Workspace, others: &[Skill]) -> Resu
         "The skill is too long (16,000 characters at most)."
     );
     if let Some(project) = input.project_id.as_deref().filter(|id| !id.is_empty()) {
+        workspace.project(project)?;
+    }
+    for project in input.projects.iter().flatten().filter(|id| !id.is_empty()) {
         workspace.project(project)?;
     }
     let taken = others.iter().any(|skill| {
@@ -271,7 +309,7 @@ impl Store {
         now: Instant,
     ) -> Result<String> {
         let agents = validate(&input, workspace, &self.state.skills)?;
-        let project_id = input.project_id.clone().filter(|id| !id.is_empty());
+        let (project_id, projects) = scope_kept(&input);
         let (name, description, body) = (
             input.name.trim().to_string(),
             input.description.trim().to_string(),
@@ -290,6 +328,7 @@ impl Store {
                     skill.description = description;
                     skill.body = body;
                     skill.project_id = project_id;
+                    skill.projects = projects;
                     skill.agents = agents;
                     skill.auto = input.auto;
                     skill.roles = roles_kept(input.roles.clone());
@@ -308,6 +347,7 @@ impl Store {
                     agents,
                     auto: input.auto,
                     roles: roles_kept(input.roles.clone()),
+                    projects,
                     created: now,
                     updated: now,
                     unknown: Map::new(),
@@ -332,20 +372,37 @@ impl Store {
 
     /// A project went: so do its own skills. Returns their ids, to detach.
     pub fn remove_project(&mut self, project_id: &str) -> Result<Vec<String>> {
+        // A skill of several projects only loses this one, unless it was
+        // its last.
+        let only = |skill: &Skill| {
+            let scope = skill.scope();
+            scope.len() == 1 && scope[0] == project_id
+        };
         let gone: Vec<String> = self
             .state
             .skills
             .iter()
-            .filter(|skill| skill.project_id.as_deref() == Some(project_id))
+            .filter(|skill| only(skill))
             .map(|skill| skill.id.clone())
             .collect();
-        if gone.is_empty() {
+        let shared = self.state.skills.iter().any(|skill| {
+            skill
+                .projects
+                .as_ref()
+                .is_some_and(|list| list.len() > 1 && list.iter().any(|id| id == project_id))
+        });
+        if gone.is_empty() && !shared {
             return Ok(gone);
         }
         let project_id = project_id.to_string();
+        let removed = gone.clone();
         self.update(move |file| {
-            file.skills
-                .retain(|skill| skill.project_id.as_deref() != Some(project_id.as_str()));
+            file.skills.retain(|skill| !removed.contains(&skill.id));
+            for skill in file.skills.iter_mut() {
+                if let Some(list) = skill.projects.as_mut() {
+                    list.retain(|id| *id != project_id);
+                }
+            }
             Ok(gone)
         })
     }
@@ -356,14 +413,14 @@ impl Store {
             .state
             .skills
             .iter()
-            .filter(|skill| skill.project_id.is_some())
+            .filter(|skill| !skill.scope().is_empty())
             .map(|skill| skill.id.clone())
             .collect();
         if gone.is_empty() {
             return Ok(gone);
         }
         self.update(move |file| {
-            file.skills.retain(|skill| skill.project_id.is_none());
+            file.skills.retain(|skill| skill.scope().is_empty());
             Ok(gone)
         })
     }
@@ -376,7 +433,10 @@ impl Store {
             .state
             .skills
             .iter()
-            .filter(|skill| skill.project_id.as_deref().is_some_and(|id| !known(id)))
+            .filter(|skill| {
+                let scope = skill.scope();
+                !scope.is_empty() && scope.iter().all(|id| !known(id))
+            })
             .map(|skill| skill.id.clone())
             .collect();
         if gone.is_empty() {
@@ -543,6 +603,8 @@ pub fn detach_everywhere(
     automations.detach_skills(ids)?;
     Ok(())
 }
+
+pub mod local;
 
 #[cfg(test)]
 mod tests;

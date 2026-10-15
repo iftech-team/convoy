@@ -20,7 +20,7 @@ import { state, project, session } from "./state.js";
 import { agentIcon, icons } from "./icons.js";
 import { t } from "./i18n.js";
 import { automationEditor } from "./views-automations.js";
-import { autoSkills, skillEditor, skillPicker } from "./views-skills.js";
+import { autoSkills, skillEditor, skillImport, skillPicker } from "./views-skills.js";
 
 const AGENTS = [
   ["claude", "Claude Code", agentIcon("claude", 15)],
@@ -1340,6 +1340,7 @@ const VIEWS = {
   markdown: markdownPreview,
   automation: automationEditor,
   skill: skillEditor,
+  "skill-import": skillImport,
 };
 
 export { session, project };

@@ -566,6 +566,7 @@ fn skills_reach_the_roles_they_are_for() {
                     agents: "both".into(),
                     auto,
                     roles,
+                    projects: None,
                 },
                 &workspace,
                 0,

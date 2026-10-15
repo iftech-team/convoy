@@ -261,6 +261,8 @@ pub fn run() {
             automations::automation_preview,
             automations::automation_run_now,
             skills::skills_list,
+            skills::skills_discover,
+            skills::skills_import,
             skills::skill_save,
             skills::skill_delete,
             skills::session_skills,

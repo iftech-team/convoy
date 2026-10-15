@@ -6384,3 +6384,80 @@ select:disabled {
   width: 100%;
   resize: vertical;
 }
+
+/* Skill import: picked rows, the skill list and the project list. */
+.import-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.import-list--projects {
+  max-height: 200px;
+  margin-top: 8px;
+}
+
+.import-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 10px;
+  text-align: left;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+
+.import-row:last-child {
+  border-bottom: 0;
+}
+
+.import-row:hover {
+  background: var(--hover, rgba(127, 127, 127, 0.08));
+}
+
+.import-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.import-row__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.import-row__detail {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.import-check {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--accent-text);
+}
+
+.link-button {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--accent-text);
+}

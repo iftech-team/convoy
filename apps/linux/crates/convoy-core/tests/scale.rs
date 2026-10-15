@@ -367,7 +367,10 @@ fn a_task_over_several_repositories_reaches_them_all() {
     workspace
         .set_task_repositories(&id, vec![api.clone(), api.clone()])
         .unwrap();
-    assert_eq!(task(&workspace, &id).extra_projects, std::slice::from_ref(&api));
+    assert_eq!(
+        task(&workspace, &id).extra_projects,
+        std::slice::from_ref(&api)
+    );
 
     // A worktree made for it there is what its agents are given.
     let checkout = fixture.path().join("worktrees").join("api-task");
