@@ -494,10 +494,7 @@ pub fn review_create(
     let storage = workspace.storage.clone();
     let (project, reviewer) = workspace.act(|workspace| {
         let builder = workspace.session(&id)?;
-        let reviewer = agent.unwrap_or(match builder.agent {
-            Agent::Claude => Agent::Codex,
-            Agent::Codex => Agent::Claude,
-        });
+        let reviewer = agent.unwrap_or(builder.agent.reviewer());
         Ok((builder.project_id.clone(), reviewer))
     })?;
     // A reviewer is a new session: it gets the automatic skills.
@@ -867,6 +864,8 @@ pub fn account_login(
     let login: &[&str] = match agent {
         Agent::Claude => &["/login"],
         Agent::Codex => &["login"],
+        // Gemini signs in from its own first run; it has no accounts here.
+        Agent::Gemini => return Err("Gemini CLI has no separate accounts in Convoy.".into()),
     };
     let (program, args) = if cfg!(windows) {
         let resolved = convoy_core::provider::launch::windows_executable(agent, &account.env)

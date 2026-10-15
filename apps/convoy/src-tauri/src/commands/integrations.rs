@@ -470,7 +470,7 @@ pub async fn models_list(
             .await
             .ok()
             .flatten(),
-        Agent::Codex => None,
+        Agent::Codex | Agent::Gemini => None,
     };
     Ok(convoy_core::provider::models::list(
         agent,

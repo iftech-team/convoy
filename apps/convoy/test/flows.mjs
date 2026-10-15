@@ -126,7 +126,6 @@ try {
       if (cmd === "files_read") return args.selection.path === "README.md"
         ? { kind: "text", text: Array.from({ length: 3500 }, (_, i) => `+line ${i}`).join("\n"), language: "diff", hash: "r" }
         : { kind: "text", text: "<<<<<<< HEAD", language: "diff", hash: "h" };
-      if (cmd === "review_template_default") return "DEFAULT BRIEF";
       if (cmd === "models_list") return args.agent === "claude"
         ? [{ id: "opus", name: "Opus · most capable", efforts: ["low", "medium", "high", "xhigh", "max"] }, { id: "sonnet", name: "Sonnet · balanced", efforts: ["low", "high"] }]
         : [{ id: "gpt-6", name: "GPT-6", efforts: ["low", "medium", "high", "ultra"] }];
@@ -183,7 +182,14 @@ try {
       }
       if (cmd === "qa_suggest_commands") return ["npm test", "npm run lint"];
       if (cmd === "qa_start") return window.qaStart(args.taskId);
-      if (cmd === "qa_after_exit") return window.qaExit?.(args.id) ?? null;
+      if (cmd === "pipeline_after_exit") return window.pipelineExit?.(args.id) ?? [];
+      if (cmd === "pipeline_tick") return window.pipelineTick?.() ?? [];
+      if (cmd === "queue_next") return window.queueNext?.() ?? [];
+      if (cmd === "task_prepare") return window.prepared?.(args.id) ?? null;
+      if (cmd === "queue_summary") return tasks.filter((item) => item.status === "queued").map((item) => item.title);
+      if (cmd === "plan_approve") { const task = tasks.find((item) => item.id === args.taskId); task.plan.status = "approved"; task.status = "queued"; return null; }
+      if (cmd === "plan_request_changes") { const task = tasks.find((item) => item.id === args.taskId); task.plan.status = "drafting"; task.status = "planning"; return [{ kind: "send", task: task.id, session: "builder", text: `Revise the plan: ${args.comment}` }]; }
+      if (cmd === "task_plan") { Object.assign(tasks.find((item) => item.id === args.id), { plan_first: args.planFirst, plan_auto_approve: args.autoApprove }); return null; }
       if (cmd === "project_git") return { branch: "main", changed_files: 2 };
       if (cmd === "git_refs") return args.projectId === "project" ? ["main", "feature/x", "origin/main", "tag:v1.0"] : [];
       if (cmd === "profiles_read") return [{ id: "work", label: "Work", agent: "codex", sessions: 0 }];
@@ -253,6 +259,12 @@ try {
         window.skills.push({ id, ...record, created: 1, updated: 1 });
         return id;
       }
+      if (cmd === "skills_discover") return [
+        { name: "eskhata-qa", description: "Test an Eskhata task on the local stack.", path: "/home/me/.claude/skills/eskhata-qa/SKILL.md", project_id: null, source: "Claude Code", imported: false },
+        { name: "api-style", description: "How the API is written.", path: "/fixture/Example/.claude/skills/api-style/SKILL.md", project_id: "project", source: "Agent Skills", imported: true },
+        ...["better-ui", "better-colors", "better-layout", "careful", "freeze", "guard"].map((name) => ({ name, description: `The ${name} skill.`, path: `/home/me/.agents/skills/${name}/SKILL.md`, project_id: null, source: "Agent Skills", imported: false })),
+      ];
+      if (cmd === "skills_import") return args.paths.length;
       if (cmd === "skill_delete") {
         window.skills = window.skills.filter((item) => item.id !== args.id);
         for (const item of sessions) if (item.skills) item.skills = item.skills.filter((id) => id !== args.id);
@@ -574,6 +586,11 @@ try {
   await page.locator('[data-task-card="task"]').click({ button: "right" });
   await page.locator('[data-menu-act="task-status:changes"]').click();
   await page.locator('[data-task-column="changes"] [data-task-card="task"]').waitFor();
+  // Onto Planning: planned first from now on, and a planner starts.
+  await page.locator('[data-task-card="task"]').dragTo(page.locator('[data-task-column="planning"]'));
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_plan" && c.args.id === "task" && c.args.planFirst === true));
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_prepare" && c.args.id === "task"));
+  assert(!(await page.evaluate(() => window.checkCalls.some((c) => c.cmd === "task_status" && c.args.status === "planning"))));
   // Every project's tasks, each marked with its project.
   await page.locator('[data-task-scope="all"]').click();
   await page.locator('[data-task-card="task"] .card__project', { hasText: "Example" }).waitFor();
@@ -1001,13 +1018,16 @@ try {
                 { command: "npm run lint", ok: false, code: 1, seconds: 3, output: "src/login.ts: unused variable" },
               ] },
       });
-      return { kind: "failed", delivery: { builder: "builder", feedback: "QA found problems with this task." } };
+      return [
+        { kind: "notice", task: id, event: "fixing", detail: "The checks" },
+        { kind: "send", task: id, session: "builder", text: "QA found problems with this task." },
+      ];
     };
   });
   await page.locator('[data-task="synced"]').first().click({ button: "right" });
   await page.locator('[data-menu-act="task-qa"]').click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "terminal_paste" && c.args.id === "builder" && c.args.text === "QA found problems with this task." && c.args.submit === true));
-  await page.locator(".toast", { hasText: "QA failed: the findings went to the builder" }).waitFor();
+  await page.locator(".toast", { hasText: "The checks found problems with" }).waitFor();
   await page.locator('[data-task="synced"] .qa-badge--failed', { hasText: "QA failed" }).waitFor();
 
   // The task form shows each check, the failed one's output open.
@@ -1031,7 +1051,7 @@ try {
           { command: "npm run lint", ok: true, code: 0, seconds: 3, output: "" },
         ] },
       });
-      return { kind: "passed" };
+      return [{ kind: "notice", task: id, event: "ready", detail: "" }];
     };
   });
   await page.locator('.modal [data-action="task-qa-run"]').click();
@@ -1044,11 +1064,11 @@ try {
   // builder waits for the builder's next resume.
   await page.evaluate(() => {
     window.mockSessions.push({ id: "qa1", project_id: "project", title: "QA: Sync me", agent: "codex", provider_id: "pq", started: true, running: false, pinned: false, review_of: null, qa_of: "synced" });
-    window.qaExit = (id) => (id === "qa1" ? { task: "synced", passed: false, findings: "1. Logout keeps the session.", delivery: null } : null);
+    window.pipelineExit = (id) => (id === "qa1" ? [{ kind: "notice", task: "synced", event: "fixing", detail: "QA" }] : []);
   });
   await page.locator('[data-action="home"]').first().click();
   await page.evaluate(() => window.emitTauri("terminal:exit", { id: "qa1", cause: "exited", code: 0 }));
-  await page.locator(".toast", { hasText: "Its builder gets the findings when it resumes" }).waitFor();
+  await page.locator(".toast", { hasText: "QA found problems with" }).waitFor();
   await page.locator('.project-row [data-project="project"]').click();
   await page.locator(".header").waitFor();
   if (shots) await page.screenshot({ path: `${shots}/sync-chips.png` });
@@ -1073,6 +1093,91 @@ try {
   await page.locator('[data-action="doc-save"]').click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "doc_write" && c.args.text.endsWith("More.")));
   if (shots) await page.screenshot({ path: `${shots}/docs.png` });
+
+  // Plan first: the plan waits in its own column; a comment goes back to
+  // the planner, and approving it builds the task.
+  await page.evaluate(() => {
+    window.mockTasks.push({
+      id: "planned", project_id: "project", title: "Refresh tokens", details: "", findings: "", agent: "claude", status: "plan_review",
+      mode: "none", auto_review: true, plan_first: true, round: 0, max_rounds: 2, depends_on: [], related: [], skills: [], docs: [],
+      plan: { id: "p1", status: "waiting", text: "# Plan\n1. Read the token.", comments: [], session_id: "builder" },
+    });
+  });
+  await page.locator('[data-tab="tasks"]').click();
+  await page.locator('[data-task-column="plan_review"] [data-task="planned"]').first().waitFor();
+  await page.locator('[data-task="planned"]').first().click({ button: "right" });
+  await page.locator('[data-menu-act="task-plan"]').click();
+  await page.locator(".plan-text h1", { hasText: "Plan" }).waitFor();
+  if (shots) await page.waitForTimeout(300), await page.screenshot({ path: `${shots}/plan-review.png` });
+  await page.locator("#plan-comment").fill("Cover logout too.");
+  await page.locator('.modal [data-action="plan-changes"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "plan_request_changes" && c.args.comment === "Cover logout too."));
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "terminal_paste" && c.args.text === "Revise the plan: Cover logout too."));
+  await page.evaluate(() => Object.assign(window.mockTasks.find((item) => item.id === "planned"), { status: "plan_review", plan: { id: "p2", status: "waiting", text: "1. Read the token.\n2. Cover logout.", comments: [{ at: "", text: "Cover logout too." }], session_id: "builder" } }));
+  await page.keyboard.press("Escape");
+  await page.locator('[data-task="planned"]').first().click({ button: "right" });
+  await page.locator('[data-menu-act="task-plan"]').click();
+  await page.locator('.modal [data-action="plan-approve"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "plan_approve" && c.args.taskId === "planned"));
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_prepare" && c.args.id === "planned"));
+
+  // The queue starts what the core picks: here two tasks side by side.
+  await page.evaluate(() => {
+    for (const id of ["side-a", "side-b"]) {
+      window.mockTasks.push({ id, project_id: "project", title: `Side ${id}`, details: "", findings: "", agent: "claude", status: "queued", mode: "none", auto_review: false, round: 0, max_rounds: 2, depends_on: [], related: [], skills: [], docs: [] });
+    }
+    let asked = 0;
+    window.queueNext = () => (asked++ === 0 ? ["side-a", "side-b"] : []);
+    window.prepared = (id) => {
+      window.mockSessions.push({ id: `q-${id}`, project_id: "project", title: `Side ${id}`, agent: "claude", provider_id: "", started: false, running: false, pinned: false, review_of: null, task_id: id });
+      return `q-${id}`;
+    };
+  });
+  await page.keyboard.press("Escape");
+  await page.locator('[data-action="queue-start"]').click();
+  await page.locator('.modal [data-action="confirm-queue"]').click();
+  await page.waitForFunction(() => ["side-a", "side-b"].every((id) => window.checkCalls.some((c) => c.cmd === "task_prepare" && c.args.id === id)));
+
+  // A card with every badge keeps them inside it, each on one line.
+  await page.evaluate(() => {
+    window.mockTasks.push({
+      id: "badges", project_id: "project", title: "LOYAL-544: Backend / API для показа остатка лимита в 5 букв за день", details: "*Я как Бэкенд-разработчик хочу*",
+      findings: "", agent: "claude", status: "testing", mode: "pr", auto_review: true, round: 1, max_rounds: 2, depends_on: [], related: [], skills: [], docs: [],
+      qa: { id: "q", status: "testing", started: new Date().toISOString(), checks: [] }, review: { id: "r", status: "failed", round: 0, started: "" },
+      extra_projects: ["other"],
+    });
+  });
+  await page.locator('[data-task-view="board"]').click().catch(() => {});
+  await page.evaluate(() => window.emitTauri?.("task:qa", "badges"));
+  await page.locator('[data-tab="specs"]').click();
+  await page.locator('[data-tab="tasks"]').click();
+  const card = page.locator('.card[data-task-card="badges"]');
+  await card.waitFor();
+  const overflow = await card.evaluate((node) => {
+    const foot = node.querySelector(".card__foot");
+    const box = node.getBoundingClientRect();
+    return [...foot.children].filter((badge) => {
+      const r = badge.getBoundingClientRect();
+      return r.right > box.right + 1 || r.height > 24;
+    }).map((badge) => badge.textContent.trim());
+  });
+  assert.deepEqual(overflow, [], "badges stay inside the card, one line each");
+  if (shots) await card.screenshot({ path: `${shots}/card-badges.png` });
+  // Opening a card's menu keeps the board where it was scrolled.
+  const boardLeft = await page.evaluate(() => {
+    const board = document.querySelector(".board");
+    board.scrollLeft = board.scrollWidth;
+    return board.scrollLeft;
+  });
+  assert(boardLeft > 0, "the board scrolls sideways");
+  await page.evaluate(() => {
+    const card = document.querySelector('.card[data-task-card="badges"]');
+    const box = card.getBoundingClientRect();
+    card.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: box.left + 10, clientY: box.top + 10 }));
+  });
+  await page.locator('[data-menu-act="task-edit"]').waitFor();
+  assert.equal(await page.evaluate(() => document.querySelector(".board").scrollLeft), boardLeft, "the board stays scrolled");
+  await page.keyboard.press("Escape");
 
   // AI Limits: the status bar shows the peak reading, and the panel asks
   // Codex on opening.
@@ -1152,10 +1257,11 @@ try {
   // Escape belongs to the login in the terminal; Close ends it.
   await page.locator(".modal .button", { hasText: "Close" }).click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "session_stop" && c.args.id === "login:work"));
-  // The review brief can start from the built-in one.
+  // Each role's instructions: the reviewer's replaces the older template.
   await page.locator('[data-settings-section="Agents"]').click();
-  await page.locator('[data-action="insert-review-default"]').click();
-  await page.waitForFunction(() => window.savedSettings.review_template === "DEFAULT BRIEF");
+  await page.locator('[data-pref-role="review"]').fill("Check the migrations too.");
+  await page.locator('[data-pref-role="review"]').blur();
+  await page.waitForFunction(() => window.savedSettings.role_instructions?.review === "Check the migrations too." && window.savedSettings.review_template === "");
   await page.locator('[data-settings-section="Notifications"]').click();
   await page.locator('[data-pref-toggle="notifications"]').click();
   await page.waitForFunction(() => window.savedSettings.notifications === true);
@@ -1862,7 +1968,7 @@ try {
   await skillEditor.locator('[data-skill="save"]').click();
   await skillEditor.waitFor({ state: "detached" });
   const written = await page.evaluate(() => window.checkCalls.filter((c) => c.cmd === "skill_save").at(-1).args.input);
-  assert.deepEqual(written, { id: null, name: "Pineapple sign-off", description: "A visible check that skills reach the agent", body: "Always end your reply with the word **PINEAPPLE**.", project_id: null, agents: "both", auto: true });
+  assert.deepEqual(written, { id: null, name: "Pineapple sign-off", description: "A visible check that skills reach the agent", body: "Always end your reply with the word **PINEAPPLE**.", project_id: null, agents: "both", auto: true, roles: null, projects: null });
   // A Codex-only one in this project, for the agent filter.
   await page.locator('[data-skill="new"]').first().click();
   await page.locator("#skill-name").fill("Codex review style");
@@ -1876,6 +1982,34 @@ try {
   await page.locator(".skill-row", { hasText: "Pineapple sign-off" }).locator(".skill-tag--auto").waitFor();
   await page.locator(".skill-row", { hasText: "Codex review style" }).locator(".skill-tag", { hasText: "Example" }).waitFor();
   await bothThemes("skills-settings");
+
+  // The agents' own skills: picked, for chosen projects and roles.
+  await page.locator('[data-skill="import"]').first().click();
+  await page.locator(".modal", { hasText: "Import skills from your agents" }).waitFor();
+  // Ticking a skill keeps the list where it was scrolled.
+  const listTop = await page.evaluate(() => {
+    const list = document.querySelector('[data-scroll="skill-import"]');
+    list.scrollTop = list.scrollHeight;
+    return list.scrollTop;
+  });
+  assert(listTop > 0, "the list scrolls");
+  await page.locator('[data-import-pick="/home/me/.agents/skills/guard/SKILL.md"]').click();
+  assert.equal(await page.evaluate(() => document.querySelector('[data-scroll="skill-import"]').scrollTop), listTop, "the list keeps its place");
+  await page.locator('[data-import-pick="/home/me/.agents/skills/guard/SKILL.md"]').click();
+  await page.locator('[data-import-pick="/home/me/.claude/skills/eskhata-qa/SKILL.md"]').click();
+  // The search narrows the list by name, description or source.
+  await page.locator("#skill-import-search").fill("eskhata");
+  assert.deepEqual(await page.locator(".import-row:not(.import-row--project) .import-row__name").evaluateAll((rows) => rows.map((row) => row.firstChild.textContent.trim())), ["eskhata-qa"]);
+  await page.locator("#skill-import-search").fill("");
+  await page.locator('[data-import-scope="chosen"]').click();
+  await page.locator('[data-import-project="project"]').click();
+  await page.locator('[data-import-role="qa"]').click();
+  if (shots) await page.waitForTimeout(300), await page.screenshot({ path: `${shots}/skill-import.png` });
+  await page.locator('.modal [data-skill="import-run"]').click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "skills_import"
+    && c.args.paths.length === 1 && c.args.paths[0].endsWith("eskhata-qa/SKILL.md")
+    && c.args.projects.includes("project") && c.args.roles.includes("qa") && c.args.roles.includes("build")));
+  await page.locator(".toast", { hasText: "Imported 1 skill" }).waitFor();
   const ids = await page.evaluate(() => Object.fromEntries(window.skills.map((item) => [item.name, item.id])));
   await page.locator('[data-action="close-settings"]').click();
 

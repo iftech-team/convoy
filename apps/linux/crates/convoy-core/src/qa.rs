@@ -28,8 +28,12 @@ const OUTPUT_TAIL: usize = 4_000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QaStatus {
+    /// Waiting for its QA environment, which another task is testing in.
+    Queued,
     /// Running the project's checks.
     Checking,
+    /// The checks passed; the QA agent tests once the review has passed.
+    Waiting,
     /// The QA agent is testing.
     Testing,
     Passed,
@@ -78,6 +82,18 @@ pub struct Plan {
     pub commands: Vec<String>,
     pub timeout: Duration,
     pub agent: Option<Agent>,
+    /// The other repositories of a task that spans several: each one's own
+    /// checks, run in its folder for the task, after this project's.
+    pub extra: Vec<ExtraChecks>,
+}
+
+/// One more repository's checks.
+#[derive(Debug, Clone)]
+pub struct ExtraChecks {
+    /// Its project's name, which labels its checks.
+    pub title: String,
+    pub directory: PathBuf,
+    pub commands: Vec<String>,
 }
 
 /// The commands in a project's test field: one per line, blank lines and
@@ -116,10 +132,11 @@ pub fn begin(workspace: &mut Workspace, task_id: &str) -> Result<Plan> {
         }
         _ => project.path.clone(),
     };
+    let extra = extra_checks(workspace, &task);
     let run_id = new_id();
     let run = QaRun {
         id: run_id.clone(),
-        status: if commands.is_empty() {
+        status: if commands.is_empty() && extra.is_empty() {
             QaStatus::Testing
         } else {
             QaStatus::Checking
@@ -146,7 +163,28 @@ pub fn begin(workspace: &mut Workspace, task_id: &str) -> Result<Plan> {
             u64::from(project.qa_timeout.unwrap_or(DEFAULT_TIMEOUT_MINUTES)) * 60,
         ),
         agent: project.qa_agent,
+        extra,
     })
+}
+
+/// The other repositories' checks: each project's commands, in the folder
+/// made for the task there, or its checkout.
+fn extra_checks(workspace: &Workspace, task: &Task) -> Vec<ExtraChecks> {
+    task.extra_projects
+        .iter()
+        .filter_map(|id| workspace.project(id).ok())
+        .map(|project| ExtraChecks {
+            title: project.title.clone(),
+            directory: task
+                .extra_checkouts
+                .iter()
+                .find(|checkout| checkout.project_id == project.id)
+                .map(|checkout| checkout.directory.clone())
+                .unwrap_or_else(|| project.path.clone()),
+            commands: commands(project.test_commands.as_deref().unwrap_or("")),
+        })
+        .filter(|repository| !repository.commands.is_empty())
+        .collect()
 }
 
 /// Runs the checks in order, stopping at the first that fails, and reports
@@ -157,18 +195,32 @@ pub fn run_checks(
     mut each: impl FnMut(&Check),
 ) -> Vec<Check> {
     let mut checks = Vec::new();
-    for command in &plan.commands {
+    let mut runs: Vec<(String, &Path, &String)> = plan
+        .commands
+        .iter()
+        .map(|command| (command.clone(), plan.directory.as_path(), command))
+        .collect();
+    for repository in &plan.extra {
+        for command in &repository.commands {
+            runs.push((
+                format!("{}: {command}", repository.title),
+                repository.directory.as_path(),
+                command,
+            ));
+        }
+    }
+    for (label, directory, command) in runs {
         let spec = ProcessSpec::new(
             crate::worktree::shell_program(),
             crate::worktree::shell_arguments(command),
         )
-        .cwd(&plan.directory)
+        .cwd(directory)
         .timeout(plan.timeout)
         .max_output(256 * 1024);
         let started = Instant::now();
         let check = match runner.run(&spec) {
             Ok(output) => Check {
-                command: command.clone(),
+                command: label.clone(),
                 ok: output.ok(),
                 code: output.status,
                 seconds: started.elapsed().as_secs(),
@@ -176,7 +228,7 @@ pub fn run_checks(
                     .to_string(),
             },
             Err(error) => Check {
-                command: command.clone(),
+                command: label.clone(),
                 ok: false,
                 code: None,
                 seconds: started.elapsed().as_secs(),
@@ -341,15 +393,15 @@ pub fn brief(workspace: &Workspace, task_id: &str, verdict: &Path) -> Result<Str
         .as_deref()
         .map(|url| format!("\nPull request: {url}\n"))
         .unwrap_or_default();
+    let project = workspace.project(&task.project_id)?;
+    let instructions = crate::roles::brief(workspace.settings(), project, crate::model::Role::Qa);
+    let context = crate::pipeline::task_context(task);
     let prompt = format!(
-        "You are QA for this task. Test the change end to end against the task and its acceptance criteria: run the project's tests, and if it has a user interface or an API, use it the way a user would. Look for regressions near the change too.\n\
+        "You are QA for this task. {instructions}\n\
          Do not edit, commit or push anything.\n\n\
-         ## Task\n{}\n\n{}\n{pr}{checks}{}\n\
-         ## Verdict\n\
-         When you are done, write your verdict as JSON to {}:\n\
-         {{\"verdict\": \"pass\"}} when everything works, or\n\
-         {{\"verdict\": \"fail\", \"findings\": \"1. What fails, how to reproduce it, what you expected.\\n2. …\"}}\n\
-         Findings must be concrete and reproducible. Then state the verdict in your last message.",
+         ## Task\n{}\n\n{}\n{pr}{checks}{}{context}\n\
+         {}\n\
+         State the verdict in your last message too.",
         task.title,
         task.details,
         if spec.is_empty() {
@@ -357,9 +409,9 @@ pub fn brief(workspace: &Workspace, task_id: &str, verdict: &Path) -> Result<Str
         } else {
             format!("\n## Specification\n{spec}\n")
         },
-        verdict.display(),
+        crate::stage::closing(crate::stage::Stage::Qa, verdict),
     );
-    Ok(head(&prompt, 32_000).to_string())
+    Ok(crate::stage::fit(&prompt))
 }
 
 /// The QA session: the project's QA agent, in the builder's folder and
@@ -409,6 +461,38 @@ pub fn record_session(
     Ok(())
 }
 
+/// Sets up the QA agent of the task's current run: its brief, its session
+/// (with the project's QA skills), tied to the run. Returns the session, to
+/// be started.
+pub fn start_agent(
+    workspace: &mut Workspace,
+    qa_dir: &Path,
+    skills: &[String],
+    task_id: &str,
+    agent: Agent,
+) -> Result<String> {
+    let Some(run_id) = find(workspace, task_id)?
+        .qa
+        .as_ref()
+        .map(|run| run.id.clone())
+    else {
+        bail!("This task has no QA run.")
+    };
+    std::fs::create_dir_all(qa_dir)?;
+    let verdict = verdict_file(qa_dir, &run_id);
+    let brief = brief(workspace, task_id, &verdict)?;
+    let mut input = handoff(workspace, task_id, agent, brief)?;
+    input.skills = skills.to_vec();
+    let session = workspace
+        .add_session(input)?
+        .sessions
+        .last()
+        .map(|session| session.id.clone())
+        .unwrap_or_default();
+    record_session(workspace, task_id, &run_id, &session)?;
+    Ok(session)
+}
+
 #[derive(Deserialize)]
 struct Verdict {
     verdict: String,
@@ -436,7 +520,7 @@ pub fn on_exit(
     else {
         return Ok(None);
     };
-    if matches!(run.status, QaStatus::Passed | QaStatus::Failed) {
+    if run.status != QaStatus::Testing {
         return Ok(None);
     }
     let verdict = std::fs::read_to_string(verdict_file(qa_dir, &run.id))
@@ -448,6 +532,18 @@ pub fn on_exit(
     let findings = verdict
         .map(|verdict| verdict.findings.trim().to_string())
         .unwrap_or_default();
+    conclude(workspace, &task, passed, findings).map(Some)
+}
+
+/// Applies a QA agent's verdict to its task — `None` when it left none —
+/// and says what that means for the builder.
+pub fn conclude(
+    workspace: &mut Workspace,
+    task: &Task,
+    passed: Option<bool>,
+    findings: String,
+) -> Result<Outcome> {
+    let task_id = task.id.clone();
     let outcome = Outcome {
         task_id: task_id.clone(),
         passed,
@@ -477,7 +573,7 @@ pub fn on_exit(
         }
         Ok(())
     })?;
-    Ok(Some(outcome))
+    Ok(outcome)
 }
 
 /// The commands a project probably tests with, read from its manifests.
@@ -519,6 +615,71 @@ pub fn suggest_commands(directory: &Path) -> Vec<String> {
         found.push("pytest".into());
     }
     found
+}
+
+/// The QA environment a task tests in, when its project shares one.
+pub fn environment(workspace: &Workspace, task: &Task) -> Option<String> {
+    workspace
+        .project(&task.project_id)
+        .ok()
+        .and_then(|project| project.qa_environment.clone())
+}
+
+/// Whether another task is testing in this task's environment now: running
+/// its checks or its QA agent. A run waiting for its review holds nothing.
+pub fn environment_busy(workspace: &Workspace, task_id: &str) -> bool {
+    let Ok(task) = find(workspace, task_id) else {
+        return false;
+    };
+    let Some(name) = environment(workspace, task) else {
+        return false;
+    };
+    workspace.state().tasks.iter().any(|other| {
+        other.id != task.id
+            && other
+                .qa
+                .as_ref()
+                .is_some_and(|run| matches!(run.status, QaStatus::Checking | QaStatus::Testing))
+            && environment(workspace, other).as_deref() == Some(name.as_str())
+    })
+}
+
+/// Puts the task's QA run in line for its environment. A run whose checks
+/// already passed keeps them, and only its agent waits.
+pub fn enqueue(workspace: &mut Workspace, task_id: &str) -> Result<()> {
+    let id = task_id.to_string();
+    workspace.update(move |state| {
+        let task = task_mut(state, &id)?;
+        task.status = TaskStatus::Testing;
+        match task.qa.as_mut() {
+            Some(run)
+                if !matches!(
+                    run.status,
+                    QaStatus::Passed | QaStatus::Failed | QaStatus::NoVerdict
+                ) =>
+            {
+                run.status = QaStatus::Queued;
+            }
+            _ => {
+                task.qa = Some(QaRun {
+                    id: new_id(),
+                    status: QaStatus::Queued,
+                    checks: Vec::new(),
+                    session_id: None,
+                    findings: String::new(),
+                    started: crate::time::now_iso8601(),
+                    finished: None,
+                });
+            }
+        }
+        Ok(())
+    })?;
+    Ok(())
+}
+
+/// Whether a queued run has only its agent left: its checks ran and passed.
+pub fn checks_passed(run: &QaRun) -> bool {
+    !run.checks.is_empty() && run.checks.iter().all(|check| check.ok)
 }
 
 fn find<'a>(workspace: &'a Workspace, task_id: &str) -> Result<&'a Task> {

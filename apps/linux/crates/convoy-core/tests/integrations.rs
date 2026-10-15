@@ -137,6 +137,8 @@ fn parses_linear_answers_and_errors() {
             priority: Some("High".into()),
             origin: None,
             parent: None,
+            comments: Vec::new(),
+            attachments: Vec::new(),
         }]
     );
     let error = parse_issues(
@@ -649,4 +651,49 @@ fn peshbar_needs_a_token_and_has_no_password_login() {
         "Peshbar has no password login; use an API key."
     );
     assert!(integrations.save(peshbar("5|abc", None)).is_ok());
+}
+
+#[test]
+fn an_issue_is_imported_with_its_comments_and_attachments() {
+    use convoy_core::integrations::IssueComment;
+    let jira = r#"{"issues":[{"key":"LOYAL-523","fields":{"summary":"Cashback","description":"Steps",
+      "comment":{"comments":[
+        {"author":{"displayName":"QA Bot"},"created":"2026-10-02T10:00:00.000+0500","body":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Still shows the invite block."}]}]}},
+        {"author":{"displayName":"Dilshod"},"created":"2026-10-03T09:00:00.000+0500","body":"Only on Android."}]},
+      "attachment":[{"filename":"screen.png","content":"https://acme.atlassian.net/rest/api/3/attachment/content/10001","mimeType":"image/png","size":2048}]}}]}"#;
+    let issues = parse_issues(TrackerKind::Jira, jira, Some("https://acme.atlassian.net")).unwrap();
+    let issue = &issues[0];
+    assert_eq!(issue.comments.len(), 2);
+    assert_eq!(issue.comments[0].body, "Still shows the invite block.");
+    assert_eq!(issue.attachments[0].mime.as_deref(), Some("image/png"));
+    let details = issue.full_details();
+    assert!(details.starts_with(
+        "Steps\n\n## Comments\n- **QA Bot, 2026-10-02:** Still shows the invite block."
+    ));
+    assert!(details.contains("- **Dilshod, 2026-10-03:** Only on Android."));
+    assert!(details.ends_with("## Attachments\n- screen.png — https://acme.atlassian.net/rest/api/3/attachment/content/10001"));
+
+    let linear = r#"{"data":{"issues":{"nodes":[{"identifier":"ENG-1","title":"Fix login","description":"Steps","url":"u","state":{"name":"Todo"},
+      "comments":{"nodes":[{"body":"Later","createdAt":"2026-10-05T00:00:00Z","user":{"name":"B"}},{"body":"First","createdAt":"2026-10-01T00:00:00Z","user":{"name":"A"}}]},
+      "attachments":{"nodes":[{"title":"Sentry","url":"https://sentry.io/x"}]}}]}}}"#;
+    let issue = &parse_issues(TrackerKind::Linear, linear, None).unwrap()[0];
+    assert_eq!(issue.comments[0].body, "First", "oldest first");
+    assert_eq!(issue.attachments[0].name, "Sentry");
+
+    // Only the latest twenty are kept, each shortened.
+    let mut long = Issue {
+        details: "D".into(),
+        ..Issue::default()
+    };
+    for n in 0..25 {
+        long.comments.push(IssueComment {
+            author: String::new(),
+            body: format!("comment {n} {}", "x".repeat(2_000)),
+            at: String::new(),
+        });
+    }
+    let details = long.full_details();
+    assert!(!details.contains("comment 4 "));
+    assert!(details.contains("comment 5 "));
+    assert!(details.contains(" …"));
 }

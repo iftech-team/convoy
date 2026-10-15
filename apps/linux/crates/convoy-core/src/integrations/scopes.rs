@@ -36,6 +36,51 @@ pub struct ProjectLink {
     /// Pushing task status back to the tracker; see [`super::sync`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sync: Option<super::sync::StatusSync>,
+    /// Importing new issues on a schedule.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intake: Option<Intake>,
+}
+
+/// Issues imported by themselves: a saved search, run every few minutes;
+/// what it finds that is not imported yet becomes tasks, queued and run
+/// when `run` says so. An MCP connection cannot be searched here.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Intake {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Free text, an issue key, or Jira JQL with `raw_jql`.
+    #[serde(default)]
+    pub query: String,
+    #[serde(default)]
+    pub mine_only: bool,
+    #[serde(default)]
+    pub raw_jql: bool,
+    /// Start the queue with what was imported.
+    #[serde(default)]
+    pub run: bool,
+    /// Minutes between searches; 15 when unset, 5 at the least.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub minutes: Option<u32>,
+    /// When it last searched, in Unix seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_run: Option<i64>,
+    /// What the last search did, or why it failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_result: Option<String>,
+}
+
+impl Intake {
+    pub fn interval(&self) -> i64 {
+        i64::from(self.minutes.unwrap_or(15).max(5)) * 60
+    }
+
+    /// Whether it should search now.
+    pub fn due(&self, now: i64) -> bool {
+        self.enabled
+            && self
+                .last_run
+                .is_none_or(|last| now - last >= self.interval())
+    }
 }
 
 impl TrackerKind {
@@ -368,6 +413,25 @@ impl ProjectLinks {
                 self.links.remove(project_id);
             }
         }
+        self.write()
+    }
+
+    /// Every linked project, by id.
+    pub fn all(&self) -> &BTreeMap<String, ProjectLink> {
+        &self.links
+    }
+
+    /// Records a search of a project's intake: when, and what it did.
+    pub fn record_intake(&mut self, project_id: &str, now: i64, result: &str) -> Result<()> {
+        let Some(intake) = self
+            .links
+            .get_mut(project_id)
+            .and_then(|link| link.intake.as_mut())
+        else {
+            return Ok(());
+        };
+        intake.last_run = Some(now);
+        intake.last_result = Some(result.chars().take(500).collect());
         self.write()
     }
 

@@ -2,6 +2,7 @@
 
 use super::Workspace;
 use crate::pty::Terminals;
+use convoy_core::model::Role;
 use convoy_core::workspace::ProjectPatch;
 use serde::Deserialize;
 use std::path::Path;
@@ -40,6 +41,30 @@ pub struct ProjectInput {
     pub qa_agent: Option<String>,
     pub qa_auto: Option<bool>,
     pub qa_timeout: Option<u32>,
+    #[serde(default)]
+    pub role_instructions: Option<std::collections::BTreeMap<convoy_core::model::Role, String>>,
+    #[serde(default)]
+    pub max_fix_rounds: Option<u32>,
+    #[serde(default)]
+    pub review_auto: Option<bool>,
+    #[serde(default)]
+    pub plan_first_default: Option<bool>,
+    #[serde(default)]
+    pub plan_auto_approve: Option<bool>,
+    #[serde(default)]
+    pub docs_dir: Option<String>,
+    #[serde(default)]
+    pub docs_auto: Option<bool>,
+    #[serde(default)]
+    pub task_worktrees: Option<bool>,
+    #[serde(default)]
+    pub max_parallel: Option<u32>,
+    #[serde(default)]
+    pub convoy_publishes: Option<bool>,
+    #[serde(default)]
+    pub pr_cli: Option<String>,
+    #[serde(default)]
+    pub qa_environment: Option<String>,
 }
 
 #[tauri::command]
@@ -69,6 +94,18 @@ pub fn project_edit(
                     qa_agent: input.qa_agent,
                     qa_auto: input.qa_auto,
                     qa_timeout: input.qa_timeout,
+                    role_instructions: input.role_instructions,
+                    max_fix_rounds: input.max_fix_rounds,
+                    review_auto: input.review_auto,
+                    plan_first_default: input.plan_first_default,
+                    plan_auto_approve: input.plan_auto_approve,
+                    docs_dir: input.docs_dir,
+                    docs_auto: input.docs_auto,
+                    task_worktrees: input.task_worktrees,
+                    max_parallel: input.max_parallel,
+                    convoy_publishes: input.convoy_publishes,
+                    pr_cli: input.pr_cli,
+                    qa_environment: input.qa_environment,
                     ..Default::default()
                 },
             )
@@ -157,6 +194,27 @@ pub struct ProjectDetail {
     pub qa_agent: String,
     pub qa_auto: bool,
     pub qa_timeout: u32,
+    /// The project's own instructions for each role it sets; the older
+    /// review template shows as the reviewer's.
+    pub role_instructions: std::collections::BTreeMap<convoy_core::model::Role, String>,
+    /// What each role follows when the project sets nothing: the global
+    /// instructions, or the built-in ones.
+    pub role_fallbacks: std::collections::BTreeMap<convoy_core::model::Role, String>,
+    pub max_fix_rounds: u32,
+    pub review_auto: bool,
+    pub plan_first_default: bool,
+    pub plan_auto_approve: bool,
+    pub docs_dir: String,
+    /// Where documents go when no folder is set.
+    pub docs_default_dir: String,
+    pub docs_auto: bool,
+    pub task_worktrees: bool,
+    /// Whether it is a git repository, which a worktree per task needs.
+    pub is_repository: bool,
+    pub max_parallel: u32,
+    pub convoy_publishes: bool,
+    pub pr_cli: String,
+    pub qa_environment: String,
 }
 
 #[tauri::command]
@@ -193,6 +251,46 @@ pub fn project_detail(
             qa_timeout: project
                 .qa_timeout
                 .unwrap_or(convoy_core::qa::DEFAULT_TIMEOUT_MINUTES),
+            role_instructions: Role::ALL
+                .into_iter()
+                .filter_map(|role| {
+                    convoy_core::roles::project_instructions(project, role)
+                        .map(|text| (role, text.to_string()))
+                })
+                .collect(),
+            role_fallbacks: Role::ALL
+                .into_iter()
+                .map(|role| {
+                    let text = convoy_core::roles::global_instructions(workspace.settings(), role)
+                        .unwrap_or_else(|| convoy_core::roles::builtin(role));
+                    (role, text.to_string())
+                })
+                .collect(),
+            max_fix_rounds: convoy_core::pipeline::max_rounds(project),
+            review_auto: project.review_auto == Some(true),
+            plan_first_default: project.plan_first_default == Some(true),
+            plan_auto_approve: project.plan_auto_approve == Some(true),
+            docs_dir: project
+                .docs_dir
+                .as_ref()
+                .map(|dir| dir.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            docs_default_dir: convoy_core::task_docs::folder(
+                workspace,
+                &convoy_core::model::Project {
+                    docs_dir: None,
+                    ..project.clone()
+                },
+            )
+            .to_string_lossy()
+            .into_owned(),
+            docs_auto: project.docs_auto == Some(true),
+            task_worktrees: project.task_worktrees == Some(true),
+            is_repository: project.path.join(".git").exists(),
+            max_parallel: project.max_parallel.unwrap_or(1),
+            convoy_publishes: project.convoy_publishes == Some(true),
+            pr_cli: project.pr_cli.clone().unwrap_or_default(),
+            qa_environment: project.qa_environment.clone().unwrap_or_default(),
         })
     })
 }

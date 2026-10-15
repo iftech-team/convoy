@@ -96,6 +96,63 @@ pub fn skill_save<R: Runtime>(
     Ok(id)
 }
 
+/// Claude Code's skills on this machine: `~/.claude/skills` and each
+/// project's `.claude/skills`.
+#[tauri::command]
+pub fn skills_discover(
+    workspace: State<'_, Workspace>,
+) -> Result<Vec<convoy_core::skills::local::Found>, String> {
+    let storage = workspace.storage.clone();
+    let home = convoy_core::storage::home(convoy_core::Platform::current());
+    workspace.with(|core| {
+        with_skills(&storage, |store| {
+            Ok(convoy_core::skills::local::discover(core, &home, store))
+        })
+    })
+}
+
+/// Imports the Claude Code skills picked, for the projects picked (none is
+/// every project), refreshing any already imported. Only files the
+/// discovery found are read. Returns how many.
+#[tauri::command]
+pub fn skills_import<R: Runtime>(
+    app: AppHandle<R>,
+    paths: Vec<std::path::PathBuf>,
+    projects: Vec<String>,
+    roles: Option<Vec<convoy_core::model::Role>>,
+    auto: bool,
+    workspace: State<'_, Workspace>,
+) -> Result<usize, String> {
+    let storage = workspace.storage.clone();
+    let home = convoy_core::storage::home(convoy_core::Platform::current());
+    let count = workspace.with(|core| {
+        with_skills(&storage, |store| {
+            let known: Vec<std::path::PathBuf> =
+                convoy_core::skills::local::discover(core, &home, store)
+                    .into_iter()
+                    .map(|found| found.path)
+                    .collect();
+            let mut count = 0;
+            for path in &paths {
+                convoy_core::ensure!(known.contains(path), "That skill is not one Convoy found.");
+                convoy_core::skills::local::import(
+                    store,
+                    core,
+                    path,
+                    projects.clone(),
+                    roles.clone(),
+                    auto,
+                    now(),
+                )?;
+                count += 1;
+            }
+            Ok(count)
+        })
+    })?;
+    let _ = app.emit("skills:changed", String::new());
+    Ok(count)
+}
+
 /// Removes one, and takes it off everything it was attached to.
 #[tauri::command]
 pub fn skill_delete<R: Runtime>(
@@ -163,6 +220,8 @@ mod tests {
             project_id: project.map(str::to_string),
             agents: "both".into(),
             auto,
+            roles: None,
+            projects: None,
         }
     }
 

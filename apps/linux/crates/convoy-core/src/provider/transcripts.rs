@@ -54,6 +54,7 @@ pub(crate) fn named(
     let name = match agent {
         Agent::Claude => claude_name(file)?,
         Agent::Codex => codex.get(&id.to_lowercase())?.clone(),
+        Agent::Gemini => return None,
     };
     let folded = name.split_whitespace().collect::<Vec<_>>().join(" ");
     (!folded.is_empty()).then(|| crate::json::head(&folded, 100).to_string())
@@ -137,9 +138,13 @@ fn walk(folder: &Path, depth: u32, max_depth: u32, visited: &mut usize, files: &
 }
 
 pub fn scan(agent: Agent, home: &Path, directory: &Path) -> Vec<Transcript> {
+    // Gemini's past conversations are not imported yet.
+    if agent == Agent::Gemini {
+        return Vec::new();
+    }
     let root = home.join(match agent {
         Agent::Claude => "projects",
-        Agent::Codex => "sessions",
+        Agent::Codex | Agent::Gemini => "sessions",
     });
     let mut files = Vec::new();
     let mut visited = 0usize;
@@ -160,12 +165,12 @@ pub fn scan(agent: Agent, home: &Path, directory: &Path) -> Vec<Transcript> {
                 .collect();
             walk(&root.join(slug), 5, 5, &mut visited, &mut files);
         }
-        Agent::Codex => walk(&root, 0, 5, &mut visited, &mut files),
+        Agent::Codex | Agent::Gemini => walk(&root, 0, 5, &mut visited, &mut files),
     }
 
     let codex = match agent {
         Agent::Codex => codex_names(home),
-        Agent::Claude => HashMap::new(),
+        Agent::Claude | Agent::Gemini => HashMap::new(),
     };
     let mut result = Vec::new();
     for file in files {
@@ -179,7 +184,7 @@ pub fn scan(agent: Agent, home: &Path, directory: &Path) -> Vec<Transcript> {
                 .file_stem()
                 .map(|stem| stem.to_string_lossy().into_owned())
                 .unwrap_or_default(),
-            Agent::Codex => meta
+            Agent::Codex | Agent::Gemini => meta
                 .and_then(|meta| meta.get("id"))
                 .and_then(Value::as_str)
                 .unwrap_or_default()
@@ -241,6 +246,7 @@ pub(crate) fn title(agent: Agent, records: &[Value], id: &str) -> String {
                     || payload.get("role").and_then(Value::as_str) == Some("user")
             })
             .and_then(|payload| payload.get("message").or_else(|| payload.get("content"))),
+        Agent::Gemini => None,
     });
     // The first message a person wrote. The agents also file their own
     // wrappers as user messages — `<local-command-caveat>`, `<command-name>`,

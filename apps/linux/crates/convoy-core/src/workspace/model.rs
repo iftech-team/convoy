@@ -26,13 +26,19 @@ fn is_false(value: &bool) -> bool {
 pub enum Agent {
     Claude,
     Codex,
+    /// Google's Gemini CLI. Terminal sessions only: it has no chat protocol
+    /// Convoy speaks.
+    Gemini,
 }
 
 impl Agent {
+    pub const ALL: [Agent; 3] = [Agent::Claude, Agent::Codex, Agent::Gemini];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Agent::Claude => "claude",
             Agent::Codex => "codex",
+            Agent::Gemini => "gemini",
         }
     }
 
@@ -40,7 +46,31 @@ impl Agent {
         match value {
             "claude" => Some(Agent::Claude),
             "codex" => Some(Agent::Codex),
+            "gemini" => Some(Agent::Gemini),
             _ => None,
+        }
+    }
+
+    /// The name people know it by.
+    pub fn label(self) -> &'static str {
+        match self {
+            Agent::Claude => "Claude Code",
+            Agent::Codex => "Codex",
+            Agent::Gemini => "Gemini CLI",
+        }
+    }
+
+    /// Whether it can be shown as a chat; Gemini runs in a terminal.
+    pub fn has_chat(self) -> bool {
+        self != Agent::Gemini
+    }
+
+    /// Who reviews its work: Claude and Codex review each other, and
+    /// Claude reviews Gemini.
+    pub fn reviewer(self) -> Agent {
+        match self {
+            Agent::Claude => Agent::Codex,
+            Agent::Codex | Agent::Gemini => Agent::Claude,
         }
     }
 }
@@ -58,6 +88,14 @@ pub enum TaskStatus {
     Changes,
     Done,
     Failed,
+    /// Stuck: out of fix rounds, no verdict, or a stage failed. A person
+    /// looks at it; nothing moves it on by itself.
+    Attention,
+    /// A planner is writing the plan; nothing is changed yet.
+    Planning,
+    /// The plan is written and waits for a person's approval.
+    #[serde(rename = "plan_review")]
+    PlanReview,
 }
 
 impl TaskStatus {
@@ -71,7 +109,68 @@ impl TaskStatus {
             TaskStatus::Changes => "changes",
             TaskStatus::Done => "done",
             TaskStatus::Failed => "failed",
+            TaskStatus::Attention => "attention",
+            TaskStatus::Planning => "planning",
+            TaskStatus::PlanReview => "plan_review",
         }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        [
+            TaskStatus::Queued,
+            TaskStatus::Building,
+            TaskStatus::Review,
+            TaskStatus::Pr,
+            TaskStatus::Testing,
+            TaskStatus::Changes,
+            TaskStatus::Done,
+            TaskStatus::Failed,
+            TaskStatus::Attention,
+            TaskStatus::Planning,
+            TaskStatus::PlanReview,
+        ]
+        .into_iter()
+        .find(|status| status.as_str() == value)
+    }
+}
+
+/// The parts an agent plays in a task, each with its own instructions and
+/// skills: see [`crate::roles`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    Plan,
+    Build,
+    Review,
+    Qa,
+    Docs,
+    /// Writes the pull request's title and description.
+    Pr,
+}
+
+impl Role {
+    pub const ALL: [Role; 6] = [
+        Role::Plan,
+        Role::Build,
+        Role::Review,
+        Role::Qa,
+        Role::Pr,
+        Role::Docs,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Role::Plan => "plan",
+            Role::Build => "build",
+            Role::Review => "review",
+            Role::Qa => "qa",
+            Role::Docs => "docs",
+            Role::Pr => "pr",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Role::ALL.into_iter().find(|role| role.as_str() == value)
     }
 }
 
@@ -82,6 +181,22 @@ pub enum PublishMode {
     None,
     Pr,
     Push,
+}
+
+impl PublishMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PublishMode::None => "none",
+            PublishMode::Pr => "pr",
+            PublishMode::Push => "push",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        [PublishMode::None, PublishMode::Pr, PublishMode::Push]
+            .into_iter()
+            .find(|mode| mode.as_str() == value)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -233,6 +348,84 @@ pub struct Project {
     /// Minutes each check may take; 15 when unset.
     #[serde(rename = "qaTimeout", default, skip_serializing_if = "Option::is_none")]
     pub qa_timeout: Option<u32>,
+    /// Instructions for each role in this project; a role left out follows
+    /// the global ones. `reviewTemplate` still counts as the reviewer's.
+    #[serde(
+        rename = "roleInstructions",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub role_instructions: Option<BTreeMap<Role, String>>,
+    /// Rounds of automatic fixes after a failed review or QA before the task
+    /// needs attention; 2 when unset.
+    #[serde(
+        rename = "maxFixRounds",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub max_fix_rounds: Option<u32>,
+    /// New tasks are reviewed automatically.
+    #[serde(
+        rename = "reviewAuto",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub review_auto: Option<bool>,
+    /// New tasks start with a plan.
+    #[serde(
+        rename = "planFirstDefault",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub plan_first_default: Option<bool>,
+    /// Plans are approved without waiting for a person.
+    #[serde(
+        rename = "planAutoApprove",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub plan_auto_approve: Option<bool>,
+    /// Where task documents go, outside the repository; Convoy's own data
+    /// folder when unset.
+    #[serde(rename = "docsDir", default, skip_serializing_if = "Option::is_none")]
+    pub docs_dir: Option<PathBuf>,
+    /// Write the task document once QA passes.
+    #[serde(rename = "docsAuto", default, skip_serializing_if = "Option::is_none")]
+    pub docs_auto: Option<bool>,
+    /// Each task builds in a worktree of its own, set up with the project's
+    /// shared paths and setup command.
+    #[serde(
+        rename = "taskWorktrees",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub task_worktrees: Option<bool>,
+    /// Tasks the queue runs at once; 1 when unset, and 1 without worktrees.
+    #[serde(
+        rename = "maxParallel",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub max_parallel: Option<u32>,
+    /// Convoy publishes a task once review and QA pass, rather than its
+    /// builder as it finishes.
+    #[serde(
+        rename = "convoyPublishes",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub convoy_publishes: Option<bool>,
+    /// `gh` or `glab`; read from the remote's host when unset.
+    #[serde(rename = "prCli", default, skip_serializing_if = "Option::is_none")]
+    pub pr_cli: Option<String>,
+    /// The QA environment its tasks test in, by name: projects that share a
+    /// name — one local database, say — run one QA at a time.
+    #[serde(
+        rename = "qaEnvironment",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub qa_environment: Option<String>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }
@@ -317,6 +510,18 @@ pub struct Session {
     /// the agent's instructions when it next starts; see [`crate::skills`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skills: Option<Vec<String>>,
+    /// Folders the agent may work in besides its own: the other
+    /// repositories of a task that spans several (`--add-dir`).
+    #[serde(rename = "addDirs", default, skip_serializing_if = "Option::is_none")]
+    pub add_dirs: Option<Vec<PathBuf>>,
+    /// Claude Code's permission mode for it, such as `plan` for a planner
+    /// that may only read; none is Claude's own default.
+    #[serde(
+        rename = "permissionMode",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub permission_mode: Option<String>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }
@@ -362,6 +567,8 @@ impl Session {
             parent_id: None,
             manager: None,
             skills: None,
+            add_dirs: None,
+            permission_mode: None,
             unknown: Map::new(),
         }
     }
@@ -369,6 +576,10 @@ impl Session {
     /// `chat` or `terminal`: the session's own choice when it made a valid
     /// one, otherwise the settings default.
     pub fn shown_as<'a>(&'a self, settings: &'a Settings) -> &'a str {
+        // Gemini has no chat Convoy can drive.
+        if !self.agent.has_chat() {
+            return "terminal";
+        }
         self.view
             .as_deref()
             .filter(|view| VIEWS.contains(view))
@@ -483,8 +694,95 @@ pub struct Task {
     /// Its latest QA run: the checks, then the QA agent's verdict.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub qa: Option<crate::qa::QaRun>,
+    /// The current round of fixes; 0 is the first build.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub round: u32,
+    /// The run its builder reports on: the completion file it writes is
+    /// named after it ([`crate::stage`]). Cleared once that is read.
+    #[serde(rename = "stageRun", default, skip_serializing_if = "Option::is_none")]
+    pub stage_run: Option<String>,
+    /// What the builder said it did, from its last completion file.
+    #[serde(
+        rename = "buildSummary",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub build_summary: Option<String>,
+    /// Its latest review, as the reviewer's verdict.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review: Option<crate::pipeline::ReviewRun>,
+    /// A plan is written and approved before anything is built.
+    #[serde(rename = "planFirst", default, skip_serializing_if = "is_false")]
+    pub plan_first: bool,
+    /// Overrides the project's plan auto-approval.
+    #[serde(
+        rename = "planAutoApprove",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub plan_auto_approve: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<crate::plan::PlanRun>,
+    /// Documents written for it: the last stage of its work.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub docs: Vec<crate::task_docs::TaskDoc>,
+    /// Its latest documentation run.
+    #[serde(rename = "docsRun", default, skip_serializing_if = "Option::is_none")]
+    pub docs_run: Option<crate::task_docs::DocsRun>,
+    /// Its latest publication by Convoy.
+    #[serde(
+        rename = "publishRun",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub publish_run: Option<crate::publish::PublishRun>,
+    /// The pull request's title and description, as its author wrote them.
+    #[serde(rename = "prTitle", default, skip_serializing_if = "Option::is_none")]
+    pub pr_title: Option<String>,
+    #[serde(rename = "prBody", default, skip_serializing_if = "Option::is_none")]
+    pub pr_body: Option<String>,
+    /// Its issue's files, downloaded for its agents to open.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<TaskAttachment>,
+    /// Other projects — repositories — this task changes too.
+    #[serde(
+        rename = "extraProjects",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub extra_projects: Vec<String>,
+    /// The worktrees made in them for it, on the task's branch.
+    #[serde(
+        rename = "extraCheckouts",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub extra_checkouts: Vec<ExtraCheckout>,
+    /// The requests opened in them.
+    #[serde(rename = "extraPrURLs", default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_pr_urls: Vec<String>,
     #[serde(flatten)]
     pub unknown: Unknown,
+}
+
+/// A worktree of another repository a task changes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExtraCheckout {
+    #[serde(rename = "projectID")]
+    pub project_id: String,
+    pub directory: PathBuf,
+    pub branch: String,
+}
+
+/// A file of a task's issue, kept on this machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskAttachment {
+    pub name: String,
+    pub path: PathBuf,
+}
+
+fn is_zero(value: &u32) -> bool {
+    *value == 0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -555,9 +853,19 @@ pub struct Settings {
     /// `--dangerously-bypass-approvals-and-sandbox` for Codex.
     #[serde(rename = "yoloCodex", default)]
     pub yolo_codex: bool,
+    /// `--yolo` for Gemini CLI.
+    #[serde(rename = "yoloGemini", default)]
+    pub yolo_gemini: bool,
     /// The review brief's instructions unless a project sets its own.
     #[serde(rename = "reviewTemplate", default)]
     pub review_template: String,
+    /// Each role's instructions unless a project sets its own.
+    #[serde(
+        rename = "roleInstructions",
+        default,
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
+    pub role_instructions: BTreeMap<Role, String>,
     #[serde(rename = "notifyWaiting", default = "yes")]
     pub notify_waiting: bool,
     #[serde(rename = "notifyDone", default = "yes")]
@@ -680,7 +988,9 @@ impl Default for Settings {
             sort_projects: false,
             yolo_claude: false,
             yolo_codex: false,
+            yolo_gemini: false,
             review_template: String::new(),
+            role_instructions: BTreeMap::new(),
             notify_waiting: true,
             notify_done: true,
             notify_when_focused: false,

@@ -207,7 +207,7 @@ impl Merge<'_> {
                 }) || snapshot
             }
             // Codex's id is only known once it printed its resume line.
-            Agent::Codex => !provider.is_empty() || snapshot,
+            Agent::Codex | Agent::Gemini => !provider.is_empty() || snapshot,
         }
     }
 
@@ -294,6 +294,18 @@ impl Merge<'_> {
                 qa_agent: None,
                 qa_auto: None,
                 qa_timeout: None,
+                role_instructions: None,
+                max_fix_rounds: None,
+                review_auto: None,
+                plan_first_default: None,
+                plan_auto_approve: None,
+                docs_dir: None,
+                docs_auto: None,
+                task_worktrees: None,
+                max_parallel: None,
+                convoy_publishes: None,
+                pr_cli: None,
+                qa_environment: None,
                 unknown: Default::default(),
             });
             ids.insert(id, state.projects.last().expect("pushed").id.clone());
@@ -504,6 +516,22 @@ impl Merge<'_> {
                         skills: None,
                         sync: None,
                         qa: None,
+                        round: 0,
+                        stage_run: None,
+                        build_summary: None,
+                        review: None,
+                        plan_first: false,
+                        plan_auto_approve: None,
+                        plan: None,
+                        docs: Vec::new(),
+                        docs_run: None,
+                        publish_run: None,
+                        pr_title: None,
+                        pr_body: None,
+                        attachments: Vec::new(),
+                        extra_projects: Vec::new(),
+                        extra_checkouts: Vec::new(),
+                        extra_pr_urls: Vec::new(),
                         unknown: Default::default(),
                     });
                     self.report.tasks += 1;
@@ -596,6 +624,22 @@ impl Merge<'_> {
                 skills: None,
                 sync: None,
                 qa: None,
+                round: 0,
+                stage_run: None,
+                build_summary: None,
+                review: None,
+                plan_first: false,
+                plan_auto_approve: None,
+                plan: None,
+                docs: Vec::new(),
+                docs_run: None,
+                publish_run: None,
+                pr_title: None,
+                pr_body: None,
+                attachments: Vec::new(),
+                extra_projects: Vec::new(),
+                extra_checkouts: Vec::new(),
+                extra_pr_urls: Vec::new(),
                 unknown: Default::default(),
             });
             self.report.tasks += 1;

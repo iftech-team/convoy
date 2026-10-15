@@ -20,6 +20,26 @@ pub fn setup(
     command: Option<&str>,
     runner: &dyn ProcessRunner,
 ) -> Result<()> {
+    setup_within(
+        repo,
+        destination,
+        shared_paths,
+        command,
+        runner,
+        Duration::from_secs(120),
+    )
+}
+
+/// [`setup`] with its own time limit: a task's worktree may install
+/// dependencies that take longer than a person would wait for.
+pub fn setup_within(
+    repo: &Path,
+    destination: &Path,
+    shared_paths: &[String],
+    command: Option<&str>,
+    runner: &dyn ProcessRunner,
+    limit: Duration,
+) -> Result<()> {
     let root = fs::canonicalize(repo)?;
     let target = fs::canonicalize(destination)?;
 
@@ -73,12 +93,13 @@ pub fn setup(
         // here. Each platform gets the shell it actually has.
         let spec = ProcessSpec::new(shell_program(), shell_arguments(command))
             .cwd(&target)
-            .timeout(Duration::from_secs(120));
+            .timeout(limit);
         let output = runner.run(&spec).map_err(|error| {
             if error.to_string() == "Command timed out." {
-                crate::ConvoyError::message(
-                    "Worktree setup exceeded 120 seconds. Worktree has been retained.",
-                )
+                crate::ConvoyError::message(format!(
+                    "Worktree setup exceeded {} seconds. Worktree has been retained.",
+                    limit.as_secs()
+                ))
             } else {
                 error
             }

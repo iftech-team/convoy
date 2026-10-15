@@ -189,6 +189,8 @@ fn page(page: &Value) -> Option<Issue> {
         priority: named(&["Priority"], &["select", "status"]).and_then(choice),
         origin: None,
         parent: page["parent"]["database_id"].as_str().map(str::to_string),
+        comments: Vec::new(),
+        attachments: Vec::new(),
     })
 }
 

@@ -16,7 +16,7 @@
 
 use crate::automations::Instant;
 use crate::json::utf16_len;
-use crate::workspace::model::Agent;
+use crate::workspace::model::{Agent, Role};
 use crate::workspace::{new_id, Workspace};
 use crate::{bail, ensure, ConvoyError, Result};
 use serde::{Deserialize, Serialize};
@@ -81,6 +81,14 @@ pub struct Skill {
     /// Attached by default to new sessions, tasks and automations in its scope.
     #[serde(default)]
     pub auto: bool,
+    /// The task roles it is given to; none is the builder only, as skills
+    /// always were.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roles: Option<Vec<Role>>,
+    /// The projects it belongs to, when there are several; then
+    /// `project_id` is none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projects: Option<Vec<String>>,
     pub created: Instant,
     #[serde(default)]
     pub updated: Instant,
@@ -91,14 +99,34 @@ pub struct Skill {
 impl Skill {
     /// Whether a session of this project may have it.
     pub fn in_scope(&self, project_id: &str) -> bool {
+        if let Some(projects) = self.projects.as_ref().filter(|list| !list.is_empty()) {
+            return projects.iter().any(|own| own == project_id);
+        }
         self.project_id
             .as_deref()
             .is_none_or(|own| own == project_id)
     }
 
+    /// The projects it is limited to; empty is every project.
+    pub fn scope(&self) -> Vec<String> {
+        match (&self.projects, &self.project_id) {
+            (Some(projects), _) if !projects.is_empty() => projects.clone(),
+            (_, Some(project)) => vec![project.clone()],
+            _ => Vec::new(),
+        }
+    }
+
     /// Whether it is given to this agent in this project.
     pub fn applies(&self, agent: Agent, project_id: &str) -> bool {
         self.agents.includes(agent) && self.in_scope(project_id)
+    }
+
+    /// Whether it is for this role in a task.
+    pub fn for_role(&self, role: Role) -> bool {
+        match &self.roles {
+            Some(roles) => roles.contains(&role),
+            None => role == Role::Build,
+        }
     }
 }
 
@@ -118,6 +146,39 @@ pub struct SkillInput {
     pub agents: String,
     #[serde(default)]
     pub auto: bool,
+    /// The task roles it is for; none or empty is the builder only.
+    #[serde(default)]
+    pub roles: Option<Vec<Role>>,
+    /// Several projects it belongs to; when given, `project_id` is ignored.
+    #[serde(default)]
+    pub projects: Option<Vec<String>>,
+}
+
+/// The scope a skill is saved with: one project in `project_id`, several in
+/// `projects`, none for every project.
+fn scope_kept(input: &SkillInput) -> (Option<String>, Option<Vec<String>>) {
+    let mut projects: Vec<String> = Vec::new();
+    for id in input.projects.clone().unwrap_or_default() {
+        if !id.is_empty() && !projects.contains(&id) {
+            projects.push(id);
+        }
+    }
+    match projects.len() {
+        0 => (input.project_id.clone().filter(|id| !id.is_empty()), None),
+        1 => (projects.pop(), None),
+        _ => (None, Some(projects)),
+    }
+}
+
+/// A role list as kept: none for the builder alone, without repeats.
+fn roles_kept(roles: Option<Vec<Role>>) -> Option<Vec<Role>> {
+    let mut unique: Vec<Role> = Vec::new();
+    for role in roles.unwrap_or_default() {
+        if !unique.contains(&role) {
+            unique.push(role);
+        }
+    }
+    (!unique.is_empty() && unique != [Role::Build]).then_some(unique)
 }
 
 /// Checks what the editor sent. `others` are the skills already kept, so a
@@ -140,6 +201,9 @@ fn validate(input: &SkillInput, workspace: &Workspace, others: &[Skill]) -> Resu
         "The skill is too long (16,000 characters at most)."
     );
     if let Some(project) = input.project_id.as_deref().filter(|id| !id.is_empty()) {
+        workspace.project(project)?;
+    }
+    for project in input.projects.iter().flatten().filter(|id| !id.is_empty()) {
         workspace.project(project)?;
     }
     let taken = others.iter().any(|skill| {
@@ -245,7 +309,7 @@ impl Store {
         now: Instant,
     ) -> Result<String> {
         let agents = validate(&input, workspace, &self.state.skills)?;
-        let project_id = input.project_id.clone().filter(|id| !id.is_empty());
+        let (project_id, projects) = scope_kept(&input);
         let (name, description, body) = (
             input.name.trim().to_string(),
             input.description.trim().to_string(),
@@ -264,8 +328,10 @@ impl Store {
                     skill.description = description;
                     skill.body = body;
                     skill.project_id = project_id;
+                    skill.projects = projects;
                     skill.agents = agents;
                     skill.auto = input.auto;
+                    skill.roles = roles_kept(input.roles.clone());
                     skill.updated = now;
                     Ok(id.clone())
                 })
@@ -280,6 +346,8 @@ impl Store {
                     project_id,
                     agents,
                     auto: input.auto,
+                    roles: roles_kept(input.roles.clone()),
+                    projects,
                     created: now,
                     updated: now,
                     unknown: Map::new(),
@@ -304,20 +372,37 @@ impl Store {
 
     /// A project went: so do its own skills. Returns their ids, to detach.
     pub fn remove_project(&mut self, project_id: &str) -> Result<Vec<String>> {
+        // A skill of several projects only loses this one, unless it was
+        // its last.
+        let only = |skill: &Skill| {
+            let scope = skill.scope();
+            scope.len() == 1 && scope[0] == project_id
+        };
         let gone: Vec<String> = self
             .state
             .skills
             .iter()
-            .filter(|skill| skill.project_id.as_deref() == Some(project_id))
+            .filter(|skill| only(skill))
             .map(|skill| skill.id.clone())
             .collect();
-        if gone.is_empty() {
+        let shared = self.state.skills.iter().any(|skill| {
+            skill
+                .projects
+                .as_ref()
+                .is_some_and(|list| list.len() > 1 && list.iter().any(|id| id == project_id))
+        });
+        if gone.is_empty() && !shared {
             return Ok(gone);
         }
         let project_id = project_id.to_string();
+        let removed = gone.clone();
         self.update(move |file| {
-            file.skills
-                .retain(|skill| skill.project_id.as_deref() != Some(project_id.as_str()));
+            file.skills.retain(|skill| !removed.contains(&skill.id));
+            for skill in file.skills.iter_mut() {
+                if let Some(list) = skill.projects.as_mut() {
+                    list.retain(|id| *id != project_id);
+                }
+            }
             Ok(gone)
         })
     }
@@ -328,14 +413,14 @@ impl Store {
             .state
             .skills
             .iter()
-            .filter(|skill| skill.project_id.is_some())
+            .filter(|skill| !skill.scope().is_empty())
             .map(|skill| skill.id.clone())
             .collect();
         if gone.is_empty() {
             return Ok(gone);
         }
         self.update(move |file| {
-            file.skills.retain(|skill| skill.project_id.is_none());
+            file.skills.retain(|skill| skill.scope().is_empty());
             Ok(gone)
         })
     }
@@ -348,7 +433,10 @@ impl Store {
             .state
             .skills
             .iter()
-            .filter(|skill| skill.project_id.as_deref().is_some_and(|id| !known(id)))
+            .filter(|skill| {
+                let scope = skill.scope();
+                !scope.is_empty() && scope.iter().all(|id| !known(id))
+            })
             .map(|skill| skill.id.clone())
             .collect();
         if gone.is_empty() {
@@ -368,8 +456,21 @@ impl Store {
             .skills
             .iter()
             .filter(|skill| skill.auto && skill.in_scope(project_id))
+            .filter(|skill| skill.for_role(Role::Build))
             .filter(|skill| agent.is_none_or(|agent| skill.agents.includes(agent)))
             .map(|skill| skill.id.clone())
+            .collect()
+    }
+
+    /// The `auto` skills of a role in a task, for this agent in this
+    /// project, within the attachment limit.
+    pub fn for_role(&self, project_id: &str, agent: Agent, role: Role) -> Vec<String> {
+        self.state
+            .skills
+            .iter()
+            .filter(|skill| skill.auto && skill.applies(agent, project_id) && skill.for_role(role))
+            .map(|skill| skill.id.clone())
+            .take(MAX_ATTACHED)
             .collect()
     }
 
@@ -410,10 +511,7 @@ impl Store {
                 skill.applies(agent, project_id),
                 "The skill “{}” is not for {} in this project.",
                 skill.name,
-                match agent {
-                    Agent::Claude => "Claude Code",
-                    Agent::Codex => "Codex",
-                }
+                agent.label()
             );
             if !ids.contains(&skill.id) {
                 ids.push(skill.id.clone());
@@ -502,6 +600,8 @@ pub fn detach_everywhere(
     automations.detach_skills(ids)?;
     Ok(())
 }
+
+pub mod local;
 
 #[cfg(test)]
 mod tests;

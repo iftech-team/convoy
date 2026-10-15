@@ -37,6 +37,7 @@ fn link(workspace: Option<Scope>, project: Option<Scope>) -> ProjectLink {
         workspace,
         project,
         sync: None,
+        intake: None,
     }
 }
 

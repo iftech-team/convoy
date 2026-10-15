@@ -51,6 +51,10 @@ pub static CODEX_RESUME: LazyLock<Regex> = LazyLock::new(|| {
 /// A GitHub pull request or GitLab merge request link, on any host: self-hosted
 /// GitLab and GitHub Enterprise print the same paths as the public sites.
 pub static PULL_REQUEST: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"https://[A-Za-z0-9.-]+(?::\d+)?/[^\s'"`)]+/(?:pull|merge_requests)/\d+"#)
-        .unwrap()
+    // Any host, so self-hosted GitLab, GitHub Enterprise, Gitea and
+    // Bitbucket are found too; the owner and repository come first.
+    Regex::new(
+        r#"https?://[A-Za-z0-9.-]+(:\d+)?/[^\s'"`)<>]+/(pull|pulls|merge_requests|pull-requests)/\d+"#,
+    )
+    .unwrap()
 });

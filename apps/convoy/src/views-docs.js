@@ -28,8 +28,43 @@ function group(title, files) {
   return `<div class="doc-group">${escape(title)}</div>${files.map(fileRow).join("")}`;
 }
 
+/// Documents written for the project's tasks, newest first: by its tracker
+/// key and title, with when it was written and where the task stands.
+function taskDocRow(doc) {
+  const docs = state.docs;
+  const label = doc.task_key ? `${doc.task_key} · ${doc.task_title ?? doc.title}` : doc.task_title ?? doc.title;
+  const date = doc.created ? doc.created.slice(0, 10) : "";
+  return `
+    <button class="doc-file doc-file--task" data-task-doc="${escape(doc.path)}"
+            aria-current="${docs.taskDoc === doc.path}" title="${escape(doc.path)}">
+      ${doc.kind === "pdf" ? icons.doc : icons.page}
+      <span class="doc-file__name">${escape(label)}</span>
+      <span class="doc-file__meta">${escape([doc.kind === "pdf" ? "PDF" : "MD", date, doc.task_status ? t(doc.task_status) : ""].filter(Boolean).join(" · "))}</span>
+    </button>`;
+}
+
+function taskDocViewer() {
+  const docs = state.docs;
+  const doc = (docs.taskDocs ?? []).find((item) => item.path === docs.taskDoc);
+  return `
+    <div class="docs__bar">
+      <span class="docs__path" title="${escape(docs.taskDoc)}">${escape(doc?.title ?? docs.taskDoc)}</span>
+      <span class="section__spacer"></span>
+      ${button({ label: t("Open in the system viewer"), icon: "open", data: { "task-doc-open": docs.taskDoc } })}
+      ${button({ icon: "folder", kind: "quiet", title: t("Show in Finder"), data: { "task-doc-reveal": docs.taskDoc } })}
+    </div>
+    ${
+      docs.loading
+        ? `<div class="docs__render"><p class="pref-muted">${escape(t("Loading…"))}</p></div>`
+        : docs.pdf
+          ? `<iframe class="docs__pdf" src="${escape(docs.pdf)}" title="${escape(doc?.title ?? "")}"></iframe>`
+          : `<div class="docs__render" data-scroll="doc">${markdown(docs.text)}</div>`
+    }`;
+}
+
 function viewer() {
   const docs = state.docs;
+  if (docs.taskDoc) return taskDocViewer();
   const file = docs.selected;
   if (!file) {
     const hasDoc = docs.files.includes(PROJECT_DOC);
@@ -88,6 +123,7 @@ export function docsView() {
           ${button({ label: t("New spec…"), icon: "plus", action: "doc-new-spec", kind: hasDoc ? "primary" : "" })}
         </div>
         <div class="docs__files" data-scroll="doc-list">
+          ${docs.taskDocs?.length ? `<div class="doc-group">${escape(t("Task documents"))}</div>${docs.taskDocs.map(taskDocRow).join("")}` : ""}
           ${group(t("Project doc"), hasDoc ? [PROJECT_DOC] : [])}
           ${group(t("Specs"), specs)}
           ${group(t("Other docs"), others)}

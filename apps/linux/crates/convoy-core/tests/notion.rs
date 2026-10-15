@@ -33,6 +33,7 @@ fn linked() -> ProjectLink {
         }),
         project: None,
         sync: None,
+        intake: None,
     }
 }
 

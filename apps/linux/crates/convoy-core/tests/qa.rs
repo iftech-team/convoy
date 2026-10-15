@@ -5,6 +5,7 @@ mod common;
 
 use common::fixture;
 use convoy_core::model::{Agent, PublishMode, TaskStatus};
+use convoy_core::pipeline::{Action, Context};
 use convoy_core::planning::TaskInput;
 use convoy_core::process::{Output, ProcessRunner, ProcessSpec};
 use convoy_core::qa::{self, Check, Next, QaStatus};
@@ -280,9 +281,18 @@ fn the_qa_agent_tests_in_the_builders_folder_and_its_verdict_decides() {
 fn a_finished_builder_starts_qa_only_where_the_project_asks_for_it() {
     let (_fixture, mut workspace, project, id) = setup("npm test", None);
     let builder = task(&workspace).session_id.unwrap();
+    let none = |_: &str| false;
+    let context = Context {
+        skills: None,
+        running: &none,
+    };
+    // Nothing automatic: the round ends, and the task waits for a person.
     assert_eq!(
-        queue::on_clean_exit(&workspace, &builder, "").unwrap(),
-        Completion::Continue
+        queue::on_clean_exit(&mut workspace, &context, &builder).unwrap(),
+        Completion::Advance(vec![Action::Built {
+            task: id.clone(),
+            project: project.clone()
+        }])
     );
 
     workspace
@@ -294,27 +304,21 @@ fn a_finished_builder_starts_qa_only_where_the_project_asks_for_it() {
             },
         )
         .unwrap();
-    assert_eq!(
-        queue::on_clean_exit(&workspace, &builder, "").unwrap(),
-        Completion::Test {
-            task: id.clone(),
-            review: None
-        }
-    );
-
-    // With automatic review as well, both start.
+    // A new round: QA tests it.
     workspace
         .update(|state| {
-            state.tasks[0].auto_review = true;
+            state.tasks[0].stage_run = Some("round-2".into());
             Ok(())
         })
         .unwrap();
-    let Completion::Test {
-        review: Some(review),
-        ..
-    } = queue::on_clean_exit(&workspace, &builder, "").unwrap()
-    else {
-        panic!("expected QA and a review");
-    };
-    assert_eq!(review.review_of.as_deref(), Some(builder.as_str()));
+    assert_eq!(
+        queue::on_clean_exit(&mut workspace, &context, &builder).unwrap(),
+        Completion::Advance(vec![
+            Action::Built {
+                task: id.clone(),
+                project: project.clone()
+            },
+            Action::Test { task: id.clone() }
+        ])
+    );
 }

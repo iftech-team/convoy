@@ -7,6 +7,7 @@ mod common;
 
 use common::fixture;
 use convoy_core::model::{Agent, PublishMode, TaskStatus};
+use convoy_core::pipeline::{Action, Context};
 use convoy_core::planning::{SpecInput, TaskInput};
 use convoy_core::queue::{self, Completion, Step};
 use convoy_core::workspace::Workspace;
@@ -110,9 +111,14 @@ fn a_clean_exit_asks_for_review_and_never_marks_work_done() {
     workspace.prepare_task(&id, None).unwrap();
     let session = workspace.state().tasks[0].session_id.clone().unwrap();
 
+    let none = |_: &str| false;
+    let context = Context {
+        skills: None,
+        running: &none,
+    };
     // Until the task reaches review there is nothing to hand on.
     assert_eq!(
-        queue::on_clean_exit(&workspace, &session, "output").unwrap(),
+        queue::on_clean_exit(&mut workspace, &context, &session).unwrap(),
         Completion::Nothing
     );
 
@@ -128,19 +134,26 @@ fn a_clean_exit_asks_for_review_and_never_marks_work_done() {
         "a clean exit means review, not done"
     );
 
-    let completion = queue::on_clean_exit(&workspace, &session, "\x1b[32mbuilt\x1b[0m").unwrap();
-    let Completion::Review(handoff) = completion else {
-        panic!("expected a review handoff, got {completion:?}");
+    let completion = queue::on_clean_exit(&mut workspace, &context, &session).unwrap();
+    let Completion::Advance(actions) = completion else {
+        panic!("expected the pipeline to move on, got {completion:?}");
     };
-    assert_eq!(handoff.agent, Agent::Codex, "the other agent reviews");
-    assert!(handoff.prompt.contains("built"));
-    assert!(!handoff.prompt.contains('\x1b'));
+    let reviewer = actions
+        .iter()
+        .find_map(|action| match action {
+            Action::Start { session, .. } => Some(session.clone()),
+            _ => None,
+        })
+        .expect("a review was started");
+    let reviewer = workspace.session(&reviewer).unwrap();
+    assert_eq!(reviewer.agent, Agent::Codex, "the other agent reviews");
+    assert_eq!(reviewer.review_of.as_deref(), Some(session.as_str()));
+    assert_eq!(workspace.state().tasks[0].status, TaskStatus::Review);
 
-    // Once a review exists, a second exit does not create another.
-    workspace.add_session(*handoff).unwrap();
+    // The round is handled: a second exit does not start another review.
     assert_eq!(
-        queue::on_clean_exit(&workspace, &session, "output").unwrap(),
-        Completion::Continue
+        queue::on_clean_exit(&mut workspace, &context, &session).unwrap(),
+        Completion::Nothing
     );
 }
 
@@ -183,8 +196,13 @@ fn work_against_a_superseded_specification_goes_back_for_changes() {
     edited.problem = String::new();
     workspace.save_spec(edited).unwrap();
 
+    let none = |_: &str| false;
+    let context = Context {
+        skills: None,
+        running: &none,
+    };
     assert_eq!(
-        queue::on_clean_exit(&workspace, &session, "output").unwrap(),
+        queue::on_clean_exit(&mut workspace, &context, &session).unwrap(),
         Completion::Superseded
     );
     queue::mark_superseded(&mut workspace, &session).unwrap();

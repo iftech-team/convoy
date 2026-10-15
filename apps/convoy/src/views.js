@@ -330,18 +330,29 @@ export function contextMenu(menu) {
     if (!task) return "";
     const building = task.status === "building";
     entries = [
-      item(t("Run"), "task-run", { icon: "play", enabled: runnable(task) }),
+      item(task.plan_first && task.plan?.status !== "approved" ? t("Make a plan") : t("Run"), "task-run", { icon: "play", enabled: runnable(task) }),
+      task.status === "plan_review" ? item(t("Review the plan…"), "task-plan", { icon: "check" }) : "",
+      task.plan?.session_id ? item(t("Open planner"), "task-planner", { icon: "terminal" }) : "",
       item(t("Open session"), "task-session", { icon: "terminal", enabled: !!task.session_id }),
       item(t("Open reviewer"), "task-reviewer", { icon: "review", enabled: !!task.review_session_id }),
+      ["review", "pr", "testing", "changes", "attention", "failed"].includes(task.status) && task.session_id
+        ? item(task.review?.status === "reviewing" ? t("Restart the review") : t("Review now"), "task-review-now", { icon: "review" })
+        : "",
+      ["reviewing", "no_verdict", "failed"].includes(task.review?.status)
+        ? item(t("Skip review"), "task-skip-review", { icon: "chevronRight" })
+        : "",
       task.pr_url ? item(t("Open pull request"), "task-pr", { icon: "open" }) : "",
       task.source?.url ? item(t("Open {key}", { key: task.source.key }), "task-issue", { icon: "open" }) : "",
       item(t("Edit…"), "task-edit", { icon: "edit" }),
       state.projects.find((entry) => entry.id === task.project_id)?.qa
         ? item(t("Test now"), "task-qa", { icon: "checkCircle", enabled: !building && !["checking", "testing"].includes(task.qa?.status) })
         : "",
+      ["testing", "review", "pr", "done", "attention"].includes(task.status) && task.docs_run?.status !== "writing"
+        ? item(task.docs?.length ? t("Write the document again") : t("Write the document"), "task-docs", { icon: "doc" })
+        : "",
       task.sync?.failed ? item(t("Retry tracker sync"), "task-sync-retry", { icon: "refresh" }) : "",
       divider,
-      ...TASK_STATUSES.filter(([key]) => key !== "building" && key !== task.status).map(([key, label]) =>
+      ...TASK_STATUSES.filter(([key]) => !["building", "planning", "plan_review"].includes(key) && key !== task.status).map(([key, label]) =>
         item(t("Set status: {status}", { status: t(label) }), `task-status:${key}`, {
           enabled: !building,
           hint: building ? "stop it first" : "",

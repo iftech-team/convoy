@@ -12,14 +12,20 @@ import { catalog, storageNote } from "./integrations-catalog.js";
 const MODELS = {
   claude: [["fable", "Fable · most capable"], ["opus", "Opus"], ["sonnet", "Sonnet · balanced"], ["haiku", "Haiku · fastest"]],
   codex: [["gpt-5-codex", "GPT-5 Codex"], ["gpt-5", "GPT-5"], ["o3", "o3"]],
+  gemini: [["auto-gemini-3", "Auto · Gemini 3"], ["gemini-3-pro-preview", "Gemini 3 Pro"], ["gemini-2.5-pro", "Gemini 2.5 Pro"], ["gemini-2.5-flash", "Gemini 2.5 Flash"]],
 };
-const AGENTS = [["claude", "Claude Code"], ["codex", "Codex"]];
+const AGENTS = [["claude", "Claude Code"], ["codex", "Codex"], ["gemini", "Gemini CLI"]];
 const MODES = [["pr", "Pull request"], ["push", "Push"], ["none", "Commit only"]];
 const STATUS = {
   queued: ["Queued", "state"],
   building: ["Building", "state state--running"],
   review: ["Needs review", "state"],
   changes: ["Changes requested", "state state--failed"],
+  attention: ["Needs attention", "state state--failed"],
+  planning: ["Planning", "state state--running"],
+  plan_review: ["Plan to approve", "state"],
+  testing: ["In testing", "state"],
+  pr: ["Pull request", "state"],
   done: ["Done", "state state--done"],
   failed: ["Failed", "state state--failed"],
 };
@@ -176,7 +182,8 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
       agent: state.projects.find((item) => item.id === state.projectId)?.default_agent || state.settings.default_agent || "claude",
       model: "",
       mode: state.projects.find((item) => item.id === state.projectId)?.task_mode || "pr",
-      autoReview: false,
+      autoReview: !!state.projects.find((item) => item.id === state.projectId)?.review_auto,
+      planFirst: !!state.projects.find((item) => item.id === state.projectId)?.plan_first_default,
       runNow: false,
       loading: false,
       message: null,
@@ -199,6 +206,12 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
       options: { agent: draft.agent, model: draft.model, mode: draft.mode, auto_review: draft.autoReview, overrides },
     });
     if (!result) return;
+    // New tasks take the project's choice; one made here for this import
+    // is set on each.
+    const planDefault = !!state.projects.find((item) => item.id === state.projectId)?.plan_first_default;
+    if (draft.planFirst !== planDefault) {
+      for (const id of result.created) await call("task_plan", { id, planFirst: draft.planFirst, autoApprove: null });
+    }
     state.dialog = null;
     state.tab = "tasks";
     await loadTasks();
@@ -421,10 +434,11 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
           <select id="imp-mode">${MODES.map(([id, name]) => `<option value="${id}"${id === draft.mode ? " selected" : ""}>${escape(t(name))}</option>`).join("")}</select>
         </label>
       </div>
-      ${modelList("claude")}${modelList("codex")}`;
+      ${modelList("claude")}${modelList("codex")}${modelList("gemini")}`;
 
     const foot = `
       <label class="import__check"><input type="checkbox" id="imp-review"${draft.autoReview ? " checked" : ""} /> ${escape(t("Auto-review"))}</label>
+      <label class="import__check"><input type="checkbox" id="imp-plan"${draft.planFirst ? " checked" : ""} /> ${escape(t("Plan first"))}</label>
       <label class="import__check"><input type="checkbox" id="imp-run"${draft.runNow ? " checked" : ""} /> ${escape(t("Run immediately"))}</label>
       <span class="section__spacer"></span>
       <button class="button" data-dismiss="1">${escape(t("Cancel"))}</button>
@@ -531,7 +545,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         ${modelInput('id="task-model"', draft.agent, draft.model)}
         <span class="field__note">${escape(t("Passed as --model; leave empty for the CLI default."))}</span>
       </label>
-      ${modelList("claude")}${modelList("codex")}`,
+      ${modelList("claude")}${modelList("codex")}${modelList("gemini")}`,
       `<button class="button" data-dismiss="1">${escape(t("Cancel"))}</button>
        <button class="button button--primary" data-action="task-save">${escape(t("Save"))}</button>`);
   }
@@ -713,6 +727,9 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         return true;
       case "imp-review":
         draft.autoReview = field.checked;
+        return true;
+      case "imp-plan":
+        draft.planFirst = field.checked;
         return true;
       case "imp-run":
         draft.runNow = field.checked;

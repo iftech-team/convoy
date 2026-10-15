@@ -350,12 +350,7 @@ pub struct Imported {
 }
 
 fn mode(value: &str) -> Result<PublishMode, String> {
-    match value {
-        "pr" => Ok(PublishMode::Pr),
-        "push" => Ok(PublishMode::Push),
-        "none" => Ok(PublishMode::None),
-        other => Err(format!("Unknown publish mode: {other}")),
-    }
+    PublishMode::parse(value).ok_or_else(|| format!("Unknown publish mode: {value}"))
 }
 
 /// A Notion page's text lives in its blocks, which the search does not
@@ -419,6 +414,104 @@ pub async fn issues_import(
         auto_review: options.auto_review,
         overrides,
     };
+    let (created, skipped) = import_into(&workspace, &project_id, &connection, &issues, &options)?;
+    download_attachments(&workspace, &connection, &created, &issues).await;
+    Ok(Imported { created, skipped })
+}
+
+/// Downloads the images, PDFs and text files of the issues just imported,
+/// into Convoy's data, for their agents to open. A file that cannot be
+/// downloaded stays a link in the task's details.
+async fn download_attachments(
+    workspace: &Workspace,
+    connection: &Connection,
+    created: &[String],
+    issues: &[Issue],
+) {
+    let Ok(wanted) = workspace.with(|core| {
+        Ok(created
+            .iter()
+            .filter_map(|id| {
+                let task = core.state().tasks.iter().find(|task| &task.id == id)?;
+                let key = task.source.as_ref()?.key.clone();
+                let issue = issues.iter().find(|issue| issue.key == key)?;
+                let files: Vec<_> = issue
+                    .attachments
+                    .iter()
+                    .filter(|file| file.downloadable())
+                    .take(10)
+                    .cloned()
+                    .collect();
+                (!files.is_empty()).then(|| (id.clone(), files))
+            })
+            .collect::<Vec<_>>())
+    }) else {
+        return;
+    };
+    let root = workspace.storage.root().join("attachments");
+    for (task_id, files) in wanted {
+        let (reader, folder) = (connection.clone(), root.join(&task_id));
+        let saved = tauri::async_runtime::spawn_blocking(move || {
+            let mut saved = Vec::new();
+            for file in files {
+                let Ok(request) = integrations::download_request(&reader, &file.url) else {
+                    continue;
+                };
+                let Ok(bytes) = download(&request) else {
+                    continue;
+                };
+                let path = folder.join(integrations::safe_file_name(&file.name));
+                if std::fs::create_dir_all(&folder).is_ok() && std::fs::write(&path, bytes).is_ok()
+                {
+                    saved.push(convoy_core::model::TaskAttachment {
+                        name: file.name.clone(),
+                        path,
+                    });
+                }
+            }
+            saved
+        })
+        .await
+        .unwrap_or_default();
+        if !saved.is_empty() {
+            let _ = workspace.act(|core| core.set_task_attachments(&task_id, saved).map(|_| ()));
+        }
+    }
+}
+
+/// A file's bytes, refused past the attachment limit.
+fn download(request: &HttpRequest) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(60))
+        .build();
+    let mut call = agent.request(request.method, &request.url);
+    for (name, value) in &request.headers {
+        call = call.set(name, value);
+    }
+    let response = call.call().map_err(|error| error.to_string())?;
+    let mut bytes = Vec::new();
+    response
+        .into_reader()
+        .take(integrations::ATTACHMENT_LIMIT + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    if bytes.len() as u64 > integrations::ATTACHMENT_LIMIT {
+        return Err("Too large.".into());
+    }
+    Ok(bytes)
+}
+
+/// Makes tasks of the issues not imported yet. Returns the new tasks, in
+/// issue order, so "run immediately" starts exactly these, and how many
+/// were skipped.
+fn import_into(
+    workspace: &Workspace,
+    project_id: &str,
+    connection: &Connection,
+    issues: &[Issue],
+    options: &ImportOptions,
+) -> Result<(Vec<String>, usize), String> {
     workspace.with(|workspace| {
         let before: std::collections::HashSet<String> = workspace
             .state()
@@ -427,9 +520,8 @@ pub async fn issues_import(
             .map(|task| task.id.clone())
             .collect();
         let (_, skipped) = workspace
-            .import_issues(&project_id, &connection, &issues, &options)
+            .import_issues(project_id, connection, issues, options)
             .map_err(|error| error.to_string())?;
-        // The new tasks, in issue order, so "run immediately" starts exactly these.
         let created = workspace
             .state()
             .tasks
@@ -437,8 +529,130 @@ pub async fn issues_import(
             .filter(|task| !before.contains(&task.id))
             .map(|task| task.id.clone())
             .collect();
-        Ok(Imported { created, skipped })
+        Ok((created, skipped))
     })
+}
+
+/// What one project's scheduled search did.
+#[derive(Serialize)]
+pub struct IntakeResult {
+    project_id: String,
+    created: Vec<String>,
+    /// Whether its queue should run them.
+    run: bool,
+    error: Option<String>,
+}
+
+fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Searches every linked project whose intake is due and imports what is
+/// new, with the project's own defaults. The window asks every minute.
+#[tauri::command]
+pub async fn intake_tick(
+    trackers: State<'_, Trackers>,
+    workspace: State<'_, Workspace>,
+) -> Result<Vec<IntakeResult>, String> {
+    let now = now();
+    let due: Vec<(String, ProjectLink)> = trackers.with_links(&workspace, |links| {
+        Ok(links
+            .all()
+            .iter()
+            .filter(|(_, link)| link.intake.as_ref().is_some_and(|intake| intake.due(now)))
+            .map(|(id, link)| (id.clone(), link.clone()))
+            .collect())
+    })?;
+    let mut results = Vec::new();
+    for (project_id, link) in due {
+        let intake = link.intake.clone().unwrap_or_default();
+        let outcome = intake_one(&trackers, &workspace, &project_id, &link).await;
+        let summary = match &outcome {
+            Ok(created) if created.is_empty() => "Nothing new.".to_string(),
+            Ok(created) => format!("Imported {}.", created.len()),
+            Err(error) => error.clone(),
+        };
+        trackers.with_links(&workspace, |links| {
+            links
+                .record_intake(&project_id, now, &summary)
+                .map_err(|error| error.to_string())
+        })?;
+        results.push(match outcome {
+            Ok(created) => IntakeResult {
+                project_id,
+                created,
+                run: intake.run,
+                error: None,
+            },
+            Err(error) => IntakeResult {
+                project_id,
+                created: Vec::new(),
+                run: false,
+                error: Some(error),
+            },
+        });
+    }
+    Ok(results)
+}
+
+async fn intake_one(
+    trackers: &Trackers,
+    workspace: &Workspace,
+    project_id: &str,
+    link: &ProjectLink,
+) -> Result<Vec<String>, String> {
+    let intake = link.intake.clone().unwrap_or_default();
+    let connection = connection(trackers, workspace, &link.connection_id)?;
+    if connection.auth == TrackerAuth::Mcp {
+        return Err("An MCP connection is searched by its agent, not by Convoy.".into());
+    }
+    let (reader, scope) = (connection.clone(), link.clone());
+    let issues = tauri::async_runtime::spawn_blocking(move || {
+        let issues = fetch(
+            &reader,
+            Some(&scope),
+            &intake.query,
+            intake.mine_only,
+            intake.raw_jql,
+        )?;
+        Ok::<_, String>(if reader.kind == TrackerKind::Notion {
+            with_page_text(&reader, issues)
+        } else {
+            issues
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    let (agent, mode, auto_review) = workspace.with(|core| {
+        let project = core
+            .project(project_id)
+            .map_err(|error| error.to_string())?;
+        Ok((
+            project
+                .default_agent
+                .unwrap_or(core.settings().default_agent),
+            project
+                .task_mode
+                .as_deref()
+                .and_then(PublishMode::parse)
+                .unwrap_or_default(),
+            project.review_auto == Some(true),
+        ))
+    })?;
+    let options = ImportOptions {
+        skills: crate::skills::resolve(&workspace.storage, project_id, None, None)?,
+        agent,
+        model: String::new(),
+        mode,
+        auto_review,
+        overrides: BTreeMap::new(),
+    };
+    let (created, _) = import_into(workspace, project_id, &connection, &issues, &options)?;
+    download_attachments(workspace, &connection, &created, &issues).await;
+    Ok(created)
 }
 
 #[derive(Serialize)]
@@ -530,21 +744,27 @@ pub fn issue_open(
 #[tauri::command]
 pub fn task_pr_open(
     id: String,
+    extra: Option<usize>,
     app: tauri::AppHandle,
     workspace: State<'_, Workspace>,
 ) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
+    // `extra` picks one of the requests opened in its other repositories.
     let url = workspace.with(|workspace| {
         workspace
             .state()
             .tasks
             .iter()
             .find(|task| task.id == id)
-            .and_then(|task| task.pr_url.clone())
+            .and_then(|task| match extra {
+                Some(index) => task.extra_pr_urls.get(index).cloned(),
+                None => task.pr_url.clone(),
+            })
             .ok_or_else(|| "This task has no pull request.".to_string())
     })?;
-    if !url.starts_with("https://") {
-        return Err("Pull request links must use HTTPS.".into());
+    // Self-hosted servers on a private network may still serve plain HTTP.
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err("Pull request links must use HTTP or HTTPS.".into());
     }
     app.opener()
         .open_url(url, None::<&str>)

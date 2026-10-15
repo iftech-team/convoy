@@ -157,7 +157,7 @@ pub struct Check {
     pub install: String,
 }
 
-const TOOLS: [(&str, &str, &str); 5] = [
+const TOOLS: [(&str, &str, &str); 6] = [
     (
         "claude",
         "Runs Claude Code sessions.",
@@ -167,6 +167,11 @@ const TOOLS: [(&str, &str, &str); 5] = [
         "codex",
         "Runs Codex sessions and reads its limits.",
         "npm install -g @openai/codex",
+    ),
+    (
+        "gemini",
+        "Runs Gemini CLI sessions. Optional.",
+        "npm install -g @google/gemini-cli",
     ),
     (
         "git",
@@ -371,6 +376,8 @@ pub async fn setup_checks(
         let (name, file) = match agent {
             convoy_core::model::Agent::Claude => ("Claude", ".credentials.json"),
             convoy_core::model::Agent::Codex => ("Codex", "auth.json"),
+            // Not in the loop: Gemini has no separate accounts here.
+            convoy_core::model::Agent::Gemini => ("Gemini", "oauth_creds.json"),
         };
         let id = if name == "Claude" {
             "login.claude"

@@ -583,7 +583,10 @@ impl<R: Runtime> Window<R> {
                     .unwrap_or(false);
             }
             ChatEvent::TextDone { text, .. } | ChatEvent::ToolResult { output: text, .. }
-                if text.contains("/pull/") || text.contains("/merge_requests/") =>
+                if text.contains("/pull/")
+                    || text.contains("/merge_requests/")
+                    || text.contains("/pulls/")
+                    || text.contains("/pull-requests/") =>
             {
                 if let Some(url) = convoy_core::session::pull_request_url(text) {
                     let Ok(mut known) = self.pull_request.lock() else {

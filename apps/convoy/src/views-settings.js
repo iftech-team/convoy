@@ -8,7 +8,7 @@ import { button, escape, plural, shorten } from "./ui.js";
 import { activeAccount, state } from "./state.js";
 import { SHORTCUTS, SHORTCUT_GROUPS, label } from "./shortcuts.js";
 import { LANGUAGES, languageChoice, t } from "./i18n.js";
-import { skillsSection } from "./views-skills.js";
+import { ROLES, skillsSection } from "./views-skills.js";
 import { pricesSection } from "./views-usage.js";
 
 /// The macOS app's sections, in its order.
@@ -17,7 +17,7 @@ export const SECTIONS = [
   ["General", "sliders", ["keep awake", "sleep", "sidebar", "sort", "worktree default", "branch prefix", "new sessions"]],
   ["Appearance", "paint", ["theme", "dark", "light", "system", "language", "russian", "english", "язык", "русский"]],
   ["Terminal", "terminal", ["font", "size", "scrollback", "lines"]],
-  ["Agents", "sparkles", ["claude", "codex", "default agent", "chat", "terminal", "view", "yolo", "permissions", "skip", "review", "template", "brief", "hibernate", "idle", "sleep"]],
+  ["Agents", "sparkles", ["claude", "codex", "gemini", "default agent", "chat", "terminal", "view", "yolo", "permissions", "skip", "review", "template", "brief", "hibernate", "idle", "sleep", "role", "roles", "planner", "builder", "qa", "documentation", "роль"]],
   ["Accounts", "person", ["account", "profile", "login", "sign in", "claude", "codex"]],
   ["Integrations", "link", ["linear", "jira", "atlassian", "peshbar", "notion", "issues", "import", "api key", "token", "mcp", "integrations"]],
   ["Quick Commands", "bolt", ["prompt", "command", "snippet", "quick"]],
@@ -32,6 +32,7 @@ export const SECTIONS = [
 const AGENTS = [
   ["claude", "Claude Code"],
   ["codex", "Codex"],
+  ["gemini", "Gemini CLI"],
 ];
 
 const visibleSections = () => {
@@ -261,6 +262,7 @@ function agents(settings) {
       t("Permissions"),
       row(t("Claude Code: skip permission prompts (Yolo)"), t("Launches with --dangerously-skip-permissions."), toggle("yolo_claude", settings.yolo_claude, "Claude Yolo")) +
         row(t("Codex: bypass approvals and sandbox (Yolo)"), t("Launches with --dangerously-bypass-approvals-and-sandbox."), toggle("yolo_codex", settings.yolo_codex, "Codex Yolo")) +
+        row(t("Gemini CLI: accept every action (Yolo)"), t("Launches with --yolo."), toggle("yolo_gemini", settings.yolo_gemini, "Gemini Yolo")) +
         row(
           t("Trust project folders automatically"),
           t("Marks the session folder, new worktrees included, as trusted in Claude's .claude.json and Codex's config.toml before launch, so agents never stop on the trust prompt."),
@@ -269,13 +271,19 @@ function agents(settings) {
       t("Yolo lets agents edit files and run commands without asking. Applies to sessions launched afterwards."),
     )}
     ${groupBox(
-      t("Review brief template"),
-      `<div class="pref-block">
-         <textarea class="pref-area" data-pref-text="review_template" rows="6" spellcheck="false"
-                   placeholder="${escape(t("Leave empty for the built-in brief"))}">${escape(settings.review_template ?? "")}</textarea>
-         ${button({ label: t("Insert default"), action: "insert-review-default", kind: "quiet" })}
-       </div>`,
-      t("Used by Start review and by automatic task reviews, unless the project sets its own in Project settings."),
+      t("Roles"),
+      ROLES.map(
+        ([role, name, about]) => `
+        <div class="pref-block pref-stack">
+          <div class="pref-row__title">${escape(t(name))}</div>
+          <div class="pref-row__detail">${escape(t(about))}</div>
+          <textarea class="pref-area" data-pref-role="${role}" rows="4" spellcheck="false"
+                    placeholder="${escape(settings.role_builtins?.[role] || t("No instructions"))}">${escape(
+                      settings.role_instructions?.[role] ?? (role === "review" ? (settings.review_template ?? "") : ""),
+                    )}</textarea>
+        </div>`,
+      ).join(""),
+      t("Each role's instructions in every project, unless the project sets its own in Project settings → Roles. Empty uses the built-in text shown."),
     )}
     ${groupBox(
       t("Hibernation"),

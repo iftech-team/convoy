@@ -52,6 +52,26 @@ pub struct ProjectPatch {
     pub qa_agent: Option<String>,
     pub qa_auto: Option<bool>,
     pub qa_timeout: Option<u32>,
+    /// Each role's instructions; a role missing or blank follows the global
+    /// ones. Replaces the whole map.
+    pub role_instructions: Option<std::collections::BTreeMap<crate::model::Role, String>>,
+    /// 0 sends every failure straight to attention.
+    pub max_fix_rounds: Option<u32>,
+    pub review_auto: Option<bool>,
+    pub plan_first_default: Option<bool>,
+    pub plan_auto_approve: Option<bool>,
+    /// An absolute folder; `Some("")` clears it.
+    pub docs_dir: Option<String>,
+    pub docs_auto: Option<bool>,
+    pub task_worktrees: Option<bool>,
+    /// 1 to 8 tasks at once.
+    pub max_parallel: Option<u32>,
+    pub convoy_publishes: Option<bool>,
+    /// `gh`, `glab`, or empty to read it from the remote.
+    pub pr_cli: Option<String>,
+    /// A name shared by projects that test in one environment; empty for
+    /// none.
+    pub qa_environment: Option<String>,
 }
 
 impl ProjectPatch {
@@ -104,6 +124,11 @@ pub struct NewSession {
     pub effort: String,
     /// Skills attached, by id; checked against the skills file by the caller.
     pub skills: Vec<String>,
+    /// Other folders it may work in; a session sharing another's folder
+    /// takes that one's when this is empty.
+    pub add_dirs: Vec<PathBuf>,
+    /// Claude's permission mode, such as `plan`.
+    pub permission_mode: Option<String>,
 }
 
 impl NewSession {
@@ -120,6 +145,8 @@ impl NewSession {
             model: String::new(),
             effort: String::new(),
             skills: Vec::new(),
+            add_dirs: Vec::new(),
+            permission_mode: None,
         }
     }
 }
@@ -142,6 +169,7 @@ pub struct SettingsPatch {
     pub sort_projects: Option<bool>,
     pub yolo_claude: Option<bool>,
     pub yolo_codex: Option<bool>,
+    pub yolo_gemini: Option<bool>,
     pub review_template: Option<String>,
     pub notify_waiting: Option<bool>,
     pub notify_done: Option<bool>,
@@ -156,6 +184,7 @@ pub struct SettingsPatch {
     pub worktree_shared: Option<String>,
     /// `chat` or `terminal`.
     pub default_view: Option<String>,
+    pub role_instructions: Option<std::collections::BTreeMap<crate::model::Role, String>>,
 }
 
 pub struct Workspace {
@@ -268,6 +297,18 @@ impl Workspace {
                     qa_agent: None,
                     qa_auto: None,
                     qa_timeout: None,
+                    role_instructions: None,
+                    max_fix_rounds: None,
+                    review_auto: None,
+                    plan_first_default: None,
+                    plan_auto_approve: None,
+                    docs_dir: None,
+                    docs_auto: None,
+                    task_worktrees: None,
+                    max_parallel: None,
+                    convoy_publishes: None,
+                    pr_cli: None,
+                    qa_environment: None,
                     unknown: Default::default(),
                 });
             }
@@ -302,6 +343,38 @@ impl Workspace {
                 Agent::parse(value).ok_or_else(|| ConvoyError::message("Unknown agent."))?,
             )),
         };
+        if let Some(roles) = &patch.role_instructions {
+            ensure!(
+                roles.values().all(|text| utf16_len(text) <= 16_000),
+                "Role instructions may be 16,000 characters at most."
+            );
+        }
+        if let Some(rounds) = patch.max_fix_rounds {
+            ensure!(rounds <= 10, "Allow 0 to 10 rounds of fixes.");
+        }
+        if let Some(parallel) = patch.max_parallel {
+            ensure!((1..=8).contains(&parallel), "Run 1 to 8 tasks at once.");
+        }
+        if let Some(cli) = patch.pr_cli.as_deref() {
+            ensure!(["", "gh", "glab"].contains(&cli), "Use gh or glab.");
+        }
+        // `~/Desktop/Docs` is how people write it.
+        let docs_dir = patch.docs_dir.as_deref().map(|value| {
+            let value = value.trim();
+            match value.strip_prefix("~/") {
+                Some(rest) => crate::storage::home(crate::Platform::current())
+                    .join(rest)
+                    .to_string_lossy()
+                    .into_owned(),
+                None => value.to_string(),
+            }
+        });
+        if let Some(dir) = docs_dir.as_deref().filter(|value| !value.is_empty()) {
+            ensure!(
+                Path::new(dir).is_absolute(),
+                "Choose the documents folder by its full path."
+            );
+        }
         if let Some(minutes) = patch.qa_timeout {
             ensure!(
                 (1..=240).contains(&minutes),
@@ -409,6 +482,47 @@ impl Workspace {
             if let Some(value) = patch.qa_timeout {
                 project.qa_timeout = Some(value);
             }
+            if let Some(roles) = patch.role_instructions {
+                let roles: std::collections::BTreeMap<_, _> = roles
+                    .into_iter()
+                    .filter(|(_, text)| !text.trim().is_empty())
+                    .collect();
+                project.role_instructions = (!roles.is_empty()).then_some(roles);
+            }
+            if let Some(value) = patch.max_fix_rounds {
+                project.max_fix_rounds = Some(value);
+            }
+            if let Some(value) = patch.review_auto {
+                project.review_auto = Some(value);
+            }
+            if let Some(value) = patch.plan_first_default {
+                project.plan_first_default = Some(value);
+            }
+            if let Some(value) = patch.plan_auto_approve {
+                project.plan_auto_approve = Some(value);
+            }
+            if let Some(value) = docs_dir {
+                project.docs_dir = (!value.is_empty()).then(|| PathBuf::from(value));
+            }
+            if let Some(value) = patch.docs_auto {
+                project.docs_auto = Some(value);
+            }
+            if let Some(value) = patch.task_worktrees {
+                project.task_worktrees = Some(value);
+            }
+            if let Some(value) = patch.max_parallel {
+                project.max_parallel = Some(value);
+            }
+            if let Some(value) = patch.convoy_publishes {
+                project.convoy_publishes = Some(value);
+            }
+            if let Some(value) = patch.pr_cli {
+                project.pr_cli = (!value.is_empty()).then_some(value);
+            }
+            if let Some(value) = patch.qa_environment {
+                let value = value.trim().to_string();
+                project.qa_environment = (!value.is_empty()).then_some(value);
+            }
             Ok(())
         })
     }
@@ -501,6 +615,18 @@ impl Workspace {
                     qa_agent: None,
                     qa_auto: None,
                     qa_timeout: None,
+                    role_instructions: None,
+                    max_fix_rounds: None,
+                    review_auto: None,
+                    plan_first_default: None,
+                    plan_auto_approve: None,
+                    docs_dir: None,
+                    docs_auto: None,
+                    task_worktrees: None,
+                    max_parallel: None,
+                    convoy_publishes: None,
+                    pr_cli: None,
+                    qa_environment: None,
                     unknown: Default::default(),
                 });
                 ids.push(id);
@@ -607,6 +733,12 @@ impl Workspace {
                 parent_id: None,
                 manager: None,
                 skills: crate::planning::attached(input.skills),
+                add_dirs: if input.add_dirs.is_empty() {
+                    source.as_ref().and_then(|source| source.add_dirs.clone())
+                } else {
+                    Some(input.add_dirs)
+                },
+                permission_mode: input.permission_mode,
                 unknown: Default::default(),
             });
             Ok(())
@@ -835,6 +967,7 @@ impl Workspace {
             sort_projects: patch.sort_projects.unwrap_or(current.sort_projects),
             yolo_claude: patch.yolo_claude.unwrap_or(current.yolo_claude),
             yolo_codex: patch.yolo_codex.unwrap_or(current.yolo_codex),
+            yolo_gemini: patch.yolo_gemini.unwrap_or(current.yolo_gemini),
             review_template: patch.review_template.unwrap_or(current.review_template),
             notify_waiting: patch.notify_waiting.unwrap_or(current.notify_waiting),
             notify_done: patch.notify_done.unwrap_or(current.notify_done),
@@ -852,6 +985,7 @@ impl Workspace {
             worktree_setup: patch.worktree_setup.unwrap_or(current.worktree_setup),
             worktree_shared: patch.worktree_shared.unwrap_or(current.worktree_shared),
             default_view: patch.default_view.unwrap_or(current.default_view),
+            role_instructions: patch.role_instructions.unwrap_or(current.role_instructions),
             unknown: current.unknown,
         };
         ensure!(
@@ -924,7 +1058,8 @@ impl Workspace {
 pub(crate) fn provider_id_for(agent: Agent) -> String {
     match agent {
         Agent::Claude => new_id(),
-        Agent::Codex => String::new(),
+        // Both name their sessions themselves; Convoy learns the id later.
+        Agent::Codex | Agent::Gemini => String::new(),
     }
 }
 

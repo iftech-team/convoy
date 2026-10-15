@@ -61,6 +61,7 @@ fn linked(workspace: Option<Scope>) -> ProjectLink {
             map,
             link_pr: true,
         }),
+        intake: None,
     }
 }
 

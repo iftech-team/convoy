@@ -156,6 +156,7 @@ fn a_manager_launch_carries_its_secret_and_its_instructions() {
                 command.contains("'-c' 'developer_instructions=\"You are a manager session"),
                 "{command}"
             ),
+            Agent::Gemini => unreachable!("only Claude and Codex are looped over"),
         }
         assert!(command.contains("--session spawn"));
         // The flags come before the prompt, which stays the last argument.
@@ -192,6 +193,7 @@ fn a_manager_launch_carries_its_secret_and_its_instructions() {
                     .unwrap()
                     .contains("--session wait"));
             }
+            Agent::Gemini => unreachable!("only Claude and Codex are looped over"),
         }
     }
 }
@@ -551,6 +553,7 @@ fn a_peshbar_connection_hands_every_launch_its_mcp_server() {
                     );
                 }
             }
+            Agent::Gemini => unreachable!("only Claude and Codex are looped over"),
         }
     }
 }

@@ -10,6 +10,7 @@ mod chat;
 mod commands;
 mod helpers;
 mod monitor;
+mod pipeline;
 mod power;
 mod pty;
 mod qa;
@@ -120,10 +121,24 @@ pub fn run() {
             sync::tracker_statuses,
             sync::task_sync_retry,
             qa::qa_start,
-            qa::qa_after_exit,
             qa::qa_suggest_commands,
+            pipeline::pipeline_tick,
+            pipeline::pipeline_after_exit,
+            pipeline::review_skip,
+            pipeline::review_now,
+            pipeline::task_publish,
+            pipeline::task_publish_start,
+            pipeline::task_plan,
+            pipeline::plan_approve,
+            pipeline::plan_request_changes,
+            pipeline::task_docs_start,
+            pipeline::task_docs_list,
+            pipeline::task_doc_read,
+            pipeline::task_doc_open,
+            pipeline::task_doc_reveal,
             tasks::issues_parse_keys,
             tasks::issues_import,
+            tasks::intake_tick,
             tasks::tasks_for,
             tasks::task_agent,
             tasks::issue_open,
@@ -203,6 +218,8 @@ pub fn run() {
             commands::planning::tasks_all,
             commands::planning::task_prepare,
             commands::planning::queue_summary,
+            commands::planning::queue_next,
+            commands::planning::task_repositories,
             commands::planning::queue_after_exit,
             commands::integrations::profiles_read,
             commands::integrations::profile_add,
@@ -244,6 +261,8 @@ pub fn run() {
             automations::automation_preview,
             automations::automation_run_now,
             skills::skills_list,
+            skills::skills_discover,
+            skills::skills_import,
             skills::skill_save,
             skills::skill_delete,
             skills::session_skills,

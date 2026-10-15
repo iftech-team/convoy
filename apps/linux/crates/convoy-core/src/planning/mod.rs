@@ -81,7 +81,7 @@ const RELATED_DETAILS: usize = 2_000;
 
 /// The tasks this one waits for or is related to, for its agent to read
 /// first: what each is, where it stands, and where its work lives.
-fn related_context(state: &State, task: &Task) -> String {
+pub(crate) fn related_context(state: &State, task: &Task) -> String {
     let mut ids: Vec<&String> = task.depends_on.iter().collect();
     for id in &task.related {
         if !ids.contains(&id) {
@@ -143,7 +143,62 @@ fn related_context(state: &State, task: &Task) -> String {
     )
 }
 
-fn source_note(source: &IssueSource) -> String {
+/// The other repositories a task changes, as its brief names them, and the
+/// folders its agent is given: their worktrees for this task, or their
+/// checkouts.
+pub(crate) fn other_repositories(state: &State, task: &Task) -> (String, Vec<std::path::PathBuf>) {
+    let mut lines = Vec::new();
+    let mut dirs = Vec::new();
+    for id in &task.extra_projects {
+        let Some(project) = state.projects.iter().find(|project| &project.id == id) else {
+            continue;
+        };
+        let checkout = task
+            .extra_checkouts
+            .iter()
+            .find(|checkout| &checkout.project_id == id);
+        let dir = checkout
+            .map(|checkout| checkout.directory.clone())
+            .unwrap_or_else(|| project.path.clone());
+        lines.push(match checkout {
+            Some(checkout) => format!(
+                "- {} at {} (branch {})",
+                project.title,
+                dir.display(),
+                checkout.branch
+            ),
+            None => format!("- {} at {}", project.title, dir.display()),
+        });
+        dirs.push(dir);
+    }
+    if lines.is_empty() {
+        return (String::new(), dirs);
+    }
+    (
+        format!(
+            "\n\n## Other repositories\nThis task changes these repositories too. You have access to them; make and commit the changes there as well, and keep them consistent with this one:\n{}",
+            lines.join("\n")
+        ),
+        dirs,
+    )
+}
+
+/// The issue's files, downloaded beside the workspace, for the agent to open.
+pub(crate) fn attached_files(task: &Task) -> String {
+    if task.attachments.is_empty() {
+        return String::new();
+    }
+    format!(
+        "\n\n## Attached files\nThe issue's files, downloaded for you; open them when they help (screenshots show what is wrong):\n{}",
+        task.attachments
+            .iter()
+            .map(|file| format!("- {}: {}", file.name, file.path.display()))
+            .collect::<Vec<_>>()
+            .join("\n")
+    )
+}
+
+pub(crate) fn source_note(source: &IssueSource) -> String {
     let link = source
         .url
         .as_deref()
@@ -179,7 +234,7 @@ fn model_name(model: &str) -> Result<Option<String>> {
     Ok((!model.is_empty()).then(|| model.to_string()))
 }
 
-const PR_NOTE: &str = "Commit your changes, push the current branch and create a pull request with gh pr create --fill. Report its URL. Do not merge.";
+const PR_NOTE: &str = "Commit your changes, push the current branch and open a pull request for it: a merge request with glab on GitLab, a pull request with gh on GitHub. Report its URL. Do not merge.";
 const PUSH_NOTE: &str = "Commit and push the current branch to its configured upstream. Never force push. Report the commit.";
 const NO_PUBLISH_NOTE: &str = "Do not publish, push, or open a PR.";
 
@@ -267,6 +322,13 @@ impl Workspace {
         text(&input.title, 200, true)?;
         text(&input.details, 16_000, false)?;
         text(&input.findings, 16_000, false)?;
+        let plan_first = self
+            .state()
+            .projects
+            .iter()
+            .find(|project| project.id == input.project_id)
+            .and_then(|project| project.plan_first_default)
+            .unwrap_or(false);
         self.update(move |state| {
             let existing = input.id.as_ref().map(|id| find_task_index(state, id));
             match existing {
@@ -312,6 +374,14 @@ impl Workspace {
                         task.status = TaskStatus::Queued;
                         task.session_id = None;
                         task.spec_revision = None;
+                        task.stage_run = None;
+                        task.round = 0;
+                        // The plan was for the task as it was.
+                        if let Some(plan) = task.plan.as_mut() {
+                            if plan.status == crate::plan::PlanStatus::Approved {
+                                plan.status = crate::plan::PlanStatus::ChangesRequested;
+                            }
+                        }
                     }
                 }
                 None => state.tasks.push(Task {
@@ -338,6 +408,22 @@ impl Workspace {
                     skills: attached(input.skills.clone().unwrap_or_default()),
                     sync: None,
                     qa: None,
+                    round: 0,
+                    stage_run: None,
+                    build_summary: None,
+                    review: None,
+                    plan_first,
+                    plan_auto_approve: None,
+                    plan: None,
+                    docs: Vec::new(),
+                    docs_run: None,
+                    publish_run: None,
+                    pr_title: None,
+                    pr_body: None,
+                    attachments: Vec::new(),
+                    extra_projects: Vec::new(),
+                    extra_checkouts: Vec::new(),
+                    extra_pr_urls: Vec::new(),
                     unknown: Default::default(),
                 }),
             }
@@ -358,6 +444,7 @@ impl Workspace {
                         | TaskStatus::Changes
                         | TaskStatus::Done
                         | TaskStatus::Failed
+                        | TaskStatus::Attention
                 ),
                 "Invalid task status."
             );
@@ -378,6 +465,96 @@ impl Workspace {
                 }
             }
             state.tasks[index].status = status;
+            Ok(())
+        })
+    }
+
+    /// Whether a task is planned before it is built, and whether its plans
+    /// are approved by themselves (`None` follows the project).
+    pub fn set_task_plan(
+        &mut self,
+        id: &str,
+        plan_first: bool,
+        auto_approve: Option<bool>,
+    ) -> Result<&State> {
+        let id = id.to_string();
+        self.update(move |state| {
+            let Some(index) = find_task_index(state, &id) else {
+                bail!("Task unavailable.")
+            };
+            let task = &mut state.tasks[index];
+            task.plan_first = plan_first;
+            task.plan_auto_approve = auto_approve;
+            Ok(())
+        })
+    }
+
+    /// The other projects — repositories — a task changes too. Not its
+    /// own, each once, and only while it is not building.
+    pub fn set_task_repositories(&mut self, id: &str, projects: Vec<String>) -> Result<&State> {
+        let id = id.to_string();
+        self.update(move |state| {
+            let Some(index) = find_task_index(state, &id) else {
+                bail!("Task unavailable.")
+            };
+            ensure!(
+                state.tasks[index].status != TaskStatus::Building,
+                "Stop the task session before changing its repositories."
+            );
+            let own = state.tasks[index].project_id.clone();
+            let mut unique: Vec<String> = Vec::new();
+            for project in projects {
+                ensure!(
+                    project != own,
+                    "The task's own project is already its repository."
+                );
+                ensure!(
+                    state.projects.iter().any(|item| item.id == project),
+                    "A repository is no longer a project here."
+                );
+                if !unique.contains(&project) {
+                    unique.push(project);
+                }
+            }
+            let task = &mut state.tasks[index];
+            task.extra_checkouts
+                .retain(|checkout| unique.contains(&checkout.project_id));
+            task.extra_projects = unique;
+            Ok(())
+        })
+    }
+
+    /// Records a worktree made for a task in another repository.
+    pub fn record_extra_checkout(
+        &mut self,
+        id: &str,
+        checkout: crate::model::ExtraCheckout,
+    ) -> Result<&State> {
+        let id = id.to_string();
+        self.update(move |state| {
+            let Some(index) = find_task_index(state, &id) else {
+                bail!("Task unavailable.")
+            };
+            let task = &mut state.tasks[index];
+            task.extra_checkouts
+                .retain(|other| other.project_id != checkout.project_id);
+            task.extra_checkouts.push(checkout);
+            Ok(())
+        })
+    }
+
+    /// Records the files downloaded for a task's issue.
+    pub fn set_task_attachments(
+        &mut self,
+        id: &str,
+        attachments: Vec<crate::model::TaskAttachment>,
+    ) -> Result<&State> {
+        let id = id.to_string();
+        self.update(move |state| {
+            let Some(index) = find_task_index(state, &id) else {
+                bail!("Task unavailable.")
+            };
+            state.tasks[index].attachments = attachments;
             Ok(())
         })
     }
@@ -529,6 +706,9 @@ impl Workspace {
     /// state; the caller looks the session up through `task.session_id`.
     pub fn prepare_task(&mut self, id: &str, profile_id: Option<String>) -> Result<&State> {
         let id = id.to_string();
+        // The run its builder reports on when it is done.
+        let run = new_id();
+        let done_file = crate::stage::file(self, crate::stage::Stage::Build, &run);
         self.update(move |state| {
             let Some(index) = find_task_index(state, &id) else {
                 bail!("Task unavailable.")
@@ -538,6 +718,10 @@ impl Workspace {
                 "Task unavailable."
             );
             let task = state.tasks[index].clone();
+            ensure!(
+                !crate::plan::needed(&task),
+                "This task is planned first: approve its plan before it is built."
+            );
             let spec = task
                 .spec_id
                 .as_deref()
@@ -562,10 +746,35 @@ impl Workspace {
                     return Ok(());
                 }
             }
+            let convoy_publishes = state
+                .projects
+                .iter()
+                .find(|project| project.id == task.project_id)
+                .is_some_and(crate::publish::by_convoy);
             let publication = match task.mode {
-                PublishMode::Pr => PR_NOTE,
-                PublishMode::Push => PUSH_NOTE,
-                PublishMode::None => NO_PUBLISH_NOTE,
+                PublishMode::None => NO_PUBLISH_NOTE.to_string(),
+                _ if convoy_publishes => crate::publish::BUILDER_NOTE.to_string(),
+                // The builder opens the request itself: the way the project
+                // writes one — its template, its skill — comes with it.
+                PublishMode::Pr => {
+                    let own = state
+                        .projects
+                        .iter()
+                        .find(|project| project.id == task.project_id)
+                        .and_then(|project| {
+                            crate::roles::project_instructions(project, crate::model::Role::Pr)
+                        })
+                        .or_else(|| {
+                            crate::roles::global_instructions(&state.settings, crate::model::Role::Pr)
+                        });
+                    match own {
+                        Some(text) => format!(
+                            "{PR_NOTE}\n\n## The pull request\nWrite and open it as follows; this comes before any other way you know:\n{text}"
+                        ),
+                        None => PR_NOTE.to_string(),
+                    }
+                }
+                PublishMode::Push => PUSH_NOTE.to_string(),
             };
             let preamble = spec
                 .as_ref()
@@ -579,9 +788,27 @@ impl Workspace {
                 String::new()
             };
             let context = related_context(state, &task);
+            let files = attached_files(&task);
+            let (repositories, add_dirs) = other_repositories(state, &task);
+            let plan = task
+                .plan
+                .as_ref()
+                .filter(|plan| plan.approved())
+                .map(|plan| format!("\n\n## Approved plan\nFollow this plan.\n\n{}", plan.text.trim()))
+                .unwrap_or_default();
+            let instructions = state
+                .projects
+                .iter()
+                .find(|project| project.id == task.project_id)
+                .map(|project| crate::roles::brief(&state.settings, project, crate::model::Role::Build))
+                .filter(|text| !text.is_empty())
+                .map(|text| format!("\n\n## Instructions\n{text}"))
+                .unwrap_or_default();
             let prompt = format!(
-                "{preamble}\n## Current task\n{}\n\n{}{origin}{findings}{context}\n\nVerify the changes and report your results. {publication}",
-                task.title, task.details
+                "{preamble}\n## Current task\n{}\n\n{}{origin}{repositories}{files}{findings}{context}{plan}{instructions}\n\nVerify the changes and report your results. {publication}\n\n{}",
+                task.title,
+                task.details,
+                crate::stage::closing(crate::stage::Stage::Build, &done_file)
             );
             ensure!(
                 utf16_len(&prompt) <= 32_000,
@@ -617,12 +844,15 @@ impl Workspace {
                 parent_id: None,
                 manager: None,
                 skills: task.skills.clone(),
+                add_dirs: (!add_dirs.is_empty()).then_some(add_dirs),
+                permission_mode: None,
                 unknown: Default::default(),
             };
             let session_id = session.id.clone();
             state.sessions.push(session);
             state.tasks[index].session_id = Some(session_id);
             state.tasks[index].spec_revision = revision;
+            state.tasks[index].stage_run = Some(run);
             Ok(())
         })
     }
@@ -673,7 +903,8 @@ impl Workspace {
                     format!("{}: {}", issue.key, issue.title)
                 };
                 let title: String = title.chars().take(200).collect();
-                let mut details = issue.details.clone();
+                // The description, then its discussion and attachments.
+                let mut details = issue.full_details();
                 if utf16_len(&details) > 12_000 {
                     details = details.chars().take(12_000).collect::<String>()
                         + "\n…(truncated; see the issue)";
@@ -712,9 +943,35 @@ impl Workspace {
                     skills: attached(options.skills.clone()),
                     sync: None,
                     qa: None,
+                    round: 0,
+                    stage_run: None,
+                    build_summary: None,
+                    review: None,
+                    plan_first: false,
+                    plan_auto_approve: None,
+                    plan: None,
+                    docs: Vec::new(),
+                    docs_run: None,
+                    publish_run: None,
+                    pr_title: None,
+                    pr_body: None,
+                    attachments: Vec::new(),
+                    extra_projects: Vec::new(),
+                    extra_checkouts: Vec::new(),
+                    extra_pr_urls: Vec::new(),
                     unknown: Default::default(),
                 });
             }
+        }
+        let plan_first = self
+            .state()
+            .projects
+            .iter()
+            .find(|project| project.id == project_id)
+            .and_then(|project| project.plan_first_default)
+            .unwrap_or(false);
+        for task in created.iter_mut() {
+            task.plan_first = plan_first;
         }
         let count = created.len();
         if count > 0 {
@@ -777,6 +1034,10 @@ impl Workspace {
 
     pub fn add_profile(&mut self, label: &str, agent: Agent) -> Result<&State> {
         text(label, 100, true)?;
+        ensure!(
+            agent != Agent::Gemini,
+            "Gemini CLI uses the account it is signed in with; Convoy keeps no others for it."
+        );
         let label = label.trim().to_string();
         self.update(move |state| {
             let taken = state.profiles.iter().any(|profile| {

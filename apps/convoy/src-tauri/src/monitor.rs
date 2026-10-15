@@ -146,6 +146,44 @@ pub fn monitor_tick(
         }
     }
 
+    // Gemini names its sessions itself: once it has written one for a
+    // running session, the session takes that id, so it resumes exactly.
+    let unnamed = workspace
+        .with(|core| Ok(convoy_core::session::gemini_unnamed(core)))
+        .unwrap_or_default();
+    for (id, directory, launched) in unnamed
+        .into_iter()
+        .filter(|(id, _, _)| running.contains(id))
+    {
+        let home = std::env::var_os("GEMINI_CLI_HOME")
+            .map(|home| std::path::PathBuf::from(home).join(".gemini"))
+            .unwrap_or_else(|| {
+                convoy_core::storage::home(convoy_core::Platform::current()).join(".gemini")
+            });
+        let taken: Vec<String> = workspace
+            .with(|core| {
+                Ok(core
+                    .state()
+                    .sessions
+                    .iter()
+                    .filter(|session| session.agent == convoy_core::model::Agent::Gemini)
+                    .map(|session| session.provider_id.clone())
+                    .filter(|provider| !provider.is_empty())
+                    .collect())
+            })
+            .unwrap_or_default();
+        if let Some(found) =
+            convoy_core::provider::gemini::session_since(&home, &directory, &launched, &taken)
+        {
+            if workspace
+                .act(|core| convoy_core::session::record_provider_id(core, &id, &found))
+                .unwrap_or(false)
+            {
+                changed = true;
+            }
+        }
+    }
+
     // A session that stopped leaves nothing behind to compare against.
     if let Ok(mut seen) = reports.seen.lock() {
         seen.retain(|id, _| running.contains(id));

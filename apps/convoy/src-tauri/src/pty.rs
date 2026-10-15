@@ -93,7 +93,11 @@ impl<R: Runtime> Window<R> {
                     .unwrap_or(false);
             }
         }
-        if watch.tail.contains("/pull/") || watch.tail.contains("/merge_requests/") {
+        if watch.tail.contains("/pull/")
+            || watch.tail.contains("/merge_requests/")
+            || watch.tail.contains("/pulls/")
+            || watch.tail.contains("/pull-requests/")
+        {
             if let Some(url) = convoy_core::session::pull_request_url(&watch.tail) {
                 if watch.pull_request.as_deref() != Some(url.as_str()) {
                     watch.pull_request = Some(url.clone());

@@ -185,8 +185,17 @@ pub fn after_exit(app: &Rc<App>, session_id: &str, cause: ExitCause) {
         return;
     }
 
-    let output = terminal::saved_output(app, session_id);
-    let completion = queue::on_clean_exit(&app.workspace.borrow(), session_id, &output);
+    let running = |id: &str| {
+        app.views
+            .borrow()
+            .get(id)
+            .is_some_and(|view| view.running())
+    };
+    let context = convoy_core::pipeline::Context {
+        skills: None,
+        running: &running,
+    };
+    let completion = queue::on_clean_exit(&mut app.workspace.borrow_mut(), &context, session_id);
     match completion {
         Err(error) => {
             app.error(error);
@@ -201,38 +210,23 @@ pub fn after_exit(app: &Rc<App>, session_id: &str, cause: ExitCause) {
             stop(app, &project_id);
             app.sync();
         }
-        // QA runs in the desktop client; here a task due for it carries on,
-        // reviewed first when that is also due.
-        Ok(Completion::Continue) | Ok(Completion::Test { review: None, .. }) => {
-            advance(app, &project_id)
-        }
-        Ok(Completion::Review(handoff))
-        | Ok(Completion::Test {
-            review: Some(handoff),
-            ..
-        }) => {
-            let created = {
-                let mut workspace = app.workspace.borrow_mut();
-                workspace.add_session(*handoff).map(|state| {
-                    state
-                        .sessions
-                        .last()
-                        .map(|session| session.id.clone())
-                        .unwrap_or_default()
-                })
-            };
-            match created {
-                Ok(review) => {
-                    window::rebuild_tabs(app);
-                    app.sync();
-                    terminal::start(app, &review);
-                    advance(app, &project_id);
-                }
-                Err(error) => {
-                    app.error(error);
-                    stop(app, &project_id);
+        // QA runs in the desktop client; here the sessions the pipeline
+        // asks for are started, and the queue carries on.
+        Ok(Completion::Advance(actions)) => {
+            window::rebuild_tabs(app);
+            app.sync();
+            for action in actions {
+                match action {
+                    convoy_core::pipeline::Action::Start { session, .. } => {
+                        terminal::start(app, &session)
+                    }
+                    convoy_core::pipeline::Action::Send { session, text, .. } => {
+                        terminal::paste(app, &session, &text, true)
+                    }
+                    _ => {}
                 }
             }
+            advance(app, &project_id);
         }
     }
 }
