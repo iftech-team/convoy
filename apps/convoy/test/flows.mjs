@@ -1828,7 +1828,9 @@ try {
   await page.locator(".inbox-button__badge", { hasText: "2" }).waitFor();
   // The keyboard reaches the rows; Esc closes the inbox.
   await inbox.focus();
-  await page.keyboard.press("Tab");
+  // WebKit on macOS tabs to buttons only with Option, as Safari does unless
+  // full keyboard access is on.
+  await page.keyboard.press(process.env.CONVOY_TEST_ENGINE === "webkit" ? "Alt+Tab" : "Tab");
   assert(await page.evaluate(() => !!document.activeElement?.closest(".inbox")), "Tab moves into the inbox");
   await page.keyboard.press("Escape");
   await inbox.waitFor({ state: "detached" });
