@@ -5,7 +5,8 @@
 import { agentIcon, icons } from "./icons.js";
 import { escape, plural } from "./ui.js";
 import { t } from "./i18n.js";
-import { state } from "./state.js";
+import { sessionState, state } from "./state.js";
+import { sessionLabel, sessionTone } from "./session-state.js";
 
 /// Every session the window knows, each once: the open project's list is the
 /// fresher one.
@@ -20,29 +21,18 @@ function known() {
 /// A manager's helpers that are not archived, in the order they started.
 export const helpersOf = (id) => known().filter((item) => item.parent_id === id && !item.archived);
 
-/// Where a helper stands, from what the window knows: its process, and the
-/// state its chat events reported.
+/// Where a helper stands, in the vocabulary every session uses. A helper
+/// the manager just started has not run yet: it is starting, not idle.
 export function helperState(item) {
-  const running = item.running || state.running?.includes(item.id);
-  if (!running) return item.started ? "stopped" : "starting";
-  const reported = state.agentState.get(item.id);
-  if (reported === "waiting") return "waiting";
-  if (reported === "done") return "done";
-  return "working";
+  const now = sessionState(item, !!(item.running || state.running?.includes(item.id)));
+  return now === "not_started" ? "starting" : now;
 }
 
-const LABELS = {
-  working: "Working",
-  waiting: "Needs you",
-  done: "Finished",
-  stopped: "Stopped",
-  starting: "Starting",
-};
+const label = (key) => (key === "starting" ? "Starting" : sessionLabel(key));
+const dot = (key) => (key === "starting" ? "idle" : sessionTone(key));
 
-const DOTS = { working: "running", waiting: "waiting", done: "done", stopped: "stopped", starting: "idle" };
-
-/// Busy helpers: working or waiting on an approval.
-export const busyCount = (list) => list.filter((item) => ["working", "waiting", "starting"].includes(helperState(item))).length;
+/// Busy helpers: working, waiting on an approval, or about to start.
+export const busyCount = (list) => list.filter((item) => ["working", "needs_you", "starting"].includes(helperState(item))).length;
 
 /// "2 helpers · 1 running", or nothing for a session without helpers.
 export function helpersSummary(id) {
@@ -50,7 +40,7 @@ export function helpersSummary(id) {
   if (!list.length) return "";
   const busy = busyCount(list);
   return busy
-    ? `${plural(list.length, "helper")} · ${t("{count} running", { count: busy })}`
+    ? `${plural(list.length, "helper")} · ${t("{count} working", { count: busy })}`
     : plural(list.length, "helper");
 }
 
@@ -64,7 +54,7 @@ export function helperCards(id) {
       <div class="helpers__head">
         ${icons.helpers}
         <span>${escape(t("Helpers"))}</span>
-        <span class="helpers__count">${escape(busy ? `${list.length} · ${t("{count} running", { count: busy })}` : String(list.length))}</span>
+        <span class="helpers__count">${escape(busy ? `${list.length} · ${t("{count} working", { count: busy })}` : String(list.length))}</span>
       </div>
       <div class="helpers__list">
         ${list.map(card).join("")}
@@ -75,12 +65,12 @@ export function helperCards(id) {
 function card(item) {
   const tone = helperState(item);
   return `
-    <div class="helper-card helper-card--${tone}" data-helper="${escape(item.id)}">
-      <span class="dot dot--${DOTS[tone]}"></span>
+    <div class="helper-card helper-card--${dot(tone)}" data-helper="${escape(item.id)}">
+      <span class="dot dot--${dot(tone)}"></span>
       ${agentIcon(item.agent, 12)}
       <span class="helper-card__text">
         <span class="helper-card__title" title="${escape(item.title)}">${escape(item.title)}</span>
-        <span class="helper-card__status">${escape(t(LABELS[tone]))}${item.branch ? ` · ${escape(item.branch)}` : ""}</span>
+        <span class="helper-card__status">${escape(t(label(tone)))}${item.branch ? ` · ${escape(item.branch)}` : ""}</span>
       </span>
       <button class="helper-card__open" data-open="${escape(item.id)}" title="${escape(t("Open {session}", { session: item.title }))}">${escape(t("Open"))}</button>
     </div>`;
@@ -122,10 +112,10 @@ export function helpersMenu(id, anchor) {
             const tone = helperState(item);
             return `
               <button class="menu__item helpers-menu__item" role="menuitem" data-open="${escape(item.id)}">
-                <span class="dot dot--${DOTS[tone]}"></span>
+                <span class="dot dot--${dot(tone)}"></span>
                 ${agentIcon(item.agent, 12)}
                 <span class="helpers-menu__title">${escape(item.title)}</span>
-                <span class="menu__hint">${escape(t(LABELS[tone]))}</span>
+                <span class="menu__hint">${escape(t(label(tone)))}</span>
               </button>`;
           })
           .join("")}

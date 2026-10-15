@@ -548,11 +548,11 @@ try {
   await page.keyboard.press(`${primary}+Alt+d`);
   await page.locator(".home__greeting", { hasText: "Agent Dashboard" }).waitFor();
   await page.locator(".board__column", { hasText: "Needs you" }).locator('[data-open="builder"]').waitFor();
-  await page.locator(".board__column", { hasText: "Idle" }).locator('[data-open="notes"]').waitFor();
+  await page.locator(".board__column", { hasText: "Not running" }).locator('[data-open="notes"]').waitFor();
   if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/dashboard.png` });
   // Opening another project's session gives the session a tab, not the
   // project's page it passes through.
-  await page.locator(".board__column", { hasText: "Idle" }).locator('[data-open="notes"]').click();
+  await page.locator(".board__column", { hasText: "Not running" }).locator('[data-open="notes"]').click();
   await page.locator('.tab-item--selected[data-tab-open="notes"]').waitFor();
   assert.equal(await page.locator('.tab-item[data-tab-open="project:other"]').count(), 0, "no tab for a page not gone to");
   await page.locator('[data-tab-close="notes"]').click();
@@ -1561,6 +1561,12 @@ try {
   await page.waitForFunction(() => document.querySelector("#terminal-host .xterm-rows")?.textContent.includes("session stopped"));
   assert.equal(await page.locator("#terminal-host").count(), 1);
   assert.equal(await page.locator(".chat-slot--readonly").count(), 0);
+  // Put to sleep, a session says so wherever it shows, not just "Stopped".
+  await page.evaluate(() => {
+    window.mockSessions.push({ id: "dozy", project_id: "project", title: "Dozy", agent: "claude", provider_id: "p-dozy", started: true, running: false, pinned: false, review_of: null });
+    window.emitTauri("terminal:exit", { id: "dozy", cause: "hibernated", code: 0 });
+  });
+  await page.locator('.side-session[data-open="dozy"] .dot--asleep[title="Asleep"]').waitFor();
   // Opened after a restart, a stopped session shows its saved output as a
   // terminal; only one with next to nothing saved shows its conversation.
   await page.evaluate(() => {
@@ -1645,8 +1651,8 @@ try {
   await inbox.waitFor({ state: "detached" });
   // The palette has it, and so does a shortcut.
   await page.keyboard.press(`${primary}+k`);
-  await page.locator("#palette-input").fill("Approvals");
-  await page.locator(".palette__row", { hasText: "Approvals…" }).first().waitFor();
+  await page.locator("#palette-input").fill("Needs you");
+  await page.locator(".palette__row", { hasText: "Needs you…" }).first().waitFor();
   await page.keyboard.press("Enter");
   await inbox.waitFor();
   await page.keyboard.press("Escape");
@@ -1671,7 +1677,7 @@ try {
   const { readFile } = await import("node:fs/promises");
   const inboxSource = await readFile(new URL("../src/views-inbox.js", import.meta.url), "utf8");
   const keys = [...inboxSource.matchAll(/\bt\("((?:[^"\\]|\\.)*)"/g)].map((match) => match[1]);
-  keys.push("Approvals…", "What the agents are waiting on you for, in every project");
+  keys.push("Needs you…", "What the agents are waiting on you for, in every project");
   assert(keys.length > 15, "the inbox's strings were found");
   assert.deepEqual(keys.filter((key) => !(key in ru)), [], "untranslated inbox strings");
 
@@ -1704,7 +1710,7 @@ try {
   });
   const leadRow = page.locator('.project-row__sessions .side-session[data-open="lead"]');
   await page.locator('.side-session--helper[data-open="helper-1"]').waitFor();
-  await leadRow.locator(".side-session__helpers", { hasText: "2 helpers · 2 running" }).waitFor();
+  await leadRow.locator(".side-session__helpers", { hasText: "2 helpers · 2 working" }).waitFor();
   assert.deepEqual(
     await page.evaluate(() => {
       const lead = document.querySelector('.project-row__sessions .side-session[data-open="lead"]');
@@ -1726,8 +1732,8 @@ try {
   await leadChat.locator('.helper-card--waiting[data-helper="helper-1"] .helper-card__status', { hasText: "Needs you" }).waitFor();
   await emitHelper([{ type: "approval_resolved", request: "h1" }, { type: "text_done", id: "m1", text: "Added 6 tests; all pass." }, { type: "turn_ended", usage: { input: 1, output: 1, cache_read: 0, cache_write: 0 }, error: null }]);
   await cardOne.locator(".helper-card__status", { hasText: "Finished" }).waitFor();
-  await leadRow.locator(".side-session__helpers", { hasText: "2 helpers · 1 running" }).waitFor();
-  await leadChat.locator(".helpers__count", { hasText: "2 · 1 running" }).waitFor();
+  await leadRow.locator(".side-session__helpers", { hasText: "2 helpers · 1 working" }).waitFor();
+  await leadChat.locator(".helpers__count", { hasText: "2 · 1 working" }).waitFor();
   if (shots) {
     for (const theme of ["light", "dark"]) {
       await page.evaluate((value) => document.documentElement.setAttribute("data-theme", value), theme);
@@ -1749,7 +1755,7 @@ try {
   });
   const helpersButton = page.locator(".workbench__bar .bar-helpers");
   await helpersButton.filter({ hasText: "2 helpers" }).waitFor();
-  assert.equal(await helpersButton.getAttribute("title"), "2 helpers · 1 running");
+  assert.equal(await helpersButton.getAttribute("title"), "2 helpers · 1 working");
   assert.equal(await helpersButton.locator(".dot--running").count(), 1, "one is still working");
   await helpersButton.click();
   const helpersMenu = page.locator(".helpers-menu");

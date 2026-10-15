@@ -17,7 +17,8 @@ import { markdown } from "./views-files.js";
 import { TASK_MODES, agentName } from "./task-defaults.js";
 import { TASK_STATUSES, syncState, syncSummary } from "./views-planning.js";
 import { when } from "./views-history.js";
-import { state, project, session } from "./state.js";
+import { isRunning, sessionState, state, project, session } from "./state.js";
+import { sessionLabel } from "./session-state.js";
 import { agentIcon, icons } from "./icons.js";
 import { t } from "./i18n.js";
 import { automationEditor } from "./views-automations.js";
@@ -1080,7 +1081,7 @@ function splitPicker(dialog) {
                (item) => `
              <button class="menu__item" data-split="${escape(item.id)}">
                <span>${escape(item.title)}</span>
-               <span class="menu__hint">${escape(name(item))} · ${escape(item.running ? t("running") : item.started ? t("stopped") : t("never started"))}</span>
+               <span class="menu__hint">${escape(name(item))} · ${escape(t(sessionLabel(sessionState(item, isRunning(item.id)))))}</span>
              </button>`,
              )
              .join("")}

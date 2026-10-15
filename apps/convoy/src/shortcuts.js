@@ -56,7 +56,7 @@ export const SHORTCUTS = [
   ["tasksTab", "mod+alt+4", "Tasks", "Project"],
   ["docsTab", "mod+alt+5", "Docs & specs", "Project"],
   ["activity", "mod+shift+a", "Activity feed", "General"],
-  ["approvals", "mod+alt+a", "Approvals", "General"],
+  ["approvals", "mod+alt+a", "Needs you", "General"],
   ["nextTab", "mod+shift+]", "Next section", "Project"],
   ["previousTab", "mod+shift+[", "Previous section", "Project"],
   ["reveal", "mod+alt+f", "Show project folder", "Project"],

@@ -15,7 +15,8 @@ import {
 } from "./ui.js";
 import { language, t } from "./i18n.js";
 import { agentName } from "./task-defaults.js";
-import { activeAccount, anySession, isProjectTab, isRunning, project, session, state, visibleSessions } from "./state.js";
+import { activeAccount, anySession, isProjectTab, isRunning, project, session, sessionState, state, visibleSessions } from "./state.js";
+import { sessionLabel, sessionTone, sleptBy } from "./session-state.js";
 import { TASK_STATUSES, runnable } from "./views-planning.js";
 import { missingConversation } from "./terminal.js";
 import { shownAsTranscript, viewOf } from "./views-chat.js";
@@ -43,26 +44,10 @@ export const revealLabel = () =>
       ? t("Show in Explorer")
       : t("Show in Files");
 
-/// The dot beside a session: what its agent last reported, or whether it runs.
-function stateDot(item) {
-  const reported = state.agentState.get(item.id);
-  const tone = !item.running
-    ? item.started
-      ? "stopped"
-      : "idle"
-    : reported === "waiting"
-      ? "waiting"
-      : reported === "done"
-        ? "done"
-        : "running";
-  const label = t({
-    stopped: "Stopped",
-    idle: "Not started",
-    waiting: "Needs you",
-    done: "Finished its turn",
-    running: reported ?? "Running",
-  }[tone]);
-  return `<span class="dot dot--${tone}" title="${escape(label)}"></span>`;
+/// The dot beside a session, titled with its state.
+function stateDot(item, running = item.running) {
+  const now = sessionState(item, !!running);
+  return `<span class="dot dot--${sessionTone(now)}" title="${escape(t(sessionLabel(now)))}"></span>`;
 }
 
 function sidebarSession(item, { showProject = false, helper = false } = {}) {
@@ -87,7 +72,7 @@ function sidebarSession(item, { showProject = false, helper = false } = {}) {
             : state.settings.compact_sidebar === false
               ? `<span class="side-session__detail">${escape(
                   [
-                    t(item.running ? (state.agentState.get(item.id) ?? "Running") : item.started ? "Stopped" : "Saved"),
+                    t(sessionLabel(sessionState(item, !!item.running))),
                     agentName(item.agent),
                   ].join(" · "),
                 )}</span>`
@@ -463,16 +448,16 @@ export const pickableKeys = () => [
 ];
 
 function sessionRow(item, { picking = false } = {}) {
-  const reported = state.agentState.get(item.id);
   // What a person needs at a glance: is it running, which agent, where, and
   // when it was last used. The provider ID is in the tooltip.
-  const status = item.running
-    ? `<span class="row__state row__state--${reported === "waiting" ? "waiting" : "running"}">${escape(t(reported ?? "running"))}</span>`
+  const now = sessionState(item, !!item.running);
+  const status = item.running || now === "asleep"
+    ? `<span class="row__state row__state--${sessionTone(now)}">${escape(t(sessionLabel(now)))}</span>`
     : "";
   const at = lastActive(item);
   const meta = [
     agentName(item.agent),
-    !item.running && !item.started ? escape(t("never started")) : null,
+    now === "not_started" ? escape(t("Not started")) : null,
     item.archived ? escape(t("archived")) : null,
     item.branch ? escape(t("on {branch}", { branch: item.branch })) : null,
     at ? escape(when(at)) : null,
@@ -616,19 +601,9 @@ export function reviewsView() {
 export function workbench() {
   const current = session();
   if (!current) return "";
-  const reported = state.agentState.get(current.id);
-  const label = t(current.running
-    ? (reported ?? "Running")
-    : current.started
-      ? "Stopped"
-      : "Not started");
-  const tone = current.running
-    ? reported === "waiting"
-      ? "state--waiting"
-      : reported === "done"
-        ? "state--done"
-        : "state--running"
-    : "";
+  const now = sessionState(current, !!current.running);
+  const label = t(sessionLabel(now));
+  const tone = { needs_you: "state--waiting", finished: "state--done", idle: "state--done", working: "state--running" }[now] ?? "";
 
   const git = state.settings.git_status === false ? null : state.git;
   const view = viewOf(current);
@@ -998,7 +973,7 @@ const ACTIVITY = {
   done: ["finished", "check", "activity--done"],
   started: ["started", "play", ""],
   resumed: ["resumed", "refresh", ""],
-  hibernated: ["slept", "moon", ""],
+  hibernated: ["asleep", "moon", ""],
   exited: ["stopped", "stop", ""],
   worktree: ["worktree", "branch", "activity--worktree"],
 };
@@ -1026,7 +1001,7 @@ function activityPanel() {
       ? [helper[0], "helpers", event.kind === "done" ? "activity--done" : ""]
       : automation
         ? [automation[0], "clock", event.kind === "done" ? "activity--done" : ""]
-        : (ACTIVITY[event.kind] ?? [event.kind, "clock", ""]);
+        : (ACTIVITY[sleptBy(event) ? "hibernated" : event.kind] ?? [event.kind, "clock", ""]);
     if (helper) event = { ...event, detail: helper[1] };
     if (automation) event = { ...event, detail: automation[1] };
     const time = new Date(event.at).toLocaleTimeString(language(), { hour: "numeric", minute: "2-digit" });
@@ -1075,10 +1050,11 @@ export const tabInfo = (id) =>
 /// A tab's state, drawn as macOS draws it: a check once the agent finished
 /// its turn, a warning when it needs you, a dot while it works.
 function tabGlyph(id, running, info) {
-  const reported = state.agentState.get(id);
-  if (running && reported === "done") return `<span class="tab-glyph tab-glyph--done" title="${escape(t("Finished its turn"))}">${icons.checkCircle}</span>`;
-  if (running && reported === "waiting") return `<span class="tab-glyph tab-glyph--waiting" title="${escape(t("Needs you"))}">${icons.warn}</span>`;
-  return stateDot({ ...info, running, started: info.started ?? running });
+  const item = { ...info, id, started: info.started ?? running };
+  const now = sessionState(item, running);
+  if (now === "finished") return `<span class="tab-glyph tab-glyph--done" title="${escape(t(sessionLabel(now)))}">${icons.checkCircle}</span>`;
+  if (now === "needs_you") return `<span class="tab-glyph tab-glyph--waiting" title="${escape(t(sessionLabel(now)))}">${icons.warn}</span>`;
+  return stateDot(item, running);
 }
 
 const PROJECT_VIEWS = {
@@ -1126,7 +1102,7 @@ export function tabBar() {
       const selected = state.sessionId === id && !state.files && state.page !== "project";
       return `
         <div class="tab-item${selected ? " tab-item--selected" : ""}" data-tab-open="${escape(id)}"
-             draggable="true" title="${escape(`${owner?.title ?? ""} · ${agentName(info.agent)}${running ? "" : ` · ${t("not running")}`}`)}">
+             draggable="true" title="${escape(`${owner?.title ?? ""} · ${agentName(info.agent)}${running ? "" : ` · ${t(sessionLabel(sessionState({ ...info, id }, false)))}`}`)}">
           <span class="tab-item__bar" style="background:${owner ? projectTint(owner) : "var(--border-strong)"}"></span>
           ${tabGlyph(id, running, info)}
           ${agentIcon(info.agent, 12)}

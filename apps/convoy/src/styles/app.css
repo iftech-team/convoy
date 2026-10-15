@@ -5773,6 +5773,12 @@ select:disabled {
   background: var(--state-idle);
 }
 
+/* Asleep: stopped by Convoy, its conversation kept to resume. */
+.dot--asleep {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.2px var(--state-idle), inset 3px 0 0 var(--state-idle);
+}
+
 .side-session--helper {
   padding-left: 4px;
 }

@@ -58,11 +58,11 @@ const inline = (text) => escape(text).replace(/`([^`]+)`/g, "<code>$1</code>");
 export function approvalsButton() {
   const count = inboxItems().length;
   const shortcut = binding("approvals");
-  const name = t("Approvals");
+  const name = t("Needs you");
   return `
     <button class="button button--icon counted inbox-button${count ? " inbox-button--waiting" : ""}" data-action="approvals"
             aria-pressed="${state.menu?.kind === "approvals"}" aria-haspopup="dialog"
-            aria-label="${escape(count ? t("Approvals: {count} waiting", { count }) : name)}"
+            aria-label="${escape(count ? t("Needs you: {count} waiting", { count }) : name)}"
             title="${escape(shortcut ? `${name} (${label(shortcut)})` : name)}">
       ${icons.approvals}
       ${count ? `<span class="counted__badge inbox-button__badge">${Math.min(99, count)}</span>` : ""}
@@ -158,9 +158,9 @@ export function approvalsPanel() {
   const rows = inboxItems();
   return `
     <div class="scrim scrim--clear" data-dismiss="1">
-      <section class="menu inbox" role="dialog" aria-label="${escape(t("Approvals"))}" tabindex="-1">
+      <section class="menu inbox" role="dialog" aria-label="${escape(t("Needs you"))}" tabindex="-1">
         <header class="inbox__head">
-          <strong>${escape(t("Approvals"))}</strong>
+          <strong>${escape(t("Needs you"))}</strong>
           ${rows.length ? `<span class="inbox__count">${rows.length}</span>` : ""}
           <span class="section__spacer"></span>
           <span class="inbox__hint">${escape(t("Newest first"))}</span>

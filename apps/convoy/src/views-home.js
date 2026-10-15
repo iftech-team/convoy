@@ -3,7 +3,8 @@
 
 import { agentIcon, icons, projectIcon } from "./icons.js";
 import { button, escape, plural } from "./ui.js";
-import { isRunning, state } from "./state.js";
+import { isRunning, sessionState, state } from "./state.js";
+import { sessionLabel, sessionTone } from "./session-state.js";
 import { limitsBlock } from "./views.js";
 import { t } from "./i18n.js";
 import { exact, nextAutomation, relative } from "./views-automations.js";
@@ -21,10 +22,9 @@ function greeting() {
 /// that fits — open it, or resume it.
 function sessionCard(item) {
   const owner = ownerOf(item);
-  const running = isRunning(item.id);
-  const state_ = reported(item);
-  const label = t(!running ? (item.started ? "Stopped" : "Not started") : state_ === "waiting" ? "Needs you" : state_ === "done" ? "Finished its turn" : "Working");
-  const tone = !running ? "stopped" : state_ === "waiting" ? "waiting" : state_ === "done" ? "done" : "running";
+  const now = sessionState(item);
+  const label = t(sessionLabel(now));
+  const tone = sessionTone(now);
   return `
     <div class="home-card" data-open="${escape(item.id)}" data-menu-session="${escape(item.id)}">
       <div class="home-card__head">
@@ -34,7 +34,7 @@ function sessionCard(item) {
       </div>
       <div class="home-card__meta">${escape([owner?.title, label, item.branch ? `⎇ ${item.branch}` : ""].filter(Boolean).join(" · "))}</div>
       ${
-        running
+        isRunning(item.id)
           ? ""
           : `<div class="home-card__actions">${button({ label: item.started ? t("Resume") : t("Start"), icon: "play", data: { start: item.id } })}</div>`
       }
@@ -142,10 +142,10 @@ export function dashboardView() {
     (item) => !needle || `${item.title} ${ownerOf(item)?.title ?? ""}`.toLowerCase().includes(needle),
   );
   const columns = [
-    ["Needs you", "waiting", sessions.filter(waiting)],
-    ["Working", "running", sessions.filter((item) => isRunning(item.id) && !["waiting", "done"].includes(reported(item)))],
-    ["Done", "done", sessions.filter((item) => reported(item) === "done")],
-    ["Idle", "stopped", sessions.filter((item) => !isRunning(item.id))],
+    ["Needs you", "waiting", sessions.filter((item) => sessionState(item) === "needs_you")],
+    ["Working", "running", sessions.filter((item) => sessionState(item) === "working")],
+    ["Finished", "done", sessions.filter((item) => ["finished", "idle"].includes(sessionState(item)))],
+    ["Not running", "stopped", sessions.filter((item) => !isRunning(item.id))],
   ];
   return `
     <div class="home" data-scroll="dashboard">

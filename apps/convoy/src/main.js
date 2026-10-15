@@ -2,6 +2,7 @@
 
 import { installTasks } from "./tasks.js";
 import { agentName, newTaskDefaults } from "./task-defaults.js";
+import { sessionLabel } from "./session-state.js";
 import { icons } from "./icons.js";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialogNative, save as saveDialogNative } from "@tauri-apps/plugin-dialog";
@@ -12,6 +13,8 @@ import {
   changed,
   done,
   isRunning,
+  noteSleep,
+  sessionState,
   loadPlanning,
   loadSessions,
   loadSettings,
@@ -3084,6 +3087,7 @@ async function loadActivity() {
   const events = (await attempt("activity_read")).value ?? state.activity ?? [];
   const changed = events.length !== (state.activity?.length ?? -1) || events[0]?.id !== state.activity?.[0]?.id;
   state.activity = events;
+  noteSleep(events);
   if (changed) render();
 }
 
@@ -3906,8 +3910,7 @@ function paletteEntries() {
   const entries = [];
   for (const item of state.allSessions) {
     const owner = state.projects.find((entry) => entry.id === item.project_id);
-    const running = isRunning(item.id);
-    const reported = running ? state.agentState.get(item.id) : null;
+    const now = sessionState(item);
     entries.push({
       kind: "Session",
       title: item.title,
@@ -3916,12 +3919,12 @@ function paletteEntries() {
         agentName(item.agent),
         item.branch ? `⎇ ${item.branch}` : "",
         item.review_of ? t("review") : "",
-        reported ? t(reported) : "",
+        now === "not_started" ? "" : t(sessionLabel(now)),
       ]
         .filter(Boolean)
         .join(" · "),
-      running,
-      needsYou: reported === "waiting",
+      running: isRunning(item.id),
+      needsYou: now === "needs_you",
       run: () => openAnywhere(item.id),
     });
   }
@@ -3971,7 +3974,7 @@ function paletteEntries() {
     ["Copy project path", "", "copyPath"],
     ["Toggle keep awake", "", "wake"],
     ["Activity", "What the agents did, newest first", "activity"],
-    ["Approvals…", "What the agents are waiting on you for, in every project", "approvals"],
+    ["Needs you…", "What the agents are waiting on you for, in every project", "approvals"],
     ["Settings…", "Appearance, terminal, agents, git, notifications", "settings"],
     ["Files & Changes", "Browse files, stage, commit, push, log", "files"],
   ].map(([title, subtitle, action]) => ({ kind: "Action", title: t(title), subtitle: t(subtitle), shortcut: bound(action), run: () => SHORTCUT_ACTIONS[action]() }));
@@ -4038,7 +4041,7 @@ function terminalEntries() {
     return {
       kind: "Session",
       title: item.title,
-      subtitle: [owner?.title, t(isRunning(id) ? (state.agentState.get(id) ?? "running") : "stopped"), id === current ? t("current") : ""]
+      subtitle: [owner?.title, t(sessionLabel(sessionState(item))), id === current ? t("current") : ""]
         .filter(Boolean)
         .join(" · "),
       shortcut: index < 9 ? label(`mod+${index + 1}`) : "",
@@ -4396,6 +4399,11 @@ async function applyKeepAwake() {
 
 terminal.onExit(async (exit) => {
   chatExited(exit.id, exit);
+  // The exit was drawn before this ran; a sleep changes the session's word.
+  if (exit.cause === "hibernated") {
+    state.asleep.add(exit.id);
+    render();
+  } else state.asleep.delete(exit.id);
   // The conversation now shown in its place has more in it than was read.
   if (terminal.ranInTerminal(exit.id)) {
     historyChanged(exit.id);

@@ -310,3 +310,19 @@ fn an_existing_session_can_be_linked_to_a_task() {
         "one task per session"
     );
 }
+
+#[test]
+fn a_session_put_to_sleep_says_so_in_the_activity_feed() {
+    // The window reads this text to show the session as asleep rather than
+    // stopped (session-state.js, sleptBy): keep the two in step.
+    let (_dir, mut workspace) = workspace();
+    let project = workspace.state().projects[0].id.clone();
+    workspace
+        .add_session(NewSession::new(project, Agent::Claude, "Dozy"))
+        .unwrap();
+    let id = workspace.state().sessions[0].id.clone();
+    finish_session(&mut workspace, &id, ExitCause::Hibernated).unwrap();
+    let event = &workspace.state().activity[0];
+    assert_eq!(event.kind, convoy_core::model::ActivityKind::Exited);
+    assert!(event.detail.starts_with("Hibernated"), "{}", event.detail);
+}

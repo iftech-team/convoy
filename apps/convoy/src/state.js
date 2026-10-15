@@ -4,6 +4,7 @@
 // that cannot survive that — the terminals — live outside the rendered tree.
 
 import { invoke } from "@tauri-apps/api/core";
+import { sessionStateOf, sleptBy } from "./session-state.js";
 
 const COLLAPSED = "convoy.collapsedProjects";
 
@@ -62,6 +63,8 @@ export const state = {
   queues: new Set(),
   /// What each running agent last reported, from its hooks.
   agentState: new Map(),
+  /// Sessions Convoy put to sleep, which stopped but keep their conversation.
+  asleep: new Set(),
   /// When each terminal session started waiting, for the approvals inbox.
   waitingSince: new Map(),
   /// Inbox rows showing their full detail.
@@ -175,6 +178,25 @@ export const project = () =>
 export const session = () =>
   state.sessions.find((item) => item.id === state.sessionId);
 export const isRunning = (id) => state.running.includes(id);
+
+/// Where a session stands, in the one vocabulary every view uses
+/// (session-state.js). `running` defaults to the process list.
+export const sessionState = (item, running = isRunning(item.id)) =>
+  sessionStateOf(item, { running, agent: state.agentState.get(item.id), asleep: state.asleep.has(item.id) });
+
+/// Which stopped sessions are asleep, from each one's newest start or stop in
+/// the activity feed (newest first). A session the feed says nothing about
+/// keeps what its exit said.
+export function noteSleep(events) {
+  const seen = new Set();
+  for (const event of events ?? []) {
+    if (!event.session_id || seen.has(event.session_id)) continue;
+    if (!["started", "resumed", "hibernated", "exited"].includes(event.kind)) continue;
+    seen.add(event.session_id);
+    if (sleptBy(event)) state.asleep.add(event.session_id);
+    else state.asleep.delete(event.session_id);
+  }
+}
 /// A project's page in the tab strip, beside the session tabs.
 export const PROJECT_TAB = "project:";
 export const projectTab = (id) => PROJECT_TAB + id;
