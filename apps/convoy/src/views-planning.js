@@ -5,26 +5,11 @@
 // reaches review, never done — accepting work stays a decision a person makes.
 
 import { button, empty, escape, plural } from "./ui.js";
-import { state } from "./state.js";
+import { phaseOf, state } from "./state.js";
+import { LIST_ORDER, PHASES } from "./phase.js";
 import { agentIcon, icons } from "./icons.js";
 import { t } from "./i18n.js";
-import { taskModeLabel } from "./task-defaults.js";
 import { when } from "./views-history.js";
-
-const COLUMNS = [
-  ["queued", "Queued", "idle"],
-  ["planning", "Planning", "running"],
-  ["plan_review", "Plan to approve", "review"],
-  ["building", "Running", "running"],
-  ["review", "Needs review", "review"],
-  ["pr", "Pull request", "review"],
-  ["testing", "In testing", "testing"],
-  ["changes", "Needs changes", "open"],
-  ["attention", "Needs attention", "failed"],
-  ["done", "Done", "done"],
-  ["failed", "Failed", "failed"],
-];
-
 
 // ------------------------------------------------------------ tracker sync --
 
@@ -56,45 +41,20 @@ export function syncSummary(task) {
   }
 }
 
-// --------------------------------------------------------------------- QA --
+// ----------------------------------------------------------------- phase --
 
-const QA_BADGES = {
-  queued: ["QA: waiting for its environment", "idle"],
-  checking: ["QA: running checks", "running"],
-  waiting: ["QA: after the review", "idle"],
-  testing: ["QA: agent testing", "running"],
-  passed: ["QA passed", "done"],
-  failed: ["QA failed", "failed"],
-  no_verdict: ["QA: no verdict", "idle"],
-};
+/// The one line under a task's title: where it stands, with what it went
+/// through once it is ready ("PR #42 open · QA passed").
+export function phaseLine(phase) {
+  const parts = phase.parts ?? [[phase.label, phase.vars]];
+  return parts.map(([label, vars]) => t(label, vars)).join(" · ");
+}
 
-const REVIEW_BADGES = {
-  reviewing: ["Reviewing", "running"],
-  failed: ["Review failed", "failed"],
-  no_verdict: ["Review: no verdict", "idle"],
-};
-
-const badge = ([label, tone], title = "") =>
-  `<span class="qa-badge qa-badge--${tone}"${title ? ` title="${escape(title)}"` : ""}><span class="state__dot state__dot--${tone}"></span>${escape(t(label))}</span>`;
-
-/// How the task's latest QA run stands, as a badge, with the review while
-/// it matters and the round of fixes it is in.
-export function qaBadge(task) {
-  const parts = [];
-  const review = REVIEW_BADGES[task.review?.status];
-  if (review) parts.push(badge(review));
-  const qa = QA_BADGES[task.qa?.status];
-  if (qa) parts.push(badge(qa));
-  if (task.round) {
-    parts.push(
-      `<span class="badge badge--muted">${escape(t("round {round}/{max}", { round: task.round, max: task.max_rounds ?? 2 }))}</span>`,
-    );
-  }
-  if (task.docs?.length) parts.push(`<span class="badge badge--muted">${escape(t("document"))}</span>`);
-  if (task.extra_projects?.length) {
-    parts.push(`<span class="badge badge--muted">${escape(t("+{count} repos", { count: task.extra_projects.length }))}</span>`);
-  }
-  return parts.join("");
+/// The phase as a dot and its line; the full status is in the tooltip.
+export function phaseTag(task, phase = phaseOf(task)) {
+  const line = phaseLine(phase);
+  const title = task.last_error && phase.phase === "needs_you" ? `${line}\n${task.last_error}` : line;
+  return `<span class="phase-tag phase-tag--${phase.tone}" title="${escape(title)}"><span class="state__dot state__dot--${phase.tone}"></span><span class="phase-tag__text">${escape(line)}</span></span>`;
 }
 
 /// The issue key, marked with how its last push went; `compact` drops the
@@ -210,27 +170,18 @@ export const runnable = (task) => ["queued", "failed", "changes", "attention"].i
 const projectName = (task) =>
   state.taskScope === "all" ? state.projects.find((item) => item.id === task.project_id)?.title : "";
 
-/// One line per task, as in Linear: status ring, key, title, then what sets
-/// it apart on the right. Rows drag onto another group like board cards.
-function taskRow(task, tone) {
+/// One line per task, as in Linear: phase ring, key, title, where it stands,
+/// then its tracker and project. Rows drag onto another group like cards.
+function taskRow(task, phase) {
   const owner = projectName(task);
   const key = task.source?.key ?? "";
-  const tags = [
-    qaBadge(task),
-    syncChip(task, { compact: true }),
-    owner ? `<span class="badge badge--muted">${escape(owner)}</span>` : "",
-    task.blocked_by?.length
-      ? `<span class="badge task-blocked" title="${escape(t("Waits for {tasks}", { tasks: task.blocked_by.join(", ") }))}">${escape(t("blocked"))}</span>`
-      : "",
-    task.auto_review ? `<span class="badge badge--muted">${escape(t("auto review"))}</span>` : "",
-    `<span class="badge badge--muted">${escape(t(taskModeLabel(task.mode)))}</span>`,
-  ].join("");
+  const tags = [syncChip(task, { compact: true }), owner ? `<span class="badge badge--muted">${escape(owner)}</span>` : ""].join("");
   return `
-    <div class="task-row" data-task="${escape(task.id)}" data-task-menu="${escape(task.id)}" data-task-card="${escape(task.id)}">
-      <span class="task-row__ring task-row__ring--${tone}"></span>
+    <div class="task-row" data-task="${escape(task.id)}" data-task-menu="${escape(task.id)}" data-task-card="${escape(task.id)}" data-phase="${phase.phase}">
+      <span class="task-row__ring task-row__ring--${phase.tone}"></span>
       <span class="task-row__key">${escape(key)}</span>
       <span class="task-row__title">${escape(task.title)}</span>
-      ${task.last_error ? `<span class="task-row__error" title="${escape(task.last_error)}">${escape(task.last_error)}</span>` : ""}
+      ${phaseTag(task, phase)}
       <span class="task-row__tags">${tags}</span>
       <span class="task-row__agent" title="${escape(task.model || "")}">${task.agent ? agentIcon(task.agent, 14) : ""}</span>
       <span class="task-row__actions">
@@ -242,12 +193,17 @@ function taskRow(task, tone) {
     </div>`;
 }
 
-/// Grouped by status as in Linear: a bar per group that folds shut, empty
-/// groups left out. A group takes rows dropped on it.
+/// Each task with its phase, worked out once per draw.
+const withPhases = (tasks) => tasks.map((task) => [task, phaseOf(task)]);
+const phasesShown = (order) => order.filter((key) => !(state.hideDone && key === "done")).map((key) => PHASES.find(([id]) => id === key));
+
+/// Grouped by phase, what needs you first: a bar per group that folds shut,
+/// empty groups left out. A group takes rows dropped on it.
 function taskList(tasks) {
-  return `<div class="task-list" data-scroll="task-list">${COLUMNS.filter(([key]) => !(state.hideDone && key === "done"))
+  const all = withPhases(tasks);
+  return `<div class="task-list" data-scroll="task-list">${phasesShown(LIST_ORDER)
     .map(([key, label, tone]) => {
-      const group = tasks.filter((task) => task.status === key);
+      const group = all.filter(([, phase]) => phase.phase === key);
       if (!group.length) return "";
       const folded = state.foldedStatuses?.has(key);
       return `
@@ -258,19 +214,21 @@ function taskList(tasks) {
             <span class="task-group__title">${escape(t(label))}</span>
             <span class="board__count">${group.length}</span>
           </button>
-          ${folded ? "" : group.map((task) => taskRow(task, tone)).join("")}
+          ${folded ? "" : group.map(([task, phase]) => taskRow(task, phase)).join("")}
         </section>`;
     })
     .join("")}</div>`;
 }
 
-/// Cards drag between columns: onto Running runs the task, onto Queued puts
-/// it back, and anywhere else sets that status.
+/// Five columns. Cards drag between them: onto Working runs the task, onto
+/// To do puts it back, onto Ready or Done sets that; Needs you is only ever
+/// reached by itself.
 function board(tasks) {
+  const all = withPhases(tasks);
   return `
-    <div class="board" data-scroll="board">
-      ${COLUMNS.filter(([key]) => !(state.hideDone && key === "done")).map(([key, label, tone]) => {
-        const cards = tasks.filter((task) => task.status === key);
+    <div class="board board--phases" data-scroll="board">
+      ${phasesShown(PHASES.map(([key]) => key)).map(([key, label, tone]) => {
+        const cards = all.filter(([, phase]) => phase.phase === key);
         return `
           <div class="board__column" data-task-column="${key}">
             <div class="board__head">
@@ -283,19 +241,14 @@ function board(tasks) {
                 cards.length
                   ? cards
                       .map(
-                        (task) => `
+                        ([task, phase]) => `
                 <button class="card" data-task="${escape(task.id)}" data-task-menu="${escape(task.id)}"
-                        data-task-card="${escape(task.id)}">
+                        data-task-card="${escape(task.id)}" data-phase="${phase.phase}">
                   <div class="card__title">${escape(task.title)}</div>
                   ${projectName(task) ? `<div class="card__project">${escape(projectName(task))}</div>` : ""}
-                  ${task.details ? `<div class="card__body">${escape(task.details)}</div>` : ""}
                   <div class="card__foot">
-                    ${qaBadge(task)}
+                    ${phaseTag(task, phase)}
                     ${syncChip(task)}
-                    <span class="badge--muted badge">${escape(t(taskModeLabel(task.mode)))}</span>
-                    ${task.auto_review ? `<span class="badge--muted badge">${escape(t("auto review"))}</span>` : ""}
-                    ${task.pr_url ? '<span class="badge--muted badge">PR</span>' : ""}
-                    ${task.blocked_by?.length ? `<span class="badge task-blocked" title="${escape(t("Waits for {tasks}", { tasks: task.blocked_by.join(", ") }))}">${escape(t("blocked"))}</span>` : ""}
                   </div>
                 </button>`,
                       )
@@ -307,5 +260,3 @@ function board(tasks) {
       }).join("")}
     </div>`;
 }
-
-export const TASK_STATUSES = COLUMNS;

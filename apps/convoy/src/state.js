@@ -5,6 +5,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { sessionStateOf, sleptBy } from "./session-state.js";
+import { taskPhase } from "./phase.js";
 
 const COLLAPSED = "convoy.collapsedProjects";
 
@@ -183,6 +184,18 @@ export const isRunning = (id) => state.running.includes(id);
 /// (session-state.js). `running` defaults to the process list.
 export const sessionState = (item, running = isRunning(item.id)) =>
   sessionStateOf(item, { running, agent: state.agentState.get(item.id), asleep: state.asleep.has(item.id) });
+
+/// What the window knows of a session, for telling a working stage from a
+/// stalled one.
+const live = {
+  session(id) {
+    const item = id ? anySession(id) : null;
+    return item ? { running: isRunning(id), started: !!item.started, agent: state.agentState.get(id) } : null;
+  },
+};
+
+/// Where a task stands, in five phases (phase.js), from what is running now.
+export const phaseOf = (task) => taskPhase(task, live);
 
 /// Which stopped sessions are asleep, from each one's newest start or stop in
 /// the activity feed (newest first). A session the feed says nothing about

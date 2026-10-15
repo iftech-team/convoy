@@ -15,9 +15,9 @@ import {
 } from "./ui.js";
 import { markdown } from "./views-files.js";
 import { TASK_MODES, agentName } from "./task-defaults.js";
-import { TASK_STATUSES, syncState, syncSummary } from "./views-planning.js";
+import { phaseLine, syncState, syncSummary } from "./views-planning.js";
 import { when } from "./views-history.js";
-import { isRunning, sessionState, state, project, session } from "./state.js";
+import { isRunning, phaseOf, sessionState, state, project, session } from "./state.js";
 import { sessionLabel } from "./session-state.js";
 import { agentIcon, icons } from "./icons.js";
 import { t } from "./i18n.js";
@@ -596,14 +596,14 @@ function relatedTasks(dialog) {
   const here = dialog.project_id ?? state.projectId;
   const chosen = (dialog.related ?? []).filter((id) => pool.has(id));
   const projectName = (id) => state.projects.find((item) => item.id === id)?.title ?? "";
-  const tone = (status) => TASK_STATUSES.find(([key]) => key === status)?.[2] ?? "idle";
   const chips = chosen
     .map((id) => {
       const task = pool.get(id);
       const elsewhere = task.project_id !== here ? projectName(task.project_id) : "";
+      const phase = phaseOf(task);
       return `
-        <span class="related-chip" title="${escape(`${task.title} · ${t(task.status)}${elsewhere ? ` · ${elsewhere}` : ""}`)}">
-          <span class="state__dot state__dot--${tone(task.status)}"></span>
+        <span class="related-chip" title="${escape(`${task.title} · ${phaseLine(phase)}${elsewhere ? ` · ${elsewhere}` : ""}`)}">
+          <span class="state__dot state__dot--${phase.tone}"></span>
           ${task.source?.key ? `<code class="related-chip__key">${escape(task.source.key)}</code>` : ""}
           <span class="related-chip__title">${escape(task.title)}</span>
           ${elsewhere ? `<span class="related-chip__project">${escape(elsewhere)}</span>` : ""}

@@ -33,7 +33,7 @@ function connectionRow(item) {
   return `
     <div class="catalog__connection">
       <span class="catalog__status${ready ? "" : " catalog__status--off"}"
-            title="${escape(ready ? t("Ready") : t("No saved credentials"))}"></span>
+            title="${escape(ready ? t("Ready to use") : t("No saved credentials"))}"></span>
       <div class="catalog__text">
         <div class="catalog__label">${escape(item.name)}</div>
         <div class="catalog__detail">${escape(summary(item))}</div>

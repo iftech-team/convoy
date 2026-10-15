@@ -3,7 +3,7 @@
 
 import { agentIcon, icons, projectIcon } from "./icons.js";
 import { button, escape, plural } from "./ui.js";
-import { isRunning, sessionState, state } from "./state.js";
+import { isRunning, phaseOf, sessionState, state } from "./state.js";
 import { sessionLabel, sessionTone } from "./session-state.js";
 import { limitsBlock } from "./views.js";
 import { t } from "./i18n.js";
@@ -59,7 +59,8 @@ export function homeView() {
   // Most recently created first; the ones on screen above are left out.
   const recent = [...sessions].reverse().filter((item) => !isRunning(item.id)).slice(0, 6);
   const tasks = state.allTasks ?? [];
-  const count = (...statuses) => tasks.filter((task) => statuses.includes(task.status)).length;
+  const phases = tasks.map((task) => phaseOf(task).phase);
+  const count = (phase) => phases.filter((key) => key === phase).length;
   // Tools not found, and every other check that is not fine, as on macOS.
   // A missing gh is counted once, not again as a missing gh login.
   const noGh = (state.diagnostics ?? []).some((check) => check.name === "gh" && !check.found);
@@ -92,10 +93,10 @@ export function homeView() {
           t("Tasks"),
           `<div class="home-stats">
              ${[
-               ["Queued", count("queued")],
-               ["Running", count("building")],
-               ["To review", count("review", "pr", "testing", "changes")],
-               ["Done", count("done")],
+               ["Needs you", count("needs_you")],
+               ["Working", count("working")],
+               ["Ready", count("ready")],
+               ["To do", count("todo")],
              ]
                .map(([name, value]) => `<button class="home-stat" data-home-tasks="1"><strong>${value}</strong><span>${escape(t(name))}</span></button>`)
                .join("")}

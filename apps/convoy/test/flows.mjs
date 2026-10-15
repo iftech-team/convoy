@@ -567,7 +567,10 @@ try {
   await page.locator('[data-action="import-run"]:not([disabled])').click();
   // The board is the default view; the task's own form carries its model.
   await page.locator('[data-task-view="board"][aria-pressed="true"]').waitFor();
-  await page.locator('[data-task-column="queued"] [data-task-card="task"]').click();
+  // Five columns, whatever the pipeline's statuses: a new task is To do.
+  assert.deepEqual(await page.locator(".board--phases .board__title").allTextContents(), ["To do", "Working", "Needs you", "Ready", "Done"]);
+  await page.locator('[data-task-column="todo"] [data-task-card="task"] .phase-tag', { hasText: "Waiting to start" }).waitFor();
+  await page.locator('[data-task-column="todo"] [data-task-card="task"]').click();
   // The form keeps its work to Save and Run now: no Accept or Back to queue.
   assert.equal(await page.locator(".modal [data-status]").count(), 0);
   // Model and account sit under Advanced; the models are the agent's own.
@@ -577,20 +580,29 @@ try {
   await page.locator("#task-model").selectOption("opus");
   await page.locator('[data-action="save-task"]').click();
   await page.locator('[data-task-card="task"]').waitFor();
-  // A card dragged to another column takes that status, and the drop does
-  // not open the task.
-  await page.locator('[data-task-card="task"]').dragTo(page.locator('[data-task-column="review"]'));
-  await page.locator('[data-task-column="review"] [data-task-card="task"]').waitFor();
+  // A card dragged onto Ready says you will check it yourself, and the drop
+  // does not open the task.
+  await page.locator('[data-task-card="task"]').dragTo(page.locator('[data-task-column="ready"]'));
+  await page.locator('[data-task-column="ready"] [data-task-card="task"] .phase-tag', { hasText: "Built · check it" }).waitFor();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_status" && c.args.id === "task" && c.args.status === "review"));
   assert.equal(await page.locator(".modal").count(), 0);
-  // Its menu sets any status, and deletes after asking.
+  // Its menu moves it between phases, and deletes after asking. Sent back,
+  // with no builder running, it needs you.
+  await page.locator('[data-task-card="task"]').click({ button: "right" });
+  assert.equal(await page.locator('[data-menu-act="task-status:ready"]').count(), 0, "no move to where it is");
+  await page.locator('[data-menu-act="task-status:changes"]').click();
+  await page.locator('[data-task-column="needs_you"] [data-task-card="task"] .phase-tag', { hasText: "Sent back · run it again" }).waitFor();
+  // Needs you is reached by itself, never by a drop.
+  await page.locator('[data-task-card="task"]').dragTo(page.locator('[data-task-column="ready"]'));
+  await page.locator('[data-task-column="ready"] [data-task-card="task"]').waitFor();
+  await page.locator('[data-task-card="task"]').dragTo(page.locator('[data-task-column="needs_you"]'));
+  await page.locator(".toast", { hasText: "A task lands here by itself when it needs you." }).waitFor();
   await page.locator('[data-task-card="task"]').click({ button: "right" });
   await page.locator('[data-menu-act="task-status:changes"]').click();
-  await page.locator('[data-task-column="changes"] [data-task-card="task"]').waitFor();
-  // Onto Planning: planned first from now on, and a planner starts.
-  await page.locator('[data-task-card="task"]').dragTo(page.locator('[data-task-column="planning"]'));
-  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_plan" && c.args.id === "task" && c.args.planFirst === true));
+  await page.locator('[data-task-column="needs_you"] [data-task-card="task"]').waitFor();
+  // Onto Working: it runs.
+  await page.locator('[data-task-card="task"]').dragTo(page.locator('[data-task-column="working"]'));
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_prepare" && c.args.id === "task"));
-  assert(!(await page.evaluate(() => window.checkCalls.some((c) => c.cmd === "task_status" && c.args.status === "planning"))));
   // Every project's tasks, each marked with its project.
   await page.locator('[data-task-scope="all"]').click();
   await page.locator('[data-task-card="task"] .card__project', { hasText: "Example" }).waitFor();
@@ -598,13 +610,13 @@ try {
   // The list groups by status under a bar per group, one line per task with
   // its issue key; it is remembered, and rows drag onto another group.
   await page.locator('[data-task-view="list"]').click();
-  await page.locator('.task-list__group[data-task-column="changes"] .task-group', { hasText: "Needs changes" }).waitFor();
+  await page.locator('.task-list__group[data-task-column="needs_you"] .task-group', { hasText: "Needs you" }).waitFor();
   await page.locator('.task-row[data-task="task"] .task-row__key', { hasText: "ENG-7" }).waitFor();
   assert.equal(await page.evaluate(() => localStorage.getItem("convoy.taskView")), "list");
   await page.locator('[data-task-view="board"]').click();
-  await page.locator('[data-task-card="task"]').dragTo(page.locator('[data-task-column="queued"]'));
+  await page.locator('[data-task-card="task"]').dragTo(page.locator('[data-task-column="todo"]'));
   await page.locator('[data-task-view="list"]').click();
-  await page.locator('.task-list__group[data-task-column="queued"] .task-row[data-task="task"]').waitFor();
+  await page.locator('.task-list__group[data-task-column="todo"] .task-row[data-task="task"]').waitFor();
   if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/tasks-list.png` });
   // Under the sessions, what the agents saved here and in worktrees that no
   // session holds yet; Resume records it as a session in its own folder and
@@ -791,7 +803,7 @@ try {
     (other) => window.checkCalls.some((c) => c.cmd === "task_related" && c.args.id === "task" && c.args.related.includes(other)),
     relatedId,
   );
-  await page.locator('.task-row[data-task="task"] .task-blocked[title="Waits for Checkout retries"]').waitFor();
+  await page.locator('.task-row[data-task="task"] .phase-tag[title="Waits for Checkout retries"]').waitFor();
   // New tasks publish nothing unless the project says otherwise.
   await page.locator('[data-action="new-task"]').click();
   await page.locator('.modal .choice [data-value="none"][aria-pressed="true"]').waitFor();
@@ -1028,7 +1040,8 @@ try {
   await page.locator('[data-menu-act="task-qa"]').click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "terminal_paste" && c.args.id === "builder" && c.args.text === "QA found problems with this task." && c.args.submit === true));
   await page.locator(".toast", { hasText: "The checks found problems with" }).waitFor();
-  await page.locator('[data-task="synced"] .qa-badge--failed', { hasText: "QA failed" }).waitFor();
+  // Its builder runs and waits on a question, so the task needs you there.
+  await page.locator('.task-row[data-task="synced"][data-phase="needs_you"] .phase-tag', { hasText: "Builder is asking you" }).waitFor();
 
   // The task form shows each check, the failed one's output open.
   await page.locator('[data-task="synced"] [data-task-more="synced"]').click();
@@ -1094,7 +1107,7 @@ try {
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "doc_write" && c.args.text.endsWith("More.")));
   if (shots) await page.screenshot({ path: `${shots}/docs.png` });
 
-  // Plan first: the plan waits in its own column; a comment goes back to
+  // Plan first: the plan waits for you to approve it; a comment goes back to
   // the planner, and approving it builds the task.
   await page.evaluate(() => {
     window.mockTasks.push({
@@ -1104,7 +1117,7 @@ try {
     });
   });
   await page.locator('[data-tab="tasks"]').click();
-  await page.locator('[data-task-column="plan_review"] [data-task="planned"]').first().waitFor();
+  await page.locator('[data-task-column="needs_you"] [data-task="planned"] .phase-tag:has-text("Approve the plan")').first().waitFor();
   await page.locator('[data-task="planned"]').first().click({ button: "right" });
   await page.locator('[data-menu-act="task-plan"]').click();
   await page.locator(".plan-text h1", { hasText: "Plan" }).waitFor();
@@ -1393,7 +1406,7 @@ try {
   assert(calls.some(c => c.cmd === "terminal_paste" && c.args.id === "builder" && c.args.text === "Fix the error path before shipping." && c.args.submit === false));
   assert(calls.some(c => c.cmd === "issues_import" && c.args.options.model === "sonnet"));
   assert(calls.some(c => c.cmd === "task_agent" && c.args.model === "opus"));
-  assert.deepEqual(calls.filter((c) => c.cmd === "task_status").map((c) => c.args.status), ["review", "changes", "queued", "done"]);
+  assert.deepEqual(calls.filter((c) => c.cmd === "task_status").map((c) => c.args.status), ["review", "changes", "review", "changes", "queued", "done"]);
   // Remove all projects is in the sidebar's ⋯ menu, and waits while an agent runs.
   await page.locator('[data-action="workspace-menu"]').click();
   await page.locator('[data-action="remove-all-projects"]').click();

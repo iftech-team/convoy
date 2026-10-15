@@ -1555,6 +1555,12 @@ select:disabled {
   overflow: hidden;
 }
 
+/* Five phases fit the window: the columns share its width. */
+.board--phases .board__column {
+  flex: 1 1 0;
+  min-width: 220px;
+}
+
 .card__foot {
   display: flex;
   flex-wrap: wrap;
@@ -4349,6 +4355,40 @@ select:disabled {
 .task-row__title {
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Where a task stands, in one line: a dot and a few words. On a card it
+ * may wrap; in a row it gives way to the title. */
+.phase-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.phase-tag .state__dot {
+  flex: none;
+}
+
+.phase-tag--failed .phase-tag__text {
+  color: var(--state-failed);
+}
+
+.card__foot > .phase-tag {
+  flex: 1 1 100%;
+  white-space: normal;
+}
+
+.task-row > .phase-tag {
+  flex: 0 1 260px;
+}
+
+.task-row > .phase-tag .phase-tag__text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

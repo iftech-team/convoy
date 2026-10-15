@@ -15,9 +15,10 @@ import {
 } from "./ui.js";
 import { language, t } from "./i18n.js";
 import { agentName } from "./task-defaults.js";
-import { activeAccount, anySession, isProjectTab, isRunning, project, session, sessionState, state, visibleSessions } from "./state.js";
+import { activeAccount, anySession, isProjectTab, isRunning, phaseOf, project, session, sessionState, state, visibleSessions } from "./state.js";
 import { sessionLabel, sessionTone, sleptBy } from "./session-state.js";
-import { TASK_STATUSES, runnable } from "./views-planning.js";
+import { runnable } from "./views-planning.js";
+import { movable } from "./phase.js";
 import { missingConversation } from "./terminal.js";
 import { shownAsTranscript, viewOf } from "./views-chat.js";
 import { skillsChip, skillsMenu } from "./views-skills.js";
@@ -314,7 +315,9 @@ export function contextMenu(menu) {
   } else if (menu.kind === "task") {
     const task = [...(state.planning?.tasks ?? []), ...(state.allTasks ?? [])].find((entry) => entry.id === menu.id);
     if (!task) return "";
-    const building = task.status === "building";
+    const phase = phaseOf(task);
+    const building = !movable(phase);
+    const move = (label, target, icon = "") => (phase.phase === target ? "" : item(t(label), `task-status:${target}`, icon ? { icon } : {}));
     entries = [
       item(task.plan_first && task.plan?.status !== "approved" ? t("Make a plan") : t("Run"), "task-run", { icon: "play", enabled: runnable(task) }),
       task.status === "plan_review" ? item(t("Review the plan…"), "task-plan", { icon: "check" }) : "",
@@ -338,12 +341,14 @@ export function contextMenu(menu) {
         : "",
       task.sync?.failed ? item(t("Retry tracker sync"), "task-sync-retry", { icon: "refresh" }) : "",
       divider,
-      ...TASK_STATUSES.filter(([key]) => !["building", "planning", "plan_review"].includes(key) && key !== task.status).map(([key, label]) =>
-        item(t("Set status: {status}", { status: t(label) }), `task-status:${key}`, {
-          enabled: !building,
-          hint: building ? "stop it first" : "",
-        }),
-      ),
+      ...(building
+        ? [item(t("Move…"), "task-status:none", { enabled: false, hint: "stop it first" })]
+        : [
+            move("Move to To do", "todo"),
+            move("Mark ready", "ready"),
+            move("Mark done", "done", "check"),
+            task.status === "changes" ? "" : item(t("Send back for changes"), "task-status:changes"),
+          ]),
       divider,
       item(t("Delete task…"), "task-delete", { icon: "trash", danger: true, enabled: !building }),
     ].join("");

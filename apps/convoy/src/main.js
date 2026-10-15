@@ -2,6 +2,7 @@
 
 import { installTasks } from "./tasks.js";
 import { agentName, newTaskDefaults } from "./task-defaults.js";
+import { dropStatus, movable } from "./phase.js";
 import { sessionLabel } from "./session-state.js";
 import { icons } from "./icons.js";
 import { listen } from "@tauri-apps/api/event";
@@ -14,6 +15,7 @@ import {
   done,
   isRunning,
   noteSleep,
+  phaseOf,
   sessionState,
   loadPlanning,
   loadSessions,
@@ -3421,20 +3423,19 @@ async function runTask(id) {
   await reloadTasks();
 }
 
-async function moveTask(id, status) {
+/// A task dropped on a phase, or moved from its menu: onto Working it runs,
+/// onto To do, Ready or Done it takes that phase's status, and "changes"
+/// sends it back to its builder. Nothing moves a task something works on.
+async function moveTask(id, target) {
   const task = findTask(id);
-  if (!task || task.status === status) return;
-  if (status === "building") return runnable(task) ? runTask(id) : toast(t("Only a queued, failed or returned task can run."));
-  // Onto Planning: a planner starts, the task planned first from now on.
-  if (status === "planning") {
-    if (!runnable(task)) return toast(t("Only a queued, failed or returned task can be planned."));
-    if (!task.plan_first && !(await done("task_plan", { id, planFirst: true, autoApprove: task.plan_auto_approve ?? null }))) return;
-    await reloadTasks();
-    return runTask(id);
-  }
-  if (status === "plan_review") return toast(t("A task gets here by itself once its planner has written the plan."));
-  // Into testing where the project tests its tasks: that is a QA run.
-  if (status === "testing" && state.projects.find((item) => item.id === task.project_id)?.qa) return startQa(id);
+  if (!task) return;
+  const now = phaseOf(task);
+  if (now.phase === target) return;
+  if (!movable(now)) return toast(t("Something is working on this task. Stop it first."));
+  if (target === "working") return runnable(task) ? runTask(id) : toast(t("Only a task waiting to start, sent back or stopped can run."));
+  if (target === "needs_you") return toast(t("A task lands here by itself when it needs you."));
+  const status = target === "changes" ? "changes" : dropStatus(task, target);
+  if (!status || status === task.status) return;
   if (await done("task_status", { id, status })) {
     await reloadTasks();
     // A finished task may be what others in the queue waited for.
