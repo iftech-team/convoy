@@ -1268,7 +1268,8 @@ const SHORTCUT_ACTIONS = {
   projectRefresh: () => withProject(() => refreshProjects(state.projectId)),
   home: () => openHome(),
   dashboard: () => (state.page === "dashboard" ? openHome() : openHome("dashboard")),
-  usagePage: () => openHome("usage"),
+  usage: () => openHome("usage"),
+  automationsTab: () => withProject(() => showTab("automations")),
   reopenTab: () => reopenTab(),
 
   // sessions — each acts on the open session, and does nothing without one
@@ -4051,7 +4052,7 @@ function paletteEntries() {
   const actions = [
     ["Home", "Every project at once", "home"],
     ["Agent Dashboard", "Every session by what its agent is doing", "dashboard"],
-    ["Usage", "Tokens and estimated cost by day, model and project", "usagePage"],
+    ["Usage", "Tokens and estimated cost by day, model and project", "usage"],
     ["New session", "Starts an agent session", "newSession"],
     ["Open folder…", "Add a repository or a folder of projects", "openFolder"],
     ["Resume current session", "Reconnect to the selected agent", "resume"],
@@ -4075,7 +4076,8 @@ function paletteEntries() {
     ["Go to Sessions", "", "sessionsTab"],
     ["Go to Reviews", "", "reviewsTab"],
     ["Go to Tasks", "", "tasksTab"],
-    ["Go to Docs & Specs", "", "docsTab"],
+    ["Go to Docs & specs", "", "docsTab"],
+    ["Go to Automations", "", "automationsTab"],
     ["Next section", "", "nextTab"],
     ["Previous section", "", "previousTab"],
     ["New spec…", "A Markdown spec in the repository, in Docs", "newSpec"],

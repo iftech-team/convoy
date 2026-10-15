@@ -1064,4 +1064,6 @@ pub const SHORTCUT_ACTIONS: &[&str] = &[
     "moveTabRight",
     "searchAll",
     "claudeUsage",
+    "automationsTab",
+    "usage",
 ];

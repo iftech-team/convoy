@@ -27,3 +27,22 @@ test("every settings section has its Russian", () => {
   assert.equal(names.length, 10);
   assert.deepEqual(names.filter((name) => !(name in ru.strings)), []);
 });
+
+test("every command palette row has its Russian", () => {
+  const text = readFileSync(new URL("main.js", src), "utf8");
+  const start = text.indexOf("const actions = [");
+  const block = text.slice(start, text.indexOf("return [...entries", start));
+  const keys = [...block.matchAll(/\[\s*"((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)"/g)]
+    .flatMap((match) => [match[1], match[2]].map((key) => JSON.parse(`"${key}"`)))
+    .filter(Boolean);
+  assert.ok(keys.length > 40);
+  assert.deepEqual(keys.filter((key) => !(key in ru.strings)), []);
+});
+
+test("every shortcut has its Russian", () => {
+  const text = readFileSync(new URL("shortcuts.js", src), "utf8");
+  const block = text.slice(text.indexOf("export const SHORTCUTS = ["), text.indexOf("];", text.indexOf("export const SHORTCUTS = [")));
+  const names = [...block.matchAll(/^\s+\["\w+", "[^"]*", "((?:[^"\\]|\\.)*)"/gm)].map((match) => match[1]);
+  assert.ok(names.length > 50);
+  assert.deepEqual(names.filter((name) => !(name in ru.strings)), []);
+});

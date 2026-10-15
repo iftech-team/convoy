@@ -64,6 +64,8 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ("moveTabRight", "Move tab right"),
     ("searchAll", "Search sessions and projects"),
     ("claudeUsage", "Open Claude /usage"),
+    ("automationsTab", "Automations"),
+    ("usage", "Usage"),
 ];
 
 /// Defaults used when the workspace has no shortcut for an action: the
@@ -125,6 +127,8 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("moveTabRight", "mod+shift+right"),
     ("searchAll", "mod+shift+p"),
     ("claudeUsage", "mod+alt+u"),
+    ("automationsTab", "mod+alt+6"),
+    ("usage", "mod+shift+u"),
 ];
 
 /// `mod+shift+p` → `<Primary><Shift>p`. Returns nothing for anything the
