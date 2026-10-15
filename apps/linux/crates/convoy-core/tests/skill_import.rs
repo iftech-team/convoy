@@ -94,7 +94,10 @@ fn skills_are_found_and_imported_for_the_projects_picked() {
         "files (scripts, templates) are in {}",
         qa.parent().unwrap().display()
     )));
-    assert_eq!(store.for_role(&api, Agent::Codex, Role::Qa), [id.clone()]);
+    assert_eq!(
+        store.for_role(&api, Agent::Codex, Role::Qa),
+        std::slice::from_ref(&id)
+    );
     assert!(store.for_role(&bot, Agent::Codex, Role::Qa).is_empty());
     assert!(store.defaults(&admin, None).contains(&id));
 
@@ -123,7 +126,10 @@ fn skills_are_found_and_imported_for_the_projects_picked() {
     )
     .unwrap();
     store.remove_project(&api).unwrap();
-    assert_eq!(store.get(&id).unwrap().scope(), [admin.clone()]);
+    assert_eq!(
+        store.get(&id).unwrap().scope(),
+        std::slice::from_ref(&admin)
+    );
     store.remove_project(&admin).unwrap();
     assert!(
         store.get(&id).is_err(),
