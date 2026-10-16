@@ -551,7 +551,7 @@ export function settingsPage() {
           <input id="settings-search" type="search" placeholder="${escape(t("Search settings"))}"
                  value="${escape(state.settingsQuery)}" spellcheck="false" />
         </div>
-        <nav class="prefs__list">
+        <nav class="prefs__list" data-scroll="settings-nav">
           ${
             sections.length
               ? sections

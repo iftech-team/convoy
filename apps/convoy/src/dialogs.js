@@ -180,7 +180,7 @@ function newSession(dialog) {
                 `${choice("setup", [["run", t("Run")], ["skip", t("Skip")]], dialog.setup)}
                  ${
                    dialog.setupPreview
-                     ? `<pre class="sheet-preview">${escape(dialog.setupPreview)}</pre>`
+                     ? `<pre class="sheet-preview" data-scroll="setup-preview">${escape(dialog.setupPreview)}</pre>`
                      : `<span class="field__note">${escape(t("None configured. Add it in Project settings or Settings → Worktrees."))}</span>`
                  }`,
               )
@@ -306,7 +306,7 @@ const savedOutput = (dialog) =>
     title: t("Saved output"),
     hint: t("{title} · bounded plain text, not a transcript", { title: dialog.title }),
     wide: true,
-    body: `<pre class="preview__text preview__text--boxed">${escape(dialog.text)}</pre>`,
+    body: `<pre class="preview__text preview__text--boxed" data-scroll="preview-text">${escape(dialog.text)}</pre>`,
     foot: button({ label: t("Close"), data: { dismiss: "1" } }),
   });
 
@@ -599,7 +599,7 @@ function blockedBy(dialog) {
   return `
     <div class="field">
       <span class="field__label">${escape(t("Blocked by"))}</span>
-      <div class="check-list">${others
+      <div class="check-list" data-scroll="depends-on">${others
         .map(
           (task) => `
         <label class="check">
@@ -998,14 +998,14 @@ export function qaPanel(task) {
   const busy = run.status === "checking" || run.status === "testing";
   const checks = (run.checks ?? [])
     .map(
-      (check) => `
+      (check, index) => `
         <li class="qa-check${check.ok ? "" : " qa-check--failed"}">
           <div class="qa-check__line">
             <span class="qa-check__mark" aria-label="${escape(check.ok ? t("Passed") : t("Failed"))}">${check.ok ? "✓" : "✗"}</span>
             <code class="qa-check__command">${escape(check.command)}</code>
             <span class="qa-check__time">${escape(t("{seconds} s", { seconds: check.seconds }))}</span>
           </div>
-          ${check.output ? `<details${check.ok ? "" : " open"}><summary>${escape(t("Output"))}</summary><pre class="qa-check__output">${escape(check.output)}</pre></details>` : ""}
+          ${check.output ? `<details${check.ok ? "" : " open"}><summary>${escape(t("Output"))}</summary><pre class="qa-check__output" data-scroll="qa-output-${index}">${escape(check.output)}</pre></details>` : ""}
         </li>`,
     )
     .join("");
@@ -1101,7 +1101,7 @@ const palette = (dialog) => `
                )}"
                value="${escape(dialog.query)}" spellcheck="false" />
       </div>
-      <div class="palette__list">
+      <div class="palette__list" data-scroll="palette">
         ${
           dialog.results.length
             ? dialog.results
@@ -1363,7 +1363,7 @@ function historySweep(dialog) {
       })
       .join("")
       : `<p class="sweep__empty">${escape(t("No conversations match “{query}”", { query: dialog.query.trim() }))}</p>`;
-    body = `${toolbar}<div class="import__list sweep__list">${list}</div>`;
+    body = `${toolbar}<div class="import__list sweep__list" data-scroll="history-sweep">${list}</div>`;
   }
   return modal({
     title: t("Import all history"),

@@ -27,6 +27,19 @@ try {
     window.checkCalls = calls;
     window.mockSessions = sessions;
     window.mockTasks = tasks;
+    // Every click re-renders, and only a scroller marked data-scroll gets
+    // its place back: one that overflows without the mark would jump to
+    // the top. Terminals and the chat log keep their own place.
+    window.unkeptScrollers = new Set();
+    setInterval(() => {
+      for (const node of document.querySelectorAll("#app *")) {
+        if (node.scrollHeight <= node.clientHeight + 1 && node.scrollWidth <= node.clientWidth + 1) continue;
+        if (node.dataset.scroll || node.closest(".xterm, .chat__log") || ["TEXTAREA", "INPUT", "SELECT"].includes(node.tagName)) continue;
+        const style = getComputedStyle(node);
+        if (![style.overflowX, style.overflowY].some((value) => value === "auto" || value === "scroll")) continue;
+        window.unkeptScrollers.add(`${node.tagName.toLowerCase()}.${[...node.classList].join(".")}`);
+      }
+    }, 150);
     // Events the backend would send, delivered to what the page listens for.
     const callbacks = new Map();
     const listeners = {};
@@ -81,7 +94,7 @@ try {
       if (cmd === "task_sync_retry") { const task = tasks.find((item) => item.id === args.id); task.sync = { pending: task.sync.failed, last: task.sync.last }; return null; }
       if (cmd === "project_link_save") { (window.links ??= {})[args.projectId] = args.link; return null; }
       if (cmd === "integration_scopes") return args.parent ? [{ id: "3", name: "Amir cargo", key: "AMR" }] : [{ id: "9", name: "Tojiron" }, { id: "4", name: "Peshbar" }, { id: "5", name: "Logistics" }];
-      if (cmd === "issues_search") return [{ key: "AMR-1", title: "Weigh parcels at intake", details: "", origin: "management-api.peshbar.com", status: "To do" }];
+      if (cmd === "issues_search") return window.mockIssues ?? [{ key: "AMR-1", title: "Weigh parcels at intake", details: "", origin: "management-api.peshbar.com", status: "To do" }];
       if (cmd === "issues_parse_keys") return [{ key: "ENG-7", title: "Test imported task", details: "", origin: "linear:test" }];
       if (cmd === "issues_import") {
         tasks.push({ id: "task", project_id: "project", title: "ENG-7: Test imported task", details: "", findings: "", agent: args.options.agent, model: args.options.model, status: "queued", mode: "none", auto_review: false, source: { tracker: "linear", key: "ENG-7", origin: "linear:test" } });
@@ -1057,6 +1070,17 @@ try {
   await page.locator(".import__row", { hasText: "Weigh parcels at intake" }).waitFor();
   if (shots) await page.screenshot({ path: `${shots}/import-linked.png` });
   assert.equal(await page.evaluate(() => window.checkCalls.findLast((c) => c.cmd === "issues_search").args.projectId), "project");
+  // A long result list keeps its place when a task far down is unticked.
+  await page.evaluate(() => { window.mockIssues = Array.from({ length: 40 }, (_, at) => ({ key: `AMR-${at + 1}`, title: `Issue ${at + 1}`, details: "", status: "To do" })); });
+  await page.locator('[data-action="import-search"]').click();
+  await page.locator('[data-issue="AMR-40"]').waitFor();
+  await page.locator(".import__list").evaluate((node) => { node.scrollTop = node.scrollHeight; });
+  const importScrolled = await page.locator(".import__list").evaluate((node) => node.scrollTop);
+  assert(importScrolled > 0, "the import list overflows");
+  await page.locator('[data-issue="AMR-40"]').click();
+  await page.locator('[data-issue="AMR-40"]:not(:checked)').waitFor();
+  assert.equal(await page.locator(".import__list").evaluate((node) => node.scrollTop), importScrolled, "the import list kept its place");
+  await page.evaluate(() => { delete window.mockIssues; });
   // Notion searches page titles or a pasted link; it has no "assigned to me".
   await page.locator("#imp-connection").selectOption("notion");
   await page.locator('#imp-query[placeholder="Page title, or a page link"]').waitFor();
@@ -2407,6 +2431,7 @@ try {
   for (const word of ["model", "request"]) assert(word in (await import("../src/locales/ru.js")).default.plurals, `${word} has its Russian plural`);
 
   assert.equal(await page.locator(".toast--error").count(), 0);
+  assert.deepEqual(await page.evaluate(() => [...window.unkeptScrollers]), [], "scrollers that lose their place on a re-render");
   assert.deepEqual(errors, []);
   assert.equal(await page.locator(".toast--error").count(), 0);
   if (process.env.CONVOY_TEST_SCREENSHOT) await page.screenshot({ path: process.env.CONVOY_TEST_SCREENSHOT });

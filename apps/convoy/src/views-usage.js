@@ -107,7 +107,7 @@ function dayChart(days, agents) {
 
 function dayTable(days, agents) {
   return `
-    <div class="usage-table-wrap">
+    <div class="usage-table-wrap" data-scroll="usage-days">
       <table class="usage-table">
         <thead><tr><th>${escape(t("Day"))}</th>${agents.map((agent) => `<th class="num">${escape(AGENTS.find(([key]) => key === agent)[1])}</th>`).join("")}<th class="num">${escape(t("Estimated cost"))}</th></tr></thead>
         <tbody>${[...days]
@@ -195,7 +195,7 @@ function modelTable(models) {
   if (!models.length) return `<p class="home-none">${escape(t("No models in this range."))}</p>`;
   const head = ["Model", "Input", "Output", "Cache read", "Cache write", "Reasoning", "Total", "Estimated cost"];
   return `
-    <div class="usage-table-wrap">
+    <div class="usage-table-wrap" data-scroll="usage-models">
       <table class="usage-table">
         <thead><tr>${head.map((name, at) => `<th${at ? ' class="num"' : ""}>${escape(t(name))}</th>`).join("")}</tr></thead>
         <tbody>${models
@@ -220,7 +220,7 @@ function modelTable(models) {
 function projectTable(projects, total) {
   if (!projects.length) return `<p class="home-none">${escape(t("No projects in this range."))}</p>`;
   return `
-    <div class="usage-table-wrap">
+    <div class="usage-table-wrap" data-scroll="usage-projects">
       <table class="usage-table">
         <thead><tr><th>${escape(t("Project"))}</th><th class="num">Claude</th><th class="num">Codex</th><th class="num">${escape(t("Total"))}</th><th class="usage-table__share">${escape(t("Share"))}</th><th class="num">${escape(t("Estimated cost"))}</th></tr></thead>
         <tbody>${projects
@@ -340,7 +340,7 @@ export function pricesSection() {
   return `
     <section class="pref-group">
       <h3 class="pref-group__title">${escape(t("Price per million tokens, USD"))}</h3>
-      <div class="pref-group__box usage-prices">
+      <div class="pref-group__box usage-prices" data-scroll="usage-prices">
         <table class="usage-table usage-prices__table">
           <thead><tr><th>${escape(t("Model"))}</th>${PRICE_KEYS.map(([, name]) => `<th class="num">${escape(t(name))}</th>`).join("")}<th></th></tr></thead>
           <tbody>${editor.rows

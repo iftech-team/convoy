@@ -462,6 +462,8 @@ function render() {
     node.scrollTop = top;
     node.scrollLeft = left;
   }
+  // The palette's arrow keys move the highlight; it stays in sight.
+  document.querySelector(".palette__row--on")?.scrollIntoView({ block: "nearest" });
   // A tab selected from elsewhere (the sidebar, ⌘1–9) is brought into view;
   // one clicked in the strip is already there, so nothing moves.
   const tab = document.querySelector(".tab-item--selected");

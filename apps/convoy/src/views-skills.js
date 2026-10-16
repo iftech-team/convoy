@@ -291,7 +291,7 @@ export function skillEditor(dialog) {
     ...state.projects.map((item) => [item.id, item.title]),
   ];
   const body = dialog.preview
-    ? `<div class="skill-preview preview__markdown">${dialog.body.trim() ? markdown(dialog.body) : `<p class="skill-preview__none">${escape(t("Nothing to preview yet."))}</p>`}</div>`
+    ? `<div class="skill-preview preview__markdown" data-scroll="skill-preview">${dialog.body.trim() ? markdown(dialog.body) : `<p class="skill-preview__none">${escape(t("Nothing to preview yet."))}</p>`}</div>`
     : `<textarea id="skill-body" class="skill-body" spellcheck="false" rows="12"
                  placeholder="${escape(t("What the agent should do, in Markdown. It reads this at the start of every session it is attached to."))}">${escape(dialog.body)}</textarea>`;
   return modal({

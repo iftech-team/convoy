@@ -24,7 +24,7 @@ export const flow = () => `
 
 export function welcomeView() {
   return `
-    <div class="welcome">
+    <div class="welcome" data-scroll="welcome">
       <header class="welcome__intro">
         <h1 class="welcome__title">${escape(t("Welcome to Convoy"))}</h1>
         <p class="welcome__lead">${escape(t(PITCH))}</p>

@@ -56,7 +56,7 @@ export function helperCards(id) {
         <span>${escape(t("Helpers"))}</span>
         <span class="helpers__count">${escape(busy ? `${list.length} · ${t("{count} working", { count: busy })}` : String(list.length))}</span>
       </div>
-      <div class="helpers__list">
+      <div class="helpers__list" data-scroll="helpers-${escape(id)}">
         ${list.map(card).join("")}
       </div>
     </div>`;

@@ -331,7 +331,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
       <div class="field">
         <span class="field__label">${escape(list.length ? t("Tasks · {picked} of {total} selected", { picked: picked.length, total: list.length }) : t("Tasks"))}
           ${allKeys.length ? `<button class="button button--quiet" data-action="import-all">${escape(everything ? t("Select none") : t("Select all"))}</button>` : ""}</span>
-        <div class="import__list">${
+        <div class="import__list" data-scroll="task-import">${
           rows ||
           `<div class="import__empty${draft.message ? " import__empty--error" : ""}">${escape(
             draft.message ?? (draft.loading ? t("Loading…") : current?.auth === "mcp" ? t("Paste issue keys or links above.") : t("No tasks loaded.")),
