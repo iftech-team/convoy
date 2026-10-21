@@ -193,13 +193,21 @@ fn codex_and_shared_agent_skills_are_found_too() {
             )
         })
         .collect();
-    assert_eq!(
-        seen,
+    // Without the link, as on Windows, the shared skill is found where it
+    // lives instead.
+    let expected = if cfg!(unix) {
         [
             ("better-ui", "Claude Code", false),
             ("release", "Codex", false),
             ("house-style", "Agent Skills", true),
         ]
-    );
+    } else {
+        [
+            ("release", "Codex", false),
+            ("better-ui", "Agent Skills", false),
+            ("house-style", "Agent Skills", true),
+        ]
+    };
+    assert_eq!(seen, expected);
     assert_eq!(found[2].project_id.as_deref(), Some(project.as_str()));
 }
