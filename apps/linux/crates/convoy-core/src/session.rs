@@ -343,7 +343,7 @@ pub fn plan_chat_launch_with(
             .clone()
             .filter(|prompt| !prompt.is_empty())
     } else {
-        (!session.prompt.is_empty()).then(|| session.prompt.clone())
+        (!session.prompt.trim().is_empty()).then(|| session.prompt.clone())
     };
     Ok(ChatPlan {
         launch,

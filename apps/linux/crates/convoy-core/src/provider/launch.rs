@@ -71,7 +71,7 @@ pub fn agent_args(session: &Session, resume: bool) -> Vec<String> {
                     .clone()
                     .filter(|prompt| !prompt.is_empty())
             } else {
-                Some(session.prompt.clone()).filter(|prompt| !prompt.is_empty())
+                Some(session.prompt.clone()).filter(|prompt| !prompt.trim().is_empty())
             };
             if let Some(message) = message {
                 args.push("-i".into());
@@ -91,7 +91,9 @@ pub fn agent_args(session: &Session, resume: bool) -> Vec<String> {
             args
         }
     };
-    if !resume && !session.prompt.is_empty() {
+    // A first message of only blank lines is no message: passed on, the
+    // agent would submit it and start a turn on nothing.
+    if !resume && !session.prompt.trim().is_empty() {
         args.push("--".into());
         args.push(session.prompt.clone());
     }

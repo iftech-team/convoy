@@ -46,6 +46,31 @@ fn resume_uses_exact_provider_identity_and_never_repeats_the_initial_prompt() {
 }
 
 #[test]
+fn a_blank_first_message_starts_the_agent_without_one() {
+    // An Enter pressed in the sheet's empty message field leaves "\n"; passed
+    // on, the agent submits it and starts working on nothing.
+    for prompt in ["\n", "  \n\t"] {
+        assert_eq!(
+            agent_args(&session(Agent::Claude, "123", prompt), false),
+            ["claude", "--session-id", "123"]
+        );
+        assert_eq!(
+            agent_args(&session(Agent::Codex, "", prompt), false),
+            ["codex", "--no-alt-screen"]
+        );
+        assert_eq!(
+            agent_args(&session(Agent::Gemini, "", prompt), false),
+            ["gemini"]
+        );
+    }
+    // A real message keeps its whitespace exactly as typed.
+    assert_eq!(
+        agent_args(&session(Agent::Claude, "123", "\nFix it\n"), false),
+        ["claude", "--session-id", "123", "--", "\nFix it\n"]
+    );
+}
+
+#[test]
 fn posix_launch_preserves_shell_metacharacters_as_literal_arguments() {
     let prompt = "quotes ' \" `echo injected` $(echo injected) ; & | %PATH%\nПривет";
     let session = session(Agent::Claude, "123", prompt);
