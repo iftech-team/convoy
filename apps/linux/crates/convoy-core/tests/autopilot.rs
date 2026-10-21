@@ -310,18 +310,22 @@ fn a_ready_task_is_written_up_then_published_on_gitlab() {
     assert!(calls
         .iter()
         .any(|call| call.contains("push -u origin convoy/x")));
+    // Through the login shell every argument is quoted; Windows runs the
+    // tool directly and has nothing to quote.
     let create = calls
         .iter()
-        .find(|call| call.contains("'mr' 'create'"))
+        .find(|call| call.replace('\'', "").contains("mr create"))
         .unwrap();
     assert!(
         create.contains("glab"),
         "GitLab is opened with glab: {create}"
     );
-    assert!(
-        create.contains("'Refresh tokens on login'"),
-        "the title is quoted: {create}"
-    );
+    if !cfg!(windows) {
+        assert!(
+            create.contains("'Refresh tokens on login'"),
+            "the title is quoted: {create}"
+        );
+    }
 
     publish::finish(&mut workspace, &context(), &id, &plan.run_id, outcome).unwrap();
     let done = task(&workspace, &id);
