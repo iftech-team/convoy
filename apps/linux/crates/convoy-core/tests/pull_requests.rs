@@ -73,7 +73,9 @@ fn a_self_hosted_merge_or_pull_request_is_recognised() {
         Some("https://github.acme.com/team/app/pull/19")
     );
     assert_eq!(
-        pull_request_url("https://jira.acme.com/browse/APP-523 and https://gitlab.acme.com/team/app/-/issues/4"),
+        pull_request_url(
+            "https://jira.acme.com/browse/APP-523 and https://gitlab.acme.com/team/app/-/issues/4"
+        ),
         None
     );
 }

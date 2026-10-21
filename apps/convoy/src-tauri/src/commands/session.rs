@@ -857,8 +857,11 @@ pub fn account_login(
                     .iter()
                     .find(|profile| profile.id == profile_id)
                     .cloned()
-                    .ok_or_else(|| convoy_core::ConvoyError::message("This account no longer exists."))?;
-                let mut probe = convoy_core::model::Session::new(String::new(), profile.agent, "login");
+                    .ok_or_else(|| {
+                        convoy_core::ConvoyError::message("This account no longer exists.")
+                    })?;
+                let mut probe =
+                    convoy_core::model::Session::new(String::new(), profile.agent, "login");
                 probe.profile_id = Some(profile.id.clone());
                 probe
             }
