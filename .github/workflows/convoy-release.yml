@@ -3,7 +3,9 @@ name: Convoy release
 # Attaches the Tauri client to every Convoy release: the macOS app, the
 # Windows installer and the Linux packages, under names that never change, so
 # releases/latest/download/<name> always resolves and peshbar.com needs no
-# update per release. `scripts/release.sh` publishes the release.
+# update per release. With the update signing key set it also attaches signed
+# update packages and latest.json, which installed copies check for a newer
+# version. `scripts/release.sh` publishes the release.
 on:
   release:
     types: [published]
@@ -84,8 +86,25 @@ jobs:
             echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
           fi
 
+      # Update packages are signed when the key is set, and installed copies
+      # update themselves from them. Without it the release still builds and
+      # nobody is offered it.
+      - name: Choose the update signing
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            {
+              printf 'TAURI_SIGNING_PRIVATE_KEY<<CONVOY_KEY\n%s\nCONVOY_KEY\n' "$TAURI_SIGNING_PRIVATE_KEY"
+              echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+              echo "UPDATER=--config src-tauri/tauri.updater.conf.json"
+            } >> "$GITHUB_ENV"
+          fi
+
       - name: Build the app
-        run: npm run tauri build -- --target universal-apple-darwin --bundles app,dmg
+        run: npm run tauri build -- --target universal-apple-darwin --bundles app,dmg ${UPDATER:-}
 
       # Convoy.zip is the name the installer and peshbar.com download.
       - name: Attach it to the release
@@ -97,8 +116,14 @@ jobs:
           ditto -c -k --keepParent macos/Convoy.app "$RUNNER_TEMP/Convoy.zip"
           cp "$RUNNER_TEMP/Convoy.zip" "$RUNNER_TEMP/Convoy-${TAG#v}.zip"
           cp dmg/*.dmg "$RUNNER_TEMP/Convoy-macos-universal.dmg"
-          gh release upload "$TAG" --clobber --repo "$GITHUB_REPOSITORY" \
-            "$RUNNER_TEMP/Convoy.zip" "$RUNNER_TEMP/Convoy-${TAG#v}.zip" "$RUNNER_TEMP/Convoy-macos-universal.dmg"
+          files=("$RUNNER_TEMP/Convoy.zip" "$RUNNER_TEMP/Convoy-${TAG#v}.zip" "$RUNNER_TEMP/Convoy-macos-universal.dmg")
+          # The update package: one for both architectures, as the app is.
+          if [ -f macos/Convoy.app.tar.gz.sig ]; then
+            cp macos/Convoy.app.tar.gz "$RUNNER_TEMP/Convoy-macos-universal.app.tar.gz"
+            cp macos/Convoy.app.tar.gz.sig "$RUNNER_TEMP/Convoy-macos-universal.app.tar.gz.sig"
+            files+=("$RUNNER_TEMP/Convoy-macos-universal.app.tar.gz" "$RUNNER_TEMP/Convoy-macos-universal.app.tar.gz.sig")
+          fi
+          gh release upload "$TAG" --clobber --repo "$GITHUB_REPOSITORY" "${files[@]}"
 
   linux:
     # 22.04 so the AppImage runs on distributions older than the runner's.
@@ -134,8 +159,25 @@ jobs:
       - name: Stamp the release version
         run: node -e 'const f="src-tauri/tauri.conf.json";const c=JSON.parse(require("fs").readFileSync(f));c.version=process.env.TAG.replace(/^v/,"");require("fs").writeFileSync(f,JSON.stringify(c,null,2))'
 
+      # Update packages are signed when the key is set, and installed copies
+      # update themselves from them. Without it the release still builds and
+      # nobody is offered it.
+      - name: Choose the update signing
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            {
+              printf 'TAURI_SIGNING_PRIVATE_KEY<<CONVOY_KEY\n%s\nCONVOY_KEY\n' "$TAURI_SIGNING_PRIVATE_KEY"
+              echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+              echo "UPDATER=--config src-tauri/tauri.updater.conf.json"
+            } >> "$GITHUB_ENV"
+          fi
+
       - name: Build the packages
-        run: npm run tauri build -- --bundles appimage,deb
+        run: npm run tauri build -- --bundles appimage,deb ${UPDATER:-}
 
       - name: Attach them to the release
         env:
@@ -145,8 +187,17 @@ jobs:
           cd src-tauri/target/release/bundle
           cp appimage/*.AppImage "$RUNNER_TEMP/Convoy-linux-x86_64.AppImage"
           cp deb/*.deb "$RUNNER_TEMP/Convoy-linux-amd64.deb"
-          gh release upload "$TAG" --clobber --repo "$GITHUB_REPOSITORY" \
-            "$RUNNER_TEMP/Convoy-linux-x86_64.AppImage" "$RUNNER_TEMP/Convoy-linux-amd64.deb"
+          files=("$RUNNER_TEMP/Convoy-linux-x86_64.AppImage" "$RUNNER_TEMP/Convoy-linux-amd64.deb")
+          # The packages update in place, so each carries its signature. The
+          # bundler signs the AppImage; the .deb is signed here if it did not.
+          if [ -n "${UPDATER:-}" ]; then
+            deb=$(ls deb/*.deb)
+            [ -f "$deb.sig" ] || "$GITHUB_WORKSPACE/apps/convoy/node_modules/.bin/tauri" signer sign "$deb"
+            cp appimage/*.AppImage.sig "$RUNNER_TEMP/Convoy-linux-x86_64.AppImage.sig"
+            cp "$deb.sig" "$RUNNER_TEMP/Convoy-linux-amd64.deb.sig"
+            files+=("$RUNNER_TEMP/Convoy-linux-x86_64.AppImage.sig" "$RUNNER_TEMP/Convoy-linux-amd64.deb.sig")
+          fi
+          gh release upload "$TAG" --clobber --repo "$GITHUB_REPOSITORY" "${files[@]}"
 
   windows:
     runs-on: windows-2022
@@ -175,8 +226,25 @@ jobs:
       - name: Stamp the release version
         run: node -e 'const f="src-tauri/tauri.conf.json";const c=JSON.parse(require("fs").readFileSync(f));c.version=process.env.TAG.replace(/^v/,"");require("fs").writeFileSync(f,JSON.stringify(c,null,2))'
 
+      # Update packages are signed when the key is set, and installed copies
+      # update themselves from them. Without it the release still builds and
+      # nobody is offered it.
+      - name: Choose the update signing
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            {
+              printf 'TAURI_SIGNING_PRIVATE_KEY<<CONVOY_KEY\n%s\nCONVOY_KEY\n' "$TAURI_SIGNING_PRIVATE_KEY"
+              echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+              echo "UPDATER=--config src-tauri/tauri.updater.conf.json"
+            } >> "$GITHUB_ENV"
+          fi
+
       - name: Build the installer
-        run: npm run tauri build -- --bundles nsis
+        run: npm run tauri build -- --bundles nsis ${UPDATER:-}
 
       - name: Attach it to the release
         env:
@@ -184,4 +252,59 @@ jobs:
         run: |
           set -euo pipefail
           cp src-tauri/target/release/bundle/nsis/*.exe "$RUNNER_TEMP/Convoy-windows-x64-setup.exe"
-          gh release upload "$TAG" --clobber --repo "$GITHUB_REPOSITORY" "$RUNNER_TEMP/Convoy-windows-x64-setup.exe"
+          files=("$RUNNER_TEMP/Convoy-windows-x64-setup.exe")
+          # The installer is also the update package.
+          if [ -n "${UPDATER:-}" ]; then
+            cp src-tauri/target/release/bundle/nsis/*.exe.sig "$RUNNER_TEMP/Convoy-windows-x64-setup.exe.sig"
+            files+=("$RUNNER_TEMP/Convoy-windows-x64-setup.exe.sig")
+          fi
+          gh release upload "$TAG" --clobber --repo "$GITHUB_REPOSITORY" "${files[@]}"
+
+  # What installed copies read to find this release: releases/latest/download/
+  # latest.json, written once every platform's package and signature is up.
+  # Until then a check finds no manifest and simply tries again later.
+  manifest:
+    needs: [macos, linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write latest.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNING: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          set -euo pipefail
+          if [ "$SIGNING" != "true" ]; then
+            echo "No update signing key; this release is not offered as an update."
+            exit 0
+          fi
+          cd "$RUNNER_TEMP"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.sig'
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body,publishedAt > release.json
+          node - <<'JS'
+          const fs = require("fs");
+          const { TAG, GITHUB_REPOSITORY } = process.env;
+          const release = JSON.parse(fs.readFileSync("release.json", "utf8"));
+          const entry = (file) => ({
+            signature: fs.readFileSync(`${file}.sig`, "utf8").trim(),
+            url: `https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${file}`,
+          });
+          const mac = entry("Convoy-macos-universal.app.tar.gz");
+          const appimage = entry("Convoy-linux-x86_64.AppImage");
+          const windows = entry("Convoy-windows-x64-setup.exe");
+          const manifest = {
+            version: TAG.replace(/^v/, ""),
+            notes: release.body ?? "",
+            pub_date: release.publishedAt,
+            platforms: {
+              "darwin-aarch64": mac,
+              "darwin-x86_64": mac,
+              "linux-x86_64": appimage,
+              "linux-x86_64-appimage": appimage,
+              "linux-x86_64-deb": entry("Convoy-linux-amd64.deb"),
+              "windows-x86_64": windows,
+              "windows-x86_64-nsis": windows,
+            },
+          };
+          fs.writeFileSync("latest.json", JSON.stringify(manifest, null, 2));
+          JS
+          gh release upload "$TAG" --clobber --repo "$GITHUB_REPOSITORY" latest.json

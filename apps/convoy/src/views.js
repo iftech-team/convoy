@@ -856,6 +856,7 @@ export function status() {
       </button>
       ${accountChip("claude")}${accountChip("codex")}${accountChip("gemini")}
       <span class="status__spacer"></span>
+      ${updateButton()}
       ${needsYouButton()}
       <span class="status__item">${icons.terminal} ${escape(t("{count} running", { count: running }))}</span>
       <span class="status__sep"></span>
@@ -866,6 +867,16 @@ export function status() {
     </footer>`;
 }
 
+
+/// A newer version, downloaded and waiting; restarting installs it.
+const updateButton = () =>
+  state.update
+    ? `<button class="status__item status__button status__button--on" data-action="update-restart"
+               title="${escape(t("Restart Convoy to install version {version}", { version: state.update.version }))}">
+         ${icons.refresh} ${escape(state.updating ? t("Updating…") : t("Restart to update"))}
+       </button>
+       <span class="status__sep"></span>`
+    : "";
 
 export { escape, empty, group, setting, segmented, choice, toggle, button };
 

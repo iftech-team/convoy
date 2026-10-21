@@ -17,6 +17,7 @@ mod qa;
 mod skills;
 mod sync;
 mod tasks;
+mod update;
 
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
@@ -24,22 +25,26 @@ use tauri::{Emitter, Manager};
 /// Quitting once the user has said yes. The agents go with the process; this
 /// asks them to stop first so an exit code is recorded for each.
 #[tauri::command]
-fn quit_now(
-    app: tauri::AppHandle,
-    terminals: tauri::State<'_, Arc<pty::Terminals>>,
-    chats: tauri::State<'_, Arc<chat::Chats>>,
-) {
+fn quit_now(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        stop_agents(&app);
+        app.exit(0);
+    });
+}
+
+/// Asks every agent to stop and gives the stops time to be sent: long enough
+/// for that, short enough not to feel stuck. Quitting and updating both end
+/// the process right after.
+pub(crate) fn stop_agents<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let terminals = app.state::<Arc<pty::Terminals>>();
+    let chats = app.state::<Arc<chat::Chats>>();
     for id in terminals.ids() {
         terminals.stop(&id);
     }
     for id in chats.ids() {
         chats.stop(&id);
     }
-    // Long enough for the stops to be sent, short enough not to feel stuck.
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(400));
-        app.exit(0);
-    });
+    std::thread::sleep(std::time::Duration::from_millis(400));
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -75,6 +80,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // On macOS, as the Swift app does, closing the window only hides it:
         // the agents keep working and the Dock icon brings it back. Quitting
         // is ⌘Q, which asks first (below). Elsewhere closing the window
@@ -104,10 +110,12 @@ pub fn run() {
         .manage(Arc::new(commands::usage::Usage::default()))
         .manage(helpers::Helpers::default())
         .manage(automations::Automations::default())
+        .manage(update::Updates::default())
         .setup(|app| {
             helpers::start_poller(app.handle().clone());
             automations::start_scheduler(app.handle().clone());
             sync::start_worker(app.handle().clone());
+            update::start_worker(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -266,6 +274,9 @@ pub fn run() {
             skills::skill_save,
             skills::skill_delete,
             skills::session_skills,
+            update::update_status,
+            update::update_check,
+            update::update_install,
             quit_now,
         ])
         .build(tauri::generate_context!())

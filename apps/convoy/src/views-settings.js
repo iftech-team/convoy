@@ -17,7 +17,7 @@ import { checklistCard, gettingStarted } from "./views-home.js";
 /// older sections folded into it.
 export const SECTIONS = [
   ["Get started", "check", ["setup", "check", "diagnostics", "doctor", "missing", "install", "path", "login", "gh", "git", "node", "problem", "first", "start", "macos"]],
-  ["General", "sliders", ["keep awake", "sleep", "sidebar", "sort", "compact", "notifications", "notify", "sound", "waiting", "finished", "done", "focus"]],
+  ["General", "sliders", ["keep awake", "sleep", "sidebar", "sort", "compact", "notifications", "notify", "sound", "waiting", "finished", "done", "focus", "version", "update", "updates", "about", "версия", "обновление"]],
   ["Appearance", "paint", ["theme", "dark", "light", "system", "language", "russian", "english", "язык", "русский", "terminal", "font", "size", "scrollback", "lines"]],
   ["Agents", "sparkles", ["claude", "codex", "gemini", "default agent", "chat", "terminal", "view", "yolo", "permissions", "skip", "review", "template", "brief", "hibernate", "idle", "sleep", "role", "roles", "planner", "builder", "qa", "documentation", "роль"]],
   ["Accounts", "person", ["account", "profile", "login", "sign in", "claude", "codex"]],
@@ -204,7 +204,30 @@ function general(settings) {
       ),
       t("A running session may be waiting for input; keeping the computer awake lets it finish."),
     )}
-    ${notifications(settings)}`;
+    ${notifications(settings)}
+    ${about()}`;
+}
+
+/// The version, and the update the background check found, or a check now.
+function about() {
+  const update = state.update;
+  const check = state.updateCheck ?? {};
+  const detail = update
+    ? t("Version {version} is downloaded. Restarting installs it and stops any running agents.", { version: update.version })
+    : check.busy
+      ? t("Checking…")
+      : check.error
+        ? t("Could not check: {error}", { error: check.error })
+        : check.checked
+          ? t("You have the latest version.")
+          : t("Checked every few hours; a new version downloads in the background.");
+  const control = update
+    ? button({ label: state.updating ? t("Updating…") : t("Restart to update"), action: "update-restart", kind: "primary", disabled: !!state.updating })
+    : button({ label: t("Check for updates"), icon: "refresh", action: "update-check", disabled: !!check.busy });
+  return groupBox(
+    "Convoy",
+    row(t("Version"), "", `<span class="pref-muted">${escape(state.version)}</span>`) + row(t("Updates"), detail, control),
+  );
 }
 
 function appearance(settings) {

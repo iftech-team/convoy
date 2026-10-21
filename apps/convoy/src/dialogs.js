@@ -1182,6 +1182,22 @@ const quitting = (dialog) =>
       ${button({ label: t("Stop and quit"), action: "quit", kind: "danger-solid" })}`,
   });
 
+/// Installing an update restarts Convoy, and the agents stop with it.
+const restartToUpdate = (dialog) =>
+  modal({
+    title: t("Restart to update?"),
+    body: `<p class="modal__hint">
+      ${escape(
+        dialog.running === 1
+          ? t("Convoy restarts into version {version}. The running agent stops; anything not written to disk by then is gone.", { version: dialog.version })
+          : t("Convoy restarts into version {version}. All {count} running agents stop; anything not written to disk by then is gone.", { version: dialog.version, count: dialog.running }),
+      )}
+    </p>`,
+    foot: `
+      ${button({ label: t("Later"), data: { dismiss: "1" } })}
+      ${button({ label: t("Stop agents and restart"), action: "update-install", kind: "danger-solid" })}`,
+  });
+
 /// The macOS app's workspace, counted before anything is written.
 function macosImport(dialog) {
   const report = dialog.report;
@@ -1390,6 +1406,7 @@ const VIEWS = {
   "doc-spec": docSpec,
   split: splitPicker,
   quit: quitting,
+  update: restartToUpdate,
   session: newSession,
   "edit-session": editSession,
   rename: renameSession,

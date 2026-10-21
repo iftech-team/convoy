@@ -6,6 +6,7 @@ import { dropStatus, movable } from "./phase.js";
 import { presetPatch } from "./presets.js";
 import { sessionLabel } from "./session-state.js";
 import { icons } from "./icons.js";
+import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialogNative, save as saveDialogNative } from "@tauri-apps/plugin-dialog";
 import {
@@ -1035,6 +1036,9 @@ const ACTIONS = {
 
   // menus
   quit: () => call("quit_now"),
+  "update-check": checkForUpdate,
+  "update-restart": restartToUpdate,
+  "update-install": installUpdate,
   "open-split": () => setLayout(2),
   "close-split": () => setLayout(1),
   "session-menu": () => {
@@ -2359,6 +2363,38 @@ async function runHistorySweep() {
   if (state.tab === "sessions") await loadHistory();
   const failed = report.failed ? t("{count} could not be copied", { count: plural(report.failed, "conversation") }) : "";
   toast([t("Imported {count}", { count: plural(report.imported, "conversation") }), failed].filter(Boolean).join(" · "));
+}
+
+/// Settings' "Check for updates": says what it found, a failure included.
+async function checkForUpdate() {
+  if (state.updateCheck?.busy) return;
+  state.updateCheck = { busy: true };
+  render();
+  const result = await attempt("update_check");
+  state.updateCheck = result.ok ? { checked: Date.now() } : { error: result.error };
+  if (result.ok && result.value) state.update = result.value;
+  render();
+}
+
+/// Installing restarts Convoy, which stops every agent, so with any
+/// running it asks first. A login terminal is not an agent.
+function restartToUpdate() {
+  if (!state.update || state.updating) return;
+  const running = state.running.filter((id) => !id.startsWith("login:")).length;
+  if (running) return openModal({ kind: "update", running, version: state.update.version });
+  installUpdate();
+}
+
+async function installUpdate() {
+  if (!state.update || state.updating) return;
+  if (state.dialog?.kind === "update") closeDialog();
+  state.updating = true;
+  render();
+  // On success the app restarts before this returns.
+  if (!(await done("update_install"))) {
+    state.updating = false;
+    render();
+  }
 }
 
 /// ⌥⌘U as on macOS: a Claude session in this project that runs /usage, or
@@ -4633,6 +4669,11 @@ async function wireFileDrop() {
 await listen("window:closing", ({ payload }) =>
   openModal({ kind: "quit", running: Number(payload) || 1 }),
 );
+// A newer version, downloaded in the background and waiting for a restart.
+await listen("update:ready", ({ payload }) => {
+  state.update = payload;
+  render();
+});
 
 try {
   await terminal.wire();
@@ -4644,6 +4685,17 @@ try {
   await loadAllTasks();
   // The status bar's account chips need them.
   await loadProfiles();
+  // For Settings, and an update that arrived before the window listened.
+  getVersion().then((version) => {
+    state.version = version;
+    render();
+  }, () => {});
+  attempt("update_status").then((result) => {
+    if (result.ok && result.value) {
+      state.update = result.value;
+      render();
+    }
+  });
   // The window opens on Home, as the macOS app's does. A first run shows
   // what is still to set up.
   if (state.projects.length) openHome();

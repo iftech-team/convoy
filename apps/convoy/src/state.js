@@ -45,6 +45,12 @@ export const state = {
   allSessions: [],
   quickCommands: [],
   storage: "",
+  /// This build's version, and a newer one downloaded and waiting for a
+  /// restart to install it.
+  version: "",
+  update: null,
+  /// Settings' own check: under way, how it failed, or when it found nothing.
+  updateCheck: null,
   running: [],
   projectId: null,
   sessionId: null,

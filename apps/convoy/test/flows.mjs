@@ -219,6 +219,10 @@ try {
       }
       if (cmd === "worktree_create") return { branch: args.branch, shared_paths: [], setup_command: null, directory: "/fixture/worktrees/x" };
       if (cmd === "plugin:window|set_badge_count") { window.badge = args.value; return null; }
+      if (cmd === "plugin:app|version") return "0.9.0";
+      if (cmd === "update_status") return null;
+      if (cmd === "update_check") return { version: "0.9.1", notes: "" };
+      if (cmd === "update_install") return null;
       if (cmd === "session_output") return { review: "Found: a token refresh race", notes: "No conversation found with session ID 0199", busy: "● Pushed to main as 0fc2782.\n\nWhat changed\n- Sign-up with an emailed code\n- Password reset\n\n❯ " }[args.id] ?? "";
       if (cmd === "session_snapshot") { (window.snapshots ??= {})[args.id] = args.text; return null; }
       if (cmd === "session_recover") {
@@ -1473,6 +1477,21 @@ try {
   await page.locator('[data-settings-section="General"]').click();
   await page.locator('[data-pref-toggle="notifications"]').click();
   await page.waitForFunction(() => window.savedSettings.notifications === true);
+  // The version, and an update found by checking: restarting into it asks
+  // first while agents run, then installs.
+  await page.locator(".pref-row", { hasText: "Version" }).getByText("0.9.0").waitFor();
+  await page.locator(".prefs__foot", { hasText: "Convoy 0.9.0" }).waitFor();
+  assert.equal(await page.locator('[data-action="update-restart"]').count(), 0, "nothing to restart into before a check");
+  await page.locator('[data-action="update-check"]').click();
+  await page.locator(".pref-row", { hasText: "Version 0.9.1 is downloaded" }).waitFor();
+  await page.locator('.status [data-action="update-restart"]').click();
+  await page.locator(".modal", { hasText: "Restart to update?" }).getByText("version 0.9.1").waitFor();
+  await page.locator(".modal .button", { hasText: "Later" }).click();
+  assert.ok(!(await page.evaluate(() => window.checkCalls.some((c) => c.cmd === "update_install"))), "Later installs nothing");
+  await page.locator('.pref-row [data-action="update-restart"]').click();
+  await page.locator(".modal .button", { hasText: "Stop agents and restart" }).click();
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "update_install"));
+  await page.locator(".pref-row", { hasText: "Updating…" }).waitFor();
   // A folded section is still found by the words of the one it was.
   await page.locator("#settings-search").fill("font");
   assert.deepEqual((await page.locator(".prefs__item").allTextContents()).map((name) => name.trim()), ["Appearance"]);

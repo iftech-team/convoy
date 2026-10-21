@@ -39,6 +39,9 @@ convoy-pty = { path = "crates/pty" }
 # FFI for the Windows shell API is not something to ship onto a machine I
 # cannot run it on.
 trash = "5.2"
+# Updates from the latest GitHub release, checked against the public key in
+# tauri.conf.json before anything is installed.
+tauri-plugin-updater = "2"
 
 # A chat's agent runs in its own process group, and a stop signals the group.
 [target.'cfg(unix)'.dependencies]
