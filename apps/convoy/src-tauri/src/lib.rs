@@ -8,6 +8,8 @@
 mod automations;
 mod chat;
 mod commands;
+#[cfg(target_os = "macos")]
+mod exceptions;
 mod helpers;
 mod monitor;
 mod pipeline;
@@ -112,6 +114,10 @@ pub fn run() {
         .manage(automations::Automations::default())
         .manage(update::Updates::default())
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            if let Ok(folder) = app.path().app_log_dir() {
+                exceptions::install(folder);
+            }
             helpers::start_poller(app.handle().clone());
             automations::start_scheduler(app.handle().clone());
             sync::start_worker(app.handle().clone());

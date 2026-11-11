@@ -50,6 +50,9 @@ libc = "0.2"
 # The macOS app keeps its settings in a property list; importing them reads it.
 [target.'cfg(target_os = "macos")'.dependencies]
 plist = "1"
+# An exception AppKit raises while handling an event is caught and logged
+# rather than aborting the app; see src/exceptions.rs.
+objc2 = { version = "0.6", features = ["exception"] }
 
 [dev-dependencies]
 # The `test` feature gives a real AppHandle, so the exit rules are checked

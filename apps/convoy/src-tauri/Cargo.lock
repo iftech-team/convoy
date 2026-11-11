@@ -533,6 +533,7 @@ dependencies = [
  "convoy-core",
  "convoy-pty",
  "libc",
+ "objc2",
  "plist",
  "serde",
  "serde_json",
