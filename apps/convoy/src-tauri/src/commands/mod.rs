@@ -140,6 +140,8 @@ pub struct ProjectView {
     pub qa_auto: bool,
     /// New tasks here are reviewed automatically.
     pub review_auto: bool,
+    /// Who reviews here, when the project names an agent.
+    pub review_agent: Option<String>,
     /// New tasks here are planned first.
     pub plan_first_default: bool,
     /// A document is written for each task once QA passes.
@@ -193,15 +195,55 @@ pub struct WorkspaceView {
     pub storage: String,
 }
 
+/// A session's name as the window shows it. One started without a message
+/// is named after its agent and the time, which tells nothing apart; once
+/// its conversation has a name — the one `claude --resume` shows, or its
+/// first message — that is shown instead.
+fn shown_title(session: &Session, state: &convoy_core::model::State, accounts: &Path) -> String {
+    use convoy_core::provider::transcripts;
+    if session.provider_id.is_empty()
+        || !transcripts::is_placeholder_title(session.agent, &session.title)
+    {
+        return session.title.clone();
+    }
+    let Ok(account) = convoy_core::accounts::account_environment(
+        session,
+        &state.profiles,
+        accounts,
+        &convoy_core::provider::launch::current_environment(),
+    ) else {
+        return session.title.clone();
+    };
+    let directory = session.working_directory.clone().or_else(|| {
+        state
+            .projects
+            .iter()
+            .find(|project| project.id == session.project_id)
+            .map(|project| project.path.clone())
+    });
+    directory
+        .and_then(|directory| {
+            transcripts::conversation_name(
+                session.agent,
+                &account.home,
+                &directory,
+                &session.provider_id,
+            )
+        })
+        .unwrap_or_else(|| session.title.clone())
+}
+
 pub fn view_of(
     session: &Session,
     running: bool,
-    settings: &convoy_core::model::Settings,
+    state: &convoy_core::model::State,
+    accounts: &Path,
 ) -> SessionView {
+    let settings = &state.settings;
     SessionView {
         id: session.id.clone(),
         project_id: session.project_id.clone(),
-        title: session.title.clone(),
+        title: shown_title(session, state, accounts),
         agent: session.agent.as_str().to_string(),
         provider_id: session.provider_id.clone(),
         model: session.model.clone().unwrap_or_default(),
@@ -241,6 +283,7 @@ pub fn workspace_read(
         .filter(|id| !id.starts_with("login:"))
         .collect();
     let storage = workspace.storage.root().to_string_lossy().into_owned();
+    let accounts = workspace.storage.accounts();
     workspace.with(|workspace| {
         let state = workspace.state();
         let projects = state
@@ -270,6 +313,7 @@ pub fn workspace_read(
                     qa: convoy_core::qa::configured(project),
                     qa_auto: project.qa_auto == Some(true) && convoy_core::qa::configured(project),
                     review_auto: project.review_auto == Some(true),
+                    review_agent: project.review_agent.map(|agent| agent.as_str().to_string()),
                     plan_first_default: project.plan_first_default == Some(true),
                     docs_auto: project.docs_auto == Some(true),
                     sessions: own.iter().filter(|session| !session.is_archived()).count(),
@@ -284,7 +328,7 @@ pub fn workspace_read(
             .sessions
             .iter()
             .filter(|session| !session.is_archived())
-            .map(|session| view_of(session, running.contains(&session.id), &state.settings))
+            .map(|session| view_of(session, running.contains(&session.id), state, &accounts))
             .collect();
         Ok(WorkspaceView {
             projects,

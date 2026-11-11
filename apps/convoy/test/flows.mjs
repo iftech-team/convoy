@@ -190,7 +190,7 @@ try {
         return { id: p.id, title: p.title, path: p.path, group: "", icon: p.icon ?? "", setup_command: "", shared_paths: "", review_template: "",
                  color: p.color ?? "", default_agent: p.default_agent ?? "", base_ref: "", branch_prefix: "", task_mode: "", auto_run_tasks: false,
                  test_commands: p.test_commands ?? "", qa_agent: p.qa_agent ?? "", qa_auto: !!p.qa_auto, qa_timeout: p.qa_timeout ?? 15,
-                 ...Object.fromEntries(["task_mode", "review_auto", "plan_first_default", "plan_auto_approve", "convoy_publishes", "task_worktrees", "auto_run_tasks", "max_parallel", "docs_auto"].filter((key) => key in p).map((key) => [key, p[key]])) };
+                 ...Object.fromEntries(["task_mode", "review_auto", "review_agent", "qa_environment", "plan_first_default", "plan_auto_approve", "convoy_publishes", "task_worktrees", "auto_run_tasks", "max_parallel", "docs_auto"].filter((key) => key in p).map((key) => [key, p[key]])) };
       }
       if (cmd === "project_edit") {
         const p = projects.find((item) => item.id === args.id);
@@ -1142,6 +1142,26 @@ try {
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.qa_timeout === 30));
   await page.locator('[data-proj-toggle="qa_auto"]').click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.qa_auto === true));
+  // Who reviews: the project names an agent, or leaves it to the other one.
+  await page.locator('[data-proj-select="review_agent"]').selectOption("gemini");
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.review_agent === "gemini"));
+  // What is typed but not saved yet survives the re-renders that come every
+  // few seconds; it is saved when the field is left.
+  const environment = page.locator('[data-proj-text="qa_environment"]');
+  await environment.click();
+  await environment.pressSequentially("local-db");
+  const rerender = async () => {
+    const calls = await page.evaluate(() => window.checkCalls.length);
+    await page.evaluate(() => window.emitTauri("session:changed", "builder"));
+    await page.waitForFunction((count) => window.checkCalls.length > count, calls);
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  };
+  await rerender();
+  assert.equal(await environment.inputValue(), "local-db", "typed text kept across a re-render");
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset.projText), "qa_environment", "still typing in it");
+  assert.ok(!(await page.evaluate(() => window.checkCalls.some((c) => c.cmd === "project_edit" && "qa_environment" in c.args.input))), "not saved before it is left");
+  await page.keyboard.press("Tab");
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.qa_environment === "local-db"));
   if (shots) {
     await page.locator('[data-action="qa-detect"]').scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${shots}/qa-settings.png` });
@@ -1715,6 +1735,25 @@ try {
   assert.equal(await chat.locator(".tool--file .tool__added").textContent(), "+3");
   const approval = chat.locator(".approval", { hasText: "git commit" });
   assert.equal(await approval.locator("[data-chat-answer]").count(), 3, "Allow, Allow for session, Deny");
+  // A redraw that lands between a scroll and its scroll event — they arrive a
+  // frame late — leaves the chat where it was scrolled to, not where it was.
+  await page.setViewportSize({ width: 1280, height: 360 });
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const log = chat.locator(".chat__log");
+  assert.ok(await log.evaluate((node) => node.scrollHeight - node.clientHeight > 60), "the chat scrolls");
+  await log.evaluate((node) => new Promise((resolve) => {
+    node.scrollTop = 0;
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  }));
+  const callsBeforeChatScroll = await page.evaluate(() => window.checkCalls.length);
+  await log.evaluate((node) => {
+    node.scrollTop = 50;
+    window.emitTauri("session:changed", "chatty");
+  });
+  await page.waitForFunction((count) => window.checkCalls.length > count, callsBeforeChatScroll);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await chat.locator(".chat__log").evaluate((node) => node.scrollTop), 50, "the chat stays where it was scrolled to");
+  await page.setViewportSize({ width: 1280, height: 840 });
   // A redraw from elsewhere keeps an opened card open.
   await page.evaluate(() => window.emitTauri("session:changed", "chatty"));
   await page.waitForTimeout(100);

@@ -1100,6 +1100,7 @@ mod tests {
             auto_run_tasks: None,
             test_commands: None,
             qa_agent: None,
+            review_agent: None,
             qa_auto: None,
             qa_timeout: None,
             role_instructions: None,

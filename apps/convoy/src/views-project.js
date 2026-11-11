@@ -180,10 +180,17 @@ function pipeline(project) {
       ${stepCard({
         key: "review",
         title: t("Review"),
-        about: t("The other agent reviews each round before testing; what it finds goes back to the builder."),
+        about: t("A reviewer checks each round before testing; what it finds goes back to the builder."),
         control: toggle("review_auto", project.review_auto, t("Review tasks automatically")),
         on: !!project.review_auto,
         forNew: true,
+        // The reviewer is also the one a review started by hand begins with.
+        open: true,
+        options: row(
+          t("Reviewer"),
+          t("Reviews this project's work, automatically or when you start a review. Unset, Claude and Codex review each other and Claude reviews Gemini."),
+          select("review_agent", [["", t("The other agent")], ["claude", "Claude Code"], ["codex", "Codex"], ["gemini", "Gemini CLI"]], project.review_agent ?? ""),
+        ),
       })}
       ${stepCard({
         key: "test",

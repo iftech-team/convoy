@@ -39,6 +39,8 @@ pub struct ProjectInput {
     pub auto_run_tasks: Option<bool>,
     pub test_commands: Option<String>,
     pub qa_agent: Option<String>,
+    #[serde(default)]
+    pub review_agent: Option<String>,
     pub qa_auto: Option<bool>,
     pub qa_timeout: Option<u32>,
     #[serde(default)]
@@ -92,6 +94,7 @@ pub fn project_edit(
                     auto_run_tasks: input.auto_run_tasks,
                     test_commands: input.test_commands,
                     qa_agent: input.qa_agent,
+                    review_agent: input.review_agent,
                     qa_auto: input.qa_auto,
                     qa_timeout: input.qa_timeout,
                     role_instructions: input.role_instructions,
@@ -192,6 +195,8 @@ pub struct ProjectDetail {
     pub auto_run_tasks: bool,
     pub test_commands: String,
     pub qa_agent: String,
+    /// Empty when the other agent from the builder's reviews.
+    pub review_agent: String,
     pub qa_auto: bool,
     pub qa_timeout: u32,
     /// The project's own instructions for each role it sets; the older
@@ -245,6 +250,10 @@ pub fn project_detail(
             test_commands: project.test_commands.clone().unwrap_or_default(),
             qa_agent: project
                 .qa_agent
+                .map(|agent| agent.as_str().to_string())
+                .unwrap_or_default(),
+            review_agent: project
+                .review_agent
                 .map(|agent| agent.as_str().to_string())
                 .unwrap_or_default(),
             qa_auto: project.qa_auto == Some(true),

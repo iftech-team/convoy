@@ -246,12 +246,10 @@ pub fn refresh_git_status(app: &Rc<App>) {
     git_status(app, &session);
 }
 
-/// The agent a review of `session` would use: the other one.
-pub fn reviewer_for(session: &Session) -> Agent {
-    match session.agent {
-        Agent::Claude => Agent::Codex,
-        Agent::Codex => Agent::Claude,
-    }
+/// The agent a review of `session` would use: its project's reviewer, or
+/// else the other one.
+pub fn reviewer_for(app: &App, session: &Session) -> Agent {
+    convoy_core::review::reviewer(&app.workspace.borrow(), session)
 }
 
 /// Text destined for a session's terminal. The session must be running:

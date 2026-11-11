@@ -498,7 +498,7 @@ pub fn start_review(app: &Rc<App>, session: &Session) {
             return;
         }
     };
-    let reviewer = crate::actions::reviewer_for(session);
+    let reviewer = crate::actions::reviewer_for(app, session);
     let (view, frame) = text_area(&brief, true);
 
     let dialog = adw::AlertDialog::builder()
@@ -506,10 +506,7 @@ pub fn start_review(app: &Rc<App>, session: &Session) {
         .body(format!(
             "A new {} session will review this work in the same folder. \
              It is told not to edit files.",
-            match reviewer {
-                Agent::Claude => "Claude Code",
-                Agent::Codex => "Codex",
-            }
+            reviewer.label()
         ))
         .extra_child(&frame)
         .build();

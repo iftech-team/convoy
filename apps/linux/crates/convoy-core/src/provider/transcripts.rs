@@ -57,7 +57,11 @@ pub(crate) fn named(
         Agent::Gemini => return None,
     };
     let folded = name.split_whitespace().collect::<Vec<_>>().join(" ");
-    (!folded.is_empty()).then(|| crate::json::head(&folded, 100).to_string())
+    // Convoy itself names a conversation after its session, and a session
+    // started without a message is named after the agent and the time: that
+    // says nothing, and the agent's own title or the first message does.
+    (!folded.is_empty() && !is_placeholder_title(agent, &folded))
+        .then(|| crate::json::head(&folded, 100).to_string())
 }
 
 /// The last `custom-title`, else the last `ai-title`, else the last `summary`
@@ -88,6 +92,9 @@ fn claude_name(file: &Path) -> Option<String> {
             .get(key)
             .and_then(Value::as_str)
             .filter(|text| !text.trim().is_empty())
+            // A rename to Convoy's made-up session name is passed over for
+            // the name Claude gave the conversation.
+            .filter(|text| !is_placeholder_title(Agent::Claude, text.trim()))
         {
             found[slot] = Some(text.to_string());
         }
@@ -152,18 +159,7 @@ pub fn scan(agent: Agent, home: &Path, directory: &Path) -> Vec<Transcript> {
         // Claude stores each project under a slug of its absolute path, so the
         // folder is addressed directly and only its own files are read.
         Agent::Claude => {
-            let slug: String = directory
-                .to_string_lossy()
-                .chars()
-                .map(|character| {
-                    if character.is_ascii_alphanumeric() {
-                        character
-                    } else {
-                        '-'
-                    }
-                })
-                .collect();
-            walk(&root.join(slug), 5, 5, &mut visited, &mut files);
+            walk(&root.join(slug(directory)), 5, 5, &mut visited, &mut files);
         }
         Agent::Codex | Agent::Gemini => walk(&root, 0, 5, &mut visited, &mut files),
     }
@@ -229,6 +225,99 @@ pub fn scan(agent: Agent, home: &Path, directory: &Path) -> Vec<Transcript> {
     result.sort_by(|a, b| b.at.total_cmp(&a.at));
     result.truncate(100);
     result
+}
+
+/// The folder name Claude files a working directory's conversations under:
+/// its absolute path with everything but letters and digits made `-`.
+fn slug(directory: &Path) -> String {
+    directory
+        .to_string_lossy()
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect()
+}
+
+/// Whether a session still has the name Convoy gives one started without a
+/// message — "Claude Code · Oct 11 at 17:09", "Codex · Sep 28, 08:56" — which
+/// says nothing about the conversation.
+pub fn is_placeholder_title(agent: Agent, title: &str) -> bool {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let Some(rest) = title
+        .strip_prefix(agent.label())
+        .and_then(|rest| rest.strip_prefix(" · "))
+    else {
+        return false;
+    };
+    let mut words = rest.split_whitespace();
+    let month = words.next().unwrap_or_default();
+    let day = words.next().unwrap_or_default();
+    MONTHS.contains(&month) && day.starts_with(|c: char| c.is_ascii_digit())
+}
+
+/// A conversation's name as the agent's own history shows it: the name it
+/// was given, else its first message. Claude's is read from its transcript —
+/// under the folder the session ran in, or any other when that folder moved —
+/// and Codex's from its thread index. Read again only when the file changes.
+pub fn conversation_name(agent: Agent, home: &Path, directory: &Path, id: &str) -> Option<String> {
+    use std::sync::{Mutex, OnceLock};
+    use std::time::SystemTime;
+    type Cache = HashMap<PathBuf, (SystemTime, Option<String>)>;
+    static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
+
+    if !is_uuid(id) {
+        return None;
+    }
+    let file = match agent {
+        Agent::Claude => {
+            let root = home.join("projects");
+            let name = format!("{id}.jsonl");
+            let direct = root.join(slug(directory)).join(&name);
+            if direct.is_file() {
+                direct
+            } else {
+                fs::read_dir(&root)
+                    .ok()?
+                    .flatten()
+                    .map(|entry| entry.path().join(&name))
+                    .find(|path| path.is_file())?
+            }
+        }
+        Agent::Codex => home.join("session_index.jsonl"),
+        Agent::Gemini => return None,
+    };
+    let modified = fs::metadata(&file).and_then(|meta| meta.modified()).ok()?;
+    let key = match agent {
+        Agent::Codex => file.join(id),
+        _ => file.clone(),
+    };
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some((at, name)) = cache.lock().ok()?.get(&key) {
+        if *at == modified {
+            return name.clone();
+        }
+    }
+    let name = match agent {
+        Agent::Claude => named(agent, &file, id, &HashMap::new()).or_else(|| {
+            let records = head(&file);
+            let title = title(agent, &records, id);
+            // With no message either, `title` names the agent and the id —
+            // no better than what the session already says.
+            (!title.starts_with(&format!("{} ", agent.as_str()))).then_some(title)
+        }),
+        _ => named(agent, &file, id, &codex_names(home)),
+    };
+    if let Ok(mut cache) = cache.lock() {
+        cache.insert(key, (modified, name.clone()));
+    }
+    name
 }
 
 /// The conversation's first user message, collapsed to one line, or the agent
@@ -310,6 +399,78 @@ mod tests {
             .iter()
             .map(|text| json!({ "type": "user", "message": { "role": "user", "content": text } }))
             .collect()
+    }
+
+    #[test]
+    fn only_the_name_convoy_makes_up_is_a_placeholder() {
+        assert!(is_placeholder_title(
+            Agent::Claude,
+            "Claude Code · Oct 11 at 17:09"
+        ));
+        assert!(is_placeholder_title(
+            Agent::Claude,
+            "Claude Code · Sep 28, 08:56"
+        ));
+        assert!(is_placeholder_title(Agent::Codex, "Codex · Oct 2, 12:00"));
+        assert!(
+            !is_placeholder_title(Agent::Codex, "Claude Code · Oct 2, 12:00"),
+            "another agent's"
+        );
+        assert!(!is_placeholder_title(
+            Agent::Claude,
+            "Claude Code · login redirect"
+        ));
+        assert!(!is_placeholder_title(
+            Agent::Claude,
+            "Fix the login redirect"
+        ));
+    }
+
+    #[test]
+    fn a_session_is_named_as_claude_names_its_conversation() {
+        let home = tempfile::tempdir().unwrap();
+        let folder = Path::new("/work/shop");
+        let at = home.path().join("projects").join(slug(folder));
+        fs::create_dir_all(&at).unwrap();
+        let file = at.join(format!("{ID}.jsonl"));
+        let line = |value: Value| format!("{value}\n");
+
+        // Only a message so far: that is the name.
+        fs::write(&file, line(json!({ "type": "user", "message": { "role": "user", "content": "Add a filter for deposits" } }))).unwrap();
+        assert_eq!(
+            conversation_name(Agent::Claude, home.path(), folder, ID).as_deref(),
+            Some("Add a filter for deposits")
+        );
+
+        // Claude's own title, then a rename, win — and a changed file is read again.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let mut text = fs::read_to_string(&file).unwrap();
+        text += &line(json!({ "type": "ai-title", "aiTitle": "Deposit filter" }));
+        text += &line(json!({ "type": "custom-title", "customTitle": "Deposits" }));
+        // Convoy's own made-up name, written later, does not hide it.
+        text += &line(
+            json!({ "type": "custom-title", "customTitle": "Claude Code · Oct 11 at 17:09" }),
+        );
+        fs::write(&file, text).unwrap();
+        assert_eq!(
+            conversation_name(Agent::Claude, home.path(), folder, ID).as_deref(),
+            Some("Deposits")
+        );
+
+        // The session's folder moved: it is still found by its id.
+        assert_eq!(
+            conversation_name(Agent::Claude, home.path(), Path::new("/elsewhere"), ID).as_deref(),
+            Some("Deposits")
+        );
+        assert_eq!(
+            conversation_name(
+                Agent::Claude,
+                home.path(),
+                folder,
+                "0199aaaa-0000-4000-8000-000000000009"
+            ),
+            None
+        );
     }
 
     #[test]

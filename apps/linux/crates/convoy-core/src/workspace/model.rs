@@ -65,8 +65,8 @@ impl Agent {
         self != Agent::Gemini
     }
 
-    /// Who reviews its work: Claude and Codex review each other, and
-    /// Claude reviews Gemini.
+    /// Who reviews its work when its project names no reviewer: Claude and
+    /// Codex review each other, and Claude reviews Gemini.
     pub fn reviewer(self) -> Agent {
         match self {
             Agent::Claude => Agent::Codex,
@@ -342,6 +342,14 @@ pub struct Project {
     /// the checks only.
     #[serde(rename = "qaAgent", default, skip_serializing_if = "Option::is_none")]
     pub qa_agent: Option<Agent>,
+    /// The agent that reviews this project's work, by hand or in the
+    /// pipeline; `None` is the other agent from the builder's.
+    #[serde(
+        rename = "reviewAgent",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub review_agent: Option<Agent>,
     /// Start QA when a task's builder finishes cleanly.
     #[serde(rename = "qaAuto", default, skip_serializing_if = "Option::is_none")]
     pub qa_auto: Option<bool>,

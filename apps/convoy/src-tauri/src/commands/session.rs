@@ -20,6 +20,7 @@ pub fn sessions_for(
     chats: State<'_, Arc<Chats>>,
 ) -> Result<Vec<SessionView>, String> {
     let running = running_ids(&terminals, &chats);
+    let accounts = workspace.storage.accounts();
     workspace.with(|workspace| {
         let state = workspace.state();
         let mut sessions: Vec<SessionView> = state
@@ -28,7 +29,7 @@ pub fn sessions_for(
             .filter(|session| {
                 session.project_id == project_id && (archived || !session.is_archived())
             })
-            .map(|session| view_of(session, running.contains(&session.id), &state.settings))
+            .map(|session| view_of(session, running.contains(&session.id), state, &accounts))
             .collect();
         sessions.sort_by_key(|session| !session.pinned);
         Ok(sessions)
@@ -43,11 +44,13 @@ pub fn session_detail(
     chats: State<'_, Arc<Chats>>,
 ) -> Result<SessionView, String> {
     let running = is_running(&terminals, &chats, &id);
+    let accounts = workspace.storage.accounts();
     workspace.act(|workspace| {
         Ok(view_of(
             workspace.session(&id)?,
             running,
-            workspace.settings(),
+            workspace.state(),
+            &accounts,
         ))
     })
 }
@@ -494,7 +497,7 @@ pub fn review_create(
     let storage = workspace.storage.clone();
     let (project, reviewer) = workspace.act(|workspace| {
         let builder = workspace.session(&id)?;
-        let reviewer = agent.unwrap_or(builder.agent.reviewer());
+        let reviewer = agent.unwrap_or_else(|| convoy_core::review::reviewer(workspace, builder));
         Ok((builder.project_id.clone(), reviewer))
     })?;
     // A reviewer is a new session: it gets the automatic skills.

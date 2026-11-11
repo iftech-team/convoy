@@ -1,12 +1,12 @@
 //! Review handoff.
 //!
-//! A review is an ordinary session with three differences: it uses the other
-//! provider, it shares the builder's folder and branch, and it is told not to
+//! A review is an ordinary session with three differences: it uses the
+//! project's reviewer (the other provider unless the project names one), it shares the builder's folder and branch, and it is told not to
 //! edit anything. Findings come back as text the user inserts into the
 //! builder — Convoy never submits on their behalf.
 
 use crate::history::review_brief;
-use crate::model::{Role, Task};
+use crate::model::{Agent, Role, Session, Task};
 use crate::workspace::{NewSession, Workspace};
 use crate::{bail, ensure, json::head, Result};
 use std::path::Path;
@@ -66,11 +66,21 @@ pub fn task_brief(
     Ok(crate::stage::fit(&text))
 }
 
-/// The session a review handoff creates: the other agent, the same project,
-/// linked back to the builder.
+/// Who reviews a builder's work: the agent its project names, or else the
+/// other agent from the builder's.
+pub fn reviewer(workspace: &Workspace, builder: &Session) -> Agent {
+    workspace
+        .project(&builder.project_id)
+        .ok()
+        .and_then(|project| project.review_agent)
+        .unwrap_or_else(|| builder.agent.reviewer())
+}
+
+/// The session a review handoff creates: the project's reviewer, the same
+/// project, linked back to the builder.
 pub fn handoff(workspace: &Workspace, id: &str, prompt: String) -> Result<NewSession> {
     let session = workspace.session(id)?.clone();
-    let agent = session.agent.reviewer();
+    let agent = reviewer(workspace, &session);
     let title = head(&format!("Review: {}", session.title), 200).to_string();
     let mut input = NewSession::new(session.project_id.clone(), agent, title);
     input.prompt = prompt;

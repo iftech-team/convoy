@@ -50,6 +50,8 @@ pub struct ProjectPatch {
     pub test_commands: Option<String>,
     /// `Some("")` turns the QA agent off.
     pub qa_agent: Option<String>,
+    /// `Some("")` goes back to the other agent from the builder's.
+    pub review_agent: Option<String>,
     pub qa_auto: Option<bool>,
     pub qa_timeout: Option<u32>,
     /// Each role's instructions; a role missing or blank follows the global
@@ -75,10 +77,11 @@ pub struct ProjectPatch {
 }
 
 impl ProjectPatch {
-    fn values(&self) -> [Option<&String>; 14] {
+    fn values(&self) -> [Option<&String>; 15] {
         [
             self.test_commands.as_ref(),
             self.qa_agent.as_ref(),
+            self.review_agent.as_ref(),
             self.default_agent.as_ref(),
             self.base_ref.as_ref(),
             self.branch_prefix.as_ref(),
@@ -295,6 +298,7 @@ impl Workspace {
                     auto_run_tasks: None,
                     test_commands: None,
                     qa_agent: None,
+                    review_agent: None,
                     qa_auto: None,
                     qa_timeout: None,
                     role_instructions: None,
@@ -336,13 +340,17 @@ impl Workspace {
                 "Enter a colour as #RRGGBB."
             );
         }
-        let qa_agent = match patch.qa_agent.as_deref() {
-            None => None,
-            Some("") => Some(None),
-            Some(value) => Some(Some(
-                Agent::parse(value).ok_or_else(|| ConvoyError::message("Unknown agent."))?,
-            )),
+        let agent = |value: Option<&str>| -> Result<Option<Option<Agent>>> {
+            Ok(match value {
+                None => None,
+                Some("") => Some(None),
+                Some(value) => Some(Some(
+                    Agent::parse(value).ok_or_else(|| ConvoyError::message("Unknown agent."))?,
+                )),
+            })
         };
+        let qa_agent = agent(patch.qa_agent.as_deref())?;
+        let review_agent = agent(patch.review_agent.as_deref())?;
         if let Some(roles) = &patch.role_instructions {
             ensure!(
                 roles.values().all(|text| utf16_len(text) <= 16_000),
@@ -475,6 +483,9 @@ impl Workspace {
             }
             if let Some(value) = qa_agent {
                 project.qa_agent = value;
+            }
+            if let Some(value) = review_agent {
+                project.review_agent = value;
             }
             if let Some(value) = patch.qa_auto {
                 project.qa_auto = Some(value);
@@ -613,6 +624,7 @@ impl Workspace {
                     auto_run_tasks: None,
                     test_commands: None,
                     qa_agent: None,
+                    review_agent: None,
                     qa_auto: None,
                     qa_timeout: None,
                     role_instructions: None,

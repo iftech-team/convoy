@@ -908,6 +908,19 @@ export function refresh(id) {
   });
 }
 
+/// Reads where each chat on screen is scrolled to, before a render takes it
+/// off the page. Scroll events arrive a frame late: a render between a scroll
+/// and its event put the chat back where it had been — it scrolled up by
+/// itself.
+export function rememberScroll() {
+  for (const host of hosts.values()) {
+    if (!host.root.isConnected) continue;
+    const { log } = host;
+    host.top = log.scrollTop;
+    host.stick = log.scrollHeight - log.scrollTop - log.clientHeight < 48;
+  }
+}
+
 /// Puts a session's chat where the workbench left room for it.
 export function mountChat(id, slotSelector = "#chat-host") {
   const slot = document.querySelector(slotSelector);

@@ -428,6 +428,74 @@ fn worktrees_belong_to_fresh_sessions_and_only_this_app_may_remove_them() {
 }
 
 #[test]
+fn a_project_names_its_reviewer_and_can_go_back_to_the_other_agent() {
+    let (_fixture, mut workspace, builder) = seeded();
+    let project = workspace.session(&builder).unwrap().project_id.clone();
+    let reviewer = |workspace: &convoy_core::workspace::Workspace| {
+        convoy_core::review::handoff(workspace, &builder, String::new())
+            .unwrap()
+            .agent
+    };
+    assert_eq!(reviewer(&workspace), Agent::Codex, "unset, the other agent");
+
+    // The same agent as the builder is the project's call, not refused.
+    for (value, expected) in [("claude", Agent::Claude), ("gemini", Agent::Gemini)] {
+        workspace
+            .edit_project(
+                &project,
+                convoy_core::workspace::ProjectPatch {
+                    review_agent: Some(value.into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            workspace.project(&project).unwrap().review_agent,
+            Some(expected)
+        );
+        assert_eq!(reviewer(&workspace), expected);
+    }
+
+    // Saved under its macOS-style key, and read back.
+    let saved = serde_json::to_value(workspace.project(&project).unwrap()).unwrap();
+    assert_eq!(saved["reviewAgent"], "gemini");
+
+    // Another field's edit leaves it alone; an empty one clears it.
+    workspace
+        .edit_project(
+            &project,
+            convoy_core::workspace::ProjectPatch {
+                review_auto: Some(true),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(reviewer(&workspace), Agent::Gemini);
+    workspace
+        .edit_project(
+            &project,
+            convoy_core::workspace::ProjectPatch {
+                review_agent: Some(String::new()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(workspace.project(&project).unwrap().review_agent, None);
+    assert_eq!(reviewer(&workspace), Agent::Codex);
+
+    let error = workspace
+        .edit_project(
+            &project,
+            convoy_core::workspace::ProjectPatch {
+                review_agent: Some("copilot".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+    assert_eq!(error.to_string(), "Unknown agent.");
+}
+
+#[test]
 fn a_review_swaps_the_agent_keeps_the_folder_and_points_back_at_its_builder() {
     let (fixture, mut workspace, builder) = seeded();
     let project = workspace.session(&builder).unwrap().project_id.clone();

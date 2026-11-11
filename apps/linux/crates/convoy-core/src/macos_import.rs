@@ -292,6 +292,7 @@ impl Merge<'_> {
                 auto_run_tasks: flag(project, "autoRunTasks"),
                 test_commands: None,
                 qa_agent: None,
+                review_agent: None,
                 qa_auto: None,
                 qa_timeout: None,
                 role_instructions: None,

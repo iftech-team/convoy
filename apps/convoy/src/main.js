@@ -45,7 +45,7 @@ import { setLanguage, t } from "./i18n.js";
 import { SHORTCUTS, binding, capture, label, matches } from "./shortcuts.js";
 import { dialogView, effortLevels, sweepChoices, sweepGroups, sweepProject, sweepVisible } from "./dialogs.js";
 import * as terminal from "./terminal.js";
-import { adoptApprovals, answer, chatEvent, chatExited, chatSnapshot, chatText, historyChanged, insertDraft, mountChat, sendText, shownAsTranscript, viewOf, waitingFor } from "./views-chat.js";
+import { adoptApprovals, answer, chatEvent, chatExited, chatSnapshot, chatText, historyChanged, insertDraft, mountChat, rememberScroll, sendText, shownAsTranscript, viewOf, waitingFor } from "./views-chat.js";
 import { inboxItems } from "./views-inbox.js";
 import {
   header,
@@ -391,6 +391,132 @@ function stepTabs(step) {
   return openTab(state.tabs[(Math.max(at, 0) + step + state.tabs.length) % state.tabs.length]);
 }
 
+// Every change re-renders the whole window from state, and a timer or an
+// agent reporting re-renders every few seconds. Two things the markup does not
+// hold would go with it: what is typed into a field that saves on change (a
+// project's test commands, a role's instructions, a setting) before it is
+// left, and how far a scroller without a `data-scroll` key was scrolled. Both
+// are carried over while the same view stays on screen.
+let renderedView = null;
+// A field whose value was handed over — a change event saved it — is not
+// carried over: whatever saved it decides what it shows next.
+const committed = new WeakSet();
+// Replacing the markup takes a focused field away, and the browser may fire
+// its change as it goes: that would save half a word and drop the caret. The
+// render carries what was typed over instead, so the change is not one.
+let replacing = false;
+app.addEventListener("input", (event) => committed.delete(event.target), true);
+app.addEventListener(
+  "change",
+  (event) => {
+    if (replacing) {
+      event.stopImmediatePropagation();
+      return;
+    }
+    committed.add(event.target);
+  },
+  true,
+);
+
+const viewSignature = () =>
+  [state.page, state.tab, state.projectId, state.sessionId, state.files ? "files" : "", state.dialog?.kind ?? "", state.dialog?.id ?? ""].join("|");
+
+// Where a node sits among the window's nodes that look the same: its id, or
+// its first data attribute, or its classes, and which of those it is.
+function nodeKey(node) {
+  const data = [...node.attributes].find((attribute) => attribute.name.startsWith("data-") && attribute.name !== "data-scroll");
+  const name = node.id
+    ? `#${node.id}`
+    : data
+      ? `${node.tagName}[${data.name}="${data.value}"]`
+      : `${node.tagName}.${[...node.classList].join(".")}`;
+  return name;
+}
+
+function keyed(nodes) {
+  const counts = new Map();
+  return nodes.map((node) => {
+    const name = nodeKey(node);
+    const index = counts.get(name) ?? 0;
+    counts.set(name, index + 1);
+    return [`${name}@${index}`, node];
+  });
+}
+
+const TEXT_FIELDS = 'textarea, input:not([type]), input[type="text"], input[type="search"], input[type="url"], input[type="email"], input[type="number"], input[type="password"]';
+// Terminals and chats are mounted after a render and keep their own scroll;
+// a `data-scroll` node is restored by its key, though what is inside it is
+// walked.
+const MOUNTED = "[id^='terminal-host'], [id^='chat-host'], .xterm";
+
+function scrollable() {
+  const nodes = [];
+  const walker = document.createTreeWalker(app, NodeFilter.SHOW_ELEMENT, (node) =>
+    node.matches(MOUNTED) ? NodeFilter.FILTER_REJECT : node.dataset.scroll != null ? NodeFilter.FILTER_SKIP : NodeFilter.FILTER_ACCEPT,
+  );
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  return nodes;
+}
+
+const textFields = () => [...app.querySelectorAll(TEXT_FIELDS)].filter((node) => !node.closest(MOUNTED));
+
+function keepUnsaved() {
+  // A render from inside a key press or click is that action's own: the
+  // field it came from is left to it, as when Enter adds what was typed.
+  const acting = window.event?.target;
+  const fields = keyed(textFields())
+    .filter(([, node]) => node !== acting && !committed.has(node) && node.value !== node.defaultValue)
+    .map(([key, node]) => [key, { value: node.value, was: node.defaultValue, focused: node === document.activeElement, start: node.selectionStart, end: node.selectionEnd }]);
+  // Keys count every node of the walk, so they match the same walk after the
+  // render.
+  const all = scrollable();
+  const scrolls = all.some((node) => node.scrollTop || node.scrollLeft)
+    ? keyed(all)
+        .filter(([, node]) => node.scrollTop || node.scrollLeft)
+        .map(([key, node]) => [key, [node.scrollTop, node.scrollLeft]])
+    : [];
+  return { fields: new Map(fields), scrolls: new Map(scrolls) };
+}
+
+function restoreUnsaved({ fields, scrolls }) {
+  if (fields.size) {
+    for (const [key, node] of keyed(textFields())) {
+      const typed = fields.get(key);
+      // The field still shows what it showed before: nothing saved or reset
+      // it in between, so what was typed is still the latest.
+      if (!typed || node.defaultValue !== typed.was) continue;
+      node.value = typed.value;
+      // The browser saw this value arrive from a script, not from typing, so
+      // leaving the field would not fire the change that saves it.
+      node.addEventListener(
+        "blur",
+        () => {
+          if (!replacing && node.isConnected && !committed.has(node) && node.value !== node.defaultValue) {
+            node.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+        },
+        { once: true },
+      );
+      if (typed.focused) {
+        node.focus();
+        try {
+          node.setSelectionRange(typed.start, typed.end);
+        } catch {
+          // A number field has no selection.
+        }
+      }
+    }
+  }
+  if (scrolls.size) {
+    for (const [key, node] of keyed(scrollable())) {
+      const at = scrolls.get(key);
+      if (!at) continue;
+      node.scrollTop = at[0];
+      node.scrollLeft = at[1];
+    }
+  }
+}
+
 function render() {
   syncTabs();
   // The sessions list ends with the conversations no session holds yet.
@@ -423,8 +549,14 @@ function render() {
     ]),
   );
   const selectedTab = document.querySelector(".tab-item--selected")?.dataset.tabOpen;
+  const view = viewSignature();
+  const kept = view === renderedView ? keepUnsaved() : null;
+  renderedView = view;
+  rememberScroll();
 
-  app.innerHTML =
+  replacing = true;
+  try {
+    app.innerHTML =
     state.page === "settings"
       ? `<div class="shell shell--page">${settingsPage()}${status()}</div>`
       : `<div class="shell${state.sidebarHidden ? " shell--nosidebar" : ""}">
@@ -432,6 +564,9 @@ function render() {
           <main class="main">${tabBar()}${state.files || state.page || state.sessionId ? "" : header()}${content()}</main>
           ${status()}
         </div>`;
+  } finally {
+    replacing = false;
+  }
 
   hints.afterRender();
   if (state.menu === "session") app.insertAdjacentHTML("beforeend", sessionMenu());
@@ -463,6 +598,7 @@ function render() {
     node.scrollTop = top;
     node.scrollLeft = left;
   }
+  if (kept) restoreUnsaved(kept);
   // The palette's arrow keys move the highlight; it stays in sight.
   document.querySelector(".palette__row--on")?.scrollIntoView({ block: "nearest" });
   // A tab selected from elsewhere (the sidebar, ⌘1–9) is brought into view;
@@ -2812,9 +2948,9 @@ async function openReview() {
   state.menu = null;
   const brief = await call("review_brief", { id: current.id });
   if (brief === undefined) return;
-  // The other agent by default: a second opinion from a different model.
-  // Claude and Codex review each other; Claude reviews Gemini.
-  const agent = current.agent === "claude" ? "codex" : "claude";
+  // The project's reviewer, or else the other agent: a second opinion from a
+  // different model. Claude and Codex review each other; Claude reviews Gemini.
+  const agent = state.projects.find((item) => item.id === current.project_id)?.review_agent || (current.agent === "claude" ? "codex" : "claude");
   openModal({ kind: "review", id: current.id, brief, agent, ...lastChoice(agent), account: activeAccount(agent) });
 }
 
