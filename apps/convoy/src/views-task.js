@@ -11,6 +11,10 @@ import { PHASES, STEP_STATES } from "./phase.js";
 import { sessionLabel } from "./session-state.js";
 import { phaseLine, runnable } from "./views-planning.js";
 import { docsPanel, planPanel, publishPanel, qaPanel, reviewPanel, syncNotice } from "./dialogs.js";
+import { SPECS } from "./views-docs.js";
+
+/// The spec files a task's details name, as Task from spec writes them.
+const specFiles = (details) => [...new Set(details.match(/\.specdesk\/specs\/[^\s`'"]+?\.md/g) ?? [])];
 
 /// The task the page shows, from whichever list holds it.
 export const pageTask = () =>
@@ -110,7 +114,13 @@ export function taskPage() {
       <ol class="steps">${steps.map((step) => stepRow(step, task)).join("")}</ol>
       ${
         task.details
-          ? `<section class="task-page__section"><h3 class="task-page__heading">${escape(t("Details"))}</h3><div class="task-page__text">${escape(task.details)}</div></section>`
+          ? `<section class="task-page__section">
+               <h3 class="task-page__heading">${escape(t("Details"))}</h3>
+               ${specFiles(task.details)
+                 .map((path) => button({ label: path.replace(SPECS, ""), icon: "doc", data: { "task-spec-open": path }, title: t("Open in Docs") }))
+                 .join("")}
+               <div class="task-page__text">${escape(task.details)}</div>
+             </section>`
           : ""
       }
     </div>`;

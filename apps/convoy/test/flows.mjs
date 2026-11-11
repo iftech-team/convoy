@@ -105,7 +105,7 @@ try {
         const task = tasks.find((item) => item.id === args.input.id);
         if (task) { Object.assign(task, { title: args.input.title, mode: args.input.mode }); return task.id; }
         const id = `new${tasks.length}`;
-        tasks.push({ id, project_id: args.input.project_id, title: args.input.title, details: "", findings: "", agent: args.input.agent, status: "queued", mode: args.input.mode, auto_review: args.input.auto_review, spec_id: args.input.spec_id, session_id: null, depends_on: [], blocked_by: [] });
+        tasks.push({ id, project_id: args.input.project_id, title: args.input.title, details: args.input.details ?? "", findings: "", agent: args.input.agent, status: "queued", mode: args.input.mode, auto_review: args.input.auto_review, spec_id: args.input.spec_id, session_id: null, depends_on: [], blocked_by: [] });
         return id;
       }
       if (cmd === "task_dependencies") {
@@ -1281,6 +1281,11 @@ try {
   await page.locator("#task-spec").selectOption("file:.specdesk/specs/checkout-retries.md");
   await page.locator('.modal [data-action="save-task"]').click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "task_save" && c.args.input.title === "Retry checkout" && c.args.input.spec_id === null && c.args.input.details.startsWith("Implement the specification in .specdesk/specs/checkout-retries.md")));
+  // Its page links to the spec, which opens in Docs.
+  await page.locator('[data-tab="tasks"]').click();
+  await page.locator('[data-task-card]', { hasText: "Retry checkout" }).first().click();
+  await page.locator('.task-page [data-task-spec-open=".specdesk/specs/checkout-retries.md"]').click();
+  await page.locator(".docs__path", { hasText: ".specdesk/specs/checkout-retries.md" }).waitFor();
   // Many task documents: the list scrolls, and each two-line row keeps its
   // height rather than running into the next.
   await page.evaluate(() => {
