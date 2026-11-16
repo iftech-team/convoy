@@ -56,6 +56,25 @@ pub fn utf16_len(text: &str) -> usize {
     text.chars().map(char::len_utf16).sum()
 }
 
+/// The longest a task's details may be. A task's brief — its details plus the
+/// notes Convoy adds around them — has to fit a session's 32,000 units.
+pub const MAX_DETAILS: usize = 30_000;
+
+/// A named text field within `max` UTF-16 units, optionally non-blank. The
+/// rejection names the field and the limit, so the user knows what to shorten.
+pub fn check_text(value: &str, label: &str, max: usize, required: bool) -> crate::Result<()> {
+    crate::ensure!(
+        !(required && value.trim().is_empty()),
+        "The {label} field is required."
+    );
+    let length = utf16_len(value);
+    crate::ensure!(
+        length <= max,
+        "The {label} field is too long: {length} characters, the limit is {max}."
+    );
+    Ok(())
+}
+
 /// `value.slice(-max)` in UTF-16 terms, rounded outward to a char boundary so
 /// the result is always valid UTF-8.
 pub fn tail(text: &str, max: usize) -> &str {

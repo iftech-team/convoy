@@ -4,7 +4,7 @@
 pub mod markdown;
 
 use crate::integrations::{self, Connection, Issue, IssueSource, TrackerAuth, TrackerKind};
-use crate::json::utf16_len;
+use crate::json::{check_text as text, utf16_len, MAX_DETAILS};
 use crate::patterns::MODEL;
 use crate::workspace::model::{
     Agent, Profile, PublishMode, Session, Spec, State, Task, TaskStatus,
@@ -13,15 +13,6 @@ use crate::workspace::{find_spec, find_task_index, new_id, provider_id_for, Work
 use crate::{bail, ensure, Result};
 pub use markdown::markdown;
 use std::collections::BTreeMap;
-
-/// A string within `max` UTF-16 units, optionally non-blank.
-fn text(value: &str, max: usize, required: bool) -> Result<()> {
-    ensure!(
-        utf16_len(value) <= max && !(required && value.trim().is_empty()),
-        "Invalid or missing text."
-    );
-    Ok(())
-}
 
 #[derive(Debug, Clone, Default)]
 pub struct SpecInput {
@@ -240,15 +231,15 @@ const NO_PUBLISH_NOTE: &str = "Do not publish, push, or open a PR.";
 
 impl Workspace {
     pub fn save_spec(&mut self, input: SpecInput) -> Result<&State> {
-        text(&input.title, 200, true)?;
-        for value in [
-            &input.problem,
-            &input.requirements,
-            &input.acceptance,
-            &input.constraints,
-            &input.plan,
+        text(&input.title, "specification title", 200, true)?;
+        for (value, label) in [
+            (&input.problem, "specification problem"),
+            (&input.requirements, "specification requirements"),
+            (&input.acceptance, "specification acceptance"),
+            (&input.constraints, "specification constraints"),
+            (&input.plan, "specification plan"),
         ] {
-            text(value, 16_000, false)?;
+            text(value, label, 16_000, false)?;
         }
         self.update(move |state| {
             let existing = input
@@ -319,9 +310,9 @@ impl Workspace {
     }
 
     pub fn save_task(&mut self, input: TaskInput) -> Result<&State> {
-        text(&input.title, 200, true)?;
-        text(&input.details, 16_000, false)?;
-        text(&input.findings, 16_000, false)?;
+        text(&input.title, "task title", 200, true)?;
+        text(&input.details, "task details", MAX_DETAILS, false)?;
+        text(&input.findings, "task findings", 16_000, false)?;
         let plan_first = self
             .state()
             .projects
@@ -1033,7 +1024,7 @@ impl Workspace {
     }
 
     pub fn add_profile(&mut self, label: &str, agent: Agent) -> Result<&State> {
-        text(label, 100, true)?;
+        text(label, "account label", 100, true)?;
         ensure!(
             agent != Agent::Gemini,
             "Gemini CLI uses the account it is signed in with; Convoy keeps no others for it."

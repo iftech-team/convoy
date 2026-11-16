@@ -448,3 +448,43 @@ fn related_tasks_are_linked_both_ways_and_read_by_the_agent() {
     workspace.delete_task(&second).unwrap();
     assert!(find(&workspace, &first).related.is_empty());
 }
+
+#[test]
+fn a_refused_task_names_the_field_and_details_may_run_to_thirty_thousand() {
+    let mut planned = planned();
+    let workspace = &mut planned.workspace;
+    let task = workspace.state().tasks[0].clone();
+    let save = |workspace: &mut Workspace, title: &str, details: String| {
+        workspace
+            .save_task(TaskInput {
+                title: title.into(),
+                details,
+                ..task_input(&task)
+            })
+            .map(|_| ())
+    };
+
+    let error = save(workspace, "  ", String::new())
+        .unwrap_err()
+        .to_string();
+    assert_eq!(error, "The task title field is required.");
+    let error = save(workspace, &"x".repeat(201), String::new())
+        .unwrap_err()
+        .to_string();
+    assert_eq!(
+        error,
+        "The task title field is too long: 201 characters, the limit is 200."
+    );
+    let error = save(workspace, "Keyboard support", "x".repeat(30_001))
+        .unwrap_err()
+        .to_string();
+    assert_eq!(
+        error,
+        "The task details field is too long: 30001 characters, the limit is 30000."
+    );
+
+    // Past the old 16,000, and the saved file still loads.
+    save(workspace, "Keyboard support", "x".repeat(30_000)).unwrap();
+    let reloaded = planned.fixture.workspace();
+    assert_eq!(reloaded.state().tasks[0].details.len(), 30_000);
+}

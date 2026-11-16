@@ -6,7 +6,8 @@
 //! several are asserted by the tests.
 
 use crate::json::{
-    array, boolean, integer, nonempty, safe_integer, string, truthy, truthy_opt, utf16_len,
+    array, boolean, check_text, integer, nonempty, safe_integer, string, truthy, truthy_opt,
+    utf16_len, MAX_DETAILS,
 };
 use crate::patterns::{BRANCH_PREFIX, SHORTCUT, UUID};
 use crate::{bail, ensure, Result};
@@ -49,16 +50,13 @@ const ACTIVITY_KINDS: [&str; 7] = [
     "worktree",
 ];
 
-/// A present string within `max` UTF-16 units,
-/// optionally non-blank.
-fn text(value: Option<&Value>, max: usize, required: bool) -> Result<()> {
+/// A present string within `max` UTF-16 units, optionally non-blank. The
+/// rejection names the field.
+fn text(value: Option<&Value>, label: &str, max: usize, required: bool) -> Result<()> {
     let Some(value) = string(value) else {
-        bail!("Invalid or missing text.")
+        bail!("The {label} field is missing.")
     };
-    if utf16_len(value) > max || (required && value.trim().is_empty()) {
-        bail!("Invalid or missing text.")
-    }
-    Ok(())
+    check_text(value, label, max, required)
 }
 
 fn field<'a>(item: &'a Value, key: &str) -> Option<&'a Value> {
@@ -329,7 +327,8 @@ pub fn validate_planning(state: &Value) -> Result<()> {
     for spec in specs {
         for key in SPEC_FIELDS {
             let max = if key == "title" { 200 } else { 16_000 };
-            text(field(spec, key), max, key == "title")?;
+            let label = format!("specification {key}");
+            text(field(spec, key), &label, max, key == "title")?;
         }
         let revision = safe_integer(field(spec, "revision"));
         let approved = field(spec, "approvedRevision");
@@ -346,9 +345,9 @@ pub fn validate_planning(state: &Value) -> Result<()> {
     }
 
     for task in tasks {
-        text(field(task, "title"), 200, true)?;
-        text(field(task, "details"), 16_000, false)?;
-        text(field(task, "findings"), 16_000, false)?;
+        text(field(task, "title"), "task title", 200, true)?;
+        text(field(task, "details"), "task details", MAX_DETAILS, false)?;
+        text(field(task, "findings"), "task findings", 16_000, false)?;
         let belongs = string(field(task, "projectID")).is_some_and(|id| project_ids.contains(id));
         let spec_ok = match nonempty(field(task, "specID")) {
             None => true,
@@ -385,7 +384,7 @@ pub fn validate_planning(state: &Value) -> Result<()> {
     dependencies(tasks)?;
 
     for profile in profiles {
-        text(field(profile, "label"), 100, true)?;
+        text(field(profile, "label"), "account label", 100, true)?;
         ensure!(
             is_one_of(field(profile, "agent"), &AGENTS),
             "Invalid account provider."
@@ -413,8 +412,8 @@ pub fn validate_planning(state: &Value) -> Result<()> {
 
     ensure!(activity.len() <= 200, "Invalid activity history.");
     for item in activity {
-        text(field(item, "title"), 200, false)?;
-        text(field(item, "detail"), 2_000, false)?;
+        text(field(item, "title"), "activity title", 200, false)?;
+        text(field(item, "detail"), "activity detail", 2_000, false)?;
         let known_session = sessions
             .iter()
             .any(|session| string(field(session, "id")) == string(field(item, "sessionID")));
