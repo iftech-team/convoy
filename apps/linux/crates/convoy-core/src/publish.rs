@@ -121,7 +121,7 @@ fn brief(workspace: &Workspace, task: &Task, file: &std::path::Path) -> Result<S
         "{instructions}\n\nRead the branch's commits and diff against its base with git to see what changed. Do not change, commit or push anything.\n\n## Task\n{}\n\n{}\n{issue}{}\n## Verification{verdicts}\n\n{}",
         task.title,
         task.details,
-        pipeline::task_context(task),
+        pipeline::task_context(workspace, task)?,
         stage::closing(Stage::Pr, file)
     );
     Ok(crate::stage::fit(&prompt))

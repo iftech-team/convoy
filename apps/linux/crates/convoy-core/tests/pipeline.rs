@@ -998,6 +998,105 @@ fn a_claude_planner_s_plan_is_read_from_its_plan_file() {
     assert_eq!(task(&workspace).status, TaskStatus::Planning);
 }
 
+/// A planned task whose details are `details` and whose approved plan is
+/// `text`, as a Claude planner leaves it: with no file of Convoy's.
+fn approved(details: &str, text: &str) -> (common::Fixture, Workspace, String) {
+    let (fixture, mut workspace, _, id) = setup(ProjectPatch {
+        plan_first_default: Some(true),
+        ..ProjectPatch::default()
+    });
+    let details = details.to_string();
+    workspace
+        .update(move |state| {
+            state.tasks[0].details = details;
+            Ok(())
+        })
+        .unwrap();
+    plan::begin(&mut workspace, &context(), &id).unwrap();
+    let file = stage::file(&workspace, Stage::Plan, &task(&workspace).plan.unwrap().id);
+    write(&file, text);
+    pipeline::poll(&mut workspace, &context()).unwrap();
+    plan::approve(&mut workspace, &id).unwrap();
+    std::fs::remove_file(&file).unwrap();
+    (fixture, workspace, id)
+}
+
+fn builder_brief(workspace: &Workspace) -> String {
+    let session = task(workspace).session_id.unwrap();
+    workspace.session(&session).unwrap().prompt.clone()
+}
+
+/// A long task with a long plan could never be built: the plan was pasted
+/// into the builder's brief, which was then refused for its length.
+#[test]
+fn a_plan_too_long_for_the_brief_is_handed_over_as_a_file() {
+    let long = format!(
+        "# План\n{}",
+        "1. Прочитать токен и обновить его.\n".repeat(600)
+    );
+    assert!(long.chars().count() > 20_000);
+    let details = "Пользователь остаётся в системе. ".repeat(400);
+    let (_fixture, mut workspace, id) = approved(&details, &long);
+    workspace.prepare_task(&id, None).unwrap();
+    let brief = builder_brief(&workspace);
+    assert!(brief.encode_utf16().count() <= stage::BRIEF_LIMIT);
+    let file = stage::file(&workspace, Stage::Plan, &task(&workspace).plan.unwrap().id);
+    assert!(brief.contains("## Approved plan\nFollow this plan."));
+    assert!(brief.contains(&format!("it is in {}", file.display())));
+    assert!(
+        !brief.contains("Прочитать токен"),
+        "the plan is not repeated"
+    );
+    assert_eq!(std::fs::read_to_string(&file).unwrap().trim(), long.trim());
+    assert!(
+        brief.contains("## When you are done"),
+        "the closing survives"
+    );
+    assert!(brief.contains(details.trim()), "the task is whole");
+
+    // The others who read the plan are pointed at the same file, and what
+    // follows the plan in their brief is still there.
+    workspace
+        .update(|state| {
+            state.tasks[0].build_summary = Some("Refreshed on login.".into());
+            Ok(())
+        })
+        .unwrap();
+    let context = pipeline::task_context(&workspace, &task(&workspace)).unwrap();
+    assert!(context.contains("Check the work against this plan too."));
+    assert!(context.contains(&file.display().to_string()));
+    assert!(context.contains("## What the builder reports\nRefreshed on login."));
+    assert!(context.chars().count() < 2_000);
+}
+
+#[test]
+fn a_plan_that_fits_the_brief_is_given_whole() {
+    let (_fixture, mut workspace, id) = approved("Short.", "1. Read the token.\n");
+    workspace.prepare_task(&id, None).unwrap();
+    let brief = builder_brief(&workspace);
+    assert!(brief.contains("## Approved plan\nFollow this plan.\n\n1. Read the token."));
+    let file = stage::file(&workspace, Stage::Plan, &task(&workspace).plan.unwrap().id);
+    assert!(!file.exists(), "no file is written for a plan given whole");
+    let context = pipeline::task_context(&workspace, &task(&workspace)).unwrap();
+    assert!(context.contains("Check the work against this plan too.\n\n1. Read the token."));
+}
+
+/// The limit is still the limit: a task that fills the brief by itself is
+/// refused, plan or no plan.
+#[test]
+fn a_task_too_long_for_the_brief_is_still_refused() {
+    let (_fixture, mut workspace, id) = approved(&"detail ".repeat(4_000), "1. Read the token.\n");
+    workspace
+        .update(|state| {
+            state.tasks[0].status = TaskStatus::Changes;
+            state.tasks[0].findings = "finding ".repeat(600);
+            Ok(())
+        })
+        .unwrap();
+    let error = workspace.prepare_task(&id, None).unwrap_err().to_string();
+    assert!(error.contains("session brief limit"), "{error}");
+}
+
 #[test]
 fn a_long_brief_is_shortened_before_its_closing() {
     let file = std::path::Path::new("/data/stages/run.verdict.json");

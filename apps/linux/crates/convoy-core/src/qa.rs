@@ -395,7 +395,7 @@ pub fn brief(workspace: &Workspace, task_id: &str, verdict: &Path) -> Result<Str
         .unwrap_or_default();
     let project = workspace.project(&task.project_id)?;
     let instructions = crate::roles::brief(workspace.settings(), project, crate::model::Role::Qa);
-    let context = crate::pipeline::task_context(task);
+    let context = crate::pipeline::task_context(workspace, task)?;
     let prompt = format!(
         "You are QA for this task. {instructions}\n\
          Do not edit, commit or push anything.\n\n\

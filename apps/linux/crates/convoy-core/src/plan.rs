@@ -161,6 +161,36 @@ pub fn presented(workspace: &Workspace, planner: &str, since: &str) -> Option<St
     }
 }
 
+/// The most of a brief an approved plan takes where the brief has other
+/// things to say: past it, the brief names the plan's file instead.
+pub const SHARE: usize = 12_000;
+
+/// The approved plan as a brief's section, opened by `lead`.
+///
+/// A plan within `room` UTF-16 units is given whole. A longer one is put
+/// in its file in `stages` (where a planner that writes files left it) and
+/// the section says to read it: a brief has a limit, and a plan cut short
+/// is worse than a plan one step away.
+pub fn section(
+    stages: &std::path::Path,
+    plan: &PlanRun,
+    lead: &str,
+    room: usize,
+) -> Result<String> {
+    let text = plan.text.trim();
+    let whole = format!("## Approved plan\n{lead}\n\n{text}");
+    if crate::json::utf16_len(&whole) <= room {
+        return Ok(whole);
+    }
+    let file = stages.join(format!("{}.plan.md", plan.id));
+    std::fs::create_dir_all(stages)?;
+    std::fs::write(&file, format!("{text}\n"))?;
+    Ok(format!(
+        "## Approved plan\n{lead}\n\nThe plan is too long to repeat here: it is in {}. Read the whole file before anything else. The file is outside the repository: never commit it.",
+        file.display()
+    ))
+}
+
 impl PlanRun {
     pub fn approved(&self) -> bool {
         self.status == PlanStatus::Approved

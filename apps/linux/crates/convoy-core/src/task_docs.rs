@@ -162,7 +162,7 @@ fn brief(workspace: &Workspace, task: &Task, folder: &Path, file: &Path) -> Resu
         folder.display(),
         task.title,
         task.details,
-        pipeline::task_context(task),
+        pipeline::task_context(workspace, task)?,
         stage::closing(Stage::Docs, file)
     );
     Ok(crate::stage::fit(&prompt))

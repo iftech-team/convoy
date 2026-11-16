@@ -205,12 +205,19 @@ pub fn advance(task: &Task, project: &Project, event: &Event) -> Step {
 
 /// What reviewers, QA and the documentation writer read besides the task:
 /// the approved plan, and what the builder said it did.
-pub fn task_context(task: &Task) -> String {
+pub fn task_context(workspace: &Workspace, task: &Task) -> Result<String> {
     let mut context = String::new();
     if let Some(plan) = task.plan.as_ref().filter(|plan| plan.approved()) {
+        // A long plan is named by its file, so that the brief's cut does
+        // not fall on it or on what follows it.
         context.push_str(&format!(
-            "\n## Approved plan\nCheck the work against this plan too.\n\n{}\n",
-            plan.text.trim()
+            "\n{}\n",
+            crate::plan::section(
+                &crate::stage::dir(workspace),
+                plan,
+                "Check the work against this plan too.",
+                crate::plan::SHARE,
+            )?
         ));
     }
     context.push_str(&crate::planning::attached_files(task));
@@ -224,7 +231,7 @@ pub fn task_context(task: &Task) -> String {
             summary.trim()
         ));
     }
-    context
+    Ok(context)
 }
 
 fn find(workspace: &Workspace, task_id: &str) -> Result<Task> {

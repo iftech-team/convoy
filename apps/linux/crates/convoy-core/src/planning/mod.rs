@@ -700,6 +700,7 @@ impl Workspace {
         // The run its builder reports on when it is done.
         let run = new_id();
         let done_file = crate::stage::file(self, crate::stage::Stage::Build, &run);
+        let stages = crate::stage::dir(self);
         self.update(move |state| {
             let Some(index) = find_task_index(state, &id) else {
                 bail!("Task unavailable.")
@@ -781,12 +782,6 @@ impl Workspace {
             let context = related_context(state, &task);
             let files = attached_files(&task);
             let (repositories, add_dirs) = other_repositories(state, &task);
-            let plan = task
-                .plan
-                .as_ref()
-                .filter(|plan| plan.approved())
-                .map(|plan| format!("\n\n## Approved plan\nFollow this plan.\n\n{}", plan.text.trim()))
-                .unwrap_or_default();
             let instructions = state
                 .projects
                 .iter()
@@ -795,12 +790,27 @@ impl Workspace {
                 .filter(|text| !text.is_empty())
                 .map(|text| format!("\n\n## Instructions\n{text}"))
                 .unwrap_or_default();
-            let prompt = format!(
-                "{preamble}\n## Current task\n{}\n\n{}{origin}{repositories}{files}{findings}{context}{plan}{instructions}\n\nVerify the changes and report your results. {publication}\n\n{}",
-                task.title,
-                task.details,
-                crate::stage::closing(crate::stage::Stage::Build, &done_file)
-            );
+            let brief = |plan: &str| {
+                format!(
+                    "{preamble}\n## Current task\n{}\n\n{}{origin}{repositories}{files}{findings}{context}{plan}{instructions}\n\nVerify the changes and report your results. {publication}\n\n{}",
+                    task.title,
+                    task.details,
+                    crate::stage::closing(crate::stage::Stage::Build, &done_file)
+                )
+            };
+            // The approved plan is given whole where it fits, and by its
+            // file where it does not: a long plan must not stop the build.
+            let plan = match task.plan.as_ref().filter(|plan| plan.approved()) {
+                Some(plan) => {
+                    let room = 32_000_usize.saturating_sub(utf16_len(&brief("")) + 2);
+                    format!(
+                        "\n\n{}",
+                        crate::plan::section(&stages, plan, "Follow this plan.", room)?
+                    )
+                }
+                None => String::new(),
+            };
+            let prompt = brief(&plan);
             ensure!(
                 utf16_len(&prompt) <= 32_000,
                 "The specification and task exceed the session brief limit of 32,000 characters. Shorten them first."

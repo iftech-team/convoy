@@ -47,7 +47,7 @@ pub fn task_brief(
             )
         })
         .unwrap_or_default();
-    let context = crate::pipeline::task_context(task);
+    let context = crate::pipeline::task_context(workspace, task)?;
     // Only the end of what the builder printed: never its brief, whose own
     // closing would tell the reviewer to write the builder's file.
     let output = crate::history::plain(output);
