@@ -898,6 +898,106 @@ fn a_claude_planner_s_plan_is_read_from_what_it_presented() {
     assert_eq!(task(&workspace).status, TaskStatus::PlanReview);
 }
 
+/// A planner whose conversation is `lines`, with its Claude home.
+fn planner_with_conversation(lines: &[String]) -> (common::Fixture, Workspace, std::path::PathBuf) {
+    let (fixture, mut workspace, _, id) = setup(ProjectPatch {
+        plan_first_default: Some(true),
+        ..ProjectPatch::default()
+    });
+    let planner = plan::begin(&mut workspace, &context(), &id).unwrap();
+    let home = fixture.path().join("claude-home");
+    let session = workspace.session(&planner).unwrap().clone();
+    let (planner_id, at) = (planner.clone(), home.clone());
+    workspace
+        .update(move |state| {
+            let session = state
+                .sessions
+                .iter_mut()
+                .find(|s| s.id == planner_id)
+                .unwrap();
+            session.agent_home = Some(at);
+            Ok(())
+        })
+        .unwrap();
+    let directory = workspace.project(&session.project_id).unwrap().path.clone();
+    let folder = home
+        .join("projects")
+        .join(convoy_core::provider::sweep::slug(&directory));
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(
+        folder.join(format!("{}.jsonl", session.provider_id)),
+        lines.join("\n"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(home.join("plans")).unwrap();
+    (fixture, workspace, home)
+}
+
+/// Claude Code 2.1.325 calls `ExitPlanMode` with nothing: the plan is in the
+/// file the conversation names, before anybody answers the call.
+#[test]
+fn a_claude_planner_s_plan_is_read_from_its_plan_file() {
+    let named = serde_json::json!({
+        "type": "attachment",
+        "timestamp": "2000-01-01T00:00:00.000Z",
+        "attachment": { "type": "plan_mode", "planFilePath": "/elsewhere/.claude/plans/vivid-grove.md" }
+    })
+    .to_string();
+    let presented = serde_json::json!({
+        "type": "assistant",
+        "timestamp": "2999-01-01T00:00:00.000Z",
+        "slug": "vivid-grove",
+        "message": { "content": [ { "type": "tool_use", "id": "toolu_1", "name": "ExitPlanMode", "input": {} } ] }
+    })
+    .to_string();
+    let (_fixture, mut workspace, home) =
+        planner_with_conversation(&[named.clone(), presented.clone()]);
+
+    // Presented, but the file is not there: nothing to read yet.
+    pipeline::poll(&mut workspace, &context()).unwrap();
+    assert_eq!(task(&workspace).status, TaskStatus::Planning);
+
+    std::fs::write(
+        home.join("plans/vivid-grove.md"),
+        "# Plan\n1. Read the file.\n",
+    )
+    .unwrap();
+    pipeline::poll(&mut workspace, &context()).unwrap();
+    assert_eq!(
+        task(&workspace).plan.unwrap().text,
+        "# Plan\n1. Read the file."
+    );
+    assert_eq!(task(&workspace).status, TaskStatus::PlanReview);
+
+    // Without the attachment, the record's own slug names the file.
+    let (_fixture, mut workspace, home) =
+        planner_with_conversation(std::slice::from_ref(&presented));
+    std::fs::write(home.join("plans/vivid-grove.md"), "By slug.").unwrap();
+    pipeline::poll(&mut workspace, &context()).unwrap();
+    assert_eq!(task(&workspace).plan.unwrap().text, "By slug.");
+
+    // Answered in the terminal: the result's plan is the approved one.
+    let answered = serde_json::json!({
+        "type": "user",
+        "timestamp": "2999-01-01T00:01:00.000Z",
+        "message": { "content": [ { "type": "tool_result", "tool_use_id": "toolu_1", "content": "approved" } ] },
+        "toolUseResult": { "plan": "As approved.", "filePath": "/elsewhere/.claude/plans/vivid-grove.md" }
+    })
+    .to_string();
+    let (_fixture, mut workspace, home) =
+        planner_with_conversation(&[named.clone(), presented.clone(), answered]);
+    std::fs::write(home.join("plans/vivid-grove.md"), "On disk.").unwrap();
+    pipeline::poll(&mut workspace, &context()).unwrap();
+    assert_eq!(task(&workspace).plan.unwrap().text, "As approved.");
+
+    // An empty call from before this draft was asked for is not this draft's.
+    let old = presented.replace("2999-01-01", "2000-01-01");
+    let (_fixture, mut workspace, home) = planner_with_conversation(&[named, old]);
+    std::fs::write(home.join("plans/vivid-grove.md"), "An old plan.").unwrap();
+    pipeline::poll(&mut workspace, &context()).unwrap();
+    assert_eq!(task(&workspace).status, TaskStatus::Planning);
+}
+
 #[test]
 fn a_long_brief_is_shortened_before_its_closing() {
     let file = std::path::Path::new("/data/stages/run.verdict.json");

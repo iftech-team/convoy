@@ -68,8 +68,28 @@ fn native(agent: crate::model::Agent) -> bool {
     agent == crate::model::Agent::Claude
 }
 
+/// Where the plan of a planner's last `ExitPlanMode` call is.
+enum Presented {
+    /// In the conversation itself.
+    Text(String),
+    /// In Claude's plan file: the call `id` carried no plan.
+    File { id: String },
+}
+
+/// A plan that is not blank, trimmed.
+fn filled(plan: Option<&str>) -> Option<String> {
+    plan.map(str::trim)
+        .filter(|plan| !plan.is_empty())
+        .map(str::to_string)
+}
+
 /// The latest plan a Claude planner presented since `since`, read from its
 /// conversation: the `plan` of its last `ExitPlanMode` call.
+///
+/// Older Claude Code passed the plan in the call. Newer ones call it with
+/// nothing: the plan is in a file under the agent's `plans` folder, which the
+/// conversation names, and is repeated in the call's result once somebody
+/// answers it in the terminal. Convoy does not wait for that answer.
 pub fn presented(workspace: &Workspace, planner: &str, since: &str) -> Option<String> {
     let storage = stage::storage(workspace);
     let source = crate::chat::history::source(workspace, &storage, planner).ok()??;
@@ -80,13 +100,29 @@ pub fn presented(workspace: &Workspace, planner: &str, since: &str) -> Option<St
         crate::chat::history::claude_file(&source.home, &source.directory, &source.provider_id)?;
     let text = std::fs::read_to_string(file).ok()?;
     let mut latest = None;
-    for line in text
-        .lines()
-        .filter(|line| line.contains("\"ExitPlanMode\""))
-    {
+    // The plan file's name, as the conversation gives it.
+    let mut named: Option<String> = None;
+    for line in text.lines().filter(|line| {
+        line.contains("\"ExitPlanMode\"")
+            || line.contains("\"planFilePath\"")
+            || line.contains("\"toolUseResult\"")
+    }) {
         let Ok(record) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
+        // The file is the session's, whenever it was named.
+        let path = record["attachment"]["planFilePath"]
+            .as_str()
+            .or_else(|| record["toolUseResult"]["filePath"].as_str());
+        if let Some(name) = path
+            .map(std::path::Path::new)
+            .filter(|path| path.parent().is_some_and(|dir| dir.ends_with("plans")))
+            .and_then(|path| path.file_name())
+        {
+            named = Some(name.to_string_lossy().into_owned());
+        } else if named.is_none() {
+            named = record["slug"].as_str().map(|slug| format!("{slug}.md"));
+        }
         if record["timestamp"].as_str().is_some_and(|at| at < since) {
             continue;
         }
@@ -96,16 +132,33 @@ pub fn presented(workspace: &Workspace, planner: &str, since: &str) -> Option<St
             .flatten()
         {
             if part["type"] == "tool_use" && part["name"] == "ExitPlanMode" {
-                if let Some(plan) = part["input"]["plan"]
-                    .as_str()
-                    .filter(|plan| !plan.trim().is_empty())
+                latest = match filled(part["input"]["plan"].as_str()) {
+                    Some(plan) => Some(Presented::Text(plan)),
+                    None => Some(Presented::File {
+                        id: part["id"].as_str().unwrap_or_default().to_string(),
+                    }),
+                };
+            } else if part["type"] == "tool_result" {
+                // The answered call repeats the plan, as it was approved.
+                let mine = matches!(&latest, Some(Presented::File { id })
+                    if !id.is_empty() && part["tool_use_id"] == id.as_str());
+                if let Some(plan) =
+                    filled(record["toolUseResult"]["plan"].as_str()).filter(|_| mine)
                 {
-                    latest = Some(plan.trim().to_string());
+                    latest = Some(Presented::Text(plan));
                 }
             }
         }
     }
-    latest
+    match latest? {
+        Presented::Text(plan) => Some(plan),
+        // Only a file in the agent's own plans folder is read.
+        Presented::File { .. } => filled(
+            std::fs::read_to_string(source.home.join("plans").join(named?))
+                .ok()
+                .as_deref(),
+        ),
+    }
 }
 
 impl PlanRun {
