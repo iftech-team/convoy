@@ -9,6 +9,7 @@ import { GLOSSARY, GLOSSARY_ORDER } from "./glossary.js";
 import { activeAccount, state } from "./state.js";
 import { SHORTCUTS, SHORTCUT_GROUPS, label } from "./shortcuts.js";
 import { LANGUAGES, languageChoice, t } from "./i18n.js";
+import { ZOOMS, percent, uiZoom } from "./zoom.js";
 import { ROLES, skillsSection } from "./views-skills.js";
 import { pricesSection } from "./views-usage.js";
 import { checklistCard, gettingStarted } from "./views-home.js";
@@ -246,6 +247,11 @@ function appearance(settings) {
         settings.theme,
       ),
     ) +
+      row(
+        t("Interface zoom"),
+        t("Everything in the window, as {in} and {out} change it outside a terminal. A terminal's own text size multiplies with it.", { in: label("mod+="), out: label("mod+-") }),
+        select("ui_zoom", ZOOMS.map((value) => [String(value), percent(value)]), String(uiZoom())),
+      ) +
       row(
         t("Language"),
         t("The window's language. System follows the desktop."),

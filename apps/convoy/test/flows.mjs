@@ -439,11 +439,21 @@ try {
   await page.locator('.tab-item[data-tab-open="builder"]').click();
   await page.locator('.tab-item--selected[data-tab-open="builder"]').waitFor();
   if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/tabs.png` });
-  // ⌘+ / ⌘0 zoom this terminal only, from the Settings size (13).
+  // ⌘+ / ⌘0 zoom this terminal only, from the Settings size (13), once the
+  // terminal has the keyboard — it takes it a frame after its tab opens.
+  await page.locator(".xterm textarea:focus").waitFor({ state: "attached" });
   await page.keyboard.press(`${primary}+Equal`);
   await page.locator(".toast", { hasText: "Terminal text 14 pt" }).waitFor();
   await page.keyboard.press(`${primary}+Digit0`);
   await page.locator(".toast", { hasText: "Terminal text 13 pt" }).waitFor();
+  // Anywhere else they zoom the whole window, and ⌘0 brings it back.
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press(`${primary}+Equal`);
+  await page.locator(".toast", { hasText: "Interface zoom 110%" }).waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem("convoy.zoom.ui")), "1.1");
+  await page.keyboard.press(`${primary}+Digit0`);
+  await page.locator(".toast", { hasText: "Interface zoom 100%" }).waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem("convoy.zoom.ui")), null);
   // ⌘E lists open terminals most recent first, the one on screen last.
   await page.keyboard.press(`${primary}+e`);
   const switcher = page.locator(".modal--palette");

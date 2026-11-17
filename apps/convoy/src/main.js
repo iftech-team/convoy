@@ -43,6 +43,7 @@ import {
 import { escape, plural, value } from "./ui.js";
 import { setLanguage, t } from "./i18n.js";
 import { SHORTCUTS, binding, capture, label, matches } from "./shortcuts.js";
+import { applyZoom, percent, setZoom, stepZoom, uiZoom } from "./zoom.js";
 import { dialogView, effortLevels, sweepChoices, sweepGroups, sweepProject, sweepVisible } from "./dialogs.js";
 import * as terminal from "./terminal.js";
 import { adoptApprovals, answer, chatEvent, chatExited, chatSnapshot, chatText, historyChanged, insertDraft, mountChat, rememberScroll, sendText, shownAsTranscript, viewOf, waitingFor } from "./views-chat.js";
@@ -2175,6 +2176,11 @@ app.addEventListener("change", async (event) => {
     return saveProjectField({ [projectKey]: numeric ? Number(event.target.value) : event.target.value });
   }
   const choiceKey = event.target.dataset?.prefSelect;
+  if (choiceKey === "ui_zoom") {
+    await setZoom(event.target.value);
+    terminal.refit();
+    return render();
+  }
   if (choiceKey) return savePref({ [choiceKey]: event.target.value });
   const textKey = event.target.dataset?.prefText;
   if (textKey) return savePref({ [textKey]: event.target.value });
@@ -2274,13 +2280,19 @@ addEventListener(
     if (state.capturing || state.dialog?.kind === "palette") return;
     // ⌘1–⌘9 (Ctrl elsewhere) select a tab, as in the macOS app.
     const primary = /mac/i.test(navigator.platform) ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
-    // ⌘+ / ⌘− / ⌘0 zoom the focused terminal only.
-    if (primary && !event.altKey && state.sessionId && !state.dialog && ["Equal", "NumpadAdd", "Minus", "NumpadSubtract", "Digit0", "Numpad0"].includes(event.code)) {
+    // ⌘+ / ⌘− / ⌘0 zoom the terminal that has the keyboard, and the whole
+    // window anywhere else, as a browser zooms its page.
+    if (primary && !event.altKey && ["Equal", "NumpadAdd", "Minus", "NumpadSubtract", "Digit0", "Numpad0"].includes(event.code)) {
       event.preventDefault();
       event.stopPropagation();
       const step = /Equal|Add/.test(event.code) ? 1 : /Minus|Subtract/.test(event.code) ? -1 : 0;
-      const size = terminal.zoom(state.sessionId, step);
-      if (size) toast(t("Terminal text {size} pt", { size }));
+      const size = state.sessionId && !state.dialog && event.target?.closest?.(".xterm") ? terminal.zoom(state.sessionId, step) : 0;
+      if (size) return toast(t("Terminal text {size} pt", { size }));
+      stepZoom(step).then((factor) => {
+        toast(t("Interface zoom {percent}", { percent: percent(factor) }));
+        terminal.refit();
+        if (state.page === "settings") render();
+      });
       return;
     }
     const digit = /^Digit([1-9])$/.exec(event.code ?? "");
@@ -4793,9 +4805,15 @@ window.convoyDrop = dropPaths;
 async function wireFileDrop() {
   try {
     const { getCurrentWebview } = await import("@tauri-apps/api/webview");
-    await getCurrentWebview().onDragDropEvent(({ payload }) => {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWebview().onDragDropEvent(async ({ payload }) => {
       if (payload.type !== "drop") return;
-      const scale = window.devicePixelRatio || 1;
+      // The position is in the screen's pixels; the page's are larger by the
+      // window's zoom as well. The monitor's scale is asked of the window, not
+      // read from devicePixelRatio, which WebView2 multiplies by the zoom and
+      // WebKit does not.
+      const screen = await getCurrentWindow().scaleFactor().catch(() => window.devicePixelRatio || 1);
+      const scale = screen * uiZoom();
       dropPaths(payload.paths, payload.position.x / scale, payload.position.y / scale);
     });
   } catch {
@@ -4817,6 +4835,7 @@ await listen("update:ready", ({ payload }) => {
 
 try {
   await terminal.wire();
+  applyZoom();
   wireFileDrop();
   await loadSettings();
   applyTheme();
