@@ -52,9 +52,11 @@ pub static CODEX_RESUME: LazyLock<Regex> = LazyLock::new(|| {
 /// GitLab and GitHub Enterprise print the same paths as the public sites.
 pub static PULL_REQUEST: LazyLock<Regex> = LazyLock::new(|| {
     // Any host, so self-hosted GitLab, GitHub Enterprise, Gitea and
-    // Bitbucket are found too; the owner and repository come first.
+    // Bitbucket are found too; the owner and repository come first. The
+    // path is the shortest that ends in a request number, so a link printed
+    // twice with nothing between, or as a Markdown link, is still one link.
     Regex::new(
-        r#"https?://[A-Za-z0-9.-]+(:\d+)?/[^\s'"`)<>]+/(pull|pulls|merge_requests|pull-requests)/\d+"#,
+        r#"https?://[A-Za-z0-9.-]+(:\d+)?/[^\s'"`()<>\[\]]+?/(pull|pulls|merge_requests|pull-requests)/\d+"#,
     )
     .unwrap()
 });

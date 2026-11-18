@@ -4027,7 +4027,7 @@ async function runTaskMenu(act, id) {
     case "task-session":
       return openAnywhere(task.session_id);
     case "task-reviewer":
-      return openAnywhere(task.review_session_id);
+      return openAnywhere(task.review?.session_id ?? task.review_session_id);
     case "task-pr":
       render();
       return done("task_pr_open", { id });

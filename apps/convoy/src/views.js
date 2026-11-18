@@ -301,7 +301,7 @@ export function contextMenu(menu) {
       task.status === "plan_review" ? item(t("Review the plan…"), "task-plan", { icon: "check" }) : "",
       task.plan?.session_id ? item(t("Open planner"), "task-planner", { icon: "terminal" }) : "",
       item(t("Open session"), "task-session", { icon: "terminal", enabled: !!task.session_id }),
-      item(t("Open reviewer"), "task-reviewer", { icon: "review", enabled: !!task.review_session_id }),
+      item(t("Open reviewer"), "task-reviewer", { icon: "review", enabled: !!(task.review?.session_id ?? task.review_session_id) }),
       ["review", "pr", "testing", "changes", "attention", "failed"].includes(task.status) && task.session_id
         ? item(task.review?.status === "reviewing" ? t("Restart the review") : t("Review now"), "task-review-now", { icon: "review" })
         : "",

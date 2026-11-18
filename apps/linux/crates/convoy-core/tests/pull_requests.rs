@@ -53,6 +53,10 @@ fn codex_resume_ids_and_pull_request_links_are_found_in_output() {
         );
     }
     assert_eq!(pull_request_url("https://example.com/pull/1"), None);
+    // Printed twice with nothing between, or as a Markdown link: one link.
+    let url = "https://gitlab.eskhata.com/wallet/api/-/merge_requests/2096";
+    assert_eq!(pull_request_url(&format!("{url}{url}")).as_deref(), Some(url));
+    assert_eq!(pull_request_url(&format!("[{url}]({url})")).as_deref(), Some(url));
 }
 
 #[test]
