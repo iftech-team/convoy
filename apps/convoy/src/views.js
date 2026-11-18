@@ -1,6 +1,6 @@
 // Every screen. Markup built from state; nothing here calls the backend.
 
-import { conversationKey, historySection, lastActive, pickBox, shownConversations, when } from "./views-history.js";
+import { conversationKey, historySection, lastActive, newestFirst, pickBox, shownConversations, when } from "./views-history.js";
 import { agentIcon, appMark, icons, projectIcon, projectTint } from "./icons.js";
 import {
   button,
@@ -524,8 +524,9 @@ export function sessionsView() {
       <p class="section__hint">${escape(t("Resume a conversation below or start a new session."))}</p>
       <div class="stack" data-scroll="sessions">${saved}</div>`;
   }
-  // Running ones first: they are what someone comes back to.
-  const shown = visibleSessions();
+  // Running ones first: they are what someone comes back to. Then the
+  // newest, so the latest work is at the top.
+  const shown = newestFirst(visibleSessions());
   const picking = !!state.picked;
   const rows = [...shown.filter((item) => item.running), ...shown.filter((item) => !item.running)]
     .map((item) => sessionRow(item, { picking }))
@@ -595,7 +596,7 @@ export function reviewsView() {
     <p class="section__hint">
       ${escape(t("A review runs in the builder's own folder, so it reads exactly what was written there."))}
     </p>
-    <div class="list">${reviews.map(sessionRow).join("")}</div>`;
+    <div class="list">${newestFirst(reviews).map((item) => sessionRow(item)).join("")}</div>`;
 }
 
 // -------------------------------------------------------------- workbench --

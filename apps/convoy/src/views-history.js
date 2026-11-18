@@ -3,6 +3,7 @@
 // than in a tab of their own: once one is resumed it is a session, so two
 // lists would only show the same work twice.
 
+import { byNewest } from "./session-state.js";
 import { agentIcon, icons } from "./icons.js";
 import { button, escape } from "./ui.js";
 import { project, state } from "./state.js";
@@ -41,6 +42,9 @@ export function lastActive(item) {
   if (!history || history.projectId !== state.projectId) return undefined;
   return history.entries.find((entry) => entry.session_id === item.id)?.at;
 }
+
+/// The project's sessions newest first; see `byNewest`.
+export const newestFirst = (items) => byNewest(items, lastActive, state.sessions);
 
 /// The project's saved conversations that no session holds yet.
 export function unlinkedConversations() {

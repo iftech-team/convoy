@@ -43,3 +43,15 @@ export const sessionTone = (key) => (SESSION_STATES[key] ?? SESSION_STATES.worki
 /// with this detail.
 export const sleptBy = (event) =>
   event?.kind === "hibernated" || (event?.kind === "exited" && String(event.detail ?? "").startsWith("Hibernated"));
+
+/// Sessions newest first, by when their conversation was last written
+/// (`lastAt`). One with nothing written yet is usually just made, so it goes
+/// on top; among such, and before the conversations are read, the later
+/// added to `all` comes first.
+export function byNewest(items, lastAt, all) {
+  const order = new Map(all.map((item, index) => [item.id, index]));
+  return items
+    .map((item) => ({ item, at: lastAt(item) ?? Infinity, index: order.get(item.id) ?? -1 }))
+    .sort((a, b) => b.at - a.at || b.index - a.index)
+    .map(({ item }) => item);
+}
