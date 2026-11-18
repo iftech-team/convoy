@@ -273,7 +273,22 @@ function currentTab() {
 function keepProjectTab() {
   if (!state.projectId) return;
   const id = projectTab(state.projectId);
-  if (!state.tabs.includes(id)) state.tabs.push(id);
+  if (!state.tabs.includes(id)) placeTab(id, state.projectId);
+}
+
+/// The project a tab belongs to: a project page's own, a session's owner.
+function tabProject(id) {
+  if (isProjectTab(id)) return id.slice(PROJECT_TAB.length);
+  return tabInfo(id)?.project_id ?? anySession(id)?.project_id ?? null;
+}
+
+/// Adds a tab beside its project's other tabs, after the last of them, so a
+/// new session opens next to its project rather than at the far end.
+function placeTab(id, projectId) {
+  let at = -1;
+  if (projectId) state.tabs.forEach((tab, index) => tabProject(tab) === projectId && (at = index));
+  if (at < 0) state.tabs.push(id);
+  else state.tabs.splice(at + 1, 0, id);
 }
 
 /// The open session always has a tab, as does a project page once gone to,
@@ -283,7 +298,7 @@ function syncTabs() {
   let touched = false;
   const current = currentTab();
   if (current && !isProjectTab(current) && !state.tabs.includes(current)) {
-    state.tabs.push(current);
+    placeTab(current, tabProject(current) ?? state.projectId);
     touched = true;
   }
   if (current && isProjectTab(current) && !state.page && state.tabs.includes(current)) {
@@ -338,8 +353,14 @@ async function openTab(id) {
   openSession(id);
 }
 
-/// Closes a tab; a running agent is stopped first, after asking, as on macOS.
+/// Closes a tab. A running agent keeps running: the tab is only hidden, and
+/// the session stays in the sidebar to bring it back.
 function closeTab(id) {
+  dropTab(id);
+}
+
+/// Stops a running agent, after asking, then closes its tab.
+function stopAndCloseTab(id) {
   if (state.running.includes(id)) {
     return openModal({
       kind: "confirm",
@@ -1600,8 +1621,9 @@ app.addEventListener("click", async (event) => {
     if (data.tabAct === "left") return moveTab(id, at - 1);
     if (data.tabAct === "right") return moveTab(id, at + 1);
     if (data.tabAct === "close") return closeTab(id);
+    if (data.tabAct === "stop") return stopAndCloseTab(id);
     if (data.tabAct === "others") {
-      for (const other of [...state.tabs]) if (other !== id && !state.running.includes(other)) dropTab(other);
+      for (const other of [...state.tabs]) if (other !== id) dropTab(other);
       return openTab(id);
     }
   }
@@ -5026,33 +5048,82 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && taskDrag?.ghost) endTaskDrag();
 });
 
-// Tabs are reordered by dragging one onto another.
-let draggedTab = null;
-app.addEventListener("dragstart", (event) => {
-  const tab = event.target.closest?.("[data-tab-open]");
-  if (!tab) return;
-  draggedTab = tab.dataset.tabOpen;
-  event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("text/plain", draggedTab);
+// Tabs are reordered by dragging, as in a browser: the tab follows the
+// pointer along the bar and a marker shows where it lands. Pointer events
+// rather than HTML5 drag and drop, for the reasons the task board gives, and
+// because the bar re-renders while an agent works — the drag keeps only ids
+// and finds the tabs again on every move.
+let tabDrag = null;
+const tabEls = () => [...app.querySelectorAll(".tabbar__tabs [data-tab-open]")];
+function clearTabDrop() {
+  for (const other of app.querySelectorAll(".tab-item--drop, .tab-item--drop-after")) {
+    other.classList.remove("tab-item--drop", "tab-item--drop-after");
+  }
+}
+/// Where the dragged tab would land: its index among the other tabs.
+function tabDropIndex(x) {
+  const others = tabEls().filter((el) => el.dataset.tabOpen !== tabDrag.id);
+  let index = others.findIndex((el) => {
+    const box = el.getBoundingClientRect();
+    return x < box.left + box.width / 2;
+  });
+  if (index < 0) index = others.length;
+  return { index, others };
+}
+function endTabDrag() {
+  if (!tabDrag) return;
+  tabDrag.ghost?.remove();
+  document.body.classList.remove("is-dragging-tab");
+  for (const el of app.querySelectorAll(".tab-item--dragging")) el.classList.remove("tab-item--dragging");
+  clearTabDrop();
+  tabDrag = null;
+}
+app.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  const tab = event.target.closest?.(".tabbar__tabs [data-tab-open]");
+  if (!tab || event.target.closest(".tab-item__close")) return;
+  tabDrag = { id: tab.dataset.tabOpen, x: event.clientX, y: event.clientY, ghost: null };
 });
-app.addEventListener("dragover", (event) => {
-  const tab = event.target.closest?.("[data-tab-open]");
-  if (!tab || !draggedTab) return;
-  event.preventDefault();
-  for (const other of app.querySelectorAll(".tab-item--drop")) other.classList.remove("tab-item--drop");
-  if (tab.dataset.tabOpen !== draggedTab) tab.classList.add("tab-item--drop");
+window.addEventListener("pointermove", (event) => {
+  if (!tabDrag) return;
+  if (!tabDrag.ghost) {
+    if (Math.abs(event.clientX - tabDrag.x) < 5) return;
+    const tab = tabEls().find((el) => el.dataset.tabOpen === tabDrag.id);
+    if (!tab) return endTabDrag();
+    const box = tab.getBoundingClientRect();
+    const ghost = tab.cloneNode(true);
+    ghost.classList.add("tab-ghost");
+    ghost.removeAttribute("data-tab-open");
+    for (const el of ghost.querySelectorAll("[data-tab-close]")) el.removeAttribute("data-tab-close");
+    ghost.style.width = `${box.width}px`;
+    ghost.style.top = `${box.top}px`;
+    document.body.append(ghost);
+    Object.assign(tabDrag, { ghost, dx: tabDrag.x - box.left });
+    document.body.classList.add("is-dragging-tab");
+  }
+  const bar = app.querySelector(".tabbar__tabs")?.getBoundingClientRect();
+  let left = event.clientX - tabDrag.dx;
+  if (bar) left = Math.max(bar.left, Math.min(left, bar.right - tabDrag.ghost.offsetWidth));
+  tabDrag.ghost.style.transform = `translateX(${left}px)`;
+  for (const el of tabEls()) el.classList.toggle("tab-item--dragging", el.dataset.tabOpen === tabDrag.id);
+  const { index, others } = tabDropIndex(event.clientX);
+  clearTabDrop();
+  if (index < others.length) others[index].classList.add("tab-item--drop");
+  else others.at(-1)?.classList.add("tab-item--drop-after");
 });
-app.addEventListener("drop", (event) => {
-  const tab = event.target.closest?.("[data-tab-open]");
-  if (!tab || !draggedTab) return;
-  event.preventDefault();
-  const id = draggedTab;
-  draggedTab = null;
-  if (tab.dataset.tabOpen !== id) moveTab(id, state.tabs.indexOf(tab.dataset.tabOpen));
+window.addEventListener("pointerup", (event) => {
+  if (!tabDrag) return;
+  const { id, ghost } = tabDrag;
+  const target = ghost && tabDropIndex(event.clientX).index;
+  endTabDrag();
+  if (!ghost) return;
+  justDropped = true;
+  // The index is among the other tabs, which is what moveTab takes.
+  if (target !== state.tabs.indexOf(id)) moveTab(id, target);
 });
-app.addEventListener("dragend", () => {
-  draggedTab = null;
-  for (const other of app.querySelectorAll(".tab-item--drop")) other.classList.remove("tab-item--drop");
+window.addEventListener("pointercancel", endTabDrag);
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && tabDrag?.ghost) endTabDrag();
 });
 
 // Right-click on a project or a session in the sidebar opens its menu.

@@ -1088,7 +1088,7 @@ function projectTabItem(id, index) {
   const view = PROJECT_VIEWS[info.view] ?? PROJECT_VIEWS.sessions;
   return `
     <div class="tab-item tab-item--project${selected ? " tab-item--selected" : ""}" data-tab-open="${escape(id)}"
-         draggable="true" title="${escape(`${owner.title} · ${t(view)}`)}">
+         title="${escape(`${owner.title} · ${t(view)}`)}">
       <span class="tab-item__bar" style="background:${projectTint(owner)}"></span>
       ${projectIcon(owner, 13)}
       <span class="tab-item__text">
@@ -1113,7 +1113,7 @@ export function tabBar() {
       const selected = state.sessionId === id && !state.files && state.page !== "project";
       return `
         <div class="tab-item${selected ? " tab-item--selected" : ""}" data-tab-open="${escape(id)}"
-             draggable="true" title="${escape(`${owner?.title ?? ""} · ${agentName(info.agent)}${running ? "" : ` · ${t(sessionLabel(sessionState({ ...info, id }, false)))}`}`)}">
+             title="${escape(`${owner?.title ?? ""} · ${agentName(info.agent)}${running ? "" : ` · ${t(sessionLabel(sessionState({ ...info, id }, false)))}`}`)}">
           <span class="tab-item__bar" style="background:${owner ? projectTint(owner) : "var(--border-strong)"}"></span>
           ${tabGlyph(id, running, info)}
           ${agentIcon(info.agent, 12)}
@@ -1128,7 +1128,7 @@ export function tabBar() {
           }
           ${index < 9 && !selected && !(state.layout > 1 && state.panes.includes(id)) ? `<span class="tab-item__number">${/mac/i.test(navigator.platform) ? "⌘" : "Ctrl+"}${index + 1}</span>` : ""}
           <button class="tab-item__close" data-tab-close="${escape(id)}"
-                  title="${escape(running ? t("Stop and close") : t("Close tab"))}">${icons.close}</button>
+                  title="${escape(running ? t("Hide tab — the agent keeps running") : t("Close tab"))}">${icons.close}</button>
         </div>`;
     })
     .join("");
@@ -1193,7 +1193,8 @@ function tabMenu(menu) {
         ${item("Move left", "left", at > 0)}
         ${item("Move right", "right", at < state.tabs.length - 1)}
         <div class="menu__divider"></div>
-        ${item("Close tab", "close")}
+        ${item(state.running.includes(menu.id) ? "Hide tab" : "Close tab", "close")}
+        ${state.running.includes(menu.id) ? item("Stop and close", "stop") : ""}
         ${item("Close other tabs", "others", state.tabs.length > 1)}
       </div>
     </div>`;

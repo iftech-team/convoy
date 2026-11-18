@@ -627,6 +627,23 @@ try {
   await page.locator(".board__column", { hasText: "Not running" }).locator('[data-open="notes"]').click();
   await page.locator('.tab-item--selected[data-tab-open="notes"]').waitFor();
   assert.equal(await page.locator('.tab-item[data-tab-open="project:other"]').count(), 0, "no tab for a page not gone to");
+  // Tabs reorder by dragging along the bar.
+  {
+    const order = () => page.locator(".tabbar__tabs [data-tab-open]").evaluateAll((els) => els.map((el) => el.dataset.tabOpen));
+    const before = await order();
+    assert.ok(before.length > 1, "several tabs to reorder");
+    {
+      const last = before.at(-1);
+      const from = await page.locator(`.tabbar__tabs [data-tab-open="${last}"]`).boundingBox();
+      const to = await page.locator(`.tabbar__tabs [data-tab-open="${before[0]}"]`).boundingBox();
+      await page.mouse.move(from.x + 20, from.y + from.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(from.x + 10, from.y + from.height / 2, { steps: 2 });
+      await page.mouse.move(to.x + 4, to.y + to.height / 2, { steps: 8 });
+      await page.mouse.up();
+      assert.deepEqual(await order(), [last, ...before.slice(0, -1)], "a dragged tab lands where it is dropped");
+    }
+  }
   await page.locator('[data-tab-close="notes"]').click();
   await page.locator('.tab-item[data-tab-open="notes"]').waitFor({ state: "detached" });
   await page.locator('.project-row [data-project="project"]').click();

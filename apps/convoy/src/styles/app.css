@@ -3652,6 +3652,37 @@ select:disabled {
   background: var(--accent);
 }
 
+.tab-item--drop-after::after {
+  content: "";
+  position: absolute;
+  right: -3px;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.tab-item--dragging {
+  opacity: 0.35;
+}
+
+.tab-ghost {
+  position: fixed;
+  left: 0;
+  z-index: 1000;
+  pointer-events: none;
+  background: var(--bg);
+  border-color: var(--border-strong);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
+}
+
+.is-dragging-tab,
+.is-dragging-tab * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
 .tab-item__bar {
   flex: none;
   width: 3px;
