@@ -118,10 +118,16 @@ function fatal(detail) {
     </div>`;
 }
 
-window.addEventListener("error", (event) => fatal(event.error?.stack ?? event.message));
-window.addEventListener("unhandledrejection", (event) =>
-  fatal(event.reason?.stack ?? String(event.reason)),
-);
+/// Once the window is up, a stray error is reported and the app keeps
+/// running; only a failure while starting replaces the window.
+let started = false;
+function failed(detail) {
+  if (!started) return fatal(detail);
+  console.error(detail);
+  toast(String(detail).split("\n")[0].slice(0, 200));
+}
+window.addEventListener("error", (event) => failed(event.error?.stack ?? event.message));
+window.addEventListener("unhandledrejection", (event) => failed(event.reason?.stack ?? String(event.reason)));
 
 // ----------------------------------------------------------------- render --
 
@@ -4944,6 +4950,7 @@ try {
   // The welcome screen links to the macOS app's workspace when there is one;
   // it is never offered unasked.
   if (!state.projects.length) checkMacImport().then(render);
+  started = true;
 } catch (error) {
   fatal(error?.stack ?? String(error));
 }

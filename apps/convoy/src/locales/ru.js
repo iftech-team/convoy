@@ -304,6 +304,7 @@ export default {
     "Recent output stays saved and the session can be resumed later.": "Последний вывод сохранится, и сессию можно будет возобновить позже.",
     "Stop and close": "Остановить и закрыть",
     "Hide tab": "Скрыть вкладку",
+    "Could not open the link": "Не удалось открыть ссылку",
     "Hide tab — the agent keeps running": "Скрыть вкладку — агент продолжит работу",
     "{count} kept — stop it first.": "Не архивировано: {count} — сначала остановите её.",
     "{count} kept — stop them first.": "Не архивировано: {count} — сначала остановите их.",

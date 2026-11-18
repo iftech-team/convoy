@@ -5,6 +5,7 @@
 // its canvas and lose the scrollback, which in a session that has been running
 // for an hour is the whole history.
 
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -15,6 +16,15 @@ import { viewOf } from "./views-chat.js";
 import { t } from "./i18n.js";
 
 const terminals = new Map();
+
+/// A link clicked in a terminal opens in the default browser. xterm's own
+/// handlers would ask with window.confirm, which the dialog plugin turns into
+/// a command the window is not allowed, or navigate the webview away.
+function openLink(event, uri) {
+  event?.preventDefault?.();
+  if (!/^(https?|mailto):/i.test(uri)) return;
+  invoke("plugin:opener|open_url", { url: uri }).catch(() => toast(t("Could not open the link")));
+}
 
 function theme() {
   const style = getComputedStyle(document.documentElement);
@@ -76,10 +86,12 @@ export function terminalFor(id) {
     allowProposedApi: true,
     scrollback: state.settings.scrollback,
     theme: theme(),
+    // Links an agent prints with OSC 8, such as Claude's.
+    linkHandler: { activate: openLink },
   });
   const fit = new FitAddon();
   terminal.loadAddon(fit);
-  terminal.loadAddon(new WebLinksAddon());
+  terminal.loadAddon(new WebLinksAddon(openLink));
   const search = new SearchAddon();
   terminal.loadAddon(search);
   search.onDidChangeResults(({ resultIndex, resultCount }) => findListener(id, resultIndex, resultCount));
