@@ -36,7 +36,7 @@ export function newTaskDefaults(project, settings) {
   };
 }
 
-const AGENT_NAMES = { claude: "Claude Code", codex: "Codex", gemini: "Gemini CLI" };
+const AGENT_NAMES = { claude: "Claude Code", codex: "Codex" };
 
 /// An agent's name as people know it. Product names, not translated.
 export const agentName = (agent) => AGENT_NAMES[agent] ?? AGENT_NAMES.claude;

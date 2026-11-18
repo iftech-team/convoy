@@ -439,7 +439,7 @@ fn a_project_names_its_reviewer_and_can_go_back_to_the_other_agent() {
     assert_eq!(reviewer(&workspace), Agent::Codex, "unset, the other agent");
 
     // The same agent as the builder is the project's call, not refused.
-    for (value, expected) in [("claude", Agent::Claude), ("gemini", Agent::Gemini)] {
+    for (value, expected) in [("codex", Agent::Codex), ("claude", Agent::Claude)] {
         workspace
             .edit_project(
                 &project,
@@ -458,7 +458,7 @@ fn a_project_names_its_reviewer_and_can_go_back_to_the_other_agent() {
 
     // Saved under its macOS-style key, and read back.
     let saved = serde_json::to_value(workspace.project(&project).unwrap()).unwrap();
-    assert_eq!(saved["reviewAgent"], "gemini");
+    assert_eq!(saved["reviewAgent"], "claude");
 
     // Another field's edit leaves it alone; an empty one clears it.
     workspace
@@ -470,7 +470,7 @@ fn a_project_names_its_reviewer_and_can_go_back_to_the_other_agent() {
             },
         )
         .unwrap();
-    assert_eq!(reviewer(&workspace), Agent::Gemini);
+    assert_eq!(reviewer(&workspace), Agent::Claude);
     workspace
         .edit_project(
             &project,
@@ -609,4 +609,13 @@ fn removing_every_project_keeps_global_quick_commands_and_settings() {
     let reloaded =
         convoy_core::workspace::Workspace::load(dir.path().join("workspace.json")).unwrap();
     assert!(reloaded.state().projects.is_empty());
+}
+
+#[test]
+fn a_record_naming_gemini_cli_reads_as_claude() {
+    // Gemini CLI is no longer offered; a workspace that ran it still loads.
+    let agent: Agent = serde_json::from_value(serde_json::json!("gemini")).unwrap();
+    assert_eq!(agent, Agent::Claude);
+    assert_eq!(serde_json::to_value(agent).unwrap(), "claude");
+    assert_eq!(Agent::parse("gemini"), None, "and it cannot be picked");
 }

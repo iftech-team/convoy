@@ -236,7 +236,6 @@ pub fn report(
             match agent {
                 Agent::Claude => entry.0 += total,
                 Agent::Codex => entry.1 += total,
-                Agent::Gemini => {}
             }
             entry.2 += cost.unwrap_or(0.0);
             by_model
@@ -250,7 +249,6 @@ pub fn report(
             match agent {
                 Agent::Claude => row.3 += total,
                 Agent::Codex => row.4 += total,
-                Agent::Gemini => {}
             }
         }
     }

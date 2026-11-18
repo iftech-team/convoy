@@ -27,8 +27,8 @@ test("found but not logged in, or still checking", () => {
   const diagnostics = [{ name: "codex", found: true }];
   assert.equal(done(checklist({ diagnostics, setupChecks: [{ id: "login.codex", status: "failed" }] })).login, false);
   assert.deepEqual(checklist({ diagnostics }).items[1].detail, ["Checking…", {}]);
-  // Gemini has no login check: found is enough.
-  assert.equal(done(checklist({ diagnostics: [{ name: "gemini", found: true }], setupChecks: [] })).login, true);
+  // Gemini CLI is no longer an agent Convoy runs: found, it counts for nothing.
+  assert.equal(done(checklist({ diagnostics: [{ name: "gemini", found: true }], setupChecks: [] })).agent, false);
 });
 
 test("a found agent that is not signed in is signed in from the window", () => {

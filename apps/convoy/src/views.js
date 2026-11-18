@@ -854,7 +854,7 @@ export function status() {
         ${icons.limits} <strong>${escape(t("Usage limits"))}</strong>
         ${limitsSummary()}
       </button>
-      ${accountChip("claude")}${accountChip("codex")}${accountChip("gemini")}
+      ${accountChip("claude")}${accountChip("codex")}
       <span class="status__spacer"></span>
       ${updateButton()}
       ${needsYouButton()}

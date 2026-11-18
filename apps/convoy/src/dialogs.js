@@ -29,7 +29,6 @@ import { autoSkills, skillEditor, skillImport, skillPicker } from "./views-skill
 const ALL_AGENTS = [
   ["claude", "Claude Code", agentIcon("claude", 15)],
   ["codex", "Codex", agentIcon("codex", 15)],
-  ["gemini", "Gemini", agentIcon("gemini", 15)],
 ];
 
 /// The agents a sheet offers: the installed ones, and the one already
@@ -189,8 +188,6 @@ function newSession(dialog) {
         ${setting(t("Keep this dialog open to create more"), "", toggle("keepOpen", dialog.keepOpen, t("Keep open")))}
       </div>`
     : "";
-  // Gemini CLI runs in a terminal only.
-  if (dialog.agent === "gemini") dialog.view = "terminal";
   const more = `
       ${field(
         t("Project"),
@@ -199,10 +196,7 @@ function newSession(dialog) {
       ${field(t("Name (optional)"), textInput("draft-title", dialog.title, t("Leave empty to name it after the first message")))}
       ${field(
         t("Open in"),
-        dialog.agent === "gemini"
-          ? choice("view", [["terminal", t("Terminal")]], "terminal")
-          : choice("view", [["chat", t("Chat")], ["terminal", t("Terminal")]], dialog.view ?? "terminal"),
-        dialog.agent === "gemini" ? t("Gemini CLI runs in a terminal.") : "",
+        choice("view", [["chat", t("Chat")], ["terminal", t("Terminal")]], dialog.view ?? "terminal"),
       )}
       ${worktree}
       ${skillPicker(dialog.skills ?? [], dialog.agent, dialog.projectId)}
@@ -214,7 +208,7 @@ function newSession(dialog) {
           "helpers",
         )}
       </div>
-      ${dialog.agent === "gemini" ? "" : field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
+      ${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
       <div class="field-row">
         ${field(t("Model"), modelSelect("draft-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}
         ${field(t("Effort"), effortSelect("draft-effort", dialog.agent, dialog.account ?? "", dialog.model ?? "", dialog.effort ?? ""))}

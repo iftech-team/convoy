@@ -24,21 +24,20 @@ fn is_false(value: &bool) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Agent {
+    /// Gemini CLI was once offered too; a record still naming it reads as
+    /// Claude, so an old workspace loads.
+    #[serde(alias = "gemini")]
     Claude,
     Codex,
-    /// Google's Gemini CLI. Terminal sessions only: it has no chat protocol
-    /// Convoy speaks.
-    Gemini,
 }
 
 impl Agent {
-    pub const ALL: [Agent; 3] = [Agent::Claude, Agent::Codex, Agent::Gemini];
+    pub const ALL: [Agent; 2] = [Agent::Claude, Agent::Codex];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Agent::Claude => "claude",
             Agent::Codex => "codex",
-            Agent::Gemini => "gemini",
         }
     }
 
@@ -46,7 +45,6 @@ impl Agent {
         match value {
             "claude" => Some(Agent::Claude),
             "codex" => Some(Agent::Codex),
-            "gemini" => Some(Agent::Gemini),
             _ => None,
         }
     }
@@ -56,21 +54,15 @@ impl Agent {
         match self {
             Agent::Claude => "Claude Code",
             Agent::Codex => "Codex",
-            Agent::Gemini => "Gemini CLI",
         }
     }
 
-    /// Whether it can be shown as a chat; Gemini runs in a terminal.
-    pub fn has_chat(self) -> bool {
-        self != Agent::Gemini
-    }
-
     /// Who reviews its work when its project names no reviewer: Claude and
-    /// Codex review each other, and Claude reviews Gemini.
+    /// Codex review each other.
     pub fn reviewer(self) -> Agent {
         match self {
             Agent::Claude => Agent::Codex,
-            Agent::Codex | Agent::Gemini => Agent::Claude,
+            Agent::Codex => Agent::Claude,
         }
     }
 }
@@ -584,10 +576,6 @@ impl Session {
     /// `chat` or `terminal`: the session's own choice when it made a valid
     /// one, otherwise the settings default.
     pub fn shown_as<'a>(&'a self, settings: &'a Settings) -> &'a str {
-        // Gemini has no chat Convoy can drive.
-        if !self.agent.has_chat() {
-            return "terminal";
-        }
         self.view
             .as_deref()
             .filter(|view| VIEWS.contains(view))
@@ -861,9 +849,6 @@ pub struct Settings {
     /// `--dangerously-bypass-approvals-and-sandbox` for Codex.
     #[serde(rename = "yoloCodex", default)]
     pub yolo_codex: bool,
-    /// `--yolo` for Gemini CLI.
-    #[serde(rename = "yoloGemini", default)]
-    pub yolo_gemini: bool,
     /// The review brief's instructions unless a project sets its own.
     #[serde(rename = "reviewTemplate", default)]
     pub review_template: String,
@@ -996,7 +981,6 @@ impl Default for Settings {
             sort_projects: false,
             yolo_claude: false,
             yolo_codex: false,
-            yolo_gemini: false,
             review_template: String::new(),
             role_instructions: BTreeMap::new(),
             notify_waiting: true,

@@ -173,7 +173,6 @@ try {
       if (cmd === "diagnostics_run") return [
         { name: "claude", found: true, path: "/usr/local/bin/claude", version: "2.1.0", purpose: "Runs Claude Code sessions.", install: "npm i -g" },
         { name: "codex", found: true, path: "/usr/local/bin/codex", version: "0.9.0", purpose: "Runs Codex sessions.", install: "npm i -g @openai/codex" },
-        { name: "gemini", found: false, path: null, version: null, purpose: "Runs Gemini CLI sessions.", install: "npm i -g @google/gemini-cli" },
         { name: "gh", found: false, path: null, version: null, purpose: "Opens pull requests.", install: "Install the GitHub CLI." },
       ];
       if (cmd === "worktrees_path") return "/fixture/worktrees";
@@ -1170,8 +1169,8 @@ try {
   await page.locator('[data-proj-toggle="qa_auto"]').click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.qa_auto === true));
   // Who reviews: the project names an agent, or leaves it to the other one.
-  await page.locator('[data-proj-select="review_agent"]').selectOption("gemini");
-  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.review_agent === "gemini"));
+  await page.locator('[data-proj-select="review_agent"]').selectOption("claude");
+  await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.review_agent === "claude"));
   // What is typed but not saved yet survives the re-renders that come every
   // few seconds; it is saved when the field is left.
   const environment = page.locator('[data-proj-text="qa_environment"]');

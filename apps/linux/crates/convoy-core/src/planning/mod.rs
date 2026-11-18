@@ -1035,10 +1035,6 @@ impl Workspace {
 
     pub fn add_profile(&mut self, label: &str, agent: Agent) -> Result<&State> {
         text(label, "account label", 100, true)?;
-        ensure!(
-            agent != Agent::Gemini,
-            "Gemini CLI uses the account it is signed in with; Convoy keeps no others for it."
-        );
         let label = label.trim().to_string();
         self.update(move |state| {
             let taken = state.profiles.iter().any(|profile| {

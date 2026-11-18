@@ -42,8 +42,6 @@ fn turns(agent: Agent, file: &Path) -> Vec<(Speaker, String)> {
                 line.contains(r#""type":"user""#) || line.contains(r#""type":"assistant""#)
             }
             Agent::Codex => line.contains(r#""type":"message""#),
-            // Gemini keeps a conversation as one JSON file, not lines.
-            Agent::Gemini => false,
         };
         if !wanted {
             continue;
@@ -54,7 +52,6 @@ fn turns(agent: Agent, file: &Path) -> Vec<(Speaker, String)> {
         if let Some(turn) = match agent {
             Agent::Claude => claude_turn(&record),
             Agent::Codex => codex_turn(&record),
-            Agent::Gemini => None,
         } {
             turns.push(turn);
         }

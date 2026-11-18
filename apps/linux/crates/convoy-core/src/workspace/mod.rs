@@ -172,7 +172,6 @@ pub struct SettingsPatch {
     pub sort_projects: Option<bool>,
     pub yolo_claude: Option<bool>,
     pub yolo_codex: Option<bool>,
-    pub yolo_gemini: Option<bool>,
     pub review_template: Option<String>,
     pub notify_waiting: Option<bool>,
     pub notify_done: Option<bool>,
@@ -979,7 +978,6 @@ impl Workspace {
             sort_projects: patch.sort_projects.unwrap_or(current.sort_projects),
             yolo_claude: patch.yolo_claude.unwrap_or(current.yolo_claude),
             yolo_codex: patch.yolo_codex.unwrap_or(current.yolo_codex),
-            yolo_gemini: patch.yolo_gemini.unwrap_or(current.yolo_gemini),
             review_template: patch.review_template.unwrap_or(current.review_template),
             notify_waiting: patch.notify_waiting.unwrap_or(current.notify_waiting),
             notify_done: patch.notify_done.unwrap_or(current.notify_done),
@@ -1071,7 +1069,7 @@ pub(crate) fn provider_id_for(agent: Agent) -> String {
     match agent {
         Agent::Claude => new_id(),
         // Both name their sessions themselves; Convoy learns the id later.
-        Agent::Codex | Agent::Gemini => String::new(),
+        Agent::Codex => String::new(),
     }
 }
 

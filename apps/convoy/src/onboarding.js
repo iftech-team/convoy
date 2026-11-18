@@ -4,14 +4,14 @@
 //
 // Pure: no imports. Labels are English keys; views call t().
 
-const AGENTS = ["claude", "codex", "gemini"];
-const NAMES = { claude: "Claude Code", codex: "Codex", gemini: "Gemini CLI" };
+const AGENTS = ["claude", "codex"];
+const NAMES = { claude: "Claude Code", codex: "Codex" };
 
 /// Every label the checklist shows, for the translation check.
 export const CHECKLIST_LABELS = [
   "Get started",
   "Install an agent",
-  "Claude Code, Codex or Gemini CLI, found on your PATH.",
+  "Claude Code or Codex, found on your PATH.",
   "Found {agents}.",
   "Log in to it",
   "Checking…",
@@ -34,19 +34,17 @@ export const CHECKLIST_LABELS = [
 export function checklist({ diagnostics, setupChecks, projects, tasks } = {}) {
   const found = AGENTS.filter((agent) => (diagnostics ?? []).some((tool) => tool.name === agent && tool.found));
   const logins = found
-    .filter((agent) => agent !== "gemini")
     .map((agent) => (setupChecks ?? []).find((check) => check.id === `login.${agent}`))
     .filter(Boolean);
-  // Gemini has no login check of its own: found is enough.
-  const loggedIn = found.includes("gemini") || logins.some((check) => check.status === "ok");
+  const loggedIn = logins.some((check) => check.status === "ok");
   // The agent to sign in from the window: the first found one whose login
-  // check failed. Gemini signs in on its own first run.
-  const signIn = loggedIn ? null : found.find((agent) => agent !== "gemini" && logins.some((check) => check.id === `login.${agent}`));
+  // check failed.
+  const signIn = loggedIn ? null : found.find((agent) => logins.some((check) => check.id === `login.${agent}`));
   const items = [
     {
       key: "agent",
       label: "Install an agent",
-      detail: found.length ? ["Found {agents}.", { agents: found.map((agent) => NAMES[agent]).join(", ") }] : ["Claude Code, Codex or Gemini CLI, found on your PATH.", {}],
+      detail: found.length ? ["Found {agents}.", { agents: found.map((agent) => NAMES[agent]).join(", ") }] : ["Claude Code or Codex, found on your PATH.", {}],
       done: found.length > 0,
       action: "setup",
     },
@@ -99,7 +97,7 @@ export const PITCH =
 /// How one task moves through Convoy, in three steps.
 export const FLOW = [
   ["edit", "You write a task", "One sentence is enough: fix a bug, add a page, update the docs."],
-  ["sparkles", "Agents do the work", "Claude Code, Codex or Gemini CLI plan, build, review each other and test, each in a session you can open."],
+  ["sparkles", "Agents do the work", "Claude Code and Codex plan, build, review each other and test, each in a session you can open."],
   ["checkCircle", "You approve and merge", "Look at the change, then merge the pull request or send it back with notes."],
 ];
 

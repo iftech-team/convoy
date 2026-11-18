@@ -102,8 +102,6 @@ pub fn flags(
         return Ok(Vec::new());
     }
     match agent {
-        // Gemini reads MCP servers from its settings file, not flags.
-        Agent::Gemini => Ok(Vec::new()),
         Agent::Claude => {
             let mut entries = Map::new();
             for server in servers {

@@ -533,8 +533,6 @@ pub fn plan_spawn(
     );
     let agent = Agent::parse(spawn.agent.trim())
         .ok_or_else(|| ConvoyError::message("Unknown agent. Use claude or codex."))?;
-    // Helpers run as chats, which Gemini CLI has none of.
-    ensure!(agent.has_chat(), "Unknown agent. Use claude or codex.");
     let prompt = spawn.prompt.trim();
     ensure!(!prompt.is_empty(), "Give the helper a prompt.");
     ensure!(
@@ -832,12 +830,9 @@ pub fn instructions(platform: crate::Platform) -> String {
 
 /// The flags that hand a manager its instructions in a terminal launch:
 /// Claude's appended system prompt, Codex's `developer_instructions`
-/// setting (a TOML string; JSON's escaping is valid TOML). Gemini has no
-/// such flag: its instructions open the first message instead (see
-/// [`crate::provider::launch::agent_args`]).
+/// setting (a TOML string; JSON's escaping is valid TOML).
 pub fn terminal_flags(agent: Agent, instructions: &str) -> Vec<String> {
     match agent {
-        Agent::Gemini => Vec::new(),
         Agent::Claude => vec!["--append-system-prompt".into(), instructions.into()],
         Agent::Codex => vec![
             "-c".into(),

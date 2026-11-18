@@ -121,7 +121,7 @@ function pipeline(project) {
      ${row(
        t("Then test with an agent"),
        t("Tests the change end to end against the task and reports a verdict. It does not edit code."),
-       select("qa_agent", [["", t("No agent")], ["claude", "Claude Code"], ["codex", "Codex"], ["gemini", "Gemini CLI"]], project.qa_agent ?? ""),
+       select("qa_agent", [["", t("No agent")], ["claude", "Claude Code"], ["codex", "Codex"]], project.qa_agent ?? ""),
      )}
      <div class="pref-block pref-stack">
        <div class="pref-row__title">${escape(t("Shared QA environment"))}</div>
@@ -188,8 +188,8 @@ function pipeline(project) {
         open: true,
         options: row(
           t("Reviewer"),
-          t("Reviews this project's work, automatically or when you start a review. Unset, Claude and Codex review each other and Claude reviews Gemini."),
-          select("review_agent", [["", t("The other agent")], ["claude", "Claude Code"], ["codex", "Codex"], ["gemini", "Gemini CLI"]], project.review_agent ?? ""),
+          t("Reviews this project's work, automatically or when you start a review. Unset, Claude and Codex review each other."),
+          select("review_agent", [["", t("The other agent")], ["claude", "Claude Code"], ["codex", "Codex"]], project.review_agent ?? ""),
         ),
       })}
       ${stepCard({
@@ -487,7 +487,7 @@ const PAGE_TABS = [
 export function projectSettingsPage() {
   const project = state.projectDraft;
   if (!project) return "";
-  const global = { codex: "Codex", gemini: "Gemini CLI" }[state.settings.default_agent] ?? "Claude Code";
+  const global = { codex: "Codex" }[state.settings.default_agent] ?? "Claude Code";
   const commands = (state.quickCommands ?? []).filter((command) => command.project_id === project.id);
   const tab = PAGE_TABS.some(([key]) => key === state.projectSettingsTab) ? state.projectSettingsTab : "general";
   return `
@@ -520,7 +520,6 @@ export function projectSettingsPage() {
                 ["", t("Use global ({agent})", { agent: global })],
                 ["claude", "Claude Code"],
                 ["codex", "Codex"],
-                ["gemini", "Gemini CLI"],
               ],
               project.default_agent ?? "",
             ),

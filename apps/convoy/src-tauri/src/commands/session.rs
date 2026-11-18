@@ -882,8 +882,6 @@ pub fn account_login(
     let login: &[&str] = match agent {
         Agent::Claude => &["/login"],
         Agent::Codex => &["login"],
-        // Gemini signs in from its own first run; it has no accounts here.
-        Agent::Gemini => return Err("Gemini CLI has no separate accounts in Convoy.".into()),
     };
     let (program, args) = if cfg!(windows) {
         let resolved = convoy_core::provider::launch::windows_executable(agent, &account.env)

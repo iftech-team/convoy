@@ -355,8 +355,6 @@ fn read_file(
         match agent {
             Agent::Claude => claude_line(&line, key, state, owners, &mut lookup),
             Agent::Codex => codex_line(&line, state, &mut lookup),
-            // Gemini's usage is not counted yet.
-            Agent::Gemini => {}
         }
     }
 }

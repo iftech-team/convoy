@@ -58,10 +58,6 @@ fn a_blank_first_message_starts_the_agent_without_one() {
             agent_args(&session(Agent::Codex, "", prompt), false),
             ["codex", "--no-alt-screen"]
         );
-        assert_eq!(
-            agent_args(&session(Agent::Gemini, "", prompt), false),
-            ["gemini"]
-        );
     }
     // A real message keeps its whitespace exactly as typed.
     assert_eq!(

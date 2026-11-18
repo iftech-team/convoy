@@ -20,7 +20,7 @@ test("new tasks take the project's defaults, then the app's agent", () => {
     auto_review: true,
     plan_first: true,
   });
-  assert.deepEqual(newTaskDefaults({ default_agent: "" }, { default_agent: "gemini" }), { agent: "gemini", mode: "none", auto_review: false, plan_first: false });
+  assert.deepEqual(newTaskDefaults({ default_agent: "" }, { default_agent: "codex" }), { agent: "codex", mode: "none", auto_review: false, plan_first: false });
   assert.equal(newTaskDefaults(undefined, undefined).agent, "claude");
 });
 
@@ -31,8 +31,7 @@ test("each mode has one label, translated", () => {
   assert.deepEqual(untranslated(TASK_MODES.map(([, name]) => name)), []);
 });
 
-test("agents are named, Gemini included", () => {
+test("agents are named", () => {
   assert.equal(agentName("claude"), "Claude Code");
   assert.equal(agentName("codex"), "Codex");
-  assert.equal(agentName("gemini"), "Gemini CLI");
 });

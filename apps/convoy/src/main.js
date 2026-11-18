@@ -563,7 +563,6 @@ function render() {
   if (state.dialog && isImportDialog()) {
     ensureModels("claude");
     ensureModels("codex");
-    ensureModels("gemini");
   }
   const caret = document.activeElement?.id;
   const position = document.activeElement?.selectionStart;
@@ -2989,7 +2988,7 @@ async function openReview() {
   const brief = await call("review_brief", { id: current.id });
   if (brief === undefined) return;
   // The project's reviewer, or else the other agent: a second opinion from a
-  // different model. Claude and Codex review each other; Claude reviews Gemini.
+  // different model. Claude and Codex review each other.
   const agent = state.projects.find((item) => item.id === current.project_id)?.review_agent || (current.agent === "claude" ? "codex" : "claude");
   openModal({ kind: "review", id: current.id, brief, agent, ...lastChoice(agent), account: activeAccount(agent) });
 }

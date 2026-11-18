@@ -39,6 +39,8 @@ const TASK_STATUSES: [&str; 11] = [
     "planning",
     "plan_review",
 ];
+/// "gemini" is still read, as Claude, from a workspace that ran it; it is
+/// never written again.
 const AGENTS: [&str; 3] = ["claude", "codex", "gemini"];
 const ACTIVITY_KINDS: [&str; 7] = [
     "started",
