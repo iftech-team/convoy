@@ -905,8 +905,18 @@ try {
   // Related tasks: picked from a list, shown as chips, linked on save.
   await page.locator("#task-title").fill("ENG-7: Test imported task, edited");
   const relatedId = await page.locator('.modal [data-related-add] option[value]:not([value=""])').first().getAttribute("value");
+  // A select with no id, low in a scrolled form: picking keeps the form
+  // where it was rather than jumping back to the first field.
+  const formBody = page.locator(".modal .modal__body");
+  await page.locator(".modal [data-related-add]").scrollIntoViewIfNeeded();
+  await page.locator(".modal [data-related-add]").focus();
+  const formScrolled = await formBody.evaluate((node) => node.scrollTop);
   await page.locator(".modal [data-related-add]").selectOption(relatedId);
   await page.locator(`.modal .related-chip [data-related-remove="${relatedId}"]`).waitFor();
+  assert.ok(Math.abs((await formBody.evaluate((node) => node.scrollTop)) - formScrolled) < 40, "the form stays where it was scrolled");
+  // The only other task is now picked, so the select itself is gone; focus
+  // must not fall back to the first field and pull the form up.
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "", "focus does not jump to the first field");
   assert.equal(await page.locator("#task-title").inputValue(), "ENG-7: Test imported task, edited", "picking keeps what was typed");
   if (process.env.CONVOY_TEST_SHOTS) await page.locator(".modal").screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/related-form.png` });
   await page.locator('[data-action="save-task"]').click();
@@ -1162,8 +1172,11 @@ try {
   await page.locator('[data-preset="simple"][aria-checked="true"]').waitFor();
   await page.locator('[data-action="qa-detect"]').click();
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.test_commands === "npm test\nnpm run lint"));
+  await page.locator('[data-proj-select="qa_agent"]').focus();
   await page.locator('[data-proj-select="qa_agent"]').selectOption("codex");
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.qa_agent === "codex"));
+  // A select without an id keeps the keyboard through the re-render.
+  await page.waitForFunction(() => document.activeElement?.matches('[data-proj-select="qa_agent"]'));
   await page.locator('[data-proj-select="qa_timeout"]').selectOption("30");
   await page.waitForFunction(() => window.checkCalls.some((c) => c.cmd === "project_edit" && c.args.input.qa_timeout === 30));
   await page.locator('[data-proj-toggle="qa_auto"]').click();

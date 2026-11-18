@@ -471,6 +471,66 @@ function keyed(nodes) {
   });
 }
 
+// The control with the keyboard, found again after a render by where it
+// sits, not only by id: most selects have none, and a dialog then lost focus
+// and jumped back to its first field.
+const FOCUSABLE = "input, select, textarea, button, [tabindex]";
+function focusKey() {
+  const active = document.activeElement;
+  if (!active || active === document.body || !app.contains(active)) return null;
+  return keyed([...app.querySelectorAll(FOCUSABLE)]).find(([, node]) => node === active)?.[0] ?? null;
+}
+function refocus(key, position) {
+  const node = keyed([...app.querySelectorAll(FOCUSABLE)]).find(([name]) => name === key)?.[1];
+  if (!node) return false;
+  // The scroll was put back already; focusing must not move it again.
+  node.focus({ preventScroll: true });
+  if (position != null && node.setSelectionRange) {
+    try {
+      node.setSelectionRange(position, position);
+    } catch {
+      /* a number input or a select has no selection range */
+    }
+  }
+  return true;
+}
+
+// A select's list is drawn by the system (GTK on Linux) over a node a render
+// would replace: the list then closes, or picks into a select that is gone.
+// While one is open, renders from elsewhere — a timer, an agent reporting —
+// wait, and run once it closes.
+let openSelect = null;
+let renderWaiting = false;
+function closeSelect() {
+  if (!openSelect) return;
+  openSelect = null;
+  if (renderWaiting) {
+    renderWaiting = false;
+    render();
+  }
+}
+app.addEventListener(
+  "pointerdown",
+  (event) => {
+    const select = event.target.closest?.("select");
+    if (select && !select.disabled) openSelect = select;
+    else closeSelect();
+  },
+  true,
+);
+app.addEventListener(
+  "keydown",
+  (event) => {
+    if (event.target.tagName !== "SELECT") return;
+    if (event.key === "Escape" || event.key === "Tab") return closeSelect();
+    if (event.key === " " || event.key === "Enter" || event.key === "F4" || (event.altKey && event.key === "ArrowDown")) openSelect = event.target;
+  },
+  true,
+);
+// Picking closes the list before the change is handled, so its render runs.
+app.addEventListener("change", (event) => event.target === openSelect && closeSelect(), true);
+app.addEventListener("focusout", (event) => event.target === openSelect && closeSelect(), true);
+
 const TEXT_FIELDS = 'textarea, input:not([type]), input[type="text"], input[type="search"], input[type="url"], input[type="email"], input[type="number"], input[type="password"]';
 // Terminals and chats are mounted after a render and keep their own scroll;
 // a `data-scroll` node is restored by its key, though what is inside it is
@@ -526,7 +586,7 @@ function restoreUnsaved({ fields, scrolls }) {
         { once: true },
       );
       if (typed.focused) {
-        node.focus();
+        node.focus({ preventScroll: true });
         try {
           node.setSelectionRange(typed.start, typed.end);
         } catch {
@@ -546,6 +606,13 @@ function restoreUnsaved({ fields, scrolls }) {
 }
 
 function render() {
+  if (openSelect) {
+    if (openSelect.isConnected) {
+      renderWaiting = true;
+      return;
+    }
+    openSelect = null;
+  }
   syncTabs();
   // The sessions list ends with the conversations no session holds yet.
   if (state.tab === "sessions") ensureHistory();
@@ -564,7 +631,7 @@ function render() {
     ensureModels("claude");
     ensureModels("codex");
   }
-  const caret = document.activeElement?.id;
+  const caret = focusKey();
   const position = document.activeElement?.selectionStart;
   // Every change re-renders, and a scroller that jumps to the top each time
   // makes a long dialog or a long file list unusable.
@@ -614,6 +681,7 @@ function render() {
   // opening animation — the whole modal blinked on each toggle. Only the
   // render that opens a dialog or menu animates it.
   const overlay = state.dialog ?? state.menu;
+  const opened = !!state.dialog && overlay !== shown;
   if (overlay && overlay === shown) {
     for (const scrim of app.querySelectorAll(".scrim")) scrim.classList.add("scrim--settled");
   }
@@ -657,19 +725,11 @@ function render() {
   }
 
   // Typing re-renders, so the caret goes back where it was.
-  if (caret) {
-    const restored = document.querySelector(`#${caret}`);
-    if (restored) {
-      restored.focus();
-      if (position != null && restored.setSelectionRange) {
-        try {
-          restored.setSelectionRange(position, position);
-        } catch {
-          /* a number input has no selection range */
-        }
-      }
-    }
-  } else if (state.dialog) {
+  if (caret && refocus(caret, position)) {
+    // Back where it was.
+  } else if (opened) {
+    // Only a dialog just opened starts in its first field; a later render
+    // must not pull a scrolled form back up to it.
     document.querySelector(".modal input, .modal textarea")?.focus();
   } else if (state.menu?.kind === "approvals") {
     // A redraw — a row answered elsewhere, a new one arriving — keeps the
