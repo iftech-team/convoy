@@ -539,6 +539,12 @@ fn a_review_swaps_the_agent_keeps_the_folder_and_points_back_at_its_builder() {
         "This session is not linked to a builder."
     );
 
+    // Removing the builder leaves its review as an ordinary session; the
+    // dangling link once made the workspace refuse the save.
+    workspace.remove_sessions(&[builder.clone()]).unwrap();
+    let kept = workspace.session(&review.id).unwrap();
+    assert_eq!(kept.review_of, None);
+
     let _ = fixture;
 }
 

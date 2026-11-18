@@ -932,7 +932,8 @@ impl Workspace {
         let ids = ids.to_vec();
         self.update(move |state| {
             state.sessions.retain(|session| !ids.contains(&session.id));
-            // A helper outlives its manager as an ordinary session.
+            // A helper outlives its manager, and a review the session it
+            // reviewed, as an ordinary session.
             for session in state.sessions.iter_mut() {
                 if session
                     .parent_id
@@ -940,6 +941,13 @@ impl Workspace {
                     .is_some_and(|id| ids.contains(id))
                 {
                     session.parent_id = None;
+                }
+                if session
+                    .review_of
+                    .as_ref()
+                    .is_some_and(|id| ids.contains(id))
+                {
+                    session.review_of = None;
                 }
             }
             for task in state.tasks.iter_mut() {
