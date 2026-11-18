@@ -663,6 +663,30 @@ try {
   // Five columns, whatever the pipeline's statuses: a new task is To do.
   assert.deepEqual(await page.locator(".board--phases .board__title").allTextContents(), ["To do", "Working", "Needs you", "Ready", "Done"]);
   await page.locator('[data-task-column="todo"] [data-task-card="task"] .phase-tag', { hasText: "Waiting to start" }).waitFor();
+  // A long column scrolls by itself, and every column stays as tall as the
+  // board: scrolled to its last card, the other columns are still there to
+  // drop on.
+  {
+    const layout = await page.evaluate(() => {
+      const board = document.querySelector(".board--phases");
+      const cards = board.querySelector('[data-task-column="todo"] .board__cards');
+      const card = cards.querySelector("[data-task-card]");
+      const clones = Array.from({ length: 40 }, () => cards.appendChild(card.cloneNode(true)));
+      cards.scrollTop = cards.scrollHeight;
+      const last = clones.at(-1).getBoundingClientRect();
+      const ready = board.querySelector('[data-task-column="ready"]').getBoundingClientRect();
+      const result = {
+        boardScrolls: board.scrollHeight > board.clientHeight + 1,
+        columnScrolls: cards.scrollHeight > cards.clientHeight + 1,
+        lastVisible: last.bottom <= board.getBoundingClientRect().bottom + 1,
+        readyUnderLast: ready.top <= last.top && ready.bottom >= last.bottom,
+      };
+      clones.forEach((clone) => clone.remove());
+      cards.scrollTop = 0;
+      return result;
+    });
+    assert.deepEqual(layout, { boardScrolls: false, columnScrolls: true, lastVisible: true, readyUnderLast: true });
+  }
   await page.locator('[data-task-column="todo"] [data-task-card="task"]').click();
   // A click opens the task's page: where it stands, and its steps in order,
   // the ones it does not use greyed.

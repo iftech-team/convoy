@@ -1562,10 +1562,26 @@ select:disabled {
   overflow: hidden;
 }
 
-/* Five phases fit the window: the columns share its width. */
+/* Five phases fit the window: the columns share its width. Each column
+   scrolls its own cards, so every column stays under the pointer as a drop
+   target however far down a long one is scrolled. */
+.board--phases {
+  overflow-y: hidden;
+}
+
 .board--phases .board__column {
   flex: 1 1 0;
   min-width: 220px;
+  min-height: 0;
+}
+
+.board--phases .board__cards {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* Room for the cards' shadow at the edges of the scroll area. */
+  margin: -4px;
+  padding: 4px;
 }
 
 .card__foot {
