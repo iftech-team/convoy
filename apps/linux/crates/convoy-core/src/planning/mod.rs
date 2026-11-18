@@ -817,6 +817,7 @@ impl Workspace {
             );
             let session = Session {
                 id: new_id(),
+                created_at: Some(crate::time::now_iso8601()),
                 project_id: task.project_id.clone(),
                 agent: task.agent,
                 title: task.title.clone(),

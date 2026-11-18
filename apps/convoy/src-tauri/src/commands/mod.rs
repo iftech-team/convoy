@@ -183,6 +183,8 @@ pub struct SessionView {
     pub manager: bool,
     /// Skills it starts with, by id.
     pub skills: Vec<String>,
+    /// When Convoy made it (ISO 8601); none for older sessions.
+    pub created_at: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -268,6 +270,7 @@ pub fn view_of(
         parent_id: session.parent_id.clone(),
         manager: session.is_manager(),
         skills: session.skill_ids().to_vec(),
+        created_at: session.created_at.clone(),
     }
 }
 

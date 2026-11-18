@@ -44,14 +44,20 @@ export const sessionTone = (key) => (SESSION_STATES[key] ?? SESSION_STATES.worki
 export const sleptBy = (event) =>
   event?.kind === "hibernated" || (event?.kind === "exited" && String(event.detail ?? "").startsWith("Hibernated"));
 
-/// Sessions newest first, by when their conversation was last written
-/// (`lastAt`). One with nothing written yet is usually just made, so it goes
-/// on top; among such, and before the conversations are read, the later
-/// added to `all` comes first.
+/// Sessions newest first, by when each was last touched: made in Convoy
+/// (`created_at`) or its conversation last written (`lastAt`, in ms). One
+/// with neither — an old session whose conversation is gone — goes last;
+/// ties keep the later added first.
 export function byNewest(items, lastAt, all) {
   const order = new Map(all.map((item, index) => [item.id, index]));
+  const touched = (item) => {
+    const made = item.created_at ? Date.parse(item.created_at) : NaN;
+    const written = lastAt(item) ?? NaN;
+    const times = [made, written].filter((time) => Number.isFinite(time));
+    return times.length ? Math.max(...times) : -Infinity;
+  };
   return items
-    .map((item) => ({ item, at: lastAt(item) ?? Infinity, index: order.get(item.id) ?? -1 }))
-    .sort((a, b) => b.at - a.at || b.index - a.index)
+    .map((item) => ({ item, at: touched(item), index: order.get(item.id) ?? -1 }))
+    .sort((a, b) => (a.at === b.at ? 0 : b.at - a.at) || b.index - a.index)
     .map(({ item }) => item);
 }

@@ -477,6 +477,10 @@ pub struct Session {
     pub worktree_removed: Option<bool>,
     #[serde(rename = "reviewOf", default, skip_serializing_if = "Option::is_none")]
     pub review_of: Option<String>,
+    /// When Convoy made it (ISO 8601), for listing the newest first. Older
+    /// sessions, and conversations imported from history, have none.
+    #[serde(rename = "createdAt", default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
     /// The task this session tests, when it is a QA run; see `crate::qa`.
     #[serde(rename = "qaOf", default, skip_serializing_if = "Option::is_none")]
     pub qa_of: Option<String>,
@@ -559,6 +563,7 @@ impl Session {
             owns_worktree: None,
             worktree_removed: None,
             review_of: None,
+            created_at: None,
             qa_of: None,
             resume_prompt: None,
             task_id: None,

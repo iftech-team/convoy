@@ -717,6 +717,7 @@ impl Workspace {
             }
             state.sessions.push(Session {
                 id: new_id(),
+                created_at: Some(crate::time::now_iso8601()),
                 project_id: input.project_id,
                 agent: input.agent,
                 model: Some(input.model),

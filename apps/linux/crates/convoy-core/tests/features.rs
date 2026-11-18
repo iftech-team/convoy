@@ -527,6 +527,8 @@ fn a_review_swaps_the_agent_keeps_the_folder_and_points_back_at_its_builder() {
 
     let review = workspace.state().sessions[1].clone();
     assert_eq!(review.review_of.as_deref(), Some(builder.as_str()));
+    // A new session notes when it was made, so lists can put it first.
+    assert!(review.created_at.as_deref().is_some_and(|at| at.starts_with("20")));
     assert_eq!(
         convoy_core::review::builder_of(&workspace, &review.id).unwrap(),
         builder
