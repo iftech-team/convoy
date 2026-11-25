@@ -14,7 +14,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { anySession, call, done, state, changed, loadWorkspace, toast } from "./state.js";
 import { viewOf } from "./views-chat.js";
 import { t } from "./i18n.js";
-import { applyTerminalColors } from "./terminal-themes.js";
+import { applyThemeColors } from "./themes.js";
 
 const terminals = new Map();
 
@@ -30,7 +30,7 @@ function openLink(event, uri) {
 /// The chosen theme for the window's light or dark appearance, all 16 ANSI
 /// colours included.
 function theme() {
-  return { ...applyTerminalColors() };
+  return { ...applyThemeColors() };
 }
 
 /// xterm lifts any text colour that reads below this against its background,

@@ -3,7 +3,7 @@
 // colours readable.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ANSI_NAMES, DEFAULT_THEME, TERMINAL_THEMES, themeFor, themesOf } from "../../src/terminal-themes.js";
+import { ANSI_NAMES, DEFAULT_THEME, TERMINAL_THEMES, themeFor, themesOf, uiVariables } from "../../src/themes.js";
 import { untranslated } from "./helpers.mjs";
 
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -65,5 +65,28 @@ test("Convoy's own themes keep text and colours readable on their background", (
 });
 
 test("the theme settings have their Russian", () => {
-  assert.deepEqual(untranslated(["Light theme", "Dark theme", "Colours when the window is light.", "Colours when the window is dark."]), []);
+  assert.deepEqual(untranslated(["Light theme", "Dark theme", "The window and its terminals when it is light.", "The window and its terminals when it is dark."]), []);
+});
+
+test("a theme that colours the window keeps its text and accent readable", () => {
+  for (const theme of TERMINAL_THEMES.filter((each) => each.ui)) {
+    const { ui } = theme;
+    for (const key of ["bg", "subtle", "sunken", "hover", "active", "border", "borderStrong", "text", "muted", "faint", "accent", "accentText"]) {
+      assert.match(ui[key], HEX, `${theme.id}.ui.${key}`);
+    }
+    assert.ok(contrast(ui.text, ui.bg) >= 10, `${theme.id} text`);
+    assert.ok(contrast(ui.muted, ui.bg) >= 4.5, `${theme.id} muted: ${contrast(ui.muted, ui.bg).toFixed(2)}`);
+    assert.ok(contrast(ui.faint, ui.bg) >= 2.5, `${theme.id} faint: ${contrast(ui.faint, ui.bg).toFixed(2)}`);
+    assert.ok(contrast(ui.accentText, ui.bg) >= 4.5, `${theme.id} accent text: ${contrast(ui.accentText, ui.bg).toFixed(2)}`);
+    // Primary buttons draw white text on the accent.
+    assert.ok(contrast("#ffffff", ui.accent) >= 3, `${theme.id} button: ${contrast("#ffffff", ui.accent).toFixed(2)}`);
+    // The terminal sits on the window's own background.
+    assert.equal(theme.colors.background, ui.bg, theme.id);
+  }
+});
+
+test("Convoy's own look stays in tokens.css", () => {
+  for (const id of Object.values(DEFAULT_THEME)) {
+    assert.deepEqual(uiVariables(themeFor(id.endsWith("light") ? "light" : "dark", id)), {});
+  }
 });

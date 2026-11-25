@@ -4,7 +4,7 @@
 // that cannot survive that — the terminals — live outside the rendered tree.
 
 import { invoke } from "@tauri-apps/api/core";
-import { applyTerminalColors } from "./terminal-themes.js";
+import { applyThemeColors } from "./themes.js";
 import { sessionStateOf, sleptBy } from "./session-state.js";
 import { taskPhase, taskSteps } from "./phase.js";
 
@@ -386,7 +386,7 @@ export function applyTheme() {
   const root = document.documentElement;
   if (state.settings.theme === "system") root.removeAttribute("data-theme");
   else root.setAttribute("data-theme", state.settings.theme);
-  applyTerminalColors();
+  applyThemeColors();
 }
 
 /// `required` is for the first load: a workspace that cannot be read at all is

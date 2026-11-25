@@ -11,7 +11,7 @@ import { acpAgents, agentOptions } from "./agents.js";
 import { SHORTCUTS, SHORTCUT_GROUPS, label } from "./shortcuts.js";
 import { LANGUAGES, languageChoice, t } from "./i18n.js";
 import { ZOOMS, percent, uiZoom } from "./zoom.js";
-import { chosenTheme, themeFor, themesOf } from "./terminal-themes.js";
+import { chosenTheme, themeFor, themesOf } from "./themes.js";
 import { ROLES, skillsSection } from "./views-skills.js";
 import { pricesSection } from "./views-usage.js";
 import { checklistCard, gettingStarted } from "./views-home.js";
@@ -289,6 +289,8 @@ function appearance(settings) {
         settings.theme,
       ),
     ) +
+      row(t("Light theme"), t("The window and its terminals when it is light."), themeChoice("light")) +
+      row(t("Dark theme"), t("The window and its terminals when it is dark."), themeChoice("dark")) +
       row(
         t("Interface zoom"),
         t("Everything in the window, as {in} and {out} change it outside a terminal. A terminal's own text size multiplies with it.", { in: label("mod+="), out: label("mod+-") }),
@@ -324,9 +326,7 @@ function themeChoice(kind) {
 function terminalSection(settings) {
   return groupBox(
     t("Terminal"),
-    row(t("Light theme"), t("Colours when the window is light."), themeChoice("light")) +
-      row(t("Dark theme"), t("Colours when the window is dark."), themeChoice("dark")) +
-      row(t("Font size"), t("10 to 24 points."), number("font_size", settings.font_size, 10, 24)) +
+    row(t("Font size"), t("10 to 24 points."), number("font_size", settings.font_size, 10, 24)) +
       row(t("Scrollback"), t("Lines kept per terminal, 1,000 to 50,000."), number("scrollback", settings.scrollback, 1000, 50000, 1000)),
     t("Applies to open terminals immediately. Claude Code draws some colours itself: if its prompt rows look dark in a light terminal, run /theme in Claude Code and pick a light theme."),
   );

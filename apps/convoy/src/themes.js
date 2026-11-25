@@ -1,4 +1,8 @@
-// The terminal's colour themes.
+// The window's colour themes: each colours the app and its terminals.
+//
+// A theme's `ui` sets the window's surfaces, borders, text and accent; the
+// Convoy themes have none and keep the look in tokens.css. Its `colors` are
+// the terminal's.
 //
 // xterm draws the 16 ANSI colours from its own built-in palette unless it is
 // given one, and that palette is made for a black background: on a white
@@ -43,6 +47,7 @@ export const TERMINAL_THEMES = [
     name: "Daylight",
     kind: "light",
     own: true,
+    ui: { bg: "#ffffff", subtle: "#f6f8fa", sunken: "#eff2f5", hover: "#f3f4f6", active: "#eaeef2", border: "#d0d7de", borderStrong: "#afb8c1", text: "#1f2328", muted: "#59636e", faint: "#8c959f", accent: "#0969da", accentText: "#0550ae" },
     colors: {
       background: "#ffffff",
       foreground: "#1f2328",
@@ -60,6 +65,7 @@ export const TERMINAL_THEMES = [
     name: "Paper",
     kind: "light",
     own: true,
+    ui: { bg: "#fbf8f1", subtle: "#f6f2e9", sunken: "#f1ece1", hover: "#efe9dc", active: "#e8e1d2", border: "#e3dccd", borderStrong: "#d2c9b6", text: "#2f2d29", muted: "#6f6a60", faint: "#a39d90", accent: "#a0611a", accentText: "#8a5014" },
     colors: {
       background: "#fbf8f1",
       foreground: "#3b3a36",
@@ -76,6 +82,7 @@ export const TERMINAL_THEMES = [
     id: "solarized-light",
     name: "Solarized Light",
     kind: "light",
+    ui: { bg: "#fdf6e3", subtle: "#f8f1dc", sunken: "#eee8d5", hover: "#f3ecd7", active: "#e9e2cc", border: "#e4dcc4", borderStrong: "#d3cbb2", text: "#073642", muted: "#586e75", faint: "#839496", accent: "#268bd2", accentText: "#1f6fa8" },
     colors: {
       background: "#fdf6e3",
       foreground: "#586e75",
@@ -110,6 +117,7 @@ export const TERMINAL_THEMES = [
     name: "Midnight",
     kind: "dark",
     own: true,
+    ui: { bg: "#0d1117", subtle: "#10151c", sunken: "#161b22", hover: "#1b222c", active: "#232b36", border: "#21262d", borderStrong: "#30363d", text: "#e6edf3", muted: "#9198a1", faint: "#6e7681", accent: "#1f6feb", accentText: "#79c0ff" },
     colors: {
       background: "#0d1117",
       foreground: "#c9d1d9",
@@ -126,6 +134,7 @@ export const TERMINAL_THEMES = [
     id: "nord",
     name: "Nord",
     kind: "dark",
+    ui: { bg: "#2e3440", subtle: "#323946", sunken: "#3b4252", hover: "#3b4252", active: "#434c5e", border: "#3b4252", borderStrong: "#4c566a", text: "#eceff4", muted: "#a7b1c2", faint: "#7b88a1", accent: "#5e81ac", accentText: "#88c0d0" },
     colors: {
       background: "#2e3440",
       foreground: "#d8dee9",
@@ -142,6 +151,7 @@ export const TERMINAL_THEMES = [
     id: "dracula",
     name: "Dracula",
     kind: "dark",
+    ui: { bg: "#282a36", subtle: "#2c2e3b", sunken: "#21222c", hover: "#343746", active: "#44475a", border: "#343746", borderStrong: "#44475a", text: "#f8f8f2", muted: "#b4b7c8", faint: "#7a86b6", accent: "#8c62d9", accentText: "#bd93f9" },
     colors: {
       background: "#282a36",
       foreground: "#f8f8f2",
@@ -158,6 +168,7 @@ export const TERMINAL_THEMES = [
     id: "solarized-dark",
     name: "Solarized Dark",
     kind: "dark",
+    ui: { bg: "#002b36", subtle: "#03303c", sunken: "#073642", hover: "#0a3c4a", active: "#0f4654", border: "#0f4654", borderStrong: "#1c5664", text: "#eee8d5", muted: "#93a1a1", faint: "#657b83", accent: "#268bd2", accentText: "#6cb6e8" },
     colors: {
       background: "#002b36",
       foreground: "#93a1a1",
@@ -219,12 +230,45 @@ export function activeTheme() {
   return themeFor(kind, chosenTheme(kind));
 }
 
-/// Paints the space around each terminal in its theme's background, so the
-/// padding and an empty pane match the canvas.
-export function applyTerminalColors() {
-  const { colors } = activeTheme();
+/// Every window colour a theme's `ui` sets, worked out from its few choices:
+/// the accent's hover, pressed and soft shades are mixed from the accent.
+export function uiVariables(theme) {
+  const ui = theme.ui;
+  if (!ui) return {};
+  const dark = theme.kind === "dark";
+  const toward = dark ? "white" : "black";
+  return {
+    "--bg": ui.bg,
+    "--bg-subtle": ui.subtle,
+    "--bg-sunken": ui.sunken,
+    "--bg-hover": ui.hover,
+    "--bg-active": ui.active,
+    "--border": ui.border,
+    "--border-strong": ui.borderStrong,
+    "--text": ui.text,
+    "--text-muted": ui.muted,
+    "--text-faint": ui.faint,
+    "--accent": ui.accent,
+    "--accent-hover": `color-mix(in srgb, ${ui.accent} 88%, ${toward})`,
+    "--accent-active": `color-mix(in srgb, ${ui.accent} 78%, ${toward})`,
+    "--accent-soft": `color-mix(in srgb, ${ui.accent} ${dark ? 18 : 10}%, ${ui.bg})`,
+    "--accent-soft-hover": `color-mix(in srgb, ${ui.accent} ${dark ? 24 : 15}%, ${ui.bg})`,
+    "--accent-text": ui.accentText,
+    "--accent-ring": `color-mix(in srgb, ${ui.accent} 35%, transparent)`,
+  };
+}
+
+/// Every property `applyThemeColors` may set, so a change of theme clears
+/// what the last one set and tokens.css shows through again.
+const SET = [...Object.keys(uiVariables(TERMINAL_THEMES.find((theme) => theme.ui))), "--term-bg", "--term-fg"];
+
+/// Colours the window with the active theme and paints the space around each
+/// terminal in its background. Returns the terminal's colours.
+export function applyThemeColors() {
+  const theme = activeTheme();
   const root = document.documentElement.style;
-  root.setProperty("--term-bg", colors.background);
-  root.setProperty("--term-fg", colors.foreground);
-  return colors;
+  for (const name of SET) root.removeProperty(name);
+  const set = { ...uiVariables(theme), "--term-bg": theme.colors.background, "--term-fg": theme.colors.foreground };
+  for (const [name, value] of Object.entries(set)) root.setProperty(name, value);
+  return theme.colors;
 }
