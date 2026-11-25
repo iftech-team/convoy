@@ -205,6 +205,12 @@ impl Storage {
     pub fn acp_chats(&self) -> PathBuf {
         self.root.join("acp-chats")
     }
+
+    /// ACP agents Convoy downloads itself, the registry's last copy, and
+    /// the registry's icons.
+    pub fn acp_agents(&self) -> PathBuf {
+        self.root.join("acp-agents")
+    }
 }
 
 #[cfg(test)]

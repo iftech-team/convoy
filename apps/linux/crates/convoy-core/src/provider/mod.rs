@@ -2,6 +2,7 @@
 //! quotas are read.
 
 pub mod acp_agents;
+pub mod acp_registry;
 pub mod codex;
 pub mod knowledge;
 pub mod launch;

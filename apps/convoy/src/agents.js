@@ -3,7 +3,7 @@
 // through it DeepSeek and the rest — Gemini CLI, and any the user adds).
 // An ACP agent is named `acp:<id>` everywhere: sessions, tasks, settings.
 
-import { agentIcon } from "./icons.js";
+import { agentIcon, registerAgentIcons } from "./icons.js";
 import { registerAgentNames } from "./task-defaults.js";
 import { call, state } from "./state.js";
 
@@ -27,6 +27,7 @@ export function loadAcpAgents(force = false) {
     loading = null;
     state.acpAgents = agents ?? [];
     registerAgentNames(Object.fromEntries(state.acpAgents.map((agent) => [agent.key, agent.name])));
+    registerAgentIcons(Object.fromEntries(state.acpAgents.filter((agent) => agent.icon).map((agent) => [agent.id, agent.icon])));
     return state.acpAgents;
   });
   return loading;
@@ -76,3 +77,18 @@ export function splitCommand(text) {
 /// The agent of a record that stores an ACP agent apart (`agent: "acp"`,
 /// `acp_agent: "<id>"`), as the pickers name it.
 export const agentKey = (item) => (item?.agent === "acp" && item.acp_agent ? `acp:${item.acp_agent}` : item?.agent);
+
+/// The ACP registry: every agent that can be added in one step. Read once,
+/// and again when asked; its icons arrive with it.
+let registryLoading = null;
+/// `reload` asks again (what is added changes); `network` also skips the
+/// day-old copy.
+export function loadAcpRegistry({ reload = false, network = false } = {}) {
+  if (state.acpRegistry && !reload) return Promise.resolve(state.acpRegistry);
+  registryLoading ??= call("acp_registry_list", { force: network }).then((agents) => {
+    registryLoading = null;
+    if (agents) state.acpRegistry = agents;
+    return state.acpRegistry ?? [];
+  });
+  return registryLoading;
+}

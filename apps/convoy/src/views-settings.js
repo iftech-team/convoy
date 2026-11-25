@@ -334,13 +334,26 @@ function terminalSection(settings) {
 
 /// Agents reached through the Agent Client Protocol: the ones Convoy knows,
 /// the ones the user added, and a form to add another.
+/// A settings row whose title carries the agent's icon.
+const agentRow = (icon, title, detail, control) => `
+  <div class="pref-row">
+    <div class="pref-row__text">
+      <div class="pref-row__title acp-row__title">${icon}<span>${escape(title)}</span></div>
+      ${detail ? `<div class="pref-row__detail">${escape(detail)}</div>` : ""}
+    </div>
+    <div class="pref-row__control">${control}</div>
+  </div>`;
+
+/// What starts an agent, short: a downloaded program by its name only.
+const commandLine = (agent) =>
+  agent.binary ? t("Downloaded by Convoy") : [agent.command, ...(agent.args ?? [])].join(" ");
+
 function acpSection() {
   const list = state.acpAgents;
   const rows = !list
     ? empty(t("Looking for agents…"))
     : acpAgents()
         .map((agent) => {
-          const command = [agent.command, ...(agent.args ?? [])].join(" ");
           const status = agent.installed ? t("Installed") : t("Not found");
           const controls = [
             agent.installed && agent.loginCommand ? button({ label: t("Sign in…"), data: { "acp-login": agent.key } }) : "",
@@ -349,7 +362,7 @@ function acpSection() {
               ? ""
               : button({ icon: "trash", kind: "quiet", data: { "acp-remove": agent.id }, title: t("Remove this agent") }),
           ].join("");
-          return row(`${agent.name}`, `${status} · ${command}${agent.terminal ? "" : ` · ${t("chat only")}`}`, controls);
+          return agentRow(agentIcon(agent.key, 16), agent.name, `${status} · ${commandLine(agent)}${agent.terminal ? "" : ` · ${t("chat only")}`}`, controls);
         })
         .join("");
   const form = `
@@ -375,6 +388,36 @@ function acpSection() {
     rows + form,
     t("Any agent that speaks the Agent Client Protocol runs here as a chat: Antigravity, Gemini CLI, and opencode, which reaches DeepSeek, Kimi, Qwen and others through its own provider setup. Variables are kept in Convoy's settings file."),
     "acp",
+  );
+}
+
+/// The ACP registry: every agent that can be added in one step, installed
+/// for you when it is a download.
+function registrySection() {
+  const list = state.acpRegistry;
+  const busy = state.acpInstalling ?? new Set();
+  const rows = !list
+    ? empty(t("Loading the agent registry…"))
+    : list
+        .map((agent) => {
+          const label = agent.kind === "binary" ? t("Install") : t("Add");
+          const control = busy.has(agent.id)
+            ? button({ label: t("Installing…"), disabled: true })
+            : !agent.kind
+              ? `<span class="pref-row__detail">${escape(t("Not for this computer"))}</span>`
+              : agent.added === agent.version
+                ? button({ label: t("Added"), kind: "quiet", disabled: true })
+                : agent.added
+                  ? button({ label: t("Update"), data: { "acp-registry-add": agent.id } })
+                  : button({ label, kind: "primary", data: { "acp-registry-add": agent.id } });
+          const icon = agent.icon?.startsWith("data:image/svg+xml;base64,") ? `<img class="agent-icon agent-icon--image" width="16" height="16" src="${agent.icon}" alt="" />` : agentIcon(`acp:${agent.id}`, 16);
+          return agentRow(icon, agent.name, shorten(agent.description || agent.version, 120), control);
+        })
+        .join("");
+  return groupBox(
+    t("Agent registry"),
+    `<div class="acp-registry">${rows}</div>`,
+    t("Agents from the official ACP registry. Add runs them through npx or uvx, fetched on first use; Install downloads the program, checks it against the registry's checksum and keeps it in Convoy's folder."),
   );
 }
 
@@ -405,6 +448,7 @@ function agents(settings) {
         ),
     )}
     ${acpSection()}
+    ${registrySection()}
     ${groupBox(
       t("Permissions"),
       row(t("Claude Code: skip permission prompts (Yolo)"), t("Launches with --dangerously-skip-permissions."), toggle("yolo_claude", settings.yolo_claude, "Claude Yolo")) +

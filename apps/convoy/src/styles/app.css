@@ -2309,6 +2309,25 @@ select:disabled {
   display: block;
 }
 
+.agent-icon--image {
+  display: inline-block;
+  border-radius: 3px;
+  object-fit: contain;
+}
+
+/* An ACP agent's name with its icon, in Settings → Agents. */
+.acp-row__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The registry is long: it scrolls inside its box. */
+.acp-registry {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
 /* ---------------------------------------------------------- settings page -- */
 
 .shell--page {

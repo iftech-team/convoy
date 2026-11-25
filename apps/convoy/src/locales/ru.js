@@ -4,6 +4,15 @@
 
 export default {
   strings: {
+    "Downloaded by Convoy": "Скачан Convoy",
+    "Loading the agent registry…": "Загружаем реестр агентов…",
+    "Install": "Установить",
+    "Installing…": "Устанавливаем…",
+    "Not for this computer": "Нет сборки для этого компьютера",
+    "Added": "Добавлен",
+    "Update": "Обновить",
+    "Agent registry": "Реестр агентов",
+    "Agents from the official ACP registry. Add runs them through npx or uvx, fetched on first use; Install downloads the program, checks it against the registry's checksum and keeps it in Convoy's folder.": "Агенты из официального реестра ACP. «Добавить» запускает их через npx или uvx — пакет скачивается при первом запуске; «Установить» скачивает программу, сверяет её с контрольной суммой из реестра и хранит в папке Convoy.",
     "ACP agent": "ACP-агент",
     "A coding agent Convoy talks to through the Agent Client Protocol, an open standard many agents speak. It runs as a chat; its sign-in and models are its own.": "Агент для кода, с которым Convoy общается по Agent Client Protocol — открытому стандарту, который понимают многие агенты. Работает в чате; вход и модели у него свои.",
     "This agent signs in its own way and lists its models once its chat opens.": "Этот агент входит в аккаунт сам и показывает свои модели, когда откроется чат.",

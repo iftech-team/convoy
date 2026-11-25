@@ -41,6 +41,16 @@ pub struct AcpAgentDef {
     pub login_command: Option<String>,
     #[serde(rename = "installUrl", default, skip_serializing_if = "Option::is_none")]
     pub install_url: Option<String>,
+    /// Its id in the ACP registry, when it came from there or matches an
+    /// entry: the icon and updates come from that entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry: Option<String>,
+    /// The registry version it was added at.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// A program Convoy downloads itself rather than finding on PATH.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binary: Option<crate::provider::acp_registry::BinaryInstall>,
     /// Shipped with Convoy, as opposed to added by the user.
     #[serde(default, skip_serializing)]
     pub builtin: bool,
@@ -62,7 +72,9 @@ impl AcpAgentDef {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn builtin(
+    registry: &str,
     id: &str,
     name: &str,
     command: &str,
@@ -82,6 +94,9 @@ fn builtin(
         tui_prompt_flag: tui.and_then(|(_, flag)| flag.map(str::to_string)),
         login_command: login.map(str::to_string),
         install_url: Some(install.into()),
+        registry: Some(registry.into()),
+        version: None,
+        binary: None,
         builtin: true,
     }
 }
@@ -90,6 +105,7 @@ fn builtin(
 pub fn builtins() -> Vec<AcpAgentDef> {
     vec![
         builtin(
+            "antigravity-acp",
             "antigravity",
             "Antigravity",
             "agy",
@@ -104,12 +120,14 @@ pub fn builtins() -> Vec<AcpAgentDef> {
             "opencode",
             "opencode",
             "opencode",
+            "opencode",
             &["acp"],
             Some(("opencode", Some("--prompt"))),
             Some("opencode auth login"),
             "https://opencode.ai",
         ),
         builtin(
+            "gemini",
             "gemini",
             "Gemini CLI",
             "gemini",
@@ -124,7 +142,15 @@ pub fn builtins() -> Vec<AcpAgentDef> {
 /// Every agent the user can pick: the shipped ones, with the user's own
 /// added — and replacing a shipped one that has the same id.
 pub fn all(settings: &Settings) -> Vec<AcpAgentDef> {
-    let mut agents = builtins();
+    // A shipped agent gives way to the same agent added from the registry.
+    let mut agents: Vec<AcpAgentDef> = builtins()
+        .into_iter()
+        .filter(|shipped| {
+            !settings.acp_agents.iter().any(|own| {
+                own.id != shipped.id && own.registry.is_some() && own.registry == shipped.registry
+            })
+        })
+        .collect();
     for custom in &settings.acp_agents {
         let mut custom = custom.clone();
         custom.builtin = false;
@@ -292,6 +318,9 @@ mod tests {
             tui_prompt_flag: None,
             login_command: None,
             install_url: None,
+            registry: None,
+            version: None,
+            binary: None,
             builtin: true,
         });
         let agents = all(&settings);

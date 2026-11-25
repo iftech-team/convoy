@@ -25,7 +25,7 @@ const GRACE: Duration = Duration::from_millis(1500);
 /// How long an ACP agent has to open its session. An agent that does not
 /// speak ACP — an older version without the command — never answers, and
 /// would otherwise leave the chat waiting for ever.
-const ACP_HANDSHAKE: Duration = Duration::from_secs(60);
+const ACP_HANDSHAKE: Duration = Duration::from_secs(120);
 /// How much of stderr is kept for an early death's explanation.
 const STDERR_TAIL: usize = 4_000;
 
@@ -234,7 +234,7 @@ impl Chats {
                     handle.emit(
                         &id,
                         &[ChatEvent::Error {
-                            message: "The agent did not answer as an ACP agent within a minute. Update it, or check its command in Settings → Agents.".into(),
+                            message: "The agent did not answer as an ACP agent within two minutes. Update it, or check its command in Settings → Agents.".into(),
                         }],
                     );
                     chats.stop(&id);

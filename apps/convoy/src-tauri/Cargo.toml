@@ -33,6 +33,8 @@ tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ureq = "2"
+# Checks a downloaded ACP agent against the registry's checksum.
+sha2 = "0.10"
 # The terminal itself, with no dependency on this window or any other.
 convoy-pty = { path = "crates/pty" }
 # The Recycle Bin on Windows and the freedesktop trash on Linux. Hand-written

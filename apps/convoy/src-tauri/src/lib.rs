@@ -246,6 +246,8 @@ pub fn run() {
             commands::integrations::models_list,
             commands::agents::acp_agents_list,
             commands::agents::acp_agents_save,
+            commands::agents::acp_registry_list,
+            commands::agents::acp_registry_add,
             commands::integrations::activity_read,
             commands::integrations::activity_clear,
             commands::docs::docs_list,

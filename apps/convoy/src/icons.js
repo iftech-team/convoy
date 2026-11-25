@@ -85,7 +85,17 @@ export const agentIcon = (agent, size = 14) =>
 
 /// Any other agent: its initial on a tile, tinted by its id so two agents
 /// tell apart at a glance.
+/// ACP agents' registry icons, by id, as `data:` URLs.
+let acpIcons = {};
+export function registerAgentIcons(icons) {
+  acpIcons = { ...icons };
+}
+
 function acpIcon(id, size) {
+  const image = acpIcons[id];
+  if (image && image.startsWith("data:image/svg+xml;base64,")) {
+    return `<img class="agent-icon agent-icon--image" width="${size}" height="${size}" src="${image}" alt="" />`;
+  }
   const tints = ["#4285F4", "#7C5CFF", "#16A085", "#E67E22", "#C0392B", "#2C3E50"];
   let hash = 0;
   for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;

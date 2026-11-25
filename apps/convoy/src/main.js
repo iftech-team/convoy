@@ -2,7 +2,7 @@
 
 import { installTasks } from "./tasks.js";
 import { agentName, newTaskDefaults } from "./task-defaults.js";
-import { acpAgents, hasTerminal, isAcp, loadAcpAgents, splitCommand } from "./agents.js";
+import { acpAgents, hasTerminal, isAcp, loadAcpAgents, loadAcpRegistry, splitCommand } from "./agents.js";
 import { dropStatus, movable } from "./phase.js";
 import { presetPatch } from "./presets.js";
 import { sessionLabel } from "./session-state.js";
@@ -1411,7 +1411,7 @@ const ACTIONS = {
   "limits-settings": () => openSettings("AI Limits"),
   "page-add-profile": addPageProfile,
   "acp-add": addAcpAgent,
-  "acp-refresh": () => loadAcpAgents(true).then(render),
+  "acp-refresh": () => Promise.all([loadAcpAgents(true), loadAcpRegistry({ reload: true, network: true })]).then(() => loadAcpAgents(true)).then(render),
   "add-profile": addProfile,
   "scan-transcripts": scanTranscripts,
 
@@ -1723,7 +1723,7 @@ app.addEventListener("click", async (event) => {
     "[data-action],[data-project],[data-tab],[data-start],[data-stop],[data-open]," +
       "[data-set],[data-toggle],[data-dismiss],[data-quick],[data-files-view]," +
       "[data-change],[data-file],[data-commit],[data-branch],[data-task],[data-spec]," +
-      "[data-approve],[data-export],[data-prepare],[data-remove-profile],[data-acp-login],[data-acp-install],[data-acp-remove]," +
+      "[data-approve],[data-export],[data-prepare],[data-remove-profile],[data-acp-login],[data-acp-install],[data-acp-remove],[data-acp-registry-add]," +
       "[data-remove-command],[data-import],[data-task-view],[data-palette],[data-split],"
       + "[data-capture],[data-expand],[data-project-more],[data-menu-act],[data-settings-section]," +
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon],[data-sync-toggle],[data-intake-toggle]," +
@@ -2209,6 +2209,7 @@ app.addEventListener("click", async (event) => {
     return;
   }
   if (data.acpRemove) return removeAcpAgent(data.acpRemove);
+  if (data.acpRegistryAdd) return addRegistryAgent(data.acpRegistryAdd);
   if (data.removeProfile) {
     if (await done("profile_remove", { id: data.removeProfile })) await loadProfiles();
     return render();
@@ -3421,6 +3422,21 @@ async function addAcpAgent() {
   if (await saveAcpAgents([...ownAcpAgents().filter((item) => item.id !== id), agent])) {
     toast(t("Added {name}", { name }));
   }
+}
+
+/// Adds an agent from the registry; a download is installed first, which
+/// can take a while, so its row says so meanwhile.
+async function addRegistryAgent(id) {
+  state.acpInstalling ??= new Set();
+  if (state.acpInstalling.has(id)) return;
+  state.acpInstalling.add(id);
+  render();
+  const added = await done("acp_registry_add", { id });
+  state.acpInstalling.delete(id);
+  await Promise.all([loadAcpAgents(true), loadAcpRegistry({ reload: true }), loadSettings()]);
+  render();
+  const name = state.acpRegistry?.find((agent) => agent.id === id)?.name ?? id;
+  if (added) toast(t("Added {name}", { name }));
 }
 
 async function removeAcpAgent(id) {
@@ -5128,7 +5144,11 @@ try {
   await loadProfiles();
   // Agents reached through ACP, for the pickers; probing them is slow, so
   // the window does not wait.
-  loadAcpAgents().then(render, () => {});
+  // The registry brings their icons; read after, then the list again.
+  loadAcpAgents()
+    .then(() => loadAcpRegistry())
+    .then(() => loadAcpAgents(true))
+    .then(render, () => {});
   // For Settings, and an update that arrived before the window listened.
   getVersion().then((version) => {
     state.version = version;
