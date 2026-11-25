@@ -39,7 +39,14 @@ import {
   PROJECT_TAB,
   projectTab,
   isProjectTab,
+  currentTab,
+  tabsGrouped,
+  tabsVertical,
+  saveCollapsedTabs,
+  saveTabColumn,
+  clampTabColumn,
 } from "./state.js";
+import { groupBounds, normalizeOrder } from "./tab-groups.js";
 import { escape, plural, value } from "./ui.js";
 import { setLanguage, t } from "./i18n.js";
 import { SHORTCUTS, binding, capture, label, matches } from "./shortcuts.js";
@@ -60,6 +67,9 @@ import {
   contextMenu,
   tabBar,
   tabInfo,
+  tabProject,
+  shownTabs,
+  verticalTabs,
   status,
   workbench,
 } from "./views.js";
@@ -266,13 +276,6 @@ function stepPane(step) {
   return focusPane((state.focus + step + state.layout) % state.layout);
 }
 
-/// The tab of what the main area shows: the open session, or the page of
-/// the selected project. `null` on Home, Files, Settings and the like.
-function currentTab() {
-  if (state.files || (state.page && state.page !== "project")) return null;
-  if (state.sessionId) return state.sessionId;
-  return state.projectId ? projectTab(state.projectId) : null;
-}
 
 /// Gives the selected project's page a tab. Only going to the page does
 /// this: opening one of its sessions passes through it without a tab.
@@ -282,11 +285,6 @@ function keepProjectTab() {
   if (!state.tabs.includes(id)) placeTab(id, state.projectId);
 }
 
-/// The project a tab belongs to: a project page's own, a session's owner.
-function tabProject(id) {
-  if (isProjectTab(id)) return id.slice(PROJECT_TAB.length);
-  return tabInfo(id)?.project_id ?? anySession(id)?.project_id ?? null;
-}
 
 /// Adds a tab beside its project's other tabs, after the last of them, so a
 /// new session opens next to its project rather than at the far end.
@@ -332,6 +330,15 @@ function syncTabs() {
     const info = { title: item.title, agent: item.agent, project_id: item.project_id, started: item.started };
     if (JSON.stringify(state.tabInfo[item.id]) !== JSON.stringify(info)) {
       state.tabInfo[item.id] = info;
+      touched = true;
+    }
+  }
+  // Grouped, a project's tabs sit together, so the order kept is the order
+  // drawn and moving a tab by one moves it by one on screen.
+  if (tabsGrouped()) {
+    const order = normalizeOrder(state.tabs, tabProject);
+    if (order !== state.tabs) {
+      state.tabs = order;
       touched = true;
     }
   }
@@ -406,6 +413,11 @@ function dropTab(id) {
 }
 
 function moveTab(id, target) {
+  // Grouped, a tab moves only among its own project's tabs.
+  if (tabsGrouped()) {
+    const [first, last] = groupBounds(state.tabs, tabProject, id);
+    if (first >= 0) target = Math.max(first, Math.min(target, last));
+  }
   const tabs = state.tabs.filter((tab) => tab !== id);
   tabs.splice(Math.max(0, Math.min(target, tabs.length)), 0, id);
   state.tabs = tabs;
@@ -413,10 +425,20 @@ function moveTab(id, target) {
   render();
 }
 
+/// Ctrl+Tab and Ctrl+Shift+Tab, through the tabs on screen: a folded
+/// project's tabs are skipped.
 function stepTabs(step) {
-  if (state.tabs.length < 2) return stepSession(step);
-  const at = state.tabs.indexOf(currentTab());
-  return openTab(state.tabs[(Math.max(at, 0) + step + state.tabs.length) % state.tabs.length]);
+  const tabs = shownTabs();
+  if (tabs.length < 2) return stepSession(step);
+  const at = tabs.indexOf(currentTab());
+  return openTab(tabs[(Math.max(at, 0) + step + tabs.length) % tabs.length]);
+}
+
+/// Folds a project's tabs away in the tab strip, or brings them back.
+function toggleTabGroup(projectId, folded = !state.collapsedTabs.has(projectId)) {
+  if (folded) state.collapsedTabs.add(projectId);
+  else state.collapsedTabs.delete(projectId);
+  saveCollapsedTabs();
 }
 
 // Every change re-renders the whole window from state, and a timer or an
@@ -605,6 +627,13 @@ function restoreUnsaved({ fields, scrolls }) {
   }
 }
 
+function shellClass() {
+  const classes = ["shell"];
+  if (state.sidebarHidden) classes.push("shell--nosidebar");
+  if (tabsVertical()) classes.push("shell--vtabs", state.settings.tab_side === "right" ? "shell--vtabs-right" : "shell--vtabs-left");
+  return classes.join(" ");
+}
+
 function render() {
   if (openSelect) {
     if (openSelect.isConnected) {
@@ -653,8 +682,9 @@ function render() {
     app.innerHTML =
     state.page === "settings"
       ? `<div class="shell shell--page">${settingsPage()}${status()}</div>`
-      : `<div class="shell${state.sidebarHidden ? " shell--nosidebar" : ""}">
+      : `<div class="${shellClass()}" style="--vtabs-width:${state.tabColumnWidth}px">
           ${state.sidebarHidden ? "" : sidebar()}
+          ${tabsVertical() ? verticalTabs() : ""}
           <main class="main">${tabBar()}${state.files || state.page || state.sessionId ? "" : header()}${content()}</main>
           ${status()}
         </div>`;
@@ -1621,7 +1651,7 @@ app.addEventListener("click", async (event) => {
       + "[data-capture],[data-expand],[data-project-more],[data-menu-act],[data-settings-section]," +
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon],[data-sync-toggle],[data-intake-toggle]," +
       "[data-proj-toggle],[data-proj-clear],[data-icon-source],[data-doc],[data-activity-open]," +
-      "[data-inbox-answer],[data-inbox-open],[data-inbox-expand],[data-tab-close],[data-tab-open],[data-related-remove],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
+      "[data-inbox-answer],[data-inbox-open],[data-inbox-expand],[data-tab-close],[data-tab-open],[data-tab-group-toggle],[data-tab-group-act],[data-related-remove],[data-tab-act],[data-awake],[data-pane-pick],[data-pane-close]," +
       "[data-layout],[data-needs-you],[data-spec-brief],[data-group-toggle],[data-workspace-option],[data-account-pick],[data-split-into],[data-pane-new],[data-pane-max],[data-pane-quick],[data-command-edit],[data-shortcut-reset],[data-history-copy],[data-history-resume],[data-history-delete],[data-knowledge-remove],[data-pick-row],[data-sweep-group],[data-sweep-all],[data-settings-open],[data-checklist-do],[data-sessions-show],[data-project-tab],[data-preset],[data-home-tasks],[data-task-scope],[data-task-group],[data-task-run],[data-task-pr],[data-task-more],[data-use-account],[data-login-account],[data-issue],[data-conn-add],[data-conn-edit],[data-conn-remove],[data-conn-auth],[data-issue-source],[data-auto],[data-auto-day],[data-skill],[data-skill-pick],[data-skill-toggle],[data-usage-days],[data-usage-agent],[data-usage-table],[data-price-add],[data-price-remove],[data-price-reset],[data-price-save],[data-task-doc-open],[data-task-spec-open],[data-task-doc-reveal],[data-task-doc],[data-repo-remove],[data-task-pr-extra],[data-import-pick],[data-import-all],[data-import-scope],[data-import-project],[data-import-role],[data-import-auto]",
   );
   if (!target) return;
@@ -1672,6 +1702,33 @@ app.addEventListener("click", async (event) => {
   }
   if (data.tabClose) return closeTab(data.tabClose);
   if (data.tabOpen) return openTab(data.tabOpen);
+  if (data.tabGroupToggle) {
+    toggleTabGroup(data.tabGroupToggle);
+    return render();
+  }
+  if (data.tabGroupAct) {
+    const id = state.menu?.id;
+    state.menu = null;
+    if (data.tabGroupAct === "toggle") toggleTabGroup(id);
+    if (data.tabGroupAct === "all") {
+      state.collapsedTabs.clear();
+      saveCollapsedTabs();
+    }
+    if (data.tabGroupAct === "others") {
+      for (const other of new Set(state.tabs.map(tabProject))) if (other && other !== id) toggleTabGroup(other, true);
+      toggleTabGroup(id, false);
+    }
+    if (data.tabGroupAct === "close") {
+      // As each tab's own close: a running agent's tab is only hidden.
+      // The tab on screen goes last, so the others close without each
+      // handing the screen to the next.
+      const current = currentTab();
+      const closing = state.tabs.filter((tab) => tabProject(tab) === id);
+      for (const tab of [...closing.filter((tab) => tab !== current), ...closing.filter((tab) => tab === current)]) dropTab(tab);
+      return;
+    }
+    return render();
+  }
   if (data.tabAct) {
     const id = state.menu?.id;
     state.menu = null;
@@ -2383,10 +2440,11 @@ addEventListener(
       return;
     }
     const digit = /^Digit([1-9])$/.exec(event.code ?? "");
-    if (primary && digit && !event.altKey && !event.shiftKey && state.tabs[Number(digit[1]) - 1]) {
+    const numbered = digit && shownTabs()[Number(digit[1]) - 1];
+    if (primary && numbered && !event.altKey && !event.shiftKey) {
       event.preventDefault();
       event.stopPropagation();
-      return openTab(state.tabs[Number(digit[1]) - 1]);
+      return openTab(numbered);
     }
     const bound = SHORTCUTS.find(([action]) => matches(event, binding(action)));
     if (!bound) return;
@@ -5119,19 +5177,22 @@ window.addEventListener("keydown", (event) => {
 // rather than HTML5 drag and drop, for the reasons the task board gives, and
 // because the bar re-renders while an agent works — the drag keeps only ids
 // and finds the tabs again on every move.
+// In the vertical column the same drag runs down the column instead.
 let tabDrag = null;
-const tabEls = () => [...app.querySelectorAll(".tabbar__tabs [data-tab-open]")];
+const TAB_LISTS = ".tabbar__tabs, .vtabs__list";
+const tabEls = () => [...app.querySelectorAll(".tabbar__tabs [data-tab-open], .vtabs__list [data-tab-open]")];
 function clearTabDrop() {
   for (const other of app.querySelectorAll(".tab-item--drop, .tab-item--drop-after")) {
     other.classList.remove("tab-item--drop", "tab-item--drop-after");
   }
 }
 /// Where the dragged tab would land: its index among the other tabs.
-function tabDropIndex(x) {
+/// `at` is the pointer's x along the bar, or its y down the column.
+function tabDropIndex(at) {
   const others = tabEls().filter((el) => el.dataset.tabOpen !== tabDrag.id);
   let index = others.findIndex((el) => {
     const box = el.getBoundingClientRect();
-    return x < box.left + box.width / 2;
+    return tabDrag.vertical ? at < box.top + box.height / 2 : at < box.left + box.width / 2;
   });
   if (index < 0) index = others.length;
   return { index, others };
@@ -5146,14 +5207,15 @@ function endTabDrag() {
 }
 app.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
-  const tab = event.target.closest?.(".tabbar__tabs [data-tab-open]");
-  if (!tab || event.target.closest(".tab-item__close")) return;
-  tabDrag = { id: tab.dataset.tabOpen, x: event.clientX, y: event.clientY, ghost: null };
+  const tab = event.target.closest?.("[data-tab-open]");
+  if (!tab?.closest(TAB_LISTS) || event.target.closest(".tab-item__close")) return;
+  const vertical = !!tab.closest(".vtabs__list");
+  tabDrag = { id: tab.dataset.tabOpen, x: event.clientX, y: event.clientY, ghost: null, vertical };
 });
 window.addEventListener("pointermove", (event) => {
   if (!tabDrag) return;
   if (!tabDrag.ghost) {
-    if (Math.abs(event.clientX - tabDrag.x) < 5) return;
+    if (Math.abs(tabDrag.vertical ? event.clientY - tabDrag.y : event.clientX - tabDrag.x) < 5) return;
     const tab = tabEls().find((el) => el.dataset.tabOpen === tabDrag.id);
     if (!tab) return endTabDrag();
     const box = tab.getBoundingClientRect();
@@ -5162,31 +5224,76 @@ window.addEventListener("pointermove", (event) => {
     ghost.removeAttribute("data-tab-open");
     for (const el of ghost.querySelectorAll("[data-tab-close]")) el.removeAttribute("data-tab-close");
     ghost.style.width = `${box.width}px`;
-    ghost.style.top = `${box.top}px`;
+    if (tabDrag.vertical) {
+      ghost.classList.add("tab-ghost--vertical");
+      ghost.style.left = `${box.left}px`;
+      ghost.style.top = "0px";
+    } else ghost.style.top = `${box.top}px`;
     document.body.append(ghost);
-    Object.assign(tabDrag, { ghost, dx: tabDrag.x - box.left });
+    Object.assign(tabDrag, { ghost, dx: tabDrag.x - box.left, dy: tabDrag.y - box.top });
     document.body.classList.add("is-dragging-tab");
   }
-  const bar = app.querySelector(".tabbar__tabs")?.getBoundingClientRect();
-  let left = event.clientX - tabDrag.dx;
-  if (bar) left = Math.max(bar.left, Math.min(left, bar.right - tabDrag.ghost.offsetWidth));
-  tabDrag.ghost.style.transform = `translateX(${left}px)`;
+  if (tabDrag.vertical) {
+    const list = app.querySelector(".vtabs__list")?.getBoundingClientRect();
+    let top = event.clientY - tabDrag.dy;
+    if (list) top = Math.max(list.top, Math.min(top, list.bottom - tabDrag.ghost.offsetHeight));
+    tabDrag.ghost.style.transform = `translateY(${top}px)`;
+  } else {
+    const bar = app.querySelector(".tabbar__tabs")?.getBoundingClientRect();
+    let left = event.clientX - tabDrag.dx;
+    if (bar) left = Math.max(bar.left, Math.min(left, bar.right - tabDrag.ghost.offsetWidth));
+    tabDrag.ghost.style.transform = `translateX(${left}px)`;
+  }
   for (const el of tabEls()) el.classList.toggle("tab-item--dragging", el.dataset.tabOpen === tabDrag.id);
-  const { index, others } = tabDropIndex(event.clientX);
+  const { index, others } = tabDropIndex(tabDrag.vertical ? event.clientY : event.clientX);
   clearTabDrop();
   if (index < others.length) others[index].classList.add("tab-item--drop");
   else others.at(-1)?.classList.add("tab-item--drop-after");
 });
 window.addEventListener("pointerup", (event) => {
   if (!tabDrag) return;
-  const { id, ghost } = tabDrag;
-  const target = ghost && tabDropIndex(event.clientX).index;
+  const { id, ghost, vertical } = tabDrag;
+  // The index is among the tabs on screen; moveTab takes one among all the
+  // others, which differ when a folded project hides some.
+  const drop = ghost && tabDropIndex(vertical ? event.clientY : event.clientX);
+  let target = drop?.index;
+  if (drop && drop.others.length) {
+    const others = state.tabs.filter((tab) => tab !== id);
+    target =
+      drop.index < drop.others.length
+        ? others.indexOf(drop.others[drop.index].dataset.tabOpen)
+        : others.indexOf(drop.others.at(-1).dataset.tabOpen) + 1;
+  }
   endTabDrag();
   if (!ghost) return;
   justDropped = true;
-  // The index is among the other tabs, which is what moveTab takes.
   if (target !== state.tabs.indexOf(id)) moveTab(id, target);
 });
+
+// The vertical tab column is as wide as it is dragged, kept per machine. The
+// drag sets the width straight on the shell; only letting go saves it.
+let columnDrag = null;
+app.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0 || !event.target.closest?.("[data-vtabs-resize]")) return;
+  event.preventDefault();
+  columnDrag = { x: event.clientX, width: state.tabColumnWidth, right: state.settings.tab_side === "right" };
+  document.body.classList.add("is-resizing-column");
+});
+window.addEventListener("pointermove", (event) => {
+  if (!columnDrag) return;
+  const moved = event.clientX - columnDrag.x;
+  state.tabColumnWidth = clampTabColumn(columnDrag.width + (columnDrag.right ? -moved : moved));
+  app.querySelector(".shell")?.style.setProperty("--vtabs-width", `${state.tabColumnWidth}px`);
+});
+const endColumnDrag = () => {
+  if (!columnDrag) return;
+  columnDrag = null;
+  document.body.classList.remove("is-resizing-column");
+  saveTabColumn();
+  justDropped = true;
+};
+window.addEventListener("pointerup", endColumnDrag);
+window.addEventListener("pointercancel", endColumnDrag);
 window.addEventListener("pointercancel", endTabDrag);
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && tabDrag?.ghost) endTabDrag();
@@ -5194,6 +5301,12 @@ window.addEventListener("keydown", (event) => {
 
 // Right-click on a project or a session in the sidebar opens its menu.
 app.addEventListener("contextmenu", (event) => {
+  const group = event.target.closest("[data-tab-group]");
+  if (group) {
+    event.preventDefault();
+    state.menu = { kind: "tab-group", id: group.dataset.tabGroup, x: event.clientX, y: event.clientY };
+    return render();
+  }
   const tab = event.target.closest("[data-tab-open]");
   if (tab) {
     event.preventDefault();

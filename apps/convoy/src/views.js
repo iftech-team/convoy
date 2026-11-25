@@ -15,7 +15,8 @@ import {
 } from "./ui.js";
 import { language, t } from "./i18n.js";
 import { agentName } from "./task-defaults.js";
-import { activeAccount, anySession, isProjectTab, isRunning, phaseOf, project, session, sessionState, state, visibleSessions } from "./state.js";
+import { activeAccount, anySession, currentTab, isProjectTab, isRunning, phaseOf, project, PROJECT_TAB, session, sessionState, state, tabsGrouped, tabsVertical, visibleSessions } from "./state.js";
+import { groupTabs, visibleTabs } from "./tab-groups.js";
 import { sessionLabel, sessionTone, sleptBy } from "./session-state.js";
 import { stageIndex } from "./stages.js";
 import { runnable, taskFiltersMenu } from "./views-planning.js";
@@ -256,6 +257,7 @@ export function contextMenu(menu) {
   if (menu.kind === "limits") return limitsPanel();
   if (menu.kind === "awake") return awakeMenu();
   if (menu.kind === "tab") return tabMenu(menu);
+  if (menu.kind === "tab-group") return tabGroupMenu(menu);
   if (menu.kind === "activity") return activityPanel();
   if (menu.kind === "approvals") return approvalsPanel();
   if (menu.kind === "task-filters") return taskFiltersMenu(anchorStyle());
@@ -1078,9 +1080,26 @@ const PROJECT_VIEWS = {
   automations: "Automations",
 };
 
+/// The project a tab belongs to: a project page's own, a session's owner.
+export function tabProject(id) {
+  if (isProjectTab(id)) return id.slice(PROJECT_TAB.length);
+  return tabInfo(id)?.project_id ?? anySession(id)?.project_id ?? null;
+}
+
+export const tabGroups = () => groupTabs(state.tabs, tabProject);
+
+/// The tabs on screen, in the order shown: a folded project's tabs are left
+/// out, but never the one being looked at. ⌘1–9 and Ctrl+Tab go by these.
+export const shownTabs = () =>
+  tabsGrouped() ? visibleTabs(tabGroups(), state.collapsedTabs, currentTab()) : state.tabs;
+
+const mac = () => /mac/i.test(navigator.platform);
+const numberHint = (number) =>
+  number >= 0 && number < 9 ? `<span class="tab-item__number">${mac() ? "⌘" : "Ctrl+"}${number + 1}</span>` : "";
+
 /// A project's page as a tab: its icon and name, and the part of the page
 /// it was left on.
-function projectTabItem(id, index) {
+function projectTabItem(id, number) {
   const info = tabInfo(id);
   const owner = state.projects.find((item) => item.id === info?.project_id);
   if (!owner) return "";
@@ -1096,59 +1115,133 @@ function projectTabItem(id, index) {
         <span class="tab-item__title">${escape(owner.title)}</span>
         <span class="tab-item__project">${escape(t(view))}</span>
       </span>
-      ${index < 9 && !selected ? `<span class="tab-item__number">${/mac/i.test(navigator.platform) ? "⌘" : "Ctrl+"}${index + 1}</span>` : ""}
+      ${selected ? "" : numberHint(number)}
       <button class="tab-item__close" data-tab-close="${escape(id)}" title="${escape(t("Close tab"))}">${icons.close}</button>
     </div>`;
 }
 
-/// The bar across the top, as in the macOS app: Home, one tab per open
-/// session or project page, then Files & Changes, the bell and New session.
-export function tabBar() {
-  const tabs = state.tabs
-    .map((id, index) => {
-      if (isProjectTab(id)) return projectTabItem(id, index);
-      const info = tabInfo(id);
-      if (!info) return "";
-      const owner = state.projects.find((item) => item.id === info.project_id);
-      const running = state.running.includes(id);
-      const selected = state.sessionId === id && !state.files && state.page !== "project";
-      return `
-        <div class="tab-item${selected ? " tab-item--selected" : ""}" data-tab-open="${escape(id)}"
-             title="${escape(`${owner?.title ?? ""} · ${agentName(info.agent)}${running ? "" : ` · ${t(sessionLabel(sessionState({ ...info, id }, false)))}`}`)}">
-          <span class="tab-item__bar" style="background:${owner ? projectTint(owner) : "var(--border-strong)"}"></span>
-          ${tabGlyph(id, running, info)}
-          ${agentIcon(info.agent, 12)}
-          <span class="tab-item__text">
-            <span class="tab-item__title">${escape(info.title)}</span>
-            <span class="tab-item__project">${escape(owner?.title ?? "")}</span>
-          </span>
-          ${
-            state.layout > 1 && state.panes.indexOf(id) >= 0 && state.panes.indexOf(id) < state.layout
-              ? `<span class="tab-item__pane" style="background:${owner ? projectTint(owner) : "var(--text-faint)"}" title="${escape(t("In pane {number}", { number: state.panes.indexOf(id) + 1 }))}">${state.panes.indexOf(id) + 1}</span>`
-              : ""
-          }
-          ${index < 9 && !selected && !(state.layout > 1 && state.panes.includes(id)) ? `<span class="tab-item__number">${/mac/i.test(navigator.platform) ? "⌘" : "Ctrl+"}${index + 1}</span>` : ""}
-          <button class="tab-item__close" data-tab-close="${escape(id)}"
-                  title="${escape(running ? t("Hide tab — the agent keeps running") : t("Close tab"))}">${icons.close}</button>
-        </div>`;
+/// One tab. `number` is its place among the tabs on screen, for the ⌘N hint;
+/// `grouped` drops the project's name when a header above already says it.
+function tabItem(id, number, grouped = false) {
+  if (isProjectTab(id)) return projectTabItem(id, number);
+  const info = tabInfo(id);
+  if (!info) return "";
+  const owner = state.projects.find((item) => item.id === info.project_id);
+  const running = state.running.includes(id);
+  const selected = state.sessionId === id && !state.files && state.page !== "project";
+  const pane = state.panes.indexOf(id);
+  const inPane = state.layout > 1 && pane >= 0 && pane < state.layout;
+  return `
+    <div class="tab-item${selected ? " tab-item--selected" : ""}" data-tab-open="${escape(id)}"
+         title="${escape(`${owner?.title ?? ""} · ${agentName(info.agent)}${running ? "" : ` · ${t(sessionLabel(sessionState({ ...info, id }, false)))}`}`)}">
+      <span class="tab-item__bar" style="background:${owner ? projectTint(owner) : "var(--border-strong)"}"></span>
+      ${tabGlyph(id, running, info)}
+      ${agentIcon(info.agent, 12)}
+      <span class="tab-item__text">
+        <span class="tab-item__title">${escape(info.title)}</span>
+        ${grouped ? "" : `<span class="tab-item__project">${escape(owner?.title ?? "")}</span>`}
+      </span>
+      ${
+        inPane
+          ? `<span class="tab-item__pane" style="background:${owner ? projectTint(owner) : "var(--text-faint)"}" title="${escape(t("In pane {number}", { number: pane + 1 }))}">${pane + 1}</span>`
+          : ""
+      }
+      ${selected || (state.layout > 1 && state.panes.includes(id)) ? "" : numberHint(number)}
+      <button class="tab-item__close" data-tab-close="${escape(id)}"
+              title="${escape(running ? t("Hide tab — the agent keeps running") : t("Close tab"))}">${icons.close}</button>
+    </div>`;
+}
+
+/// The groups as drawn: each with its project, whether it is folded, and the
+/// tabs that still show under it.
+function drawnGroups() {
+  const current = currentTab();
+  return tabGroups().map((group) => {
+    const owner = state.projects.find((item) => item.id === group.projectId) ?? null;
+    const folded = !!owner && state.collapsedTabs.has(owner.id);
+    return {
+      ...group,
+      owner,
+      folded,
+      shown: folded ? group.tabs.filter((id) => id === current) : group.tabs,
+      holdsCurrent: group.tabs.includes(current),
+    };
+  });
+}
+
+/// A project's header in the tab strip or column: click folds its tabs away,
+/// and folded it says how many it holds.
+function groupHeader(group, vertical) {
+  const { owner, folded, tabs } = group;
+  const title = folded
+    ? t("Show {project}'s tabs", { project: owner.title })
+    : t("Hide {project}'s tabs", { project: owner.title });
+  return `
+    <button class="tab-group${vertical ? " tab-group--row" : ""}${folded ? " tab-group--folded" : ""}${folded && group.holdsCurrent ? " tab-group--current" : ""}"
+            data-tab-group-toggle="${escape(owner.id)}" data-tab-group="${escape(owner.id)}"
+            aria-expanded="${!folded}" title="${escape(title)}" style="--group-tint:${projectTint(owner)}">
+      <span class="tab-group__chevron">${folded ? icons.chevronRight : icons.chevronDown}</span>
+      ${projectIcon(owner, vertical ? 13 : 12)}
+      <span class="tab-group__title">${escape(owner.title)}</span>
+      ${folded || vertical ? `<span class="tab-group__count">${tabs.length}</span>` : ""}
+    </button>`;
+}
+
+/// The tabs, grouped or not, for the bar or the column.
+function tabList(vertical) {
+  if (!tabsGrouped()) return state.tabs.map((id, index) => tabItem(id, index)).join("");
+  let number = 0;
+  return drawnGroups()
+    .map((group) => {
+      const items = group.shown.map((id) => tabItem(id, number++, !!group.owner)).join("");
+      if (!group.owner) return vertical ? `<div class="vtabs__group">${items}</div>` : items;
+      const header = groupHeader(group, vertical);
+      return vertical
+        ? `<div class="vtabs__group">${header}${items}</div>`
+        : `<span class="tabbar__group">${header}${items}</span>`;
     })
     .join("");
+}
+
+/// The open tabs as a column beside the content, one header per project.
+export function verticalTabs() {
+  const tabs = tabList(true);
+  return `
+    <aside class="vtabs" aria-label="${escape(t("Open tabs"))}">
+      <div class="vtabs__list" data-scroll="vtabs">
+        ${tabs || `<span class="vtabs__none">${escape(t("No open terminals"))}</span>`}
+      </div>
+      ${
+        state.projects.length
+          ? `<button class="vtabs__new" data-action="new-session">${icons.plus}<span>${escape(t("New session"))}</span></button>`
+          : ""
+      }
+      <div class="vtabs__resize" data-vtabs-resize="1" title="${escape(t("Drag to resize"))}"></div>
+    </aside>`;
+}
+
+/// The bar across the top, as in the macOS app: Home, one tab per open
+/// session or project page, then Files & Changes, the bell and New session.
+/// With vertical tabs the tabs move to their own column and the bar keeps
+/// the rest.
+export function tabBar() {
+  const vertical = tabsVertical();
+  const tabs = vertical ? "" : tabList(false);
   const home = ["home", "dashboard", "usage"].includes(state.page);
-  const mac = /mac/i.test(navigator.platform);
   // The Tasks page and Home have New task in their own headers; one is enough.
   const tasksShown = (state.tab === "tasks" && !state.page && !state.sessionId && !state.files) || state.page === "home";
   return `
-    <div class="tabbar">
+    <div class="tabbar${vertical ? " tabbar--notabs" : ""}">
       <button class="tabbar__home${state.sidebarHidden ? "" : " tabbar__home--on"}" data-action="toggle-sidebar"
               title="${escape(state.sidebarHidden ? t("Show sidebar") : t("Hide sidebar"))}">${icons.sidebar}</button>
       <button class="tabbar__home${home ? " tabbar__home--on" : ""}" data-action="home" title="${escape(t("Home"))}">${icons.home}</button>
       <span class="tabbar__divider"></span>
       <div class="tabbar__tabs" data-scroll="tabs">
-        ${tabs || `<span class="tabbar__none">${escape(t("No open terminals"))}</span>`}
+        ${vertical ? "" : tabs || `<span class="tabbar__none">${escape(t("No open terminals"))}</span>`}
       </div>
       <span class="tabbar__actions">
         <button class="tabbar__search" data-action="palette" title="${escape(t("Search sessions, projects and actions"))}">
-          ${icons.search}<span>${escape(t("Search"))}</span><kbd>${mac ? "⌘K" : "Ctrl+K"}</kbd>
+          ${icons.search}<span>${escape(t("Search"))}</span><kbd>${mac() ? "⌘K" : "Ctrl+K"}</kbd>
         </button>
         <span class="layouts">
           ${[
@@ -1178,6 +1271,25 @@ export function tabBar() {
     </div>`;
 }
 
+/// Right-click on a project's header in the tabs.
+function tabGroupMenu(menu) {
+  const owner = state.projects.find((item) => item.id === menu.id);
+  const folded = state.collapsedTabs.has(menu.id);
+  const others = tabGroups().filter((group) => group.projectId && group.projectId !== menu.id);
+  const item = (label, act, enabled = true) =>
+    `<button class="menu__item" data-tab-group-act="${act}" ${enabled ? "" : "disabled"}><span>${escape(label)}</span></button>`;
+  return `
+    <div class="scrim scrim--clear" data-dismiss="1">
+      <div class="menu menu--context" role="menu" style="left:${Math.max(8, Math.min(menu.x, window.innerWidth - 240))}px;top:${menu.y}px">
+        ${item(folded ? t("Show tabs") : t("Hide tabs"), "toggle")}
+        ${item(t("Hide other projects' tabs"), "others", others.some((group) => !state.collapsedTabs.has(group.projectId)))}
+        ${item(t("Show all tabs"), "all", state.collapsedTabs.size > 0)}
+        <div class="menu__divider"></div>
+        ${item(t("Close {project}'s tabs", { project: owner?.title ?? "" }), "close")}
+      </div>
+    </div>`;
+}
+
 function tabMenu(menu) {
   const at = state.tabs.indexOf(menu.id);
   const item = (label, act, enabled = true) =>
@@ -1191,8 +1303,8 @@ function tabMenu(menu) {
               '<div class="menu__divider"></div>'
             : ""
         }
-        ${item("Move left", "left", at > 0)}
-        ${item("Move right", "right", at < state.tabs.length - 1)}
+        ${item(tabsVertical() ? "Move up" : "Move left", "left", at > 0)}
+        ${item(tabsVertical() ? "Move down" : "Move right", "right", at < state.tabs.length - 1)}
         <div class="menu__divider"></div>
         ${item(state.running.includes(menu.id) ? "Hide tab" : "Close tab", "close")}
         ${state.running.includes(menu.id) ? item("Stop and close", "stop") : ""}

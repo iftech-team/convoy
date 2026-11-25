@@ -182,6 +182,11 @@ pub struct SettingsPatch {
     pub git_status: Option<bool>,
     pub git_poll_seconds: Option<i64>,
     pub compact_sidebar: Option<bool>,
+    /// `horizontal` or `vertical`.
+    pub tab_layout: Option<String>,
+    pub tab_grouping: Option<bool>,
+    /// `left` or `right`.
+    pub tab_side: Option<String>,
     pub worktree_setup: Option<String>,
     pub worktree_shared: Option<String>,
     /// `chat` or `terminal`.
@@ -1001,6 +1006,9 @@ impl Workspace {
             git_status: patch.git_status.unwrap_or(current.git_status),
             git_poll_seconds: patch.git_poll_seconds.unwrap_or(current.git_poll_seconds),
             compact_sidebar: patch.compact_sidebar.unwrap_or(current.compact_sidebar),
+            tab_layout: patch.tab_layout.unwrap_or(current.tab_layout),
+            tab_grouping: patch.tab_grouping.unwrap_or(current.tab_grouping),
+            tab_side: patch.tab_side.unwrap_or(current.tab_side),
             worktree_setup: patch.worktree_setup.unwrap_or(current.worktree_setup),
             worktree_shared: patch.worktree_shared.unwrap_or(current.worktree_shared),
             default_view: patch.default_view.unwrap_or(current.default_view),

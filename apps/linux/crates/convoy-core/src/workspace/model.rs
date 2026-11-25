@@ -889,6 +889,16 @@ pub struct Settings {
     /// Sidebar rows without the second line of detail.
     #[serde(rename = "compactSidebar", default = "yes")]
     pub compact_sidebar: bool,
+    /// Where open tabs are listed: `horizontal`, a bar along the top, or
+    /// `vertical`, a column beside the content.
+    #[serde(rename = "tabLayout", default = "default_tab_layout")]
+    pub tab_layout: String,
+    /// Tabs drawn together under a header per project, which can be folded.
+    #[serde(rename = "tabGrouping", default = "yes")]
+    pub tab_grouping: bool,
+    /// The side of the content the vertical tab column sits on: `left` or `right`.
+    #[serde(rename = "tabSide", default = "default_tab_side")]
+    pub tab_side: String,
     /// Run in every new worktree, before the project's own command.
     #[serde(rename = "worktreeSetup", default)]
     pub worktree_setup: String,
@@ -921,6 +931,19 @@ impl Settings {
             "terminal"
         }
     }
+}
+
+/// The places open tabs can be listed.
+pub const TAB_LAYOUTS: &[&str] = &["horizontal", "vertical"];
+/// The sides the vertical tab column can sit on.
+pub const TAB_SIDES: &[&str] = &["left", "right"];
+
+fn default_tab_layout() -> String {
+    "horizontal".into()
+}
+
+fn default_tab_side() -> String {
+    "left".into()
 }
 
 fn default_sound() -> String {
@@ -997,6 +1020,9 @@ impl Default for Settings {
             git_status: true,
             git_poll_seconds: default_git_poll(),
             compact_sidebar: true,
+            tab_layout: default_tab_layout(),
+            tab_grouping: true,
+            tab_side: default_tab_side(),
             worktree_setup: String::new(),
             worktree_shared: String::new(),
             default_view: default_view(),

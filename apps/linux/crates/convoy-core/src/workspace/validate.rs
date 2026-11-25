@@ -245,6 +245,7 @@ pub fn validate_settings(settings: &Value) -> Result<()> {
         "statusHooks",
         "gitStatus",
         "compactSidebar",
+        "tabGrouping",
     ] {
         if let Some(value) = settings.get(key) {
             ensure!(value.is_boolean(), "Invalid settings.");
@@ -256,6 +257,22 @@ pub fn validate_settings(settings: &Value) -> Result<()> {
                 .as_str()
                 .is_some_and(|prefix| utf16_len(prefix) <= 60 && BRANCH_PREFIX.is_match(prefix)),
             "Invalid branch prefix. Use letters, digits, dots, dashes and slashes."
+        );
+    }
+    if let Some(value) = settings.get("tabLayout") {
+        ensure!(
+            value
+                .as_str()
+                .is_some_and(|layout| crate::model::TAB_LAYOUTS.contains(&layout)),
+            "Invalid tab layout."
+        );
+    }
+    if let Some(value) = settings.get("tabSide") {
+        ensure!(
+            value
+                .as_str()
+                .is_some_and(|side| crate::model::TAB_SIDES.contains(&side)),
+            "Invalid tab side."
         );
     }
     if let Some(value) = settings.get("notificationSound") {

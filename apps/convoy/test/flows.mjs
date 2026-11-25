@@ -626,22 +626,42 @@ try {
   await page.locator(".board__column", { hasText: "Not running" }).locator('[data-open="notes"]').click();
   await page.locator('.tab-item--selected[data-tab-open="notes"]').waitFor();
   assert.equal(await page.locator('.tab-item[data-tab-open="project:other"]').count(), 0, "no tab for a page not gone to");
-  // Tabs reorder by dragging along the bar.
+  // Tabs reorder by dragging along the bar, within their project's group.
   {
     const order = () => page.locator(".tabbar__tabs [data-tab-open]").evaluateAll((els) => els.map((el) => el.dataset.tabOpen));
-    const before = await order();
-    assert.ok(before.length > 1, "several tabs to reorder");
-    {
-      const last = before.at(-1);
-      const from = await page.locator(`.tabbar__tabs [data-tab-open="${last}"]`).boundingBox();
-      const to = await page.locator(`.tabbar__tabs [data-tab-open="${before[0]}"]`).boundingBox();
+    // The strip is narrower than its tabs here: the dragged one is brought
+    // into view, and the pointer goes as far left as the target is.
+    const drag = async (id, onto) => {
+      await page.locator(`.tabbar__tabs [data-tab-open="${id}"]`).evaluate((el) => el.scrollIntoView({ inline: "nearest" }));
+      const from = await page.locator(`.tabbar__tabs [data-tab-open="${id}"]`).boundingBox();
+      const to = await page.locator(`.tabbar__tabs [data-tab-open="${onto}"]`).boundingBox();
+      to.x = Math.max(to.x, 1);
       await page.mouse.move(from.x + 20, from.y + from.height / 2);
       await page.mouse.down();
       await page.mouse.move(from.x + 10, from.y + from.height / 2, { steps: 2 });
       await page.mouse.move(to.x + 4, to.y + to.height / 2, { steps: 8 });
       await page.mouse.up();
-      assert.deepEqual(await order(), [last, ...before.slice(0, -1)], "a dragged tab lands where it is dropped");
-    }
+    };
+    const before = await order();
+    assert.deepEqual(before, ["project:project", "review", "builder", "notes"], "each project's tabs together");
+    assert.deepEqual(await page.locator(".tabbar__tabs .tab-group__title").allTextContents(), ["Example", "Other"], "a header per project");
+    await drag("builder", "project:project");
+    assert.deepEqual(await order(), ["builder", "project:project", "review", "notes"], "a dragged tab lands where it is dropped");
+    await drag("notes", "builder");
+    assert.deepEqual(await order(), ["builder", "project:project", "review", "notes"], "a tab stays with its project's tabs");
+  }
+  // A project's header folds its tabs away, all but the one on screen, and
+  // ⌘1–9 count only the tabs that show.
+  {
+    const shownTabs = () => page.locator(".tabbar__tabs [data-tab-open]").evaluateAll((els) => els.map((el) => el.dataset.tabOpen));
+    if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/tabs-grouped.png` });
+    await page.locator('.tabbar__tabs [data-tab-group-toggle="project"]').click();
+    assert.deepEqual(await shownTabs(), ["notes"], "the folded project's tabs are hidden");
+    if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/tabs-folded.png` });
+    await page.locator('.tabbar__tabs [data-tab-group-toggle="project"] .tab-group__count', { hasText: "3" }).waitFor();
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem("convoy.collapsedTabGroups"))), ["project"], "the fold is remembered");
+    await page.locator('.tabbar__tabs [data-tab-group-toggle="project"]').click();
+    assert.deepEqual(await shownTabs(), ["builder", "project:project", "review", "notes"], "unfolded, they come back");
   }
   await page.locator('[data-tab-close="notes"]').click();
   await page.locator('.tab-item[data-tab-open="notes"]').waitFor({ state: "detached" });
@@ -1565,6 +1585,56 @@ try {
   await page.locator('[data-settings-section="General"]').click();
   await page.locator('[data-pref-toggle="notifications"]').click();
   await page.waitForFunction(() => window.savedSettings.notifications === true);
+  // Tabs can be a column beside the content, on either side; the bar keeps
+  // its buttons and gives up its tabs.
+  assert.equal(await page.locator('[data-pref-set="tab_side"]').count(), 0, "the side only matters for the column");
+  await page.locator('[data-pref-set="tab_layout"][data-value="vertical"]').click();
+  await page.waitForFunction(() => window.savedSettings.tab_layout === "vertical");
+  await page.locator('[data-pref-set="tab_side"][data-value="left"][aria-pressed="true"]').waitFor();
+  await page.locator('[data-action="close-settings"]').click();
+  await page.locator(".shell--vtabs-left .vtabs .vtabs__list [data-tab-open]").first().waitFor();
+  assert.equal(await page.locator(".tabbar [data-tab-open]").count(), 0, "no tabs left in the bar");
+  await page.locator('.tabbar [data-layout="2"]').waitFor();
+  await page.locator('.tabbar [data-action="approvals"]').waitFor();
+  {
+    const order = (selector) => page.evaluate((selector) => [...document.querySelector(".shell").children].findIndex((el) => el.matches(selector)), selector);
+    assert.ok((await order(".vtabs")) < (await order(".main")), "on the left, the column comes before the content");
+    // A project's header folds its tabs in the column too.
+    if (shots) await page.screenshot({ path: `${shots}/tabs-vertical.png` });
+    const header = page.locator(".vtabs [data-tab-group-toggle]").first();
+    const project = await header.getAttribute("data-tab-group-toggle");
+    const inGroup = page.locator(`.vtabs__group:has([data-tab-group-toggle="${project}"]) [data-tab-open]`);
+    const before = await inGroup.count();
+    await header.click();
+    assert.ok((await inGroup.count()) <= 1 && before >= 1, "folded, only the tab on screen stays");
+    await page.locator(`.vtabs [data-tab-group-toggle="${project}"]`).click();
+    assert.equal(await inGroup.count(), before, "unfolded, they come back");
+    // The column's edge drags to a width that is kept.
+    const edge = await page.locator(".vtabs__resize").boundingBox();
+    await page.mouse.move(edge.x + 3, edge.y + 200);
+    await page.mouse.down();
+    await page.mouse.move(edge.x + 63, edge.y + 200, { steps: 4 });
+    await page.mouse.up();
+    const width = Number(await page.evaluate(() => localStorage.getItem("convoy.tabColumnWidth")));
+    assert.ok(Math.abs(width - 300) <= 2, `the column is as wide as dragged (${width})`);
+  }
+  await page.keyboard.press(`${primary}+Comma`);
+  await page.locator('[data-settings-section="General"]').click();
+  await page.locator('[data-pref-set="tab_side"][data-value="right"]').click();
+  await page.waitForFunction(() => window.savedSettings.tab_side === "right");
+  await page.locator('[data-action="close-settings"]').click();
+  await page.locator(".shell--vtabs-right .vtabs").waitFor();
+  {
+    const order = (selector) => page.evaluate((selector) => [...document.querySelector(".shell").children].findIndex((el) => el.matches(selector)), selector);
+    assert.ok((await order(".vtabs")) < (await order(".main")), "the markup order stays; the grid places it");
+    const column = await page.locator(".vtabs").boundingBox();
+    const main = await page.locator(".main").boundingBox();
+    assert.ok(column.x > main.x, "on the right, the column sits after the content");
+  }
+  await page.keyboard.press(`${primary}+Comma`);
+  await page.locator('[data-settings-section="General"]').click();
+  await page.locator('[data-pref-set="tab_layout"][data-value="horizontal"]').click();
+  await page.waitForFunction(() => window.savedSettings.tab_layout === "horizontal");
   // The version, and an update found by checking: restarting into it asks
   // first while agents run, then installs.
   await page.locator(".pref-row", { hasText: "Version" }).getByText("0.9.0").waitFor();

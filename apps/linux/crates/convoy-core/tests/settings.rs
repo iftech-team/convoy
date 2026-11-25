@@ -137,6 +137,48 @@ fn new_preferences_are_validated_and_saved() {
 }
 
 #[test]
+fn tab_layout_settings_default_save_and_reject_unknown_values() {
+    let fixture = fixture();
+    let (mut workspace, _) = fixture.with_project();
+    let defaults = workspace.settings().clone();
+    assert_eq!(defaults.tab_layout, "horizontal");
+    assert!(defaults.tab_grouping);
+    assert_eq!(defaults.tab_side, "left");
+
+    workspace
+        .save_settings(SettingsPatch {
+            tab_layout: Some("vertical".into()),
+            tab_grouping: Some(false),
+            tab_side: Some("right".into()),
+            ..Default::default()
+        })
+        .unwrap();
+    let saved = convoy_core::Workspace::load(&fixture.file)
+        .unwrap()
+        .settings()
+        .clone();
+    assert_eq!(saved.tab_layout, "vertical");
+    assert!(!saved.tab_grouping);
+    assert_eq!(saved.tab_side, "right");
+    let json = std::fs::read_to_string(&fixture.file).unwrap();
+    assert!(json.contains("\"tabLayout\""), "saved under its macOS-style key");
+
+    for patch in [
+        SettingsPatch {
+            tab_layout: Some("diagonal".into()),
+            ..Default::default()
+        },
+        SettingsPatch {
+            tab_side: Some("top".into()),
+            ..Default::default()
+        },
+    ] {
+        assert!(workspace.save_settings(patch).is_err());
+    }
+    assert_eq!(workspace.settings().tab_layout, "vertical", "a bad value changes nothing");
+}
+
+#[test]
 fn a_global_review_template_applies_unless_the_project_sets_one() {
     let fixture = fixture();
     let (mut workspace, project) = fixture.with_project();

@@ -8,6 +8,10 @@ import { sessionStateOf, sleptBy } from "./session-state.js";
 import { taskPhase, taskSteps } from "./phase.js";
 
 const COLLAPSED = "convoy.collapsedProjects";
+const COLLAPSED_TABS = "convoy.collapsedTabGroups";
+const TAB_COLUMN = "convoy.tabColumnWidth";
+export const TAB_COLUMN_MIN = 180;
+export const TAB_COLUMN_MAX = 420;
 
 function remembered(key) {
   try {
@@ -21,6 +25,27 @@ function remembered(key) {
 export function saveCollapsed() {
   try {
     localStorage.setItem(COLLAPSED, JSON.stringify([...state.collapsed]));
+  } catch {
+    /* not remembered */
+  }
+}
+
+/// Projects folded shut in the tab strip or column. Apart from the sidebar's
+/// folds: hiding a project's tabs need not hide it in the sidebar.
+export function saveCollapsedTabs() {
+  try {
+    localStorage.setItem(COLLAPSED_TABS, JSON.stringify([...state.collapsedTabs]));
+  } catch {
+    /* not remembered */
+  }
+}
+
+export const clampTabColumn = (width) =>
+  Math.round(Math.max(TAB_COLUMN_MIN, Math.min(TAB_COLUMN_MAX, Number(width) || 240)));
+
+export function saveTabColumn() {
+  try {
+    localStorage.setItem(TAB_COLUMN, String(state.tabColumnWidth));
   } catch {
     /* not remembered */
   }
@@ -86,6 +111,16 @@ export const state = {
   inboxExpanded: new Set(),
   // Projects the user folded shut in the sidebar, kept across launches.
   collapsed: new Set(remembered(COLLAPSED)),
+  // Projects whose tabs are folded away in the tab strip; per machine.
+  collapsedTabs: new Set(remembered(COLLAPSED_TABS)),
+  // The vertical tab column's width, per machine since screens differ.
+  tabColumnWidth: (() => {
+    try {
+      return clampTabColumn(localStorage.getItem(TAB_COLUMN) ?? 240);
+    } catch {
+      return 240;
+    }
+  })(),
   // Groups as folding rows (on) or a flat list (off); per machine.
   groupHierarchy: (() => {
     try {
@@ -229,6 +264,17 @@ export function noteSleep(events) {
 export const PROJECT_TAB = "project:";
 export const projectTab = (id) => PROJECT_TAB + id;
 export const isProjectTab = (id) => typeof id === "string" && id.startsWith(PROJECT_TAB);
+/// The tab of what the main area shows: the open session, or the page of
+/// the selected project. `null` on Home, Files, Settings and the like.
+export function currentTab() {
+  if (state.files || (state.page && state.page !== "project")) return null;
+  if (state.sessionId) return state.sessionId;
+  return state.projectId ? projectTab(state.projectId) : null;
+}
+/// Open tabs as a column beside the content rather than a bar on top.
+export const tabsVertical = () => state.settings.tab_layout === "vertical";
+/// Tabs drawn under a header per project, which folds.
+export const tabsGrouped = () => state.settings.tab_grouping !== false;
 export const anySession = (id) =>
   state.sessions.find((item) => item.id === id) ??
   state.allSessions.find((item) => item.id === id);

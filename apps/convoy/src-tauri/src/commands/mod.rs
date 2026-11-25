@@ -369,6 +369,11 @@ pub struct SettingsView {
     pub git_status: bool,
     pub git_poll_seconds: i64,
     pub compact_sidebar: bool,
+    /// `horizontal` or `vertical`.
+    pub tab_layout: String,
+    pub tab_grouping: bool,
+    /// `left` or `right`, for the vertical tab column.
+    pub tab_side: String,
     pub worktree_setup: String,
     pub worktree_shared: String,
     /// `chat` or `terminal`, for sessions that have not chosen.
@@ -420,6 +425,9 @@ pub fn settings_read(workspace: State<'_, Workspace>) -> Result<SettingsView, St
             git_status: settings.git_status,
             git_poll_seconds: settings.git_poll_seconds,
             compact_sidebar: settings.compact_sidebar,
+            tab_layout: settings.tab_layout.clone(),
+            tab_grouping: settings.tab_grouping,
+            tab_side: settings.tab_side.clone(),
             worktree_setup: settings.worktree_setup.clone(),
             worktree_shared: settings.worktree_shared.clone(),
             default_view: settings.view().to_string(),
@@ -476,6 +484,12 @@ pub struct SettingsInput {
     #[serde(default)]
     pub compact_sidebar: Option<bool>,
     #[serde(default)]
+    pub tab_layout: Option<String>,
+    #[serde(default)]
+    pub tab_grouping: Option<bool>,
+    #[serde(default)]
+    pub tab_side: Option<String>,
+    #[serde(default)]
     pub worktree_setup: Option<String>,
     #[serde(default)]
     pub worktree_shared: Option<String>,
@@ -529,6 +543,9 @@ pub fn settings_save(input: SettingsInput, workspace: State<'_, Workspace>) -> R
                 git_status: input.git_status,
                 git_poll_seconds: input.git_poll_seconds,
                 compact_sidebar: input.compact_sidebar,
+                tab_layout: input.tab_layout,
+                tab_grouping: input.tab_grouping,
+                tab_side: input.tab_side,
                 worktree_setup: input.worktree_setup,
                 worktree_shared: input.worktree_shared,
                 default_view: input.default_view,

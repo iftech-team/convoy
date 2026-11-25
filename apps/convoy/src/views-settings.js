@@ -18,7 +18,7 @@ import { checklistCard, gettingStarted } from "./views-home.js";
 /// older sections folded into it.
 export const SECTIONS = [
   ["Get started", "check", ["setup", "check", "diagnostics", "doctor", "missing", "install", "path", "login", "gh", "git", "node", "problem", "first", "start", "macos"]],
-  ["General", "sliders", ["keep awake", "sleep", "sidebar", "sort", "compact", "notifications", "notify", "sound", "waiting", "finished", "done", "focus", "version", "update", "updates", "about", "версия", "обновление"]],
+  ["General", "sliders", ["keep awake", "sleep", "sidebar", "sort", "compact", "tabs", "tab", "vertical", "horizontal", "group", "вкладки", "notifications", "notify", "sound", "waiting", "finished", "done", "focus", "version", "update", "updates", "about", "версия", "обновление"]],
   ["Appearance", "paint", ["theme", "dark", "light", "system", "language", "russian", "english", "язык", "русский", "terminal", "font", "size", "scrollback", "lines"]],
   ["Agents", "sparkles", ["claude", "codex", "default agent", "chat", "terminal", "view", "yolo", "permissions", "skip", "review", "template", "brief", "hibernate", "idle", "sleep", "role", "roles", "planner", "builder", "qa", "documentation", "роль"]],
   ["Accounts", "person", ["account", "profile", "login", "sign in", "claude", "codex"]],
@@ -186,6 +186,40 @@ function general(settings) {
       t("Sidebar"),
       row(t("Sort projects by name"), t("Otherwise projects keep the order they were added in."), toggle("sort_projects", settings.sort_projects, t("Sort projects by name"))) +
         row(t("Compact rows"), t("Hides the branch and status line under projects and sessions."), toggle("compact_sidebar", settings.compact_sidebar !== false, t("Compact rows"))),
+    )}
+    ${groupBox(
+      t("Tabs"),
+      row(
+        t("Tab layout"),
+        t("A bar along the top, or a column beside the content."),
+        segmented(
+          "tab_layout",
+          [
+            ["horizontal", t("Top bar")],
+            ["vertical", t("Vertical")],
+          ],
+          settings.tab_layout === "vertical" ? "vertical" : "horizontal",
+        ),
+      ) +
+        (settings.tab_layout === "vertical"
+          ? row(
+              t("Column side"),
+              t("Drag the column's edge to change its width."),
+              segmented(
+                "tab_side",
+                [
+                  ["left", t("Left")],
+                  ["right", t("Right")],
+                ],
+                settings.tab_side === "right" ? "right" : "left",
+              ),
+            )
+          : "") +
+        row(
+          t("Group tabs by project"),
+          t("Each project's tabs sit under its name. Click the name to hide them."),
+          toggle("tab_grouping", settings.tab_grouping !== false, t("Group tabs by project")),
+        ),
     )}
     ${groupBox(
       t("Keep computer awake"),
