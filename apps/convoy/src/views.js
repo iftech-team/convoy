@@ -1132,22 +1132,39 @@ const numberHint = (number) =>
 
 /// A project's page as a tab: its icon and name, and the part of the page
 /// it was left on.
-function projectTabItem(id, number) {
+/// Each part of a project's page, as its tab shows it under the project's
+/// header, where the project's own name and icon would only repeat it.
+const PROJECT_VIEW_ICONS = {
+  sessions: "terminal",
+  reviews: "review",
+  specs: "doc",
+  tasks: "board",
+  docs: "book",
+  automations: "bolt",
+};
+
+function projectTabItem(id, number, grouped = false) {
   const info = tabInfo(id);
   const owner = state.projects.find((item) => item.id === info?.project_id);
   if (!owner) return "";
   const selected =
     !state.files && !state.sessionId && state.projectId === owner.id && (!state.page || state.page === "project");
   const view = PROJECT_VIEWS[info.view] ?? PROJECT_VIEWS.sessions;
+  const glyph = icons[PROJECT_VIEW_ICONS[info.view] ?? "terminal"] ?? "";
   return `
     <div class="tab-item tab-item--project${selected ? " tab-item--selected" : ""}" data-tab-open="${escape(id)}"
          title="${escape(`${owner.title} · ${t(view)}`)}">
-      <span class="tab-item__bar" style="background:${projectTint(owner)}"></span>
+      ${
+        grouped
+          ? `<span class="tab-item__view">${glyph}</span>
+      <span class="tab-item__text"><span class="tab-item__title">${escape(t(view))}</span></span>`
+          : `<span class="tab-item__bar" style="background:${projectTint(owner)}"></span>
       ${projectIcon(owner, 13)}
       <span class="tab-item__text">
         <span class="tab-item__title">${escape(owner.title)}</span>
         <span class="tab-item__project">${escape(t(view))}</span>
-      </span>
+      </span>`
+      }
       ${selected ? "" : numberHint(number)}
       <button class="tab-item__close" data-tab-close="${escape(id)}" title="${escape(t("Close tab"))}">${icons.close}</button>
     </div>`;
@@ -1156,7 +1173,7 @@ function projectTabItem(id, number) {
 /// One tab. `number` is its place among the tabs on screen, for the ⌘N hint;
 /// `grouped` drops the project's name when a header above already says it.
 function tabItem(id, number, grouped = false) {
-  if (isProjectTab(id)) return projectTabItem(id, number);
+  if (isProjectTab(id)) return projectTabItem(id, number, grouped);
   const info = tabInfo(id);
   if (!info) return "";
   const owner = state.projects.find((item) => item.id === info.project_id);
@@ -1167,7 +1184,7 @@ function tabItem(id, number, grouped = false) {
   return `
     <div class="tab-item${selected ? " tab-item--selected" : ""}" data-tab-open="${escape(id)}"
          title="${escape(`${owner?.title ?? ""} · ${agentName(info.agent)}${running ? "" : ` · ${t(sessionLabel(sessionState({ ...info, id }, false)))}`}`)}">
-      <span class="tab-item__bar" style="background:${owner ? projectTint(owner) : "var(--border-strong)"}"></span>
+      ${grouped ? "" : `<span class="tab-item__bar" style="background:${owner ? projectTint(owner) : "var(--border-strong)"}"></span>`}
       ${tabGlyph(id, running, info)}
       ${agentIcon(info.agent, 12)}
       <span class="tab-item__text">

@@ -103,6 +103,15 @@ export function terminalFor(id) {
   // `missing`: the agent said the conversation it was asked to resume is gone.
   const entry = { terminal, fit, host, search, opened: false, restored: false, saved: "", missing: false };
   terminals.set(id, entry);
+  // The space a terminal has changes without the window changing: the tab
+  // column opening, being resized or narrowed, panes splitting. It fits
+  // again then, rather than drawing at its old width over what is beside it.
+  let fitting = 0;
+  new ResizeObserver(() => {
+    if (!entry.opened || !host.isConnected || !host.clientWidth) return;
+    cancelAnimationFrame(fitting);
+    fitting = requestAnimationFrame(() => host.isConnected && fit.fit());
+  }).observe(host);
   return entry;
 }
 

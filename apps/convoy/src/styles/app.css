@@ -724,6 +724,12 @@ select:disabled {
   height: 100%;
 }
 
+/* A terminal never sets its pane's width: it fits the space it is given. */
+.terminal__surface {
+  min-width: 0;
+  overflow: hidden;
+}
+
 .term .xterm-viewport {
   background-color: var(--term-bg) !important;
 }
@@ -3838,9 +3844,15 @@ select:disabled {
   }
 }
 
+/* Nothing in the content draws over the tab column, whichever side it is on. */
+.shell--vtabs .main {
+  overflow: hidden;
+}
+
 .vtabs {
   grid-area: vtabs;
   position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -4141,21 +4153,26 @@ select:disabled {
 }
 
 .tabbar__group + .tabbar__group,
-.tab-item + .tabbar__group {
-  margin-left: 6px;
+.tab-item + .tabbar__group,
+.tabbar__pins + .tabbar__group {
+  margin-left: 4px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
 }
 
+/* A quiet label, like the sidebar's section names: the project's colour is
+   on its icon, and its tabs follow without repeating it. */
 .tab-group {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   height: 26px;
   max-width: 160px;
-  padding: 0 8px 0 6px;
-  border-radius: 7px;
+  padding: 0 6px 0 4px;
+  border-radius: 6px;
   border: 1px solid transparent;
-  background: color-mix(in srgb, var(--group-tint) 12%, transparent);
+  background: none;
   font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
@@ -4163,14 +4180,37 @@ select:disabled {
 }
 
 .tab-group:hover {
-  background: color-mix(in srgb, var(--group-tint) 22%, transparent);
+  background: var(--bg-hover);
   color: var(--text);
+}
+
+.tab-group--folded {
+  background: var(--bg-hover);
+}
+
+.tab-group .project-icon,
+.tab-group svg {
+  flex: none;
+}
+
+/* A project page's part, under its project's header. */
+.tab-item__view {
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+
+.tab-item__view svg {
+  width: 13px;
+  height: 13px;
 }
 
 .tab-group__chevron {
   flex: none;
   display: grid;
   place-items: center;
+  color: var(--text-faint);
 }
 
 .tab-group__chevron svg {
@@ -4187,14 +4227,10 @@ select:disabled {
 
 .tab-group__count {
   flex: none;
-  min-width: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--bg-hover);
-  font-size: 9.5px;
-  font-weight: 600;
-  text-align: center;
-  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
 }
 
 /* What the agents behind a folded header are doing. */
@@ -4274,8 +4310,8 @@ select:disabled {
 .tab-group--row {
   max-width: none;
   width: 100%;
-  height: 28px;
-  padding: 0 8px;
+  height: 26px;
+  padding: 0 8px 0 6px;
   background: none;
   text-align: left;
 }
@@ -4289,12 +4325,11 @@ select:disabled {
 }
 
 .tab-group--row.tab-group--folded {
-  background: color-mix(in srgb, var(--group-tint) 10%, transparent);
+  background: none;
 }
 
-/* Under its header a tab does not repeat the project, so it is one line. */
-.vtabs__group .tab-group--row ~ .tab-item {
-  margin-left: 10px;
+.tab-group--row.tab-group--folded:hover {
+  background: var(--bg-hover);
 }
 
 /* ------------------------------------------- session bar, macOS style -- */
