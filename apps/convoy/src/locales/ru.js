@@ -4,6 +4,7 @@
 
 export default {
   strings: {
+    "Website…": "Сайт…",
     "Downloaded by Convoy": "Скачан Convoy",
     "Loading the agent registry…": "Загружаем реестр агентов…",
     "Install": "Установить",

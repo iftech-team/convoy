@@ -348,6 +348,19 @@ const agentRow = (icon, title, detail, control) => `
 const commandLine = (agent) =>
   agent.binary ? t("Downloaded by Convoy") : [agent.command, ...(agent.args ?? [])].join(" ");
 
+/// How a missing agent gets installed: from the registry, in Convoy, when
+/// the registry has a build for this computer; its website otherwise.
+function installControl(agent) {
+  if (agent.installed) return "";
+  const entry = agent.registry ? state.acpRegistry?.find((item) => item.id === agent.registry && item.kind) : null;
+  if (entry) {
+    return (state.acpInstalling ?? new Set()).has(entry.id)
+      ? button({ label: t("Installing…"), disabled: true })
+      : button({ label: t("Install"), kind: "primary", data: { "acp-registry-add": entry.id } });
+  }
+  return agent.installUrl ? button({ label: t("Website…"), kind: "quiet", data: { "acp-install": agent.installUrl } }) : "";
+}
+
 function acpSection() {
   const list = state.acpAgents;
   const rows = !list
@@ -357,7 +370,7 @@ function acpSection() {
           const status = agent.installed ? t("Installed") : t("Not found");
           const controls = [
             agent.installed && agent.loginCommand ? button({ label: t("Sign in…"), data: { "acp-login": agent.key } }) : "",
-            !agent.installed && agent.installUrl ? button({ label: t("Install…"), kind: "quiet", data: { "acp-install": agent.installUrl } }) : "",
+            installControl(agent),
             agent.builtin
               ? ""
               : button({ icon: "trash", kind: "quiet", data: { "acp-remove": agent.id }, title: t("Remove this agent") }),
