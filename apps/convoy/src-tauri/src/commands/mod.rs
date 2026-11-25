@@ -317,7 +317,9 @@ pub fn workspace_read(
                     qa: convoy_core::qa::configured(project),
                     qa_auto: project.qa_auto == Some(true) && convoy_core::qa::configured(project),
                     review_auto: project.review_auto == Some(true),
-                    review_agent: project.review_agent.map(|agent| agent.as_str().to_string()),
+                    review_agent: project
+                        .review_agent
+                        .map(|agent| convoy_core::provider::acp_agents::key(agent, project.review_acp_agent.as_deref())),
                     plan_first_default: project.plan_first_default == Some(true),
                     docs_auto: project.docs_auto == Some(true),
                     sessions: own.iter().filter(|session| !session.is_archived()).count(),

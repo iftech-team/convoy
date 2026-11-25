@@ -122,7 +122,7 @@ function pipeline(project) {
      ${row(
        t("Then test with an agent"),
        t("Tests the change end to end against the task and reports a verdict. It does not edit code."),
-       select("qa_agent", [["", t("No agent")], ["claude", "Claude Code"], ["codex", "Codex"]], project.qa_agent ?? ""),
+       select("qa_agent", [["", t("No agent")], ...agentOptions({ chosen: project.qa_agent ?? "" }).map(([value, name]) => [value, name])], project.qa_agent ?? ""),
      )}
      <div class="pref-block pref-stack">
        <div class="pref-row__title">${escape(t("Shared QA environment"))}</div>
@@ -190,7 +190,7 @@ function pipeline(project) {
         options: row(
           t("Reviewer"),
           t("Reviews this project's work, automatically or when you start a review. Unset, Claude and Codex review each other."),
-          select("review_agent", [["", t("The other agent")], ["claude", "Claude Code"], ["codex", "Codex"]], project.review_agent ?? ""),
+          select("review_agent", [["", t("The other agent")], ...agentOptions({ chosen: project.review_agent ?? "" }).map(([value, name]) => [value, name])], project.review_agent ?? ""),
         ),
       })}
       ${stepCard({

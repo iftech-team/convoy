@@ -64,6 +64,10 @@ pub struct ImportOptions {
     pub mode: PublishMode,
     pub auto_review: bool,
     pub overrides: BTreeMap<String, (Agent, String)>,
+    /// The ACP agent, when `agent` is [`Agent::Acp`].
+    pub acp_agent: Option<String>,
+    /// The ACP agent of each override whose agent is [`Agent::Acp`].
+    pub acp_overrides: BTreeMap<String, String>,
     /// Skills every imported task starts with.
     pub skills: Vec<String>,
 }
@@ -850,7 +854,7 @@ impl Workspace {
                     .clone()
                     .filter(|id| !id.is_empty())
                     .or_else(|| task.profile_id.clone()),
-                view: None,
+                view: (task.agent == Agent::Acp).then(|| "chat".to_string()),
                 parent_id: None,
                 manager: None,
                 skills: task.skills.clone(),
@@ -884,6 +888,19 @@ impl Workspace {
             "Project not found."
         );
         let default_model = model_name(&options.model)?;
+        // Each ACP agent named must be set up.
+        let mut acp_names: Vec<Option<&str>> = Vec::new();
+        if options.agent == Agent::Acp {
+            acp_names.push(options.acp_agent.as_deref());
+        }
+        for (key, (agent, _)) in &options.overrides {
+            if *agent == Agent::Acp {
+                acp_names.push(options.acp_overrides.get(key).map(String::as_str));
+            }
+        }
+        for name in acp_names {
+            crate::provider::acp_agents::find(&self.state().settings, name)?;
+        }
         let mut picks = BTreeMap::new();
         for (key, (agent, model)) in &options.overrides {
             picks.insert(key.clone(), (*agent, model_name(model)?));
@@ -923,6 +940,11 @@ impl Workspace {
                     .get(&issue.key)
                     .cloned()
                     .unwrap_or((options.agent, default_model.clone()));
+                let acp_agent = match picks.get(&issue.key) {
+                    Some(_) => options.acp_overrides.get(&issue.key).cloned(),
+                    None => options.acp_agent.clone(),
+                }
+                .filter(|_| agent == Agent::Acp);
                 created.push(Task {
                     id: new_id(),
                     project_id: project_id.to_string(),
@@ -930,7 +952,7 @@ impl Workspace {
                     details,
                     findings: String::new(),
                     agent,
-                    acp_agent: None,
+                    acp_agent,
                     status: TaskStatus::Queued,
                     mode: options.mode,
                     auto_review: options.auto_review,

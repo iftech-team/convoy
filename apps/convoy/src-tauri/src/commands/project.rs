@@ -250,11 +250,11 @@ pub fn project_detail(
             test_commands: project.test_commands.clone().unwrap_or_default(),
             qa_agent: project
                 .qa_agent
-                .map(|agent| agent.as_str().to_string())
+                .map(|agent| convoy_core::provider::acp_agents::key(agent, project.qa_acp_agent.as_deref()))
                 .unwrap_or_default(),
             review_agent: project
                 .review_agent
-                .map(|agent| agent.as_str().to_string())
+                .map(|agent| convoy_core::provider::acp_agents::key(agent, project.review_acp_agent.as_deref()))
                 .unwrap_or_default(),
             qa_auto: project.qa_auto == Some(true),
             qa_timeout: project

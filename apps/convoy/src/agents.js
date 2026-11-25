@@ -72,3 +72,7 @@ export function splitCommand(text) {
   if (started || word) words.push(word);
   return words;
 }
+
+/// The agent of a record that stores an ACP agent apart (`agent: "acp"`,
+/// `acp_agent: "<id>"`), as the pickers name it.
+export const agentKey = (item) => (item?.agent === "acp" && item.acp_agent ? `acp:${item.acp_agent}` : item?.agent);

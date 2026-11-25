@@ -282,6 +282,8 @@ fn import_creates_tasks_with_per_issue_models_and_skips_duplicates() {
         mode: PublishMode::Push,
         auto_review: false,
         overrides,
+        acp_agent: None,
+        acp_overrides: BTreeMap::new(),
     };
 
     assert_eq!(
@@ -463,6 +465,8 @@ fn the_same_key_on_two_sites_is_two_issues() {
         mode: PublishMode::Pr,
         auto_review: false,
         overrides: BTreeMap::new(),
+        acp_agent: None,
+        acp_overrides: BTreeMap::new(),
     };
     assert_eq!(
         workspace
@@ -519,6 +523,8 @@ fn editing_an_imported_task_keeps_its_model_until_the_agent_changes() {
         mode: PublishMode::None,
         auto_review: false,
         overrides: BTreeMap::new(),
+        acp_agent: None,
+        acp_overrides: BTreeMap::new(),
     };
     workspace
         .import_issues(

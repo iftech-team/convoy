@@ -340,6 +340,12 @@ fn launch<R: Runtime>(
     };
 
     let title = session_title(&automation.title, zone, now);
+    // An ACP agent has no hooks to end a terminal run by.
+    let view = if automation.agent == convoy_core::model::Agent::Acp {
+        "chat"
+    } else {
+        automation.view.as_str()
+    };
     let created = workspace.act(|core| {
         let before: HashSet<String> = core
             .state()
@@ -348,6 +354,7 @@ fn launch<R: Runtime>(
             .map(|session| session.id.clone())
             .collect();
         let mut input = NewSession::new(automation.project_id.clone(), automation.agent, &title);
+        input.acp_agent = automation.acp_agent.clone();
         input.prompt = automation.prompt.clone();
         input.model = automation.model.clone();
         input.effort = automation.effort.clone();
@@ -362,7 +369,7 @@ fn launch<R: Runtime>(
             .find(|session| !before.contains(&session.id))
             .map(|session| session.id.clone())
             .ok_or_else(|| convoy_core::ConvoyError::message("Session not found."))?;
-        core.set_session_view(&id, &automation.view)?;
+        core.set_session_view(&id, view)?;
         Ok(id)
     });
     let session = match created {
@@ -394,7 +401,7 @@ fn launch<R: Runtime>(
     if let Ok(mut tracker) = automations.tracker.lock() {
         tracker.track(&session, &automation.id);
     }
-    if automation.view == "terminal" {
+    if view == "terminal" {
         if let Ok(mut terminal) = automations.terminal.lock() {
             terminal.insert(session.clone(), now_ms());
         }
@@ -411,7 +418,7 @@ fn launch<R: Runtime>(
         .map(|_| ())
     });
 
-    let started = if automation.view == "terminal" {
+    let started = if view == "terminal" {
         let helpers = app.try_state::<crate::helpers::Helpers>();
         crate::commands::session::start_terminal(
             app,
@@ -581,7 +588,7 @@ pub fn automation_save(
         input.skills = Some(crate::skills::resolve(
             &storage,
             &input.project_id,
-            convoy_core::model::Agent::parse(&input.agent),
+            convoy_core::provider::acp_agents::parse_key(&input.agent).map(|(agent, _)| agent),
             input.skills.as_deref(),
         )?);
     }

@@ -1101,6 +1101,8 @@ mod tests {
             test_commands: None,
             qa_agent: None,
             review_agent: None,
+            qa_acp_agent: None,
+            review_acp_agent: None,
             qa_auto: None,
             qa_timeout: None,
             role_instructions: None,

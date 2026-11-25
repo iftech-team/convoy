@@ -226,6 +226,7 @@ fn automation(schedule: Schedule, created: Instant) -> Automation {
         title: "Morning triage".into(),
         prompt: "Triage the new issues".into(),
         agent: Agent::Claude,
+        acp_agent: None,
         model: String::new(),
         effort: String::new(),
         profile_id: None,
@@ -662,4 +663,30 @@ fn runs_finish_skip_and_are_kept_to_twenty() {
             .unwrap();
     }
     assert_eq!(store.get(&id).unwrap().history.len(), HISTORY);
+}
+
+#[test]
+fn an_acp_automation_names_its_agent_and_always_runs_as_a_chat() {
+    let world = world();
+    let mut store = Store::load(&world.store_file).unwrap();
+    let mut acp = input(&world.project);
+    acp.agent = "acp:opencode".into();
+    acp.model = String::new();
+    acp.effort = String::new();
+    acp.view = "terminal".into();
+    let id = store.save(acp.clone(), &world.workspace, 1_000).unwrap();
+    let item = store.get(&id).unwrap().clone();
+    assert_eq!(item.agent, Agent::Acp);
+    assert_eq!(item.acp_agent.as_deref(), Some("opencode"));
+    assert_eq!(item.view, "chat", "a terminal run ends on a hook ACP agents lack");
+
+    let mut unknown = acp.clone();
+    unknown.agent = "acp:nobody".into();
+    assert!(store.save(unknown, &world.workspace, 1_000).is_err());
+    let mut bare = acp.clone();
+    bare.agent = "acp".into();
+    assert!(store.save(bare, &world.workspace, 1_000).is_err());
+    let mut account = acp;
+    account.profile_id = Some("p1".into());
+    assert!(store.save(account, &world.workspace, 1_000).is_err());
 }

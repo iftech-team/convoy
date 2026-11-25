@@ -4,6 +4,7 @@
 
 import { attempt, done, ensureModels, activeAccount, lastChoice, state, toast } from "./state.js";
 import { t } from "./i18n.js";
+import { agentKey, isAcp } from "./agents.js";
 import { DAYS, draftSchedule, previewBlock } from "./views-automations.js";
 import { fitSkills } from "./skills.js";
 import { autoSkills } from "./views-skills.js";
@@ -55,7 +56,7 @@ export function installAutomations({ render, openModal, closeDialog, selectProje
   }
 
   function open(item) {
-    const agent = item?.agent ?? state.settings.default_agent ?? "claude";
+    const agent = (item ? agentKey(item) : null) ?? state.settings.default_agent ?? "claude";
     const schedule = item?.schedule ?? { kind: "weekdays", at: "09:00", days: ["mon", "tue", "wed", "thu", "fri"] };
     const fresh = item ? {} : lastChoice(agent);
     openModal({
@@ -96,10 +97,11 @@ export function installAutomations({ render, openModal, closeDialog, selectProje
       title: dialog.title,
       prompt: dialog.prompt,
       agent: dialog.agent,
-      model: dialog.model === "__loading" ? "" : dialog.model ?? "",
-      effort: dialog.effort ?? "",
-      profile_id: dialog.account || null,
-      view: dialog.view,
+      // An ACP agent has no accounts, models or terminal runs here.
+      model: isAcp(dialog.agent) || dialog.model === "__loading" ? "" : dialog.model ?? "",
+      effort: isAcp(dialog.agent) ? "" : dialog.effort ?? "",
+      profile_id: isAcp(dialog.agent) ? null : dialog.account || null,
+      view: isAcp(dialog.agent) ? "chat" : dialog.view,
       worktree: !!dialog.worktree,
       schedule: draftSchedule(dialog),
       enabled: dialog.enabled !== false,

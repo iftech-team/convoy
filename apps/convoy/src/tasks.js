@@ -6,6 +6,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { t } from "./i18n.js";
 import { plural } from "./ui.js";
+import { agentOptions } from "./agents.js";
 import { catalog, storageNote } from "./integrations-catalog.js";
 import { TASK_MODES, taskModeOf } from "./task-defaults.js";
 
@@ -13,7 +14,6 @@ const MODELS = {
   claude: [["fable", "Fable · most capable"], ["opus", "Opus"], ["sonnet", "Sonnet · balanced"], ["haiku", "Haiku · fastest"]],
   codex: [["gpt-5-codex", "GPT-5 Codex"], ["gpt-5", "GPT-5"], ["o3", "o3"]],
 };
-const AGENTS = [["claude", "Claude Code"], ["codex", "Codex"]];
 const AUTH = {
   apiKey: { linear: "API key", jira: "API token", peshbar: "API token", notion: "Integration token" },
   password: { linear: "Login & password", jira: "Login & password", peshbar: "Login & password", notion: "Login & password" },
@@ -41,12 +41,15 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
   // well-known ones until then.
   const modelList = (agent) => {
     const loaded = state.models?.[`${agent}:`]?.map((model) => [model.id, model.name]);
-    const models = loaded?.length ? loaded : MODELS[agent];
+    // An ACP agent lists its models once its chat opens: none here.
+    const models = loaded?.length ? loaded : MODELS[agent] ?? [];
     return `<datalist id="models-${agent}">${models.map(([id, name]) => `<option value="${escape(id)}">${escape(t(name))}</option>`).join("")}</datalist>`;
   };
 
   const agentSelect = (attrs, value) =>
-    `<select ${attrs}>${AGENTS.map(([id, name]) => `<option value="${id}"${id === value ? " selected" : ""}>${name}</option>`).join("")}</select>`;
+    `<select ${attrs}>${agentOptions({ chosen: value })
+      .map(([id, name]) => `<option value="${escape(id)}"${id === value ? " selected" : ""}>${escape(name)}</option>`)
+      .join("")}</select>`;
 
   const modelInput = (attrs, agent, value) =>
     `<input ${attrs} list="models-${agent}" value="${escape(value || "")}" placeholder="${escape(t("Agent default"))}" spellcheck="false" />`;

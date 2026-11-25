@@ -279,12 +279,16 @@ const startReview = (dialog) =>
     }),
     wide: true,
     body: `
-      ${field(t("Reviewer"), choice("agent", agentChoices(dialog.agent, false), dialog.agent))}
-      ${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
+      ${field(t("Reviewer"), choice("agent", agentChoices(dialog.agent), dialog.agent))}
+      ${
+        isAcp(dialog.agent)
+          ? `<p class="modal__hint">${escape(t("This agent signs in its own way and lists its models once its chat opens."))}</p>`
+          : `${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
       <div class="field-row">
         ${field(t("Model"), modelSelect("draft-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}
         ${field(t("Effort"), effortSelect("draft-effort", dialog.agent, dialog.account ?? "", dialog.model ?? "", dialog.effort ?? ""))}
-      </div>
+      </div>`
+      }
       ${field(t("Brief"), textArea("draft-brief", dialog.brief, "", 14))}`,
     foot: foot(t("Create review"), "create-review"),
   });

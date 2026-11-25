@@ -82,6 +82,9 @@ pub struct Automation {
     pub title: String,
     pub prompt: String,
     pub agent: Agent,
+    /// Which ACP agent, when `agent` is [`Agent::Acp`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acp_agent: Option<String>,
     /// Empty for the agent's default.
     #[serde(default)]
     pub model: String,
@@ -188,7 +191,8 @@ pub struct AutomationInput {
 }
 
 /// Checks what the editor sent against the workspace it will run in.
-pub fn validate(input: &AutomationInput, workspace: &Workspace) -> Result<Agent> {
+/// The agent and, for an ACP agent, its id.
+pub fn validate(input: &AutomationInput, workspace: &Workspace) -> Result<(Agent, Option<String>)> {
     let title = input.title.trim();
     ensure!(!title.is_empty(), "Give the automation a title.");
     ensure!(
@@ -202,8 +206,15 @@ pub fn validate(input: &AutomationInput, workspace: &Workspace) -> Result<Agent>
         "The prompt is too long (32,000 characters at most)."
     );
     workspace.project(&input.project_id)?;
-    let agent = Agent::parse(&input.agent)
-        .ok_or_else(|| ConvoyError::message("Unknown agent. Use claude or codex."))?;
+    let (agent, acp_agent) = crate::provider::acp_agents::parse_key(&input.agent)
+        .ok_or_else(|| ConvoyError::message("Unknown agent. Use claude, codex or acp:<id>."))?;
+    if agent == Agent::Acp {
+        crate::provider::acp_agents::find(workspace.settings(), acp_agent.as_deref())?;
+        ensure!(
+            input.profile_id.as_deref().is_none_or(str::is_empty),
+            "Accounts are not available for this agent."
+        );
+    }
     ensure!(
         utf16_len(&input.model) <= 100 && MODEL.is_match(&input.model),
         "Invalid model name."
@@ -227,7 +238,7 @@ pub fn validate(input: &AutomationInput, workspace: &Workspace) -> Result<Agent>
     if let Some(problem) = input.schedule.problem() {
         bail!("{problem}");
     }
-    Ok(agent)
+    Ok((agent, acp_agent))
 }
 
 /// What one pass of the scheduler should do with one automation.
@@ -465,7 +476,10 @@ impl Store {
         workspace: &Workspace,
         now: Instant,
     ) -> Result<String> {
-        let agent = validate(&input, workspace)?;
+        let (agent, acp_agent) = validate(&input, workspace)?;
+        // A terminal run ends on its agent's hook, which only Claude and
+        // Codex have: an ACP agent always runs as a chat.
+        let view = if agent == Agent::Acp { "chat".to_string() } else { input.view.clone() };
         let profile_id = input.profile_id.clone().filter(|id| !id.is_empty());
         match input.id.clone() {
             Some(id) => self.with(&id, |automation| {
@@ -478,10 +492,11 @@ impl Store {
                 automation.title = input.title.trim().to_string();
                 automation.prompt = input.prompt.trim().to_string();
                 automation.agent = agent;
+                automation.acp_agent = acp_agent.clone();
                 automation.model = input.model.clone();
                 automation.effort = input.effort.clone();
                 automation.profile_id = profile_id;
-                automation.view = input.view.clone();
+                automation.view = view.clone();
                 automation.worktree = input.worktree;
                 automation.schedule = input.schedule.clone();
                 automation.enabled = input.enabled;
@@ -503,10 +518,11 @@ impl Store {
                     title: input.title.trim().to_string(),
                     prompt: input.prompt.trim().to_string(),
                     agent,
+                    acp_agent,
                     model: input.model.clone(),
                     effort: input.effort.clone(),
                     profile_id,
-                    view: input.view.clone(),
+                    view,
                     worktree: input.worktree,
                     schedule: input.schedule.clone(),
                     enabled: input.enabled,

@@ -9,7 +9,7 @@ use convoy_core::integrations::{
     Scope, TrackerAuth, TrackerKind,
 };
 use convoy_core::planning::ImportOptions;
-use convoy_core::workspace::model::{Agent, PublishMode};
+use convoy_core::workspace::model::PublishMode;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -396,23 +396,27 @@ pub async fn issues_import(
         issues
     };
     let mut overrides = BTreeMap::new();
+    let mut acp_overrides = BTreeMap::new();
     for (key, pick) in options.overrides {
-        overrides.insert(
-            key,
-            (
-                Agent::parse(&pick.agent).ok_or("Unknown agent.")?,
-                pick.model,
-            ),
-        );
+        let (agent, acp) = convoy_core::provider::acp_agents::parse_key(&pick.agent)
+            .ok_or("Unknown agent.")?;
+        if let Some(acp) = acp {
+            acp_overrides.insert(key.clone(), acp);
+        }
+        overrides.insert(key, (agent, pick.model));
     }
+    let (agent, acp_agent) =
+        convoy_core::provider::acp_agents::parse_key(&options.agent).ok_or("Unknown agent.")?;
     let skills = crate::skills::resolve(&workspace.storage, &project_id, None, None)?;
     let options = ImportOptions {
         skills,
-        agent: Agent::parse(&options.agent).ok_or("Unknown agent.")?,
+        agent,
         model: options.model,
         mode: mode(&options.mode)?,
         auto_review: options.auto_review,
         overrides,
+        acp_agent,
+        acp_overrides,
     };
     let (created, skipped) = import_into(&workspace, &project_id, &connection, &issues, &options)?;
     download_attachments(&workspace, &connection, &created, &issues).await;
@@ -649,6 +653,8 @@ async fn intake_one(
         mode,
         auto_review,
         overrides: BTreeMap::new(),
+        acp_agent: None,
+        acp_overrides: BTreeMap::new(),
     };
     let (created, _) = import_into(workspace, project_id, &connection, &issues, &options)?;
     download_attachments(workspace, &connection, &created, &issues).await;

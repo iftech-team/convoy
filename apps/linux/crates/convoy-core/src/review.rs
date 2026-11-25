@@ -76,6 +76,24 @@ pub fn reviewer(workspace: &Workspace, builder: &Session) -> Agent {
         .unwrap_or_else(|| builder.agent.reviewer())
 }
 
+/// Which ACP agent reviews, when [`reviewer`] is [`Agent::Acp`]: the one
+/// the project names.
+pub fn reviewer_acp(workspace: &Workspace, builder: &Session) -> Option<String> {
+    workspace
+        .project(&builder.project_id)
+        .ok()
+        .filter(|project| project.review_agent == Some(Agent::Acp))
+        .and_then(|project| project.review_acp_agent.clone())
+}
+
+/// The reviewer as the window names it: `claude`, `codex` or `acp:<id>`.
+pub fn reviewer_key(workspace: &Workspace, builder: &Session) -> String {
+    crate::provider::acp_agents::key(
+        reviewer(workspace, builder),
+        reviewer_acp(workspace, builder).as_deref(),
+    )
+}
+
 /// The session a review handoff creates: the project's reviewer, the same
 /// project, linked back to the builder.
 pub fn handoff(workspace: &Workspace, id: &str, prompt: String) -> Result<NewSession> {
@@ -83,6 +101,7 @@ pub fn handoff(workspace: &Workspace, id: &str, prompt: String) -> Result<NewSes
     let agent = reviewer(workspace, &session);
     let title = head(&format!("Review: {}", session.title), 200).to_string();
     let mut input = NewSession::new(session.project_id.clone(), agent, title);
+    input.acp_agent = reviewer_acp(workspace, &session).filter(|_| agent == Agent::Acp);
     input.prompt = prompt;
     input.review_of = Some(session.id);
     Ok(input)

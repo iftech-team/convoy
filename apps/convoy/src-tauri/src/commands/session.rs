@@ -491,22 +491,27 @@ pub fn review_create(
     profile_id: Option<String>,
     workspace: State<'_, Workspace>,
 ) -> Result<String, String> {
+    // `claude`, `codex` or `acp:<id>`; none is the project's reviewer.
     let agent = match agent.as_deref() {
-        Some(name) => Some(Agent::parse(name).ok_or("Unknown agent.")?),
+        Some(name) => Some(convoy_core::provider::acp_agents::parse_key(name).ok_or("Unknown agent.")?),
         None => None,
     };
     let storage = workspace.storage.clone();
     let (project, reviewer) = workspace.act(|workspace| {
         let builder = workspace.session(&id)?;
-        let reviewer = agent.unwrap_or_else(|| convoy_core::review::reviewer(workspace, builder));
+        let reviewer = agent
+            .as_ref()
+            .map(|(agent, _)| *agent)
+            .unwrap_or_else(|| convoy_core::review::reviewer(workspace, builder));
         Ok((builder.project_id.clone(), reviewer))
     })?;
     // A reviewer is a new session: it gets the automatic skills.
     let skills = crate::skills::resolve(&storage, &project, Some(reviewer), None)?;
     workspace.act(|workspace| {
         let mut input = convoy_core::review::handoff(workspace, &id, prompt)?;
-        if let Some(agent) = agent {
+        if let Some((agent, acp)) = agent.clone() {
             input.agent = agent;
+            input.acp_agent = acp;
         }
         input.skills = skills;
         input.model = model.unwrap_or_default();

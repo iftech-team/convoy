@@ -3212,9 +3212,9 @@ async function createReview() {
     id: dialog.id,
     prompt: dialog.brief,
     agent: dialog.agent,
-    model: dialog.model === "__loading" ? "" : dialog.model ?? "",
-    effort: effortLevels(dialog.agent, dialog.account ?? "", dialog.model ?? "").includes(dialog.effort) ? dialog.effort : null,
-    profileId: dialog.account || null,
+    model: isAcp(dialog.agent) || dialog.model === "__loading" ? "" : dialog.model ?? "",
+    effort: !isAcp(dialog.agent) && effortLevels(dialog.agent, dialog.account ?? "", dialog.model ?? "").includes(dialog.effort) ? dialog.effort : null,
+    profileId: isAcp(dialog.agent) ? null : dialog.account || null,
   });
   if (!id) return;
   rememberChoice(dialog.agent, dialog.model, dialog.effort);

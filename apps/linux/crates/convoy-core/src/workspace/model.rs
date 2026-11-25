@@ -361,6 +361,12 @@ pub struct Project {
         skip_serializing_if = "Option::is_none"
     )]
     pub review_agent: Option<Agent>,
+    /// The ACP agent, when `qa_agent` is [`Agent::Acp`].
+    #[serde(rename = "qaAcpAgent", default, skip_serializing_if = "Option::is_none")]
+    pub qa_acp_agent: Option<String>,
+    /// The ACP agent, when `review_agent` is [`Agent::Acp`].
+    #[serde(rename = "reviewAcpAgent", default, skip_serializing_if = "Option::is_none")]
+    pub review_acp_agent: Option<String>,
     /// Start QA when a task's builder finishes cleanly.
     #[serde(rename = "qaAuto", default, skip_serializing_if = "Option::is_none")]
     pub qa_auto: Option<bool>,

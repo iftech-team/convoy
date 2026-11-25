@@ -312,6 +312,8 @@ impl Workspace {
                     test_commands: None,
                     qa_agent: None,
                     review_agent: None,
+                    qa_acp_agent: None,
+                    review_acp_agent: None,
                     qa_auto: None,
                     qa_timeout: None,
                     role_instructions: None,
@@ -353,15 +355,15 @@ impl Workspace {
                 "Enter a colour as #RRGGBB."
             );
         }
-        let agent = |value: Option<&str>| -> Result<Option<Option<Agent>>> {
+        #[allow(clippy::type_complexity)]
+        let agent = |value: Option<&str>| -> Result<Option<Option<(Agent, Option<String>)>>> {
             Ok(match value {
                 None => None,
                 Some("") => Some(None),
-                // QA and review read the agent's own transcripts, which
-                // only Claude and Codex have.
+                // `claude`, `codex` or `acp:<id>`: QA and review write their
+                // verdicts to a file, which any agent can.
                 Some(value) => Some(Some(
-                    Agent::parse(value)
-                        .filter(|agent| agent.is_native())
+                    crate::provider::acp_agents::parse_key(value)
                         .ok_or_else(|| ConvoyError::message("Unknown agent."))?,
                 )),
             })
@@ -502,10 +504,12 @@ impl Workspace {
                 project.test_commands = Some(value).filter(|value| !value.trim().is_empty());
             }
             if let Some(value) = qa_agent {
-                project.qa_agent = value;
+                project.qa_agent = value.as_ref().map(|(agent, _)| *agent);
+                project.qa_acp_agent = value.and_then(|(_, acp)| acp);
             }
             if let Some(value) = review_agent {
-                project.review_agent = value;
+                project.review_agent = value.as_ref().map(|(agent, _)| *agent);
+                project.review_acp_agent = value.and_then(|(_, acp)| acp);
             }
             if let Some(value) = patch.qa_auto {
                 project.qa_auto = Some(value);
@@ -646,6 +650,8 @@ impl Workspace {
                     test_commands: None,
                     qa_agent: None,
                     review_agent: None,
+                    qa_acp_agent: None,
+                    review_acp_agent: None,
                     qa_auto: None,
                     qa_timeout: None,
                     role_instructions: None,
@@ -771,7 +777,9 @@ impl Workspace {
                 resume_prompt: None,
                 task_id: None,
                 profile_id: input.profile_id,
-                view: None,
+                // An ACP agent opens as a chat: the brief reaches it as
+                // its first turn, which its own terminal UI may not take.
+                view: (input.agent == Agent::Acp).then(|| "chat".to_string()),
                 parent_id: None,
                 manager: None,
                 skills: crate::planning::attached(input.skills),
