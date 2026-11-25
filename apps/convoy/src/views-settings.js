@@ -10,6 +10,7 @@ import { activeAccount, state } from "./state.js";
 import { SHORTCUTS, SHORTCUT_GROUPS, label } from "./shortcuts.js";
 import { LANGUAGES, languageChoice, t } from "./i18n.js";
 import { ZOOMS, percent, uiZoom } from "./zoom.js";
+import { chosenTheme, themeFor, themesOf } from "./terminal-themes.js";
 import { ROLES, skillsSection } from "./views-skills.js";
 import { pricesSection } from "./views-usage.js";
 import { checklistCard, gettingStarted } from "./views-home.js";
@@ -300,12 +301,33 @@ function appearance(settings) {
   );
 }
 
+/// A strip of a theme's background with its foreground and six colours on
+/// it, so the choice can be seen before it is made.
+function themePreview(theme) {
+  const { colors } = theme;
+  const dots = [colors.foreground, colors.red, colors.green, colors.yellow, colors.blue, colors.magenta, colors.cyan]
+    .map((color) => `<span class="term-theme__dot" style="background:${escape(color)}"></span>`)
+    .join("");
+  return `<span class="term-theme__preview" style="background:${escape(colors.background)}" aria-hidden="true">${dots}</span>`;
+}
+
+function themeChoice(kind) {
+  const chosen = themeFor(kind, chosenTheme(kind));
+  return `<div class="term-theme">${themePreview(chosen)}${select(
+    `terminal_theme_${kind}`,
+    themesOf(kind).map((theme) => [theme.id, theme.name]),
+    chosen.id,
+  )}</div>`;
+}
+
 function terminalSection(settings) {
   return groupBox(
     t("Terminal"),
-    row(t("Font size"), t("10 to 24 points."), number("font_size", settings.font_size, 10, 24)) +
+    row(t("Light theme"), t("Colours when the window is light."), themeChoice("light")) +
+      row(t("Dark theme"), t("Colours when the window is dark."), themeChoice("dark")) +
+      row(t("Font size"), t("10 to 24 points."), number("font_size", settings.font_size, 10, 24)) +
       row(t("Scrollback"), t("Lines kept per terminal, 1,000 to 50,000."), number("scrollback", settings.scrollback, 1000, 50000, 1000)),
-    t("Applies to open terminals immediately."),
+    t("Applies to open terminals immediately. Claude Code draws some colours itself: if its prompt rows look dark in a light terminal, run /theme in Claude Code and pick a light theme."),
   );
 }
 

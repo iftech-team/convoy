@@ -54,6 +54,7 @@ import { escape, plural, value } from "./ui.js";
 import { setLanguage, t } from "./i18n.js";
 import { SHORTCUTS, binding, capture, label, matches } from "./shortcuts.js";
 import { applyZoom, percent, setZoom, stepZoom, uiZoom } from "./zoom.js";
+import { chooseTheme } from "./terminal-themes.js";
 import { dialogView, effortLevels, sweepChoices, sweepGroups, sweepProject, sweepVisible } from "./dialogs.js";
 import * as terminal from "./terminal.js";
 import { adoptApprovals, answer, chatEvent, chatExited, chatSnapshot, chatText, historyChanged, insertDraft, mountChat, rememberScroll, sendText, shownAsTranscript, viewOf, waitingFor } from "./views-chat.js";
@@ -2391,6 +2392,12 @@ app.addEventListener("change", async (event) => {
     return saveProjectField({ [projectKey]: numeric ? Number(event.target.value) : event.target.value });
   }
   const choiceKey = event.target.dataset?.prefSelect;
+  const themeKind = /^terminal_theme_(light|dark)$/.exec(choiceKey ?? "")?.[1];
+  if (themeKind) {
+    chooseTheme(themeKind, event.target.value);
+    terminal.applySettings();
+    return render();
+  }
   if (choiceKey === "ui_zoom") {
     await setZoom(event.target.value);
     terminal.refit();

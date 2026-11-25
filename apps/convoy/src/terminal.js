@@ -14,6 +14,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { anySession, call, done, state, changed, loadWorkspace, toast } from "./state.js";
 import { viewOf } from "./views-chat.js";
 import { t } from "./i18n.js";
+import { applyTerminalColors } from "./terminal-themes.js";
 
 const terminals = new Map();
 
@@ -26,16 +27,15 @@ function openLink(event, uri) {
   invoke("plugin:opener|open_url", { url: uri }).catch(() => toast(t("Could not open the link")));
 }
 
+/// The chosen theme for the window's light or dark appearance, all 16 ANSI
+/// colours included.
 function theme() {
-  const style = getComputedStyle(document.documentElement);
-  const read = (name) => style.getPropertyValue(name).trim();
-  return {
-    background: read("--term-bg"),
-    foreground: read("--term-fg"),
-    cursor: read("--term-cursor"),
-    selectionBackground: read("--term-selection"),
-  };
+  return { ...applyTerminalColors() };
 }
+
+/// xterm lifts any text colour that reads below this against its background,
+/// so a program's dim grey or pale colour stays legible on every theme.
+const MIN_CONTRAST = 4.5;
 
 // ------------------------------------------------------------------- zoom --
 
@@ -86,6 +86,7 @@ export function terminalFor(id) {
     allowProposedApi: true,
     scrollback: state.settings.scrollback,
     theme: theme(),
+    minimumContrastRatio: MIN_CONTRAST,
     // Links an agent prints with OSC 8, such as Claude's.
     linkHandler: { activate: openLink },
   });
