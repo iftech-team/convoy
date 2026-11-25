@@ -374,6 +374,7 @@ pub struct SettingsView {
     pub tab_grouping: bool,
     /// `left` or `right`, for the vertical tab column.
     pub tab_side: String,
+    pub tab_auto_fold: bool,
     pub worktree_setup: String,
     pub worktree_shared: String,
     /// `chat` or `terminal`, for sessions that have not chosen.
@@ -428,6 +429,7 @@ pub fn settings_read(workspace: State<'_, Workspace>) -> Result<SettingsView, St
             tab_layout: settings.tab_layout.clone(),
             tab_grouping: settings.tab_grouping,
             tab_side: settings.tab_side.clone(),
+            tab_auto_fold: settings.tab_auto_fold,
             worktree_setup: settings.worktree_setup.clone(),
             worktree_shared: settings.worktree_shared.clone(),
             default_view: settings.view().to_string(),
@@ -490,6 +492,8 @@ pub struct SettingsInput {
     #[serde(default)]
     pub tab_side: Option<String>,
     #[serde(default)]
+    pub tab_auto_fold: Option<bool>,
+    #[serde(default)]
     pub worktree_setup: Option<String>,
     #[serde(default)]
     pub worktree_shared: Option<String>,
@@ -546,6 +550,7 @@ pub fn settings_save(input: SettingsInput, workspace: State<'_, Workspace>) -> R
                 tab_layout: input.tab_layout,
                 tab_grouping: input.tab_grouping,
                 tab_side: input.tab_side,
+                tab_auto_fold: input.tab_auto_fold,
                 worktree_setup: input.worktree_setup,
                 worktree_shared: input.worktree_shared,
                 default_view: input.default_view,

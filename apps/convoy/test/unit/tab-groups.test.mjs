@@ -3,7 +3,7 @@
 // its own group.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { groupBounds, groupTabs, normalizeOrder, visibleTabs } from "../../src/tab-groups.js";
+import { groupBounds, groupTabs, moveGroup, normalizeOrder, visibleTabs } from "../../src/tab-groups.js";
 
 const owner = { a1: "A", a2: "A", b1: "B", b2: "B", c1: "C", loose: null };
 const projectOf = (id) => owner[id];
@@ -49,4 +49,18 @@ test("a drag is bounded by its own group", () => {
   const tabs = ["a1", "a2", "b1", "b2", "c1"];
   assert.deepEqual(groupBounds(tabs, projectOf, "b2"), [2, 3]);
   assert.deepEqual(groupBounds(tabs, projectOf, "c1"), [4, 4]);
+});
+
+test("pinned tabs lead, ahead of every project", () => {
+  const pinned = new Set(["b2"]);
+  const keyOf = (id) => (pinned.has(id) ? "pinned" : projectOf(id));
+  assert.deepEqual(normalizeOrder(["a1", "b1", "b2", "a2"], keyOf, "pinned"), ["b2", "a1", "a2", "b1"]);
+});
+
+test("a project's tabs move together, before another project's or to the end", () => {
+  const tabs = ["a1", "a2", "b1", "c1", "b2"];
+  assert.deepEqual(moveGroup(tabs, projectOf, "C", "A"), ["c1", "a1", "a2", "b1", "b2"]);
+  assert.deepEqual(moveGroup(tabs, projectOf, "A", null), ["b1", "b2", "c1", "a1", "a2"]);
+  assert.equal(moveGroup(tabs, projectOf, "A", "A"), tabs);
+  assert.equal(moveGroup(tabs, projectOf, "missing", "A"), tabs);
 });

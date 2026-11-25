@@ -899,6 +899,9 @@ pub struct Settings {
     /// The side of the content the vertical tab column sits on: `left` or `right`.
     #[serde(rename = "tabSide", default = "default_tab_side")]
     pub tab_side: String,
+    /// Fold every other project's tabs when a tab of another project opens.
+    #[serde(rename = "tabAutoFold", default)]
+    pub tab_auto_fold: bool,
     /// Run in every new worktree, before the project's own command.
     #[serde(rename = "worktreeSetup", default)]
     pub worktree_setup: String,
@@ -1023,6 +1026,7 @@ impl Default for Settings {
             tab_layout: default_tab_layout(),
             tab_grouping: true,
             tab_side: default_tab_side(),
+            tab_auto_fold: false,
             worktree_setup: String::new(),
             worktree_shared: String::new(),
             default_view: default_view(),
@@ -1089,4 +1093,6 @@ pub const SHORTCUT_ACTIONS: &[&str] = &[
     "claudeUsage",
     "automationsTab",
     "usage",
+    "foldTabs",
+    "foldOtherTabs",
 ];

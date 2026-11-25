@@ -246,6 +246,7 @@ pub fn validate_settings(settings: &Value) -> Result<()> {
         "gitStatus",
         "compactSidebar",
         "tabGrouping",
+        "tabAutoFold",
     ] {
         if let Some(value) = settings.get(key) {
             ensure!(value.is_boolean(), "Invalid settings.");

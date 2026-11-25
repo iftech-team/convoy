@@ -15,7 +15,7 @@ import {
 } from "./ui.js";
 import { language, t } from "./i18n.js";
 import { agentName } from "./task-defaults.js";
-import { activeAccount, anySession, currentTab, isProjectTab, isRunning, phaseOf, project, PROJECT_TAB, session, sessionState, state, tabsGrouped, tabsVertical, visibleSessions } from "./state.js";
+import { activeAccount, anySession, currentTab, isProjectTab, isRunning, phaseOf, PINNED, project, PROJECT_TAB, session, sessionState, state, tabsGrouped, tabsVertical, visibleSessions } from "./state.js";
 import { groupTabs, visibleTabs } from "./tab-groups.js";
 import { sessionLabel, sessionTone, sleptBy } from "./session-state.js";
 import { stageIndex } from "./stages.js";
@@ -285,6 +285,13 @@ export function contextMenu(menu) {
       item(t("Copy folder path"), "copy-path", { icon: "copy" }),
       item(t("Reconnect folder…"), "reconnect", { icon: "link" }),
       divider,
+      ...(state.tabs.some((id) => tabProject(id) === menu.id)
+        ? [
+            item(state.collapsedTabs.has(menu.id) ? t("Show tabs") : t("Hide tabs"), "tabs-fold", { icon: "list" }),
+            item(t("Close tabs"), "tabs-close", { icon: "close" }),
+            divider,
+          ]
+        : []),
       item(t("Project settings…"), "project-settings", { icon: "gear" }),
       ...(state.settings.sort_projects
         ? []
@@ -1086,12 +1093,38 @@ export function tabProject(id) {
   return tabInfo(id)?.project_id ?? anySession(id)?.project_id ?? null;
 }
 
-export const tabGroups = () => groupTabs(state.tabs, tabProject);
+/// The group a tab is drawn in: pinned tabs together ahead of the rest, the
+/// others by project when grouped, or all in one run when not.
+export const tabKey = (id) => (state.pinnedTabs.has(id) ? PINNED : tabsGrouped() ? tabProject(id) : null);
 
-/// The tabs on screen, in the order shown: a folded project's tabs are left
-/// out, but never the one being looked at. ⌘1–9 and Ctrl+Tab go by these.
-export const shownTabs = () =>
-  tabsGrouped() ? visibleTabs(tabGroups(), state.collapsedTabs, currentTab()) : state.tabs;
+const pinnedTabs = () => state.tabs.filter((id) => state.pinnedTabs.has(id));
+const unpinnedTabs = () => state.tabs.filter((id) => !state.pinnedTabs.has(id));
+export const tabGroups = () => groupTabs(unpinnedTabs(), tabProject);
+
+/// The tabs on screen, in the order shown: pinned ones first, then the rest,
+/// a folded project's left out but never the one being looked at. ⌘1–9 and
+/// Ctrl+Tab go by these.
+export const shownTabs = () => [
+  ...pinnedTabs(),
+  ...(tabsGrouped() ? visibleTabs(tabGroups(), state.collapsedTabs, currentTab()) : unpinnedTabs()),
+];
+
+/// What the agents behind some tabs are doing, for a folded project's
+/// header: how many need you and how many finished their turn.
+export function tabsNeed(ids) {
+  let needs = 0;
+  let done = 0;
+  for (const id of ids) {
+    if (isProjectTab(id)) continue;
+    const info = tabInfo(id);
+    if (!info) continue;
+    const running = state.running.includes(id);
+    const now = sessionState({ ...info, id, started: info.started ?? running }, running);
+    if (now === "needs_you") needs++;
+    else if (now === "finished") done++;
+  }
+  return { needs, done };
+}
 
 const mac = () => /mac/i.test(navigator.platform);
 const numberHint = (number) =>
@@ -1159,12 +1192,14 @@ function drawnGroups() {
   return tabGroups().map((group) => {
     const owner = state.projects.find((item) => item.id === group.projectId) ?? null;
     const folded = !!owner && state.collapsedTabs.has(owner.id);
+    const shown = folded ? group.tabs.filter((id) => id === current) : group.tabs;
     return {
       ...group,
       owner,
       folded,
-      shown: folded ? group.tabs.filter((id) => id === current) : group.tabs,
+      shown,
       holdsCurrent: group.tabs.includes(current),
+      hidden: folded ? tabsNeed(group.tabs.filter((id) => !shown.includes(id))) : { needs: 0, done: 0 },
     };
   });
 }
@@ -1183,39 +1218,102 @@ function groupHeader(group, vertical) {
       <span class="tab-group__chevron">${folded ? icons.chevronRight : icons.chevronDown}</span>
       ${projectIcon(owner, vertical ? 13 : 12)}
       <span class="tab-group__title">${escape(owner.title)}</span>
+      ${
+        group.hidden.needs
+          ? `<span class="tab-group__state tab-group__state--needs" title="${escape(t("{count} need you", { count: group.hidden.needs }))}">${icons.warn}${group.hidden.needs}</span>`
+          : group.hidden.done
+            ? `<span class="tab-group__state tab-group__state--done" title="${escape(t("{count} finished", { count: group.hidden.done }))}">${icons.checkCircle}</span>`
+            : ""
+      }
       ${folded || vertical ? `<span class="tab-group__count">${tabs.length}</span>` : ""}
     </button>`;
 }
 
-/// The tabs, grouped or not, for the bar or the column.
+/// A pinned tab: a tile with its icon, ahead of every project. Its name and
+/// project show on hover; it closes from its menu.
+function pinnedTile(id, number) {
+  const info = tabInfo(id);
+  if (!info) return "";
+  const projectId = tabProject(id);
+  const owner = state.projects.find((item) => item.id === projectId);
+  if (isProjectTab(id) && !owner) return "";
+  const selected = currentTab() === id;
+  const running = state.running.includes(id);
+  const name = isProjectTab(id) ? owner.title : info.title;
+  const hint = number < 9 ? ` · ${mac() ? "⌘" : "Ctrl+"}${number + 1}` : "";
+  return `
+    <div class="tab-pin${selected ? " tab-pin--selected" : ""}" data-tab-open="${escape(id)}"
+         title="${escape(`${name}${owner && !isProjectTab(id) ? ` · ${owner.title}` : ""}${hint}`)}"
+         style="--group-tint:${owner ? projectTint(owner) : "var(--border-strong)"}">
+      ${isProjectTab(id) ? projectIcon(owner, 14) : `${agentIcon(info.agent, 14)}${tabGlyph(id, running, info)}`}
+    </div>`;
+}
+
+/// Tabs matching the column's filter, by their name or their project's.
+function filteredTabs() {
+  const words = state.tabFilter.trim().toLowerCase();
+  return state.tabs.filter((id) => {
+    const projectId = tabProject(id);
+    const owner = state.projects.find((item) => item.id === projectId);
+    const name = isProjectTab(id) ? owner?.title : tabInfo(id)?.title;
+    return `${name ?? ""} ${owner?.title ?? ""}`.toLowerCase().includes(words);
+  });
+}
+
+/// The tabs, grouped or not, for the bar or the column: pinned tiles first,
+/// then each project's header and tabs.
 function tabList(vertical) {
-  if (!tabsGrouped()) return state.tabs.map((id, index) => tabItem(id, index)).join("");
+  if (vertical && state.tabFilter.trim()) {
+    const found = filteredTabs();
+    return found.length
+      ? `<div class="vtabs__group">${found.map((id) => tabItem(id, -1)).join("")}</div>`
+      : `<span class="vtabs__none">${escape(t("No tabs match"))}</span>`;
+  }
+  const pinned = pinnedTabs();
   let number = 0;
-  return drawnGroups()
-    .map((group) => {
-      const items = group.shown.map((id) => tabItem(id, number++, !!group.owner)).join("");
-      if (!group.owner) return vertical ? `<div class="vtabs__group">${items}</div>` : items;
-      const header = groupHeader(group, vertical);
-      return vertical
-        ? `<div class="vtabs__group">${header}${items}</div>`
-        : `<span class="tabbar__group">${header}${items}</span>`;
-    })
-    .join("");
+  const tiles = pinned.map((id) => pinnedTile(id, number++)).join("");
+  const pins = tiles ? `<div class="${vertical ? "vtabs__pins" : "tabbar__pins"}" data-group-key="${escape(PINNED)}">${tiles}</div>` : "";
+  if (!tabsGrouped()) return pins + unpinnedTabs().map((id) => tabItem(id, number++)).join("");
+  return (
+    pins +
+    drawnGroups()
+      .map((group) => {
+        const items = group.shown.map((id) => tabItem(id, number++, !!group.owner)).join("");
+        if (!group.owner) return vertical ? `<div class="vtabs__group">${items}</div>` : items;
+        const header = groupHeader(group, vertical);
+        const key = `data-group-key="${escape(group.owner.id)}"`;
+        return vertical
+          ? `<div class="vtabs__group" ${key}>${header}${items}</div>`
+          : `<span class="tabbar__group" ${key}>${header}${items}</span>`;
+      })
+      .join("")
+  );
 }
 
 /// The open tabs as a column beside the content, one header per project.
+/// Slim, it shows icons only and widens while the pointer is over it.
 export function verticalTabs() {
   const tabs = tabList(true);
+  const slim = state.tabColumnSlim;
   return `
-    <aside class="vtabs" aria-label="${escape(t("Open tabs"))}">
+    <aside class="vtabs${slim ? " vtabs--slim" : ""}" aria-label="${escape(t("Open tabs"))}">
+      <label class="vtabs__filter">
+        ${icons.search}
+        <input id="vtabs-filter" data-tab-filter="1" value="${escape(state.tabFilter)}" placeholder="${escape(t("Filter tabs"))}" spellcheck="false" autocomplete="off" />
+      </label>
       <div class="vtabs__list" data-scroll="vtabs">
         ${tabs || `<span class="vtabs__none">${escape(t("No open terminals"))}</span>`}
       </div>
-      ${
-        state.projects.length
-          ? `<button class="vtabs__new" data-action="new-session">${icons.plus}<span>${escape(t("New session"))}</span></button>`
-          : ""
-      }
+      <div class="vtabs__foot">
+        ${
+          state.projects.length
+            ? `<button class="vtabs__new" data-action="new-session" title="${escape(t("New session"))}">${icons.plus}<span>${escape(t("New session"))}</span></button>`
+            : ""
+        }
+        <button class="vtabs__tool" data-action="tabs-clean" title="${escape(t("Close tabs that aren't running"))}">${icons.archive}</button>
+        <button class="vtabs__tool" data-action="tabs-slim" aria-pressed="${slim}"
+                title="${escape(slim ? t("Show names in the tab column") : t("Narrow the tab column to icons"))}">${slim ? icons.chevronRight : icons.back}</button>
+      </div>
       <div class="vtabs__resize" data-vtabs-resize="1" title="${escape(t("Drag to resize"))}"></div>
     </aside>`;
 }
@@ -1285,6 +1383,7 @@ function tabGroupMenu(menu) {
         ${item(t("Hide other projects' tabs"), "others", others.some((group) => !state.collapsedTabs.has(group.projectId)))}
         ${item(t("Show all tabs"), "all", state.collapsedTabs.size > 0)}
         <div class="menu__divider"></div>
+        ${item(t("Close tabs that aren't running"), "clean")}
         ${item(t("Close {project}'s tabs", { project: owner?.title ?? "" }), "close")}
       </div>
     </div>`;
@@ -1309,6 +1408,8 @@ function tabMenu(menu) {
         ${item(state.running.includes(menu.id) ? "Hide tab" : "Close tab", "close")}
         ${state.running.includes(menu.id) ? item("Stop and close", "stop") : ""}
         ${item("Close other tabs", "others", state.tabs.length > 1)}
+        <div class="menu__divider"></div>
+        ${item(state.pinnedTabs.has(menu.id) ? "Unpin tab" : "Pin tab", "pin")}
       </div>
     </div>`;
 }

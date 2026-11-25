@@ -51,6 +51,23 @@ export function saveTabColumn() {
   }
 }
 
+/// Tabs pinned to the top of the strip or column, ahead of every project.
+export function savePinnedTabs() {
+  try {
+    localStorage.setItem("convoy.pinnedTabs", JSON.stringify([...state.pinnedTabs]));
+  } catch {
+    /* not remembered */
+  }
+}
+
+export function saveTabColumnSlim() {
+  try {
+    localStorage.setItem("convoy.tabColumnSlim", state.tabColumnSlim ? "1" : "0");
+  } catch {
+    /* not remembered */
+  }
+}
+
 export const state = {
   settings: {
     theme: "dark",
@@ -113,6 +130,18 @@ export const state = {
   collapsed: new Set(remembered(COLLAPSED)),
   // Projects whose tabs are folded away in the tab strip; per machine.
   collapsedTabs: new Set(remembered(COLLAPSED_TABS)),
+  // Tabs pinned ahead of every project, as tiles; per machine.
+  pinnedTabs: new Set(remembered("convoy.pinnedTabs")),
+  // The vertical tab column narrowed to icons, widening while hovered.
+  tabColumnSlim: (() => {
+    try {
+      return localStorage.getItem("convoy.tabColumnSlim") === "1";
+    } catch {
+      return false;
+    }
+  })(),
+  // What the vertical column's filter box holds. In memory only.
+  tabFilter: "",
   // The vertical tab column's width, per machine since screens differ.
   tabColumnWidth: (() => {
     try {
@@ -275,6 +304,8 @@ export function currentTab() {
 export const tabsVertical = () => state.settings.tab_layout === "vertical";
 /// Tabs drawn under a header per project, which folds.
 export const tabsGrouped = () => state.settings.tab_grouping !== false;
+/// The group key pinned tabs share, never a project id.
+export const PINNED = "\u0000pinned";
 export const anySession = (id) =>
   state.sessions.find((item) => item.id === id) ??
   state.allSessions.find((item) => item.id === id);

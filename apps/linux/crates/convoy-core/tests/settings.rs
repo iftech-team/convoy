@@ -144,12 +144,14 @@ fn tab_layout_settings_default_save_and_reject_unknown_values() {
     assert_eq!(defaults.tab_layout, "horizontal");
     assert!(defaults.tab_grouping);
     assert_eq!(defaults.tab_side, "left");
+    assert!(!defaults.tab_auto_fold, "folding on its own is opt-in");
 
     workspace
         .save_settings(SettingsPatch {
             tab_layout: Some("vertical".into()),
             tab_grouping: Some(false),
             tab_side: Some("right".into()),
+            tab_auto_fold: Some(true),
             ..Default::default()
         })
         .unwrap();
@@ -160,6 +162,7 @@ fn tab_layout_settings_default_save_and_reject_unknown_values() {
     assert_eq!(saved.tab_layout, "vertical");
     assert!(!saved.tab_grouping);
     assert_eq!(saved.tab_side, "right");
+    assert!(saved.tab_auto_fold);
     let json = std::fs::read_to_string(&fixture.file).unwrap();
     assert!(json.contains("\"tabLayout\""), "saved under its macOS-style key");
 

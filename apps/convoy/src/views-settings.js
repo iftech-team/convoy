@@ -219,7 +219,14 @@ function general(settings) {
           t("Group tabs by project"),
           t("Each project's tabs sit under its name. Click the name to hide them."),
           toggle("tab_grouping", settings.tab_grouping !== false, t("Group tabs by project")),
-        ),
+        ) +
+        (settings.tab_grouping !== false
+          ? row(
+              t("Fold other projects automatically"),
+              t("Opening a tab of another project hides every other project's tabs."),
+              toggle("tab_auto_fold", !!settings.tab_auto_fold, t("Fold other projects automatically")),
+            )
+          : ""),
     )}
     ${groupBox(
       t("Keep computer awake"),

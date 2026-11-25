@@ -659,12 +659,55 @@ try {
     assert.deepEqual(await shownTabs(), ["notes"], "the folded project's tabs are hidden");
     if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/tabs-folded.png` });
     await page.locator('.tabbar__tabs [data-tab-group-toggle="project"] .tab-group__count', { hasText: "3" }).waitFor();
+    // Folded, the header still says an agent there needs you.
+    await page.locator('.tabbar__tabs [data-tab-group-toggle="project"] .tab-group__state--needs', { hasText: "1" }).waitFor();
     assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem("convoy.collapsedTabGroups"))), ["project"], "the fold is remembered");
     await page.locator('.tabbar__tabs [data-tab-group-toggle="project"]').click();
     assert.deepEqual(await shownTabs(), ["builder", "project:project", "review", "notes"], "unfolded, they come back");
+    const folded = (id) => page.locator(`.tabbar__tabs [data-tab-group-toggle="${id}"]`).getAttribute("aria-expanded").then((value) => value === "false");
+    // ⌘⌥[ folds the project on screen, ⌘⌥] every other project.
+    await page.keyboard.press(`${primary}+Alt+BracketLeft`);
+    assert.ok(await folded("other"), "the project on screen folds");
+    await page.keyboard.press(`${primary}+Alt+BracketLeft`);
+    assert.ok(!(await folded("other")), "and unfolds");
+    await page.keyboard.press(`${primary}+Alt+BracketRight`);
+    assert.ok((await folded("project")) && !(await folded("other")), "every other project folds");
+    // The sidebar's project menu shows and closes a project's tabs too.
+    await page.locator('.project-row[data-menu-project="project"]').click({ button: "right" });
+    await page.locator('.menu--context [data-menu-act="tabs-fold"]', { hasText: "Show tabs" }).click();
+    assert.ok(!(await folded("project")), "shown from the sidebar");
+    // A project's header drags the whole project ahead of another.
+    {
+      await page.locator('.tabbar__tabs [data-tab-group="other"]').evaluate((el) => el.scrollIntoView({ inline: "nearest" }));
+      const from = await page.locator('.tabbar__tabs [data-tab-group="other"]').boundingBox();
+      const to = await page.locator('.tabbar__tabs [data-group-key="project"]').boundingBox();
+      await page.mouse.move(from.x + 10, from.y + from.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(from.x, from.y + from.height / 2, { steps: 2 });
+      await page.mouse.move(Math.max(to.x + 4, 1), to.y + to.height / 2, { steps: 8 });
+      await page.mouse.up();
+      assert.deepEqual(await shownTabs(), ["notes", "builder", "project:project", "review"], "the project moved as a whole");
+      assert.ok(!(await folded("other")), "dragging a header does not fold it");
+    }
+    // A pinned tab leads as a tile, ahead of every project.
+    await page.locator('.tabbar__tabs [data-tab-open="review"]').click({ button: "right" });
+    await page.locator('.menu--context [data-tab-act="pin"]', { hasText: "Pin tab" }).click();
+    await page.locator('.tabbar__pins .tab-pin[data-tab-open="review"]').waitFor();
+    assert.deepEqual(await shownTabs(), ["review", "notes", "builder", "project:project"], "pinned first");
+    await page.locator('.tabbar__tabs [data-tab-group-toggle="project"]').click();
+    await page.locator('.tabbar__pins .tab-pin[data-tab-open="review"]').waitFor();
+    await page.locator('.tabbar__tabs [data-tab-group-toggle="project"]').click();
+    await page.locator('.tabbar__pins [data-tab-open="review"]').click({ button: "right" });
+    await page.locator('.menu--context [data-tab-act="pin"]', { hasText: "Unpin tab" }).click();
+    await page.locator(".tabbar__pins").waitFor({ state: "detached" });
+    // Closing the tabs that aren't running leaves the one on screen and
+    // running agents: here only Release notes would go, and it is on screen.
+    await page.locator('.tabbar__tabs [data-tab-open="builder"]').click();
+    await page.locator('.tab-item--selected[data-tab-open="builder"]').waitFor();
+    await page.locator('.tabbar__tabs [data-tab-group="other"]').click({ button: "right" });
+    await page.locator('.menu--context [data-tab-group-act="clean"]').click();
+    await page.locator('.tab-item[data-tab-open="notes"]').waitFor({ state: "detached" });
   }
-  await page.locator('[data-tab-close="notes"]').click();
-  await page.locator('.tab-item[data-tab-open="notes"]').waitFor({ state: "detached" });
   await page.locator('.project-row [data-project="project"]').click();
   await page.locator(".header").waitFor();
 
@@ -1591,6 +1634,8 @@ try {
   await page.locator('[data-pref-set="tab_layout"][data-value="vertical"]').click();
   await page.waitForFunction(() => window.savedSettings.tab_layout === "vertical");
   await page.locator('[data-pref-set="tab_side"][data-value="left"][aria-pressed="true"]').waitFor();
+  await page.locator('[data-pref-toggle="tab_auto_fold"]').click();
+  await page.waitForFunction(() => window.savedSettings.tab_auto_fold === true);
   await page.locator('[data-action="close-settings"]').click();
   await page.locator(".shell--vtabs-left .vtabs .vtabs__list [data-tab-open]").first().waitFor();
   assert.equal(await page.locator(".tabbar [data-tab-open]").count(), 0, "no tabs left in the bar");
@@ -1617,6 +1662,33 @@ try {
     await page.mouse.up();
     const width = Number(await page.evaluate(() => localStorage.getItem("convoy.tabColumnWidth")));
     assert.ok(Math.abs(width - 300) <= 2, `the column is as wide as dragged (${width})`);
+    // The filter narrows the column to matching tabs.
+    await page.locator("#vtabs-filter").fill("login");
+    const titles = await page.locator(".vtabs__list .tab-item__title").allTextContents();
+    assert.ok(titles.length > 0 && titles.every((title) => /login/i.test(title)), `only matching tabs (${titles})`);
+    await page.locator("#vtabs-filter").fill("no such tab");
+    await page.locator(".vtabs__none", { hasText: "No tabs match" }).waitFor();
+    await page.locator("#vtabs-filter").fill("");
+    await page.locator(".vtabs__list .tab-group").first().waitFor();
+    // Slim, the column is icons only, and widens while hovered.
+    await page.locator('.vtabs [data-action="tabs-slim"]').click();
+    await page.locator(".vtabs--slim").waitFor();
+    await page.mouse.move(900, 400);
+    await page.waitForFunction(() => document.querySelector(".vtabs").getBoundingClientRect().width < 60);
+    if (shots) await page.screenshot({ path: `${shots}/tabs-slim.png`, clip: { x: 0, y: 0, width: 420, height: 400 } });
+    await page.locator(".vtabs").hover();
+    await page.waitForFunction(() => document.querySelector(".vtabs").getBoundingClientRect().width > 200);
+    if (shots) await page.screenshot({ path: `${shots}/tabs-slim-hover.png` });
+    await page.locator('.vtabs [data-action="tabs-slim"]').click();
+    await page.locator(".vtabs--slim").waitFor({ state: "detached" });
+    // Fold automatically: opening another project's tab folds the rest.
+    await page.locator('.project-row__sessions--pinned [data-open="notes"]').click();
+    await page.locator('.vtabs .tab-item--selected[data-tab-open="notes"]').waitFor();
+    await page.locator('.vtabs [data-tab-group-toggle="project"][aria-expanded="false"]').waitFor();
+    if (shots) await page.screenshot({ path: `${shots}/tabs-autofold.png` });
+    await page.locator('.vtabs [data-tab-group-toggle="project"]').click();
+    await page.locator('.vtabs [data-tab-close="notes"]').click();
+    await page.locator('.vtabs [data-tab-open="notes"]').waitFor({ state: "detached" });
   }
   await page.keyboard.press(`${primary}+Comma`);
   await page.locator('[data-settings-section="General"]').click();
@@ -1633,6 +1705,8 @@ try {
   }
   await page.keyboard.press(`${primary}+Comma`);
   await page.locator('[data-settings-section="General"]').click();
+  await page.locator('[data-pref-toggle="tab_auto_fold"]').click();
+  await page.waitForFunction(() => window.savedSettings.tab_auto_fold === false);
   await page.locator('[data-pref-set="tab_layout"][data-value="horizontal"]').click();
   await page.waitForFunction(() => window.savedSettings.tab_layout === "horizontal");
   // The version, and an update found by checking: restarting into it asks

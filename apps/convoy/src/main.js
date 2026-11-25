@@ -45,8 +45,11 @@ import {
   saveCollapsedTabs,
   saveTabColumn,
   clampTabColumn,
+  savePinnedTabs,
+  saveTabColumnSlim,
+  PINNED,
 } from "./state.js";
-import { groupBounds, normalizeOrder } from "./tab-groups.js";
+import { groupBounds, moveGroup, normalizeOrder } from "./tab-groups.js";
 import { escape, plural, value } from "./ui.js";
 import { setLanguage, t } from "./i18n.js";
 import { SHORTCUTS, binding, capture, label, matches } from "./shortcuts.js";
@@ -68,6 +71,7 @@ import {
   tabBar,
   tabInfo,
   tabProject,
+  tabKey,
   shownTabs,
   verticalTabs,
   status,
@@ -335,13 +339,18 @@ function syncTabs() {
   }
   // Grouped, a project's tabs sit together, so the order kept is the order
   // drawn and moving a tab by one moves it by one on screen.
-  if (tabsGrouped()) {
-    const order = normalizeOrder(state.tabs, tabProject);
-    if (order !== state.tabs) {
-      state.tabs = order;
-      touched = true;
-    }
+  // Pinned tabs lead, whether grouped or not.
+  const order = normalizeOrder(state.tabs, tabKey, PINNED);
+  if (order !== state.tabs) {
+    state.tabs = order;
+    touched = true;
   }
+  const pinned = [...state.pinnedTabs].filter((id) => state.tabs.includes(id));
+  if (pinned.length !== state.pinnedTabs.size) {
+    state.pinnedTabs = new Set(pinned);
+    savePinnedTabs();
+  }
+  autoFold();
   if (touched) saveTabs();
 }
 
@@ -413,11 +422,10 @@ function dropTab(id) {
 }
 
 function moveTab(id, target) {
-  // Grouped, a tab moves only among its own project's tabs.
-  if (tabsGrouped()) {
-    const [first, last] = groupBounds(state.tabs, tabProject, id);
-    if (first >= 0) target = Math.max(first, Math.min(target, last));
-  }
+  // A tab moves only among its own group: the pinned tabs, or its
+  // project's when grouped.
+  const [first, last] = groupBounds(state.tabs, tabKey, id);
+  if (first >= 0) target = Math.max(first, Math.min(target, last));
   const tabs = state.tabs.filter((tab) => tab !== id);
   tabs.splice(Math.max(0, Math.min(target, tabs.length)), 0, id);
   state.tabs = tabs;
@@ -432,6 +440,52 @@ function stepTabs(step) {
   if (tabs.length < 2) return stepSession(step);
   const at = tabs.indexOf(currentTab());
   return openTab(tabs[(Math.max(at, 0) + step + tabs.length) % tabs.length]);
+}
+
+/// With Fold automatically on, opening a tab of another project folds every
+/// project but that one. Only a change of project does it, so a project
+/// unfolded by hand stays open until then.
+let autoFoldedFor = null;
+function autoFold() {
+  const current = currentTab();
+  const projectId = current ? tabProject(current) : null;
+  if (!projectId || projectId === autoFoldedFor) return;
+  autoFoldedFor = projectId;
+  if (!state.settings.tab_auto_fold || !tabsGrouped()) return;
+  hideOtherTabs(projectId);
+}
+
+/// Folds every project's tabs but this one's.
+function hideOtherTabs(projectId) {
+  for (const other of new Set(state.tabs.map(tabProject))) if (other && other !== projectId) state.collapsedTabs.add(other);
+  state.collapsedTabs.delete(projectId);
+  saveCollapsedTabs();
+}
+
+/// Closes tabs whose agent is not running, as Arc's Clear does: in one
+/// project, or everywhere. The tab on screen and pinned tabs stay.
+function cleanTabs(projectId = null) {
+  const current = currentTab();
+  const idle = state.tabs.filter(
+    (id) =>
+      id !== current &&
+      !state.pinnedTabs.has(id) &&
+      !isProjectTab(id) &&
+      !state.running.includes(id) &&
+      (projectId === null || tabProject(id) === projectId),
+  );
+  for (const id of idle) dropTab(id);
+  if (!idle.length) render();
+  toast(idle.length ? t("Closed {count} tabs", { count: idle.length }) : t("Every tab is running"));
+}
+
+/// Closes a project's tabs. The tab on screen goes last, so the others close
+/// without each handing the screen to the next; a running agent's tab is
+/// only hidden, as with its own close.
+function closeProjectTabs(projectId) {
+  const current = currentTab();
+  const closing = state.tabs.filter((tab) => tabProject(tab) === projectId);
+  for (const tab of [...closing.filter((tab) => tab !== current), ...closing.filter((tab) => tab === current)]) dropTab(tab);
 }
 
 /// Folds a project's tabs away in the tab strip, or brings them back.
@@ -1085,6 +1139,12 @@ const ACTIONS = {
     }
   },
   "close-project-settings": closeProjectSettings,
+  "tabs-clean": () => cleanTabs(),
+  "tabs-slim": () => {
+    state.tabColumnSlim = !state.tabColumnSlim;
+    saveTabColumnSlim();
+    render();
+  },
   "layout-1": () => setLayout(1),
   "layout-2": () => setLayout(2),
   "layout-4": () => setLayout(4),
@@ -1524,6 +1584,18 @@ const SHORTCUT_ACTIONS = {
   searchAll: () => openPalette("search"),
   moveTabLeft: () => state.sessionId && moveTab(state.sessionId, state.tabs.indexOf(state.sessionId) - 1),
   moveTabRight: () => state.sessionId && moveTab(state.sessionId, state.tabs.indexOf(state.sessionId) + 1),
+  foldTabs: () => {
+    const projectId = currentTab() ? tabProject(currentTab()) : state.projectId;
+    if (!projectId) return;
+    toggleTabGroup(projectId);
+    render();
+  },
+  foldOtherTabs: () => {
+    const projectId = currentTab() ? tabProject(currentTab()) : state.projectId;
+    if (!projectId) return;
+    hideOtherTabs(projectId);
+    render();
+  },
   claudeUsage: () => withProject(openClaudeUsage),
   projectRefresh: () => withProject(() => refreshProjects(state.projectId)),
   home: () => openHome(),
@@ -1714,19 +1786,9 @@ app.addEventListener("click", async (event) => {
       state.collapsedTabs.clear();
       saveCollapsedTabs();
     }
-    if (data.tabGroupAct === "others") {
-      for (const other of new Set(state.tabs.map(tabProject))) if (other && other !== id) toggleTabGroup(other, true);
-      toggleTabGroup(id, false);
-    }
-    if (data.tabGroupAct === "close") {
-      // As each tab's own close: a running agent's tab is only hidden.
-      // The tab on screen goes last, so the others close without each
-      // handing the screen to the next.
-      const current = currentTab();
-      const closing = state.tabs.filter((tab) => tabProject(tab) === id);
-      for (const tab of [...closing.filter((tab) => tab !== current), ...closing.filter((tab) => tab === current)]) dropTab(tab);
-      return;
-    }
+    if (data.tabGroupAct === "others") hideOtherTabs(id);
+    if (data.tabGroupAct === "close") return closeProjectTabs(id);
+    if (data.tabGroupAct === "clean") return cleanTabs(id);
     return render();
   }
   if (data.tabAct) {
@@ -1743,6 +1805,11 @@ app.addEventListener("click", async (event) => {
     if (data.tabAct === "left") return moveTab(id, at - 1);
     if (data.tabAct === "right") return moveTab(id, at + 1);
     if (data.tabAct === "close") return closeTab(id);
+    if (data.tabAct === "pin") {
+      if (!state.pinnedTabs.delete(id)) state.pinnedTabs.add(id);
+      savePinnedTabs();
+      return render();
+    }
     if (data.tabAct === "stop") return stopAndCloseTab(id);
     if (data.tabAct === "others") {
       for (const other of [...state.tabs]) if (other !== id) dropTab(other);
@@ -2173,6 +2240,10 @@ app.addEventListener("input", (event) => {
   }
   if (field.id === "settings-search") {
     state.settingsQuery = field.value;
+    return render();
+  }
+  if (field.id === "vtabs-filter") {
+    state.tabFilter = field.value;
     return render();
   }
   if (field.id === "project-search") {
@@ -3333,6 +3404,11 @@ async function runMenu(act) {
   const menu = state.menu;
   state.menu = null;
   if (!menu?.kind) return render();
+  if (menu.kind === "project" && act === "tabs-fold") {
+    toggleTabGroup(menu.id);
+    return render();
+  }
+  if (menu.kind === "project" && act === "tabs-close") return closeProjectTabs(menu.id);
   if (menu.kind === "project") {
     const target = state.projects.find((item) => item.id === menu.id);
     if (!target) return render();
@@ -5269,6 +5345,64 @@ window.addEventListener("pointerup", (event) => {
   justDropped = true;
   if (target !== state.tabs.indexOf(id)) moveTab(id, target);
 });
+
+// A project's header drags its whole group to another place among the
+// projects. A press that does not move is a click, which folds the group.
+let groupDrag = null;
+function groupDropTarget(at) {
+  const others = [...app.querySelectorAll("[data-group-key]")].filter(
+    (el) => el.dataset.groupKey !== groupDrag.key && el.dataset.groupKey !== PINNED && el.closest(TAB_LISTS),
+  );
+  const before = others.find((el) => {
+    const box = el.getBoundingClientRect();
+    return groupDrag.vertical ? at < box.top + box.height / 2 : at < box.left + box.width / 2;
+  });
+  return { before, last: others.at(-1) };
+}
+function clearGroupDrop() {
+  for (const el of app.querySelectorAll(".tab-drop-group, .tab-drop-group--after")) el.classList.remove("tab-drop-group", "tab-drop-group--after");
+}
+function endGroupDrag() {
+  if (!groupDrag) return;
+  clearGroupDrop();
+  document.body.classList.remove("is-dragging-tab");
+  for (const el of app.querySelectorAll(".tab-group--dragging")) el.classList.remove("tab-group--dragging");
+  groupDrag = null;
+}
+app.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  const header = event.target.closest?.("[data-tab-group]");
+  if (!header?.closest(TAB_LISTS)) return;
+  groupDrag = { key: header.dataset.tabGroup, x: event.clientX, y: event.clientY, vertical: !!header.closest(".vtabs__list"), moved: false };
+});
+window.addEventListener("pointermove", (event) => {
+  if (!groupDrag) return;
+  const at = groupDrag.vertical ? event.clientY : event.clientX;
+  if (!groupDrag.moved) {
+    if (Math.abs(at - (groupDrag.vertical ? groupDrag.y : groupDrag.x)) < 5) return;
+    groupDrag.moved = true;
+    document.body.classList.add("is-dragging-tab");
+  }
+  for (const el of app.querySelectorAll("[data-tab-group]")) el.classList.toggle("tab-group--dragging", el.dataset.tabGroup === groupDrag.key);
+  const { before, last } = groupDropTarget(at);
+  clearGroupDrop();
+  if (before) before.classList.add("tab-drop-group");
+  else last?.classList.add("tab-drop-group--after");
+});
+window.addEventListener("pointerup", (event) => {
+  if (!groupDrag) return;
+  const { key, moved, vertical } = groupDrag;
+  const { before } = moved ? groupDropTarget(vertical ? event.clientY : event.clientX) : {};
+  endGroupDrag();
+  if (!moved) return;
+  justDropped = true;
+  const order = moveGroup(state.tabs, tabKey, key, before ? before.dataset.groupKey : null);
+  if (order === state.tabs) return;
+  state.tabs = order;
+  saveTabs();
+  render();
+});
+window.addEventListener("pointercancel", endGroupDrag);
 
 // The vertical tab column is as wide as it is dragged, kept per machine. The
 // drag sets the width straight on the shell; only letting go saves it.

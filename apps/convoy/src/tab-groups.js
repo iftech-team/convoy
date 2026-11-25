@@ -21,10 +21,25 @@ export function groupTabs(tabs, projectOf) {
 }
 
 /// The tabs reordered so each project's tabs sit together, which is how they
-/// are drawn once grouped. Returns the same array when nothing moves.
-export function normalizeOrder(tabs, projectOf) {
-  const order = groupTabs(tabs, projectOf).flatMap((group) => group.tabs);
+/// are drawn once grouped, with the group keyed `first` (pinned tabs) ahead
+/// of the rest. Returns the same array when nothing moves.
+export function normalizeOrder(tabs, projectOf, first) {
+  const groups = groupTabs(tabs, projectOf);
+  const lead = first === undefined ? [] : groups.filter((group) => group.projectId === first);
+  const order = [...lead, ...groups.filter((group) => !lead.includes(group))].flatMap((group) => group.tabs);
   return order.every((id, index) => id === tabs[index]) ? tabs : order;
+}
+
+/// A whole project's tabs moved to just before another project's, or to the
+/// end when `before` is null. Each project's own order is kept.
+export function moveGroup(tabs, projectOf, key, before) {
+  const groups = groupTabs(tabs, projectOf);
+  const moving = groups.find((group) => group.projectId === key);
+  if (!moving || key === before) return tabs;
+  const rest = groups.filter((group) => group !== moving);
+  const at = before === null ? -1 : rest.findIndex((group) => group.projectId === before);
+  rest.splice(at < 0 ? rest.length : at, 0, moving);
+  return rest.flatMap((group) => group.tabs);
 }
 
 /// The tabs that are on screen, in the order shown: a folded group's tabs are

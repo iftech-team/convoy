@@ -31,6 +31,8 @@ export const SHORTCUTS = [
   ["reopenTab", "mod+shift+t", "Reopen closed tab", "Sessions"],
   ["moveTabLeft", "mod+shift+left", "Move tab left", "Sessions"],
   ["moveTabRight", "mod+shift+right", "Move tab right", "Sessions"],
+  ["foldTabs", "mod+alt+[", "Hide or show this project's tabs", "Sessions"],
+  ["foldOtherTabs", "mod+alt+]", "Hide other projects' tabs", "Sessions"],
   ["resume", "mod+shift+r", "Resume session", "Sessions"],
   ["stop", "mod+.", "Stop session", "Sessions"],
   ["sleep", "mod+alt+z", "Sleep session", "Sessions"],
