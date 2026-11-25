@@ -185,34 +185,28 @@ const TOOLS: [(&str, &str, &str); 5] = [
     ),
 ];
 
+/// Marks the lines `locate` reads, so whatever the user's `.zshrc` prints
+/// around them (a greeting, terminal escape codes with no line break) cannot
+/// hide the answer.
+const PATH_MARK: &str = "__CONVOY_PATH__";
+const VERSION_MARK: &str = "__CONVOY_VERSION__";
+
 /// Finds a tool the way a terminal would: through the login shell on Unix,
 /// so the PATH matches what an agent session sees.
 fn locate(tool: &str) -> (Option<String>, Option<String>) {
-    let output = if cfg!(windows) {
-        std::process::Command::new("where").arg(tool).output()
-    } else {
-        let (shell, args) = convoy_core::provider::launch::shell_command(format!(
-            "command -v {tool} && {tool} --version 2>/dev/null | head -1"
-        ));
-        std::process::Command::new(shell).args(args).output()
-    };
-    let Ok(output) = output else {
-        return (None, None);
-    };
-    if !output.status.success() {
-        return (None, None);
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    // An interactive shell may print a greeting first; the path is the first
-    // line that is one.
-    let mut lines = text
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .skip_while(|line| !cfg!(windows) && !line.starts_with('/'));
-    let path = lines.next().map(str::to_string);
-    let version = if cfg!(windows) {
-        path.as_ref().and_then(|found| {
+    if cfg!(windows) {
+        let Ok(output) = std::process::Command::new("where").arg(tool).output() else {
+            return (None, None);
+        };
+        if !output.status.success() {
+            return (None, None);
+        }
+        let path = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .map(str::to_string);
+        let version = path.as_ref().and_then(|found| {
             let out = std::process::Command::new(found)
                 .arg("--version")
                 .output()
@@ -221,11 +215,33 @@ fn locate(tool: &str) -> (Option<String>, Option<String>) {
                 .lines()
                 .next()
                 .map(|line| line.trim().to_string())
-        })
-    } else {
-        lines.next().map(str::to_string)
+        });
+        return (path, version);
+    }
+    // The shell's exit status is not trusted: a `.zshrc` or `.zlogout` that
+    // fails would turn a found tool into a missing one.
+    let (shell, args) = convoy_core::provider::launch::shell_command(format!(
+        "p=$(command -v {tool}) && printf '\\n{PATH_MARK}%s\\n{VERSION_MARK}%s\\n' \"$p\" \"$({tool} --version 2>/dev/null | head -1)\""
+    ));
+    match std::process::Command::new(shell).args(args).output() {
+        Ok(output) => parse_located(&String::from_utf8_lossy(&output.stdout)),
+        Err(_) => (None, None),
+    }
+}
+
+/// Reads the marked path and version out of the shell's output. A path that
+/// is not absolute (an alias or a shell function) does not count.
+fn parse_located(text: &str) -> (Option<String>, Option<String>) {
+    let marked = |mark: &str| {
+        text.lines()
+            .find_map(|line| line.find(mark).map(|at| line[at + mark.len()..].trim()))
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
     };
-    (path, version)
+    let Some(path) = marked(PATH_MARK).filter(|path| path.starts_with('/')) else {
+        return (None, None);
+    };
+    (Some(path), marked(VERSION_MARK))
 }
 
 #[tauri::command]
@@ -529,7 +545,7 @@ pub fn worktrees_path(workspace: State<'_, Workspace>) -> String {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::locate;
+    use super::{locate, parse_located};
 
     /// The checks run against the real machine; only what does not depend on
     /// it is asserted: every check is there, Convoy's folder is writable, and
@@ -568,6 +584,19 @@ mod tests {
         assert!(path.is_some_and(|path| path.ends_with("/git")));
         assert!(version.is_some_and(|version| version.starts_with("git version")));
         assert_eq!(locate("convoy-no-such-tool"), (None, None));
+    }
+
+    #[test]
+    fn reads_the_marked_path_through_whatever_the_shell_prints_around_it() {
+        let noisy = "Welcome!\n\u{1b}]1337;SetMark\u{7}\n__CONVOY_PATH__/usr/bin/git\n__CONVOY_VERSION__git version 2.54.0\nbye\n";
+        assert_eq!(
+            parse_located(noisy),
+            (Some("/usr/bin/git".into()), Some("git version 2.54.0".into()))
+        );
+        let glued = "\u{1b}]133;A\u{7}__CONVOY_PATH__/opt/homebrew/bin/gh\n__CONVOY_VERSION__\n";
+        assert_eq!(parse_located(glued), (Some("/opt/homebrew/bin/gh".into()), None));
+        assert_eq!(parse_located("__CONVOY_PATH__alias gh=hub\n"), (None, None));
+        assert_eq!(parse_located("nothing here\n"), (None, None));
     }
 }
 
