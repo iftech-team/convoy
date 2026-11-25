@@ -3,7 +3,7 @@
 // section, and every change saved the moment it is made.
 
 import { catalog, storageNote } from "./integrations-catalog.js";
-import { agentIcon, icons } from "./icons.js";
+import { agentIcon, icons, maskIcon } from "./icons.js";
 import { button, escape, hint, plural, shorten } from "./ui.js";
 import { GLOSSARY, GLOSSARY_ORDER } from "./glossary.js";
 import { activeAccount, state } from "./state.js";
@@ -404,6 +404,29 @@ function acpSection() {
   );
 }
 
+/// DeepSeek: Claude Code on DeepSeek's Anthropic-compatible API, with only
+/// a key to give.
+function deepseekSection() {
+  const connected = (state.profiles ?? []).find((item) => item.provider === "deepseek");
+  const keyInput = `<input id="deepseek-key" type="password" autocomplete="off" spellcheck="false"
+                          placeholder="${escape(connected ? t("New API key") : t("API key, from platform.deepseek.com"))}" />`;
+  const rows = connected
+    ? agentRow(
+        agentIcon("deepseek", 16),
+        t("Connected"),
+        t("New sessions can pick DeepSeek as their agent: Claude Code, running on DeepSeek's models."),
+        `${keyInput}
+         ${button({ label: t("Replace key"), action: "deepseek-save" })}
+         ${button({ label: t("Disconnect"), kind: "quiet", action: "deepseek-remove" })}`,
+      )
+    : agentRow(agentIcon("deepseek", 16), t("Not connected"), t("Paste a DeepSeek API key to run Claude Code on DeepSeek."), `${keyInput}${button({ label: t("Connect"), kind: "primary", action: "deepseek-save" })}`);
+  return groupBox(
+    "DeepSeek",
+    rows,
+    t("Claude Code works as usual on DeepSeek: chat and terminal, tasks, reviews you start and automations. The key is kept in an owner-only file in Convoy's folder."),
+  );
+}
+
 /// The ACP registry: every agent that can be added in one step, installed
 /// for you when it is a download.
 function registrySection() {
@@ -423,7 +446,7 @@ function registrySection() {
                 : agent.added
                   ? button({ label: t("Update"), data: { "acp-registry-add": agent.id } })
                   : button({ label, kind: "primary", data: { "acp-registry-add": agent.id } });
-          const icon = agent.icon?.startsWith("data:image/svg+xml;base64,") ? `<img class="agent-icon agent-icon--image" width="16" height="16" src="${agent.icon}" alt="" />` : agentIcon(`acp:${agent.id}`, 16);
+          const icon = maskIcon(agent.icon, 16) || agentIcon(`acp:${agent.id}`, 16);
           return agentRow(icon, agent.name, shorten(agent.description || agent.version, 120), control);
         })
         .join("");
@@ -460,6 +483,7 @@ function agents(settings) {
           ),
         ),
     )}
+    ${deepseekSection()}
     ${acpSection()}
     ${registrySection()}
     ${groupBox(
@@ -614,7 +638,8 @@ function accounts() {
       ? `<span class="pref-ok">${icons.check} ${escape(t("Active"))}</span>`
       : button({ label: t("Use"), data: { "use-account": `${agent}:${id}` } });
   const perAgent = ACCOUNT_AGENTS.map(([agent, name]) => {
-    const own = profiles.filter((profile) => profile.agent === agent);
+    // A provider's account (DeepSeek) is set up in Agents, with its key.
+    const own = profiles.filter((profile) => profile.agent === agent && !profile.provider);
     const rows =
       row(t("System login"), t("Your normal login in a terminal. Convoy never changes it."), using(agent, "")) +
       own

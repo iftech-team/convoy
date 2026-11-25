@@ -4,6 +4,18 @@
 
 export default {
   strings: {
+    "Claude Code, running on DeepSeek with the key from Settings → Agents.": "Claude Code на моделях DeepSeek, с ключом из Settings → Agents.",
+    "Paste the API key first.": "Сначала вставьте API-ключ.",
+    "DeepSeek connected": "DeepSeek подключён",
+    "New API key": "Новый API-ключ",
+    "API key, from platform.deepseek.com": "API-ключ с platform.deepseek.com",
+    "Connected": "Подключено",
+    "New sessions can pick DeepSeek as their agent: Claude Code, running on DeepSeek's models.": "В новой сессии можно выбрать агента DeepSeek: это Claude Code на моделях DeepSeek.",
+    "Replace key": "Заменить ключ",
+    "Disconnect": "Отключить",
+    "Not connected": "Не подключено",
+    "Paste a DeepSeek API key to run Claude Code on DeepSeek.": "Вставьте API-ключ DeepSeek, чтобы запускать Claude Code на DeepSeek.",
+    "Claude Code works as usual on DeepSeek: chat and terminal, tasks, reviews you start and automations. The key is kept in an owner-only file in Convoy's folder.": "Claude Code работает на DeepSeek как обычно: чат и терминал, задачи, ревью, запущенные вручную, и автоматизации. Ключ хранится в файле, доступном только владельцу, в папке Convoy.",
     "Website…": "Сайт…",
     "Downloaded by Convoy": "Скачан Convoy",
     "Loading the agent registry…": "Загружаем реестр агентов…",

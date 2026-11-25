@@ -4,7 +4,7 @@
 
 import { attempt, done, ensureModels, activeAccount, lastChoice, state, toast } from "./state.js";
 import { t } from "./i18n.js";
-import { agentKey, isAcp } from "./agents.js";
+import { agentKey, deepseekProfile, isAcp, isProviderAccount } from "./agents.js";
 import { DAYS, draftSchedule, previewBlock } from "./views-automations.js";
 import { fitSkills } from "./skills.js";
 import { autoSkills } from "./views-skills.js";
@@ -189,8 +189,14 @@ export function installAutomations({ render, openModal, closeDialog, selectProje
       return true;
     }
     const dialog = state.dialog;
+    if (data.set === "auto-agent" && data.value === "deepseek") {
+      Object.assign(dialog, { agent: "claude", account: deepseekProfile()?.id ?? "", model: "", effort: "" });
+      ensureModels(dialog.agent, dialog.account);
+      render();
+      return true;
+    }
     if (data.set === "auto-agent") {
-      if (dialog.agent !== data.value) {
+      if (dialog.agent !== data.value || isProviderAccount(dialog.account)) {
         dialog.agent = data.value;
         dialog.account = activeAccount(data.value);
         Object.assign(dialog, lastChoice(data.value));

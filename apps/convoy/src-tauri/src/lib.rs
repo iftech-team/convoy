@@ -248,6 +248,8 @@ pub fn run() {
             commands::agents::acp_agents_save,
             commands::agents::acp_registry_list,
             commands::agents::acp_registry_add,
+            commands::integrations::api_provider_set,
+            commands::integrations::api_provider_remove,
             commands::integrations::activity_read,
             commands::integrations::activity_clear,
             commands::docs::docs_list,

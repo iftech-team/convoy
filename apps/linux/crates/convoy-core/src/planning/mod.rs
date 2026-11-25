@@ -1099,6 +1099,7 @@ impl Workspace {
                 id: new_id(),
                 label,
                 agent,
+                provider: None,
                 unknown: Default::default(),
             });
             Ok(())

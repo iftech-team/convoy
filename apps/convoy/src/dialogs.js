@@ -23,7 +23,7 @@ import { agentIcon, icons } from "./icons.js";
 import { t } from "./i18n.js";
 import { automationEditor } from "./views-automations.js";
 import { installedAgents } from "./onboarding.js";
-import { agentOptions, hasTerminal, isAcp } from "./agents.js";
+import { agentOptions, hasTerminal, isAcp, isProviderAccount, pickedAgent } from "./agents.js";
 import { SPECS } from "./views-docs.js";
 import { autoSkills, skillEditor, skillImport, skillPicker } from "./views-skills.js";
 
@@ -31,8 +31,15 @@ import { autoSkills, skillEditor, skillImport, skillPicker } from "./views-skill
 /// chosen so a choice never disappears from under it. `acp: false` keeps to
 /// Claude and Codex, for accounts, history and reviews, which read their
 /// own files.
-const agentChoices = (chosen, acp = true) =>
-  agentOptions({ chosen, installed: installedAgents(state.diagnostics), acp });
+const agentChoices = (chosen, acp = true, providers = false) =>
+  agentOptions({ chosen, installed: installedAgents(state.diagnostics), acp, providers });
+
+/// The agent row of a sheet that picks an account too: DeepSeek is Claude
+/// Code on the DeepSeek account, and shown as its own choice.
+const agentPicker = (dialog, account) => {
+  const picked = pickedAgent(dialog.agent, account);
+  return choice("agent", agentChoices(picked, true, true), picked);
+};
 
 export function dialogView() {
   const dialog = state.dialog;
@@ -50,7 +57,8 @@ const foot = (confirmLabel, action, kind = "primary") => `
 /// The account a new session signs in with: the system login or a profile.
 export const accountOptions = (agent) => [
   ["", t("System login")],
-  ...(state.profiles ?? []).filter((item) => item.agent === agent).map((item) => [item.id, item.label]),
+  // A provider's account is picked as its own agent, not here.
+  ...(state.profiles ?? []).filter((item) => item.agent === agent && !item.provider).map((item) => [item.id, item.label]),
 ];
 
 const select = (id, options, selected, disabled = false) =>
@@ -210,7 +218,7 @@ function newSession(dialog) {
         // chat opens, where they can be switched.
         isAcp(dialog.agent)
           ? `<p class="modal__hint">${escape(t("This agent signs in its own way and lists its models once its chat opens."))}</p>`
-          : `${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
+          : `${isProviderAccount(dialog.account) ? `<p class="modal__hint">${escape(t("Claude Code, running on DeepSeek with the key from Settings → Agents."))}</p>` : field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
       <div class="field-row">
         ${field(t("Model"), modelSelect("draft-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}
         ${field(t("Effort"), effortSelect("draft-effort", dialog.agent, dialog.account ?? "", dialog.model ?? "", dialog.effort ?? ""))}
@@ -225,7 +233,7 @@ function newSession(dialog) {
     title: t("New session"),
     hint: target ? t("In {project}", { project: target.title }) : "",
     body: `
-      ${field(t("Agent"), choice("agent", agentChoices(dialog.agent), dialog.agent))}
+      ${field(t("Agent"), agentPicker(dialog, dialog.account))}
       ${field(
         t("First message (optional)"),
         textArea("draft-prompt", dialog.prompt, t("Sent once, when the agent starts. Resuming never replays it.")),
@@ -279,11 +287,11 @@ const startReview = (dialog) =>
     }),
     wide: true,
     body: `
-      ${field(t("Reviewer"), choice("agent", agentChoices(dialog.agent), dialog.agent))}
+      ${field(t("Reviewer"), agentPicker(dialog, dialog.account))}
       ${
         isAcp(dialog.agent)
           ? `<p class="modal__hint">${escape(t("This agent signs in its own way and lists its models once its chat opens."))}</p>`
-          : `${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
+          : `${isProviderAccount(dialog.account) ? `<p class="modal__hint">${escape(t("Claude Code, running on DeepSeek with the key from Settings → Agents."))}</p>` : field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
       <div class="field-row">
         ${field(t("Model"), modelSelect("draft-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}
         ${field(t("Effort"), effortSelect("draft-effort", dialog.agent, dialog.account ?? "", dialog.model ?? "", dialog.effort ?? ""))}
@@ -736,7 +744,7 @@ const taskForm = (dialog) => {
   const more = !!dialog.id || !!dialog.more;
   const runLabel = dialog.plan_first && dialog.plan?.status !== "approved" ? t("Plan now") : t("Run now");
   const options = `
-      ${field(t("Agent"), choice("agent", agentChoices(dialog.agent), dialog.agent))}
+      ${field(t("Agent"), agentPicker(dialog, dialog.profile_id))}
       ${skillPicker(dialog.skills, dialog.agent, projectId)}
       ${
         // A list, not a row of buttons: a project may have a hundred specs.
@@ -804,7 +812,7 @@ const taskForm = (dialog) => {
                ${field(t("Model"), modelSelect("task-model", dialog.agent, dialog.profile_id ?? "", dialog.model ?? ""))}
                ${field(t("Effort"), effortSelect("task-effort", dialog.agent, dialog.profile_id ?? "", dialog.model ?? "", dialog.effort ?? ""))}
              </div>
-             ${field(t("Account"), select("task-account", accountOptions(dialog.agent), dialog.profile_id ?? ""))}
+             ${isProviderAccount(dialog.profile_id) || isAcp(dialog.agent) ? "" : field(t("Account"), select("task-account", accountOptions(dialog.agent), dialog.profile_id ?? ""))}
              </div>`
           : ""
       }`;

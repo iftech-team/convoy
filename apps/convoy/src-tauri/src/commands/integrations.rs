@@ -11,6 +11,9 @@ pub struct ProfileView {
     pub id: String,
     pub label: String,
     pub agent: String,
+    /// The model provider it runs on, such as `deepseek`; none is Anthropic
+    /// or OpenAI as usual.
+    pub provider: Option<String>,
     /// Sessions bound to it. One that is in use cannot be removed.
     pub sessions: usize,
 }
@@ -26,6 +29,7 @@ pub fn profiles_read(workspace: State<'_, Workspace>) -> Result<Vec<ProfileView>
                 id: profile.id.clone(),
                 label: profile.label.clone(),
                 agent: profile.agent.as_str().to_string(),
+                provider: profile.provider.clone(),
                 sessions: state
                     .sessions
                     .iter()
@@ -44,6 +48,81 @@ pub fn profile_add(
 ) -> Result<(), String> {
     let agent = Agent::parse(&agent).ok_or("Unknown agent.")?;
     workspace.act(|workspace| workspace.add_profile(&label, agent).map(|_| ()))
+}
+
+/// Connects a model provider that Claude Code reaches through an
+/// Anthropic-compatible API, such as DeepSeek: its own Claude account, with
+/// the key saved owner-only. Saving again replaces the key.
+#[tauri::command]
+pub fn api_provider_set(
+    provider: String,
+    key: String,
+    workspace: State<'_, Workspace>,
+) -> Result<(), String> {
+    use convoy_core::provider::api;
+    if !api::PROVIDERS.contains(&provider.as_str()) {
+        return Err("Unknown model provider.".into());
+    }
+    let accounts = workspace.storage.accounts();
+    workspace.act(|core| {
+        let existing = core
+            .state()
+            .profiles
+            .iter()
+            .find(|profile| profile.provider.as_deref() == Some(provider.as_str()))
+            .map(|profile| profile.id.clone());
+        let id = match existing {
+            Some(id) => id,
+            None => {
+                let id = convoy_core::workspace::new_id();
+                let (profile_id, label) = (id.clone(), api::name(&provider).to_string());
+                let provider = provider.clone();
+                core.update(move |state| {
+                    state.profiles.push(convoy_core::model::Profile {
+                        id: profile_id,
+                        label,
+                        agent: Agent::Claude,
+                        provider: Some(provider),
+                        unknown: Default::default(),
+                    });
+                    Ok(())
+                })?;
+                id
+            }
+        };
+        api::save_key(&accounts, &id, &key)
+    })
+}
+
+/// Disconnects a model provider: its key is deleted, and its account too
+/// when no saved session uses it.
+#[tauri::command]
+pub fn api_provider_remove(provider: String, workspace: State<'_, Workspace>) -> Result<(), String> {
+    let accounts = workspace.storage.accounts();
+    workspace.act(|core| {
+        let Some(id) = core
+            .state()
+            .profiles
+            .iter()
+            .find(|profile| profile.provider.as_deref() == Some(provider.as_str()))
+            .map(|profile| profile.id.clone())
+        else {
+            return Ok(());
+        };
+        convoy_core::provider::api::remove_key(&accounts, &id);
+        let bound = core
+            .state()
+            .sessions
+            .iter()
+            .any(|session| session.profile_id.as_deref() == Some(id.as_str()));
+        if !bound {
+            core.update(move |state| {
+                state.profiles.retain(|profile| profile.id != id);
+                Ok(())
+            })?;
+        }
+        Ok(())
+    })
 }
 
 /// Removes Convoy's record of a profile. The credential files stay where they
@@ -452,6 +531,19 @@ pub async fn models_list(
         return Ok(Vec::new());
     }
     let storage = workspace.storage.clone();
+    // A provider account offers that provider's models.
+    let provider = workspace.act(|core| {
+        Ok(profile_id.as_deref().and_then(|id| {
+            core.state()
+                .profiles
+                .iter()
+                .find(|profile| profile.id == id && profile.agent == agent)
+                .and_then(|profile| profile.provider.clone())
+        }))
+    })?;
+    if let Some(provider) = provider {
+        return Ok(convoy_core::provider::api::models(&provider));
+    }
     let home = workspace.act(|core| {
         let mut probe = convoy_core::model::Session::new(String::new(), agent, "models");
         probe.profile_id = profile_id.filter(|id| !id.is_empty()).filter(|id| {

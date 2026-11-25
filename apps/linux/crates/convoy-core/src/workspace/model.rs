@@ -823,6 +823,10 @@ pub struct Profile {
     pub id: String,
     pub label: String,
     pub agent: Agent,
+    /// A model provider this Claude account runs on instead of Anthropic,
+    /// such as `deepseek`; see [`crate::provider::api`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
     #[serde(flatten)]
     pub unknown: Unknown,
 }

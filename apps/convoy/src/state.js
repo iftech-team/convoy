@@ -329,7 +329,7 @@ const ACCOUNT_KEY = "convoy.activeAccount";
 export function activeAccount(agent) {
   try {
     const id = JSON.parse(localStorage.getItem(ACCOUNT_KEY) ?? "{}")?.[agent] ?? "";
-    return (state.profiles ?? []).some((item) => item.id === id && item.agent === agent) ? id : "";
+    return (state.profiles ?? []).some((item) => item.id === id && item.agent === agent && !item.provider) ? id : "";
   } catch {
     return "";
   }

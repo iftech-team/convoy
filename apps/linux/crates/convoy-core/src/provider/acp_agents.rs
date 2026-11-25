@@ -126,16 +126,6 @@ pub fn builtins() -> Vec<AcpAgentDef> {
             Some("opencode auth login"),
             "https://opencode.ai",
         ),
-        builtin(
-            "gemini",
-            "gemini",
-            "Gemini CLI",
-            "gemini",
-            &["--acp"],
-            Some(("gemini", Some("--prompt-interactive"))),
-            None,
-            "https://github.com/google-gemini/gemini-cli",
-        ),
     ]
 }
 

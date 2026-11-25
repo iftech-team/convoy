@@ -101,6 +101,12 @@ pub fn account_environment(
             env.remove(name);
         }
     }
+    // A provider account runs Claude Code on that provider's models.
+    if let Some((profile, provider)) =
+        profile.and_then(|profile| Some((profile, profile.provider.as_deref()?)))
+    {
+        env.extend(crate::provider::api::environment(provider, root, &profile.id)?);
+    }
     Ok(Account { home, env })
 }
 

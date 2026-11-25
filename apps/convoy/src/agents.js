@@ -37,14 +37,25 @@ export function loadAcpAgents(force = false) {
 /// with a terminal UI of their own.
 export const hasTerminal = (agent) => !isAcp(agent) || !!acpAgent(agent)?.terminal;
 
-/// Picker rows: Claude and Codex (those installed, when known), then the
-/// installed ACP agents — and always the one already chosen, so a choice
-/// never disappears from under the picker. `acp: false` leaves ACP agents
-/// out, for roles only Claude and Codex can fill.
-export function agentOptions({ chosen = "", installed = null, acp = true } = {}) {
+/// The Claude account that runs on DeepSeek, when one is connected.
+export const deepseekProfile = () => (state.profiles ?? []).find((item) => item.provider === "deepseek" && item.agent === "claude") ?? null;
+
+/// Whether an account is a model provider's rather than a sign-in.
+export const isProviderAccount = (id) => !!id && (state.profiles ?? []).some((item) => item.id === id && item.provider);
+
+/// The picker's value for a dialog: `deepseek` when it runs Claude Code on
+/// the DeepSeek account, the agent otherwise.
+export const pickedAgent = (agent, account) => (agent === "claude" && account && account === deepseekProfile()?.id ? "deepseek" : agent);
+
+/// Picker rows: Claude and Codex (those installed, when known), DeepSeek
+/// when connected and `providers` allows it, then the installed ACP agents
+/// — and always the one already chosen, so a choice never disappears from
+/// under the picker. `acp: false` leaves ACP agents out.
+export function agentOptions({ chosen = "", installed = null, acp = true, providers = false } = {}) {
   const natives = NATIVE_AGENTS.filter(([agent]) => !installed?.length || installed.includes(agent) || agent === chosen);
+  const deepseek = providers && deepseekProfile() ? [["deepseek", "DeepSeek"]] : [];
   const others = acp ? acpAgents().filter((agent) => agent.installed || agent.key === chosen).map((agent) => [agent.key, agent.name]) : [];
-  const rows = [...(natives.length ? natives : NATIVE_AGENTS), ...others];
+  const rows = [...(natives.length ? natives : NATIVE_AGENTS), ...deepseek, ...others];
   return rows.map(([value, name]) => [value, name, agentIcon(value, 15)]);
 }
 

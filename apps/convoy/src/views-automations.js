@@ -7,7 +7,7 @@ import { button, choice, escape, field, modal, setting, textArea, textInput, tog
 import { agentIcon, icons } from "./icons.js";
 import { language, t } from "./i18n.js";
 import { state } from "./state.js";
-import { agentKey, agentOptions, isAcp } from "./agents.js";
+import { agentKey, agentOptions, isAcp, isProviderAccount, pickedAgent } from "./agents.js";
 import { accountOptions, effortSelect, modelSelect } from "./dialogs.js";
 import { skillPicker } from "./views-skills.js";
 
@@ -162,7 +162,8 @@ export function previewBlock(dialog) {
 
 export function automationEditor(dialog) {
   const target = state.projects.find((item) => item.id === dialog.project_id);
-  const agents = agentOptions({ chosen: dialog.agent });
+  const picked = pickedAgent(dialog.agent, dialog.account);
+  const agents = agentOptions({ chosen: picked, providers: true });
   const acp = isAcp(dialog.agent);
   const kind = dialog.schedule_kind;
   const timeInput = (id, value) => `<input id="${id}" type="time" value="${escape(value ?? "")}" required />`;
@@ -189,7 +190,7 @@ export function automationEditor(dialog) {
       ${field(t("Title"), textInput("auto-title", dialog.title, t("Morning triage")))}
       ${field(t("Prompt"), textArea("auto-prompt", dialog.prompt, t("What the agent does each run. It starts fresh every time, so say everything it needs."), 5))}
       <div class="field-row field-row--agent">
-        ${field(t("Agent"), choice("auto-agent", agents, dialog.agent))}
+        ${field(t("Agent"), choice("auto-agent", agents, picked))}
         ${field(
           t("Open in"),
           // A terminal run ends on Claude's or Codex's hook; an ACP agent runs as a chat.
@@ -199,7 +200,9 @@ export function automationEditor(dialog) {
       ${
         acp
           ? `<p class="modal__hint">${escape(t("This agent signs in its own way and lists its models once its chat opens."))}</p>`
-          : `<div class="field-row field-row--three">
+          : isProviderAccount(dialog.account)
+            ? `<div class="field-row">${field(t("Model"), modelSelect("auto-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}</div>`
+            : `<div class="field-row field-row--three">
         ${field(t("Account"), `<select id="auto-account" class="field__select">${accountOptions(dialog.agent).map(([value, label]) => `<option value="${escape(value)}"${value === (dialog.account ?? "") ? " selected" : ""}>${escape(label)}</option>`).join("")}</select>`)}
         ${field(t("Model"), modelSelect("auto-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}
         ${field(t("Effort"), effortSelect("auto-effort", dialog.agent, dialog.account ?? "", dialog.model ?? "", dialog.effort ?? ""))}

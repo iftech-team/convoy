@@ -3,6 +3,7 @@
 
 pub mod acp_agents;
 pub mod acp_registry;
+pub mod api;
 pub mod codex;
 pub mod knowledge;
 pub mod launch;
@@ -55,10 +56,17 @@ pub fn provider_spec_for(
 }
 
 fn unix_spec(agent: Agent, args: &[String], env: &BTreeMap<String, String>) -> LaunchSpec {
-    let bindings: Vec<String> = FORWARDED
+    let mut bindings: Vec<String> = FORWARDED
         .iter()
+        .chain(api::FORWARDED)
         .filter_map(|key| env.get(*key).map(|value| quote(&format!("{key}={value}"))))
         .collect();
+    // A provider account must not fall back on an Anthropic key the user's
+    // shell profile exports; its own key travels in the environment only.
+    if env.contains_key("ANTHROPIC_BASE_URL") && env.contains_key("ANTHROPIC_AUTH_TOKEN") {
+        bindings.insert(0, quote("ANTHROPIC_API_KEY"));
+        bindings.insert(0, quote("-u"));
+    }
     let command: Vec<String> = std::iter::once(agent.as_str().to_string())
         .chain(args.iter().cloned())
         .map(|arg| quote(&arg))

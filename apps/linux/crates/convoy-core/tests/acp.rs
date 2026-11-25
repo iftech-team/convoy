@@ -38,7 +38,7 @@ fn an_acp_agent_reviews_and_tests_when_the_project_names_one() {
         .edit_project(
             &project,
             ProjectPatch {
-                qa_agent: Some("acp:gemini".into()),
+                qa_agent: Some("acp:antigravity".into()),
                 review_agent: Some("acp:opencode".into()),
                 ..ProjectPatch::default()
             },
@@ -46,7 +46,7 @@ fn an_acp_agent_reviews_and_tests_when_the_project_names_one() {
         .unwrap();
     let settings = workspace.project(&project).unwrap();
     assert_eq!(settings.qa_agent, Some(Agent::Acp));
-    assert_eq!(settings.qa_acp_agent.as_deref(), Some("gemini"));
+    assert_eq!(settings.qa_acp_agent.as_deref(), Some("antigravity"));
     assert_eq!(settings.review_agent, Some(Agent::Acp));
     assert_eq!(settings.review_acp_agent.as_deref(), Some("opencode"));
 
@@ -64,7 +64,7 @@ fn an_acp_agent_reviews_and_tests_when_the_project_names_one() {
     assert_eq!(session.view.as_deref(), Some("chat"), "its brief is its first turn");
 
     let tester = qa::handoff(&workspace, &id, Agent::Acp, "Test it.".into()).unwrap();
-    assert_eq!(tester.acp_agent.as_deref(), Some("gemini"));
+    assert_eq!(tester.acp_agent.as_deref(), Some("antigravity"));
     workspace.add_session(tester).unwrap();
 
     // Everything written loads again.

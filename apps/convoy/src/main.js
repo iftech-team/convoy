@@ -2,7 +2,7 @@
 
 import { installTasks } from "./tasks.js";
 import { agentName, newTaskDefaults } from "./task-defaults.js";
-import { acpAgents, hasTerminal, isAcp, loadAcpAgents, loadAcpRegistry, splitCommand } from "./agents.js";
+import { acpAgents, deepseekProfile, hasTerminal, isAcp, isProviderAccount, loadAcpAgents, loadAcpRegistry, splitCommand } from "./agents.js";
 import { dropStatus, movable } from "./phase.js";
 import { presetPatch } from "./presets.js";
 import { sessionLabel } from "./session-state.js";
@@ -1411,6 +1411,19 @@ const ACTIONS = {
   "limits-settings": () => openSettings("AI Limits"),
   "page-add-profile": addPageProfile,
   "acp-add": addAcpAgent,
+  "deepseek-save": async () => {
+    const key = value("deepseek-key").trim();
+    if (!key) return toast(t("Paste the API key first."));
+    if (!(await done("api_provider_set", { provider: "deepseek", key }))) return;
+    await loadProfiles();
+    toast(t("DeepSeek connected"));
+    render();
+  },
+  "deepseek-remove": async () => {
+    if (!(await done("api_provider_remove", { provider: "deepseek" }))) return;
+    await loadProfiles();
+    render();
+  },
   "acp-refresh": () => Promise.all([loadAcpAgents(true), loadAcpRegistry({ reload: true, network: true })]).then(() => loadAcpAgents(true)).then(render),
   "add-profile": addProfile,
   "scan-transcripts": scanTranscripts,
@@ -2015,6 +2028,20 @@ app.addEventListener("click", async (event) => {
       commandId: data.quick,
     });
   }
+  // DeepSeek is Claude Code on the DeepSeek account.
+  if (data.set === "agent" && data.value === "deepseek") {
+    captureDraft();
+    const account = deepseekProfile()?.id ?? "";
+    state.dialog.agent = "claude";
+    if (state.dialog.kind === "task") state.dialog.profile_id = account;
+    else state.dialog.account = account;
+    Object.assign(state.dialog, { model: "", effort: "" });
+    ensureModels("claude", account);
+    if (Array.isArray(state.dialog.skills)) {
+      fitSkills(state.dialog, "claude", state.dialog.projectId ?? state.dialog.project_id ?? state.projectId);
+    }
+    return render();
+  }
   if (data.set) {
     captureDraft();
     state.dialog[fieldFor(data.set)] = data.value;
@@ -2028,7 +2055,7 @@ app.addEventListener("click", async (event) => {
     }
     // An account and a model belong to one agent; switching lets them go.
     if (state.dialog.kind === "task" && data.set === "agent") {
-      const own = (state.profiles ?? []).some((item) => item.id === state.dialog.profile_id && item.agent === data.value);
+      const own = (state.profiles ?? []).some((item) => item.id === state.dialog.profile_id && item.agent === data.value && !item.provider);
       if (!own) state.dialog.profile_id = "";
       Object.assign(state.dialog, lastChoice(data.value));
     }
@@ -3123,8 +3150,10 @@ async function createSession() {
   });
   draft.busy = false;
   if (!id) return render();
-  rememberAccount(draft.agent, draft.account);
-  rememberChoice(draft.agent, draft.model, draft.effort);
+  if (!isProviderAccount(draft.account)) {
+    rememberAccount(draft.agent, draft.account);
+    rememberChoice(draft.agent, draft.model, draft.effort);
+  }
   const wantsWorktree = draft.repo && draft.worktree;
   const branch = (draft.branch ?? "").trim() || suggestBranch(title, target);
   const base = (draft.base ?? "").trim();

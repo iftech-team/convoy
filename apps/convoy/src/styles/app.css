@@ -2309,10 +2309,16 @@ select:disabled {
   display: block;
 }
 
-.agent-icon--image {
+/* A registry icon: its shape, in the text's colour. */
+.agent-icon--mask {
   display: inline-block;
-  border-radius: 3px;
-  object-fit: contain;
+  background-color: currentColor;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
 }
 
 /* An ACP agent's name with its icon, in Settings → Agents. */
