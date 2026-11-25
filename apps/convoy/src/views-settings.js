@@ -7,6 +7,7 @@ import { agentIcon, icons } from "./icons.js";
 import { button, escape, hint, plural, shorten } from "./ui.js";
 import { GLOSSARY, GLOSSARY_ORDER } from "./glossary.js";
 import { activeAccount, state } from "./state.js";
+import { acpAgents, agentOptions } from "./agents.js";
 import { SHORTCUTS, SHORTCUT_GROUPS, label } from "./shortcuts.js";
 import { LANGUAGES, languageChoice, t } from "./i18n.js";
 import { ZOOMS, percent, uiZoom } from "./zoom.js";
@@ -331,6 +332,52 @@ function terminalSection(settings) {
   );
 }
 
+/// Agents reached through the Agent Client Protocol: the ones Convoy knows,
+/// the ones the user added, and a form to add another.
+function acpSection() {
+  const list = state.acpAgents;
+  const rows = !list
+    ? empty(t("Looking for agents…"))
+    : acpAgents()
+        .map((agent) => {
+          const command = [agent.command, ...(agent.args ?? [])].join(" ");
+          const status = agent.installed ? t("Installed") : t("Not found");
+          const controls = [
+            agent.installed && agent.loginCommand ? button({ label: t("Sign in…"), data: { "acp-login": agent.key } }) : "",
+            !agent.installed && agent.installUrl ? button({ label: t("Install…"), kind: "quiet", data: { "acp-install": agent.installUrl } }) : "",
+            agent.builtin
+              ? ""
+              : button({ icon: "trash", kind: "quiet", data: { "acp-remove": agent.id }, title: t("Remove this agent") }),
+          ].join("");
+          return row(`${agent.name}`, `${status} · ${command}${agent.terminal ? "" : ` · ${t("chat only")}`}`, controls);
+        })
+        .join("");
+  const form = `
+    <div class="pref-block pref-stack">
+      <div class="pref-row__title">${escape(t("Add an agent"))}</div>
+      <div class="pref-inline">
+        <input id="acp-name" placeholder="${escape(t("Name, e.g. Kimi"))}" spellcheck="false" />
+        <input id="acp-command" class="pref-text--wide" placeholder="${escape(t("Command that speaks ACP, e.g. kimi acp"))}" spellcheck="false" />
+      </div>
+      <div class="pref-inline">
+        <input id="acp-tui" placeholder="${escape(t("Terminal command (optional)"))}" spellcheck="false" />
+        <input id="acp-login" placeholder="${escape(t("Sign-in command (optional)"))}" spellcheck="false" />
+      </div>
+      <textarea id="acp-env" class="pref-area" rows="2" spellcheck="false"
+                placeholder="${escape(t("Environment, one NAME=value per line (optional)"))}"></textarea>
+      <div class="pref-inline pref-inline--flush">
+        ${button({ label: t("Add agent"), action: "acp-add", kind: "primary" })}
+        ${button({ label: t("Check again"), action: "acp-refresh", kind: "quiet" })}
+      </div>
+    </div>`;
+  return groupBox(
+    t("Other agents (ACP)"),
+    rows + form,
+    t("Any agent that speaks the Agent Client Protocol runs here as a chat: Antigravity, Gemini CLI, and opencode, which reaches DeepSeek, Kimi, Qwen and others through its own provider setup. Variables are kept in Convoy's settings file."),
+    "acp",
+  );
+}
+
 function agents(settings) {
   return `
     ${groupBox(
@@ -340,7 +387,7 @@ function agents(settings) {
         t("Preselected for a new session and a new task. Reviews default to the other agent."),
         segmented(
           "default_agent",
-          AGENTS.map(([value, name]) => [value, name, agentIcon(value, 13)]),
+          agentOptions({ chosen: settings.default_agent }).map(([value, name]) => [value, name, agentIcon(value, 13)]),
           settings.default_agent,
         ),
       ) +
@@ -357,6 +404,7 @@ function agents(settings) {
           ),
         ),
     )}
+    ${acpSection()}
     ${groupBox(
       t("Permissions"),
       row(t("Claude Code: skip permission prompts (Yolo)"), t("Launches with --dangerously-skip-permissions."), toggle("yolo_claude", settings.yolo_claude, "Claude Yolo")) +

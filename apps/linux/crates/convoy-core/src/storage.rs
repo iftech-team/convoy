@@ -199,6 +199,12 @@ impl Storage {
     pub fn knowledge(&self) -> PathBuf {
         self.root.join("knowledge")
     }
+
+    /// Chats with ACP agents, one file per session: those agents keep their
+    /// transcripts where Convoy cannot read them.
+    pub fn acp_chats(&self) -> PathBuf {
+        self.root.join("acp-chats")
+    }
 }
 
 #[cfg(test)]

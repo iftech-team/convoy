@@ -86,7 +86,7 @@ pub async fn session_create(
     skills: Option<Vec<String>>,
     workspace: State<'_, Workspace>,
 ) -> Result<String, String> {
-    let agent = Agent::parse(&agent).ok_or("Unknown agent.")?;
+    let (agent, acp_agent) = convoy_core::provider::acp_agents::parse_key(&agent).ok_or("Unknown agent.")?;
     let storage = workspace.storage.clone();
     // The skills picked, or the automatic ones when none were asked about.
     let skills = crate::skills::resolve(&storage, &project_id, Some(agent), skills.as_deref())?;
@@ -139,6 +139,7 @@ pub async fn session_create(
 
     workspace.act(|workspace| {
         let mut input = NewSession::new(project_id, agent, title);
+        input.acp_agent = acp_agent;
         input.prompt = prompt;
         input.model = model;
         input.effort = effort.unwrap_or_default();
@@ -846,6 +847,45 @@ pub fn account_login(
     terminals: State<'_, Arc<Terminals>>,
 ) -> Result<String, String> {
     let storage = workspace.storage.clone();
+    // An ACP agent signs in with its own command, in the home folder.
+    if let Some(id) = agent
+        .as_deref()
+        .and_then(|key| key.strip_prefix(convoy_core::provider::acp_agents::KEY_PREFIX))
+    {
+        let definition = workspace.act(|core| {
+            convoy_core::provider::acp_agents::find(core.settings(), Some(id))
+        })?;
+        let Some(command) = definition.login_command.clone().filter(|c| !c.trim().is_empty())
+        else {
+            return Err(format!(
+                "{} has no sign-in command. Sign in the way its own documentation says.",
+                definition.name
+            ));
+        };
+        let terminal = login_terminal(&format!("system-acp:{id}"));
+        if terminals.running(&terminal) {
+            return Ok(terminal);
+        }
+        let mut env = convoy_core::provider::launch::current_environment();
+        env.extend(definition.env.clone());
+        let (program, args) = convoy_core::provider::launch::shell_command(command);
+        let home = convoy_core::storage::home(convoy_core::Platform::current());
+        let env: Vec<(String, String)> = env.into_iter().collect();
+        crate::pty::start(
+            &terminals,
+            &app,
+            Launch {
+                id: &terminal,
+                program: &program,
+                args: &args,
+                cwd: &home,
+                env: &env,
+                cols,
+                rows,
+            },
+        )?;
+        return Ok(terminal);
+    }
     let system = match agent.as_deref().filter(|_| profile_id.is_empty()) {
         Some(name) => Some(Agent::parse(name).ok_or("Unknown agent.")?),
         None => None,
@@ -882,6 +922,7 @@ pub fn account_login(
     let login: &[&str] = match agent {
         Agent::Claude => &["/login"],
         Agent::Codex => &["login"],
+        Agent::Acp => return Err("Unknown agent.".into()),
     };
     let (program, args) = if cfg!(windows) {
         let resolved = convoy_core::provider::launch::windows_executable(agent, &account.env)
@@ -1004,6 +1045,11 @@ pub async fn sessions_delete(
         let history = convoy_core::history::History::new(storage.history());
         for id in &removed {
             history.remove(id);
+            // An ACP chat's record, if it had one.
+            let _ = std::fs::remove_file(convoy_core::chat::history::acp_file(
+                &storage.acp_chats(),
+                id,
+            ));
         }
     }
     Ok(DeleteReport {

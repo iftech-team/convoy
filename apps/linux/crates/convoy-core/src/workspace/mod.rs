@@ -112,6 +112,8 @@ pub struct SessionPatch {
 pub struct NewSession {
     pub project_id: String,
     pub agent: Agent,
+    /// Which ACP agent, when `agent` is [`Agent::Acp`].
+    pub acp_agent: Option<String>,
     pub title: String,
     pub prompt: String,
     pub review_of: Option<String>,
@@ -139,6 +141,7 @@ impl NewSession {
         NewSession {
             project_id: project_id.into(),
             agent,
+            acp_agent: None,
             title: title.into(),
             prompt: String::new(),
             review_of: None,
@@ -162,6 +165,10 @@ pub struct SettingsPatch {
     pub scrollback: Option<i64>,
     pub theme: Option<Theme>,
     pub default_agent: Option<Agent>,
+    /// The ACP agent, when `default_agent` is [`Agent::Acp`].
+    pub default_acp_agent: Option<String>,
+    /// Replaces the user's ACP agents; each is checked first.
+    pub acp_agents: Option<Vec<crate::provider::acp_agents::AcpAgentDef>>,
     pub notifications: Option<bool>,
     pub keep_awake: Option<KeepAwake>,
     pub hibernate_minutes: Option<i64>,
@@ -297,6 +304,7 @@ impl Workspace {
                     shared_paths: None,
                     review_template: None,
                     default_agent: None,
+                    default_acp_agent: None,
                     base_ref: None,
                     branch_prefix: None,
                     task_mode: None,
@@ -349,8 +357,12 @@ impl Workspace {
             Ok(match value {
                 None => None,
                 Some("") => Some(None),
+                // QA and review read the agent's own transcripts, which
+                // only Claude and Codex have.
                 Some(value) => Some(Some(
-                    Agent::parse(value).ok_or_else(|| ConvoyError::message("Unknown agent."))?,
+                    Agent::parse(value)
+                        .filter(|agent| agent.is_native())
+                        .ok_or_else(|| ConvoyError::message("Unknown agent."))?,
                 )),
             })
         };
@@ -394,11 +406,13 @@ impl Workspace {
                 "QA checks may take 1 to 240 minutes."
             );
         }
+        // `claude`, `codex` or `acp:<id>`.
         let default_agent = match patch.default_agent.as_deref() {
             None => None,
             Some("") => Some(None),
             Some(value) => Some(Some(
-                Agent::parse(value).ok_or_else(|| ConvoyError::message("Unknown agent."))?,
+                crate::provider::acp_agents::parse_key(value)
+                    .ok_or_else(|| ConvoyError::message("Unknown agent."))?,
             )),
         };
         if let Some(prefix) = patch.branch_prefix.as_deref() {
@@ -464,7 +478,8 @@ impl Workspace {
                 project.review_template = Some(value);
             }
             if let Some(value) = default_agent {
-                project.default_agent = value;
+                project.default_agent = value.as_ref().map(|(agent, _)| *agent);
+                project.default_acp_agent = value.and_then(|(_, acp)| acp);
             }
             // An empty value falls back to the global setting.
             let optional = |value: String| {
@@ -623,6 +638,7 @@ impl Workspace {
                     shared_paths: None,
                     review_template: None,
                     default_agent: None,
+                    default_acp_agent: None,
                     base_ref: None,
                     branch_prefix: None,
                     task_mode: None,
@@ -710,6 +726,13 @@ impl Workspace {
             input.effort.is_empty() || crate::provider::valid_effort(input.agent, &input.effort),
             "Invalid effort."
         );
+        if input.agent == Agent::Acp {
+            crate::provider::acp_agents::find(&self.state.settings, input.acp_agent.as_deref())?;
+            ensure!(
+                input.profile_id.as_deref().is_none_or(str::is_empty),
+                "Accounts are not available for this agent."
+            );
+        }
         self.update(move |state| {
             let source = match input.review_of.as_ref().or(input.directory_of.as_ref()) {
                 Some(id) => Some(find_session(state, id)?.clone()),
@@ -726,6 +749,7 @@ impl Workspace {
                 created_at: Some(crate::time::now_iso8601()),
                 project_id: input.project_id,
                 agent: input.agent,
+                acp_agent: input.acp_agent.clone().filter(|_| input.agent == Agent::Acp),
                 model: Some(input.model),
                 effort: Some(input.effort).filter(|effort| !effort.is_empty()),
                 title: input.title.trim().to_string(),
@@ -973,11 +997,25 @@ impl Workspace {
 
     pub fn save_settings(&mut self, patch: SettingsPatch) -> Result<&State> {
         let current = self.state.settings.clone();
+        if let Some(agents) = &patch.acp_agents {
+            ensure!(agents.len() <= 50, "Too many agents.");
+            let mut seen = std::collections::HashSet::new();
+            for agent in agents {
+                crate::provider::acp_agents::validate(agent)?;
+                ensure!(seen.insert(agent.id.clone()), "Two agents share the id \u{201c}{}\u{201d}.", agent.id);
+            }
+        }
         let next = Settings {
             font_size: patch.font_size.unwrap_or(current.font_size),
             scrollback: patch.scrollback.unwrap_or(current.scrollback),
             theme: patch.theme.unwrap_or(current.theme),
             default_agent: patch.default_agent.unwrap_or(current.default_agent),
+            default_acp_agent: match patch.default_agent {
+                Some(Agent::Acp) => patch.default_acp_agent.clone(),
+                Some(_) => None,
+                None => current.default_acp_agent.clone(),
+            },
+            acp_agents: patch.acp_agents.clone().unwrap_or(current.acp_agents.clone()),
             notifications: patch.notifications.unwrap_or(current.notifications),
             keep_awake: patch.keep_awake.unwrap_or(current.keep_awake),
             hibernate_minutes: patch.hibernate_minutes.unwrap_or(current.hibernate_minutes),
@@ -1087,8 +1125,8 @@ impl Workspace {
 pub(crate) fn provider_id_for(agent: Agent) -> String {
     match agent {
         Agent::Claude => new_id(),
-        // Both name their sessions themselves; Convoy learns the id later.
-        Agent::Codex => String::new(),
+        // They name their sessions themselves; Convoy learns the id later.
+        Agent::Codex | Agent::Acp => String::new(),
     }
 }
 

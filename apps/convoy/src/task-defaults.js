@@ -37,6 +37,14 @@ export function newTaskDefaults(project, settings) {
 }
 
 const AGENT_NAMES = { claude: "Claude Code", codex: "Codex" };
+/// ACP agents' names, by `acp:<id>`, as their list was last read.
+let acpNames = {};
 
-/// An agent's name as people know it. Product names, not translated.
-export const agentName = (agent) => AGENT_NAMES[agent] ?? AGENT_NAMES.claude;
+export function registerAgentNames(names) {
+  acpNames = { ...names };
+}
+
+/// An agent's name as people know it. Product names, not translated. An
+/// ACP agent not listed (yet) goes by its id.
+export const agentName = (agent) =>
+  AGENT_NAMES[agent] ?? acpNames[agent] ?? (typeof agent === "string" && agent.startsWith("acp:") ? agent.slice(4) : AGENT_NAMES.claude);

@@ -684,7 +684,7 @@ pub fn tasks_for(
                 id: task.id.clone(),
                 title: task.title.clone(),
                 details: task.details.clone(),
-                agent: task.agent.as_str().to_string(),
+                agent: convoy_core::provider::acp_agents::key(task.agent, task.acp_agent.as_deref()),
                 model: task.model.clone(),
                 status: task.status.as_str().to_string(),
                 mode: task.mode,
@@ -704,10 +704,16 @@ pub fn task_agent(
     effort: Option<String>,
     workspace: State<'_, Workspace>,
 ) -> Result<(), String> {
-    let agent = Agent::parse(&agent).ok_or("Unknown agent.")?;
+    let (agent, acp_agent) = convoy_core::provider::acp_agents::parse_key(&agent).ok_or("Unknown agent.")?;
     workspace.with(|workspace| {
         workspace
-            .set_task_agent(&id, agent, &model, effort.as_deref().unwrap_or_default())
+            .set_task_agent_with(
+                &id,
+                agent,
+                acp_agent,
+                &model,
+                effort.as_deref().unwrap_or_default(),
+            )
             .map(|_| ())
             .map_err(|error| error.to_string())
     })

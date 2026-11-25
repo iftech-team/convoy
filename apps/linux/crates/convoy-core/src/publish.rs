@@ -163,6 +163,7 @@ pub fn begin(
         task.agent,
         head(&format!("PR: {}", task.title), 200).to_string(),
     );
+    input.acp_agent = task.acp_agent.clone();
     input.prompt = brief(workspace, &task, &file)?;
     input.model = task.model.clone().unwrap_or_default();
     input.effort = task.effort.clone().unwrap_or_default();

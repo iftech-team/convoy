@@ -217,6 +217,7 @@ mod tests {
             details: String::new(),
             findings: String::new(),
             agent: Agent::Claude,
+            acp_agent: None,
             mode: PublishMode::None,
             auto_review: false,
         })
@@ -287,6 +288,7 @@ mod tests {
             details: String::new(),
             findings: String::new(),
             agent: Agent::Claude,
+            acp_agent: None,
             mode: PublishMode::Pr,
             auto_review: false,
         })

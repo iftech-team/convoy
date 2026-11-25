@@ -54,6 +54,7 @@ pub(crate) fn named(
     let name = match agent {
         Agent::Claude => claude_name(file)?,
         Agent::Codex => codex.get(&id.to_lowercase())?.clone(),
+        Agent::Acp => return None,
     };
     let folded = name.split_whitespace().collect::<Vec<_>>().join(" ");
     // Convoy itself names a conversation after its session, and a session
@@ -147,6 +148,8 @@ pub fn scan(agent: Agent, home: &Path, directory: &Path) -> Vec<Transcript> {
     let root = home.join(match agent {
         Agent::Claude => "projects",
         Agent::Codex => "sessions",
+        // Nothing to import: ACP agents keep their transcripts private.
+        Agent::Acp => return Vec::new(),
     });
     let mut files = Vec::new();
     let mut visited = 0usize;
@@ -156,12 +159,12 @@ pub fn scan(agent: Agent, home: &Path, directory: &Path) -> Vec<Transcript> {
         Agent::Claude => {
             walk(&root.join(slug(directory)), 5, 5, &mut visited, &mut files);
         }
-        Agent::Codex => walk(&root, 0, 5, &mut visited, &mut files),
+        Agent::Codex | Agent::Acp => walk(&root, 0, 5, &mut visited, &mut files),
     }
 
     let codex = match agent {
         Agent::Codex => codex_names(home),
-        Agent::Claude => HashMap::new(),
+        Agent::Claude | Agent::Acp => HashMap::new(),
     };
     let mut result = Vec::new();
     for file in files {
@@ -175,7 +178,7 @@ pub fn scan(agent: Agent, home: &Path, directory: &Path) -> Vec<Transcript> {
                 .file_stem()
                 .map(|stem| stem.to_string_lossy().into_owned())
                 .unwrap_or_default(),
-            Agent::Codex => meta
+            Agent::Codex | Agent::Acp => meta
                 .and_then(|meta| meta.get("id"))
                 .and_then(Value::as_str)
                 .unwrap_or_default()
@@ -271,6 +274,7 @@ pub fn conversation_name(agent: Agent, home: &Path, directory: &Path, id: &str) 
         return None;
     }
     let file = match agent {
+        Agent::Acp => return None,
         Agent::Claude => {
             let root = home.join("projects");
             let name = format!("{id}.jsonl");
@@ -322,6 +326,7 @@ pub(crate) fn title(agent: Agent, records: &[Value], id: &str) -> String {
             .then(|| record.get("message"))
             .flatten()
             .and_then(|message| message.get("message").or_else(|| message.get("content"))),
+        Agent::Acp => None,
         Agent::Codex => record
             .get("payload")
             .filter(|payload| {

@@ -6,7 +6,7 @@
 //! person makes.
 
 use super::Workspace;
-use convoy_core::model::{Agent, PublishMode, TaskStatus};
+use convoy_core::model::{PublishMode, TaskStatus};
 use convoy_core::planning::{markdown, SpecInput, TaskInput};
 use convoy_core::queue::Completion;
 #[cfg(test)]
@@ -84,7 +84,7 @@ fn task_view(state: &convoy_core::model::State, task: &convoy_core::model::Task)
         title: task.title.clone(),
         details: task.details.clone(),
         findings: task.findings.clone(),
-        agent: task.agent.as_str().to_string(),
+        agent: convoy_core::provider::acp_agents::key(task.agent, task.acp_agent.as_deref()),
         model: task.model.clone(),
         effort: task.effort.clone(),
         source: task.source.clone(),
@@ -315,7 +315,7 @@ pub struct TaskFormInput {
 #[tauri::command]
 /// Returns the task's id, so a new task can be run at once.
 pub fn task_save(input: TaskFormInput, workspace: State<'_, Workspace>) -> Result<String, String> {
-    let agent = Agent::parse(&input.agent).ok_or("Unknown agent.")?;
+    let (agent, acp_agent) = convoy_core::provider::acp_agents::parse_key(&input.agent).ok_or("Unknown agent.")?;
     let mode = PublishMode::parse(&input.mode)
         .ok_or_else(|| format!("Unknown publication mode: {}", input.mode))?;
     let existing = input.id.clone().filter(|id| !id.is_empty());
@@ -338,6 +338,7 @@ pub fn task_save(input: TaskFormInput, workspace: State<'_, Workspace>) -> Resul
             details: input.details,
             findings: input.findings,
             agent,
+            acp_agent,
             mode,
             auto_review: input.auto_review,
         })?;
@@ -697,6 +698,7 @@ mod tests {
             details: String::new(),
             findings: String::new(),
             agent: Agent::Claude,
+            acp_agent: None,
             mode: PublishMode::None,
             auto_review: true,
         })

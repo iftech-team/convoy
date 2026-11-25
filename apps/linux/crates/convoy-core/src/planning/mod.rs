@@ -35,6 +35,8 @@ pub struct TaskInput {
     pub details: String,
     pub findings: String,
     pub agent: Agent,
+    /// Which ACP agent, when `agent` is [`Agent::Acp`].
+    pub acp_agent: Option<String>,
     pub mode: PublishMode,
     pub auto_review: bool,
     /// Skills its session starts with. None leaves an existing task's as
@@ -313,6 +315,9 @@ impl Workspace {
         text(&input.title, "task title", 200, true)?;
         text(&input.details, "task details", MAX_DETAILS, false)?;
         text(&input.findings, "task findings", 16_000, false)?;
+        if input.agent == Agent::Acp {
+            crate::provider::acp_agents::find(&self.state().settings, input.acp_agent.as_deref())?;
+        }
         let plan_first = self
             .state()
             .projects
@@ -340,11 +345,12 @@ impl Workspace {
                     task.title = input.title;
                     task.details = input.details;
                     task.findings = input.findings;
-                    if task.agent != input.agent {
+                    if task.agent != input.agent || task.acp_agent != input.acp_agent {
                         task.model = None;
                         task.effort = None;
                     }
                     task.agent = input.agent;
+                    task.acp_agent = input.acp_agent.clone();
                     task.mode = input.mode;
                     task.auto_review = input.auto_review;
                     // Skills apply when its session next starts: a session
@@ -382,6 +388,7 @@ impl Workspace {
                     details: input.details,
                     findings: input.findings,
                     agent: input.agent,
+                    acp_agent: input.acp_agent,
                     status: TaskStatus::Queued,
                     mode: input.mode,
                     auto_review: input.auto_review,
@@ -820,6 +827,7 @@ impl Workspace {
                 created_at: Some(crate::time::now_iso8601()),
                 project_id: task.project_id.clone(),
                 agent: task.agent,
+                acp_agent: task.acp_agent.clone(),
                 title: task.title.clone(),
                 prompt,
                 provider_id: provider_id_for(task.agent),
@@ -922,6 +930,7 @@ impl Workspace {
                     details,
                     findings: String::new(),
                     agent,
+                    acp_agent: None,
                     status: TaskStatus::Queued,
                     mode: options.mode,
                     auto_review: options.auto_review,
@@ -995,6 +1004,23 @@ impl Workspace {
         model: &str,
         effort: &str,
     ) -> Result<&State> {
+        self.set_task_agent_with(id, agent, None, model, effort)
+    }
+
+    /// As [`Self::set_task_agent`], naming the ACP agent when `agent` is
+    /// [`Agent::Acp`].
+    pub fn set_task_agent_with(
+        &mut self,
+        id: &str,
+        agent: Agent,
+        acp_agent: Option<String>,
+        model: &str,
+        effort: &str,
+    ) -> Result<&State> {
+        if agent == Agent::Acp {
+            crate::provider::acp_agents::find(&self.state().settings, acp_agent.as_deref())?;
+        }
+        let acp_agent = acp_agent.filter(|_| agent == Agent::Acp);
         let model = model_name(model)?;
         ensure!(
             effort.is_empty() || crate::provider::EFFORTS.contains(&effort),
@@ -1024,8 +1050,13 @@ impl Workspace {
             if !keeps_account {
                 task.profile_id = None;
             }
-            if task.agent != agent || task.model != model || task.effort != effort {
+            if task.agent != agent
+                || task.acp_agent != acp_agent
+                || task.model != model
+                || task.effort != effort
+            {
                 task.agent = agent;
+                task.acp_agent = acp_agent;
                 task.model = model;
                 task.effort = effort;
                 task.session_id = None;

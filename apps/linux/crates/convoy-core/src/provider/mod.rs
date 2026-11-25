@@ -1,6 +1,7 @@
 //! Port of `provider.cjs`: how a provider CLI is invoked and how its usage
 //! quotas are read.
 
+pub mod acp_agents;
 pub mod codex;
 pub mod knowledge;
 pub mod launch;
@@ -146,6 +147,8 @@ pub fn valid_effort(agent: Agent, effort: &str) -> bool {
                     .bytes()
                     .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
         }
+        // ACP has no effort levels.
+        Agent::Acp => false,
     }
 }
 
@@ -159,6 +162,7 @@ pub fn effort_flags(agent: Agent, effort: Option<&str>) -> Vec<String> {
     match agent {
         Agent::Claude => vec!["--effort".into(), effort.into()],
         Agent::Codex => vec!["-c".into(), format!("model_reasoning_effort={effort}")],
+        Agent::Acp => Vec::new(),
     }
 }
 

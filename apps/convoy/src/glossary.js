@@ -19,11 +19,12 @@ export const GLOSSARY = {
   sleep: ["Sleep", "Stops an idle agent to free memory. Opening the session again resumes the same conversation."],
   skills: ["Skills", "Instructions you write once and attach to sessions, tasks and automations."],
   automation: ["Automation", "A prompt that runs on a schedule. Each run is a new session you can open later."],
+  acp: ["ACP agent", "A coding agent Convoy talks to through the Agent Client Protocol, an open standard many agents speak. It runs as a chat; its sign-in and models are its own."],
   specdesk: [".specdesk folder", "Where Convoy keeps the project doc and specs inside your repository, so agents read them as files and git keeps their history."],
 };
 
 /// The order Settings → Get started lists them in.
-export const GLOSSARY_ORDER = ["task", "session", "needsYou", "preset", "planFirst", "review", "publish", "waiting", "worktree", "helpers", "yolo", "sleep", "skills", "automation", "specdesk"];
+export const GLOSSARY_ORDER = ["task", "session", "needsYou", "preset", "planFirst", "review", "publish", "waiting", "worktree", "helpers", "yolo", "sleep", "skills", "automation", "acp", "specdesk"];
 
 /// Every title and line, for the translation check.
 export const GLOSSARY_LABELS = [...Object.values(GLOSSARY).flat(), "Words Convoy uses", "What is {term}?"];

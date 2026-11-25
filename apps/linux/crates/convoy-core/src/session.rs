@@ -42,6 +42,9 @@ pub struct LaunchPlan {
     /// The flags that hand the agent Convoy's MCP servers (see
     /// [`crate::provider::mcp`]). Already in `spec` for a terminal.
     pub mcp_flags: Vec<String>,
+    /// The same servers, for an ACP agent, which takes them in its session
+    /// request instead of as flags.
+    pub mcp_servers: Vec<crate::provider::mcp::McpServer>,
 }
 
 /// Why a session's process is no longer running.
@@ -149,14 +152,43 @@ pub fn plan_launch_with(
     let link = crate::integrations::ProjectLinks::load(storage.integration_links())
         .ok()
         .and_then(|links| links.get(&session.project_id).cloned());
+    let mcp_servers = crate::provider::mcp::servers(&connections, link.as_ref());
     let mcp_flags = crate::provider::mcp::flags(
         session.agent,
-        &crate::provider::mcp::servers(&connections, link.as_ref()),
+        &mcp_servers,
         &storage.telemetry(),
         &session.id,
         &mut account.env,
     )?;
     let settings = workspace.settings();
+    if session.agent == Agent::Acp {
+        // Its own terminal UI, from its definition. Nothing of Claude's or
+        // Codex's applies: no hooks, trust files, knowledge or flags.
+        let agent = crate::provider::acp_agents::find(settings, session.acp_agent.as_deref())?;
+        let prompt = (!session.started).then_some(session.prompt.as_str());
+        let mut env = agent.env.clone();
+        for key in helpers::ENV_KEYS {
+            if let Some(value) = account.env.get(key) {
+                env.insert(key.to_string(), value.clone());
+            }
+        }
+        let spec = crate::provider::acp_agents::shell_spec(
+            &crate::provider::acp_agents::terminal_command(&agent, prompt)?,
+            &env,
+        );
+        return Ok(LaunchPlan {
+            session_id: id.to_string(),
+            directory,
+            spec,
+            env: account.env,
+            account_home: account.home,
+            settings_file: None,
+            resume: session.started,
+            instructions,
+            mcp_flags,
+            mcp_servers,
+        });
+    }
     let settings_file = match session.agent {
         Agent::Claude if settings.status_hooks || settings.claude_usage => {
             Some(telemetry::configuration_with(
@@ -208,6 +240,7 @@ pub fn plan_launch_with(
         resume: session.started,
         instructions,
         mcp_flags,
+        mcp_servers,
     })
 }
 
@@ -309,13 +342,40 @@ pub fn plan_chat_launch_with(
                 developer_instructions: launch.instructions.clone(),
             })),
         ),
+        Agent::Acp => {
+            let agent = crate::provider::acp_agents::find(settings, session.acp_agent.as_deref())?;
+            let mut env = agent.env.clone();
+            for key in helpers::ENV_KEYS {
+                if let Some(value) = launch.env.get(key) {
+                    env.insert(key.to_string(), value.clone());
+                }
+            }
+            launch.spec = crate::provider::acp_agents::shell_spec(
+                &crate::provider::acp_agents::chat_command(&agent),
+                &env,
+            );
+            let driver = Driver::Acp(crate::chat::acp::AcpClient::new(crate::chat::acp::Options {
+                name: agent.name.clone(),
+                cwd: launch.directory.to_string_lossy().into_owned(),
+                model: model.map(str::to_string),
+                // A session whose agent never gave an id starts a new one.
+                resume: (launch.resume && !session.provider_id.is_empty())
+                    .then(|| session.provider_id.clone()),
+                login_command: agent.login_command.clone(),
+                mcp_servers: crate::provider::acp_agents::mcp_servers(&launch.mcp_servers),
+                instructions: launch.instructions.clone(),
+            }));
+            (Vec::new(), driver)
+        }
     };
-    launch.spec = crate::provider::provider_spec_for(
-        session.agent,
-        &args,
-        &launch.env,
-        crate::Platform::current(),
-    )?;
+    if session.agent != Agent::Acp {
+        launch.spec = crate::provider::provider_spec_for(
+            session.agent,
+            &args,
+            &launch.env,
+            crate::Platform::current(),
+        )?;
+    }
     let first_prompt = if launch.resume {
         session
             .resume_prompt
@@ -486,10 +546,15 @@ pub fn pull_request_url(text: &str) -> Option<String> {
 /// exactly. Only a Codex session with none yet takes it. Returns whether
 /// anything changed.
 pub fn record_provider_id(workspace: &mut Workspace, session_id: &str, id: &str) -> Result<bool> {
+    // Codex names its thread once; an ACP agent that could not reopen the
+    // conversation starts a new one, whose id replaces the old.
     let wanted = workspace.state().sessions.iter().any(|session| {
         session.id == session_id
-            && session.agent == crate::model::Agent::Codex
-            && session.provider_id.is_empty()
+            && match session.agent {
+                crate::model::Agent::Codex => session.provider_id.is_empty(),
+                crate::model::Agent::Acp => session.provider_id != id,
+                crate::model::Agent::Claude => false,
+            }
     });
     if !wanted {
         return Ok(false);

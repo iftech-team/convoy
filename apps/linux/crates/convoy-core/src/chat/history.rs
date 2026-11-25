@@ -5,6 +5,10 @@
 //! Claude keeps `<config>/projects/<slug of the folder>/<id>.jsonl`; Codex a
 //! `rollout-…-<thread id>.jsonl` under `<home>/sessions`. Only the end of a
 //! long file is read, which is the part a chat shows first anyway.
+//!
+//! ACP agents are the exception: their transcripts are their own business,
+//! so Convoy keeps the chat events itself, one file per session (see
+//! [`record`]).
 
 use super::claude;
 use super::codex;
@@ -32,18 +36,29 @@ const EVENT_LIMIT: usize = 4_000;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Source {
     pub agent: Agent,
+    /// The agent's home; for an ACP agent, the folder of Convoy's own files.
     pub home: PathBuf,
     pub directory: PathBuf,
+    /// The agent's conversation id; for an ACP agent, the session's own id,
+    /// which names Convoy's file.
     pub provider_id: String,
 }
 
 /// The session's transcript location; `None` before the agent has an id.
 pub fn source(workspace: &Workspace, storage: &Storage, id: &str) -> Result<Option<Source>> {
     let session = workspace.session(id)?.clone();
+    let directory = crate::session::directory_for(workspace, id)?;
+    if session.agent == Agent::Acp {
+        return Ok(Some(Source {
+            agent: Agent::Acp,
+            home: storage.acp_chats(),
+            directory,
+            provider_id: session.id,
+        }));
+    }
     if session.provider_id.is_empty() {
         return Ok(None);
     }
-    let directory = crate::session::directory_for(workspace, id)?;
     let account = account_environment(
         &session,
         &workspace.state().profiles,
@@ -67,8 +82,71 @@ pub fn read(source: &Source) -> Vec<ChatEvent> {
         Agent::Codex => {
             codex_file(&source.home, &source.provider_id).map(|file| codex_events(&file))
         }
+        Agent::Acp => Some(recorded(&acp_file(&source.home, &source.provider_id))),
     };
     events.unwrap_or_default()
+}
+
+/// Convoy's own record of an ACP session.
+pub fn acp_file(folder: &Path, session_id: &str) -> PathBuf {
+    let name: String = session_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+    folder.join(format!("{name}.jsonl"))
+}
+
+/// Whether an event belongs in the record: what was said and done, not the
+/// model list or the moment a turn began.
+fn worth_keeping(event: &ChatEvent) -> bool {
+    !matches!(
+        event,
+        ChatEvent::Models { .. } | ChatEvent::TurnStarted | ChatEvent::ApprovalResolved { .. }
+    )
+}
+
+/// Appends an ACP session's events to its record. Deltas of one message are
+/// joined first, so the file holds a line per message rather than per chunk.
+pub fn record(folder: &Path, session_id: &str, events: &[ChatEvent]) -> Result<()> {
+    use std::io::Write;
+    let mut lines = String::new();
+    let mut joined: Vec<ChatEvent> = Vec::new();
+    for event in events.iter().filter(|event| worth_keeping(event)) {
+        match (joined.last_mut(), event) {
+            (Some(ChatEvent::Text { id, delta }), ChatEvent::Text { id: next, delta: more })
+            | (Some(ChatEvent::Thinking { id, delta }), ChatEvent::Thinking { id: next, delta: more })
+                if id == next =>
+            {
+                delta.push_str(more)
+            }
+            _ => joined.push(event.clone()),
+        }
+    }
+    for event in &joined {
+        lines.push_str(&serde_json::to_string(event)?);
+        lines.push('\n');
+    }
+    if lines.is_empty() {
+        return Ok(());
+    }
+    fs::create_dir_all(folder)?;
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(acp_file(folder, session_id))?;
+    file.write_all(lines.as_bytes())?;
+    Ok(())
+}
+
+/// The events of a record, the newest [`EVENT_LIMIT`] of them. A line that
+/// does not parse — a newer build's event, or one cut short — is skipped.
+pub fn recorded(file: &Path) -> Vec<ChatEvent> {
+    newest(
+        records(file)
+            .into_iter()
+            .filter_map(|record| serde_json::from_value(record).ok())
+            .collect(),
+    )
 }
 
 /// [`source`] and [`read`] in one step.

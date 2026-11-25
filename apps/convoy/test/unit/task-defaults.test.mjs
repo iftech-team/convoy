@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_TASK_MODE, TASK_MODES, agentName, newTaskDefaults, taskModeLabel, taskModeOf } from "../../src/task-defaults.js";
+import { DEFAULT_TASK_MODE, TASK_MODES, agentName, newTaskDefaults, registerAgentNames, taskModeLabel, taskModeOf } from "../../src/task-defaults.js";
 import { untranslated } from "./helpers.mjs";
 
 test("a project that never chose does not publish", () => {
@@ -34,4 +34,12 @@ test("each mode has one label, translated", () => {
 test("agents are named", () => {
   assert.equal(agentName("claude"), "Claude Code");
   assert.equal(agentName("codex"), "Codex");
+});
+
+test("ACP agents go by their listed name, else their id", () => {
+  assert.equal(agentName("acp:opencode"), "opencode");
+  registerAgentNames({ "acp:antigravity": "Antigravity" });
+  assert.equal(agentName("acp:antigravity"), "Antigravity");
+  assert.equal(agentName("acp:unknown"), "unknown");
+  registerAgentNames({});
 });

@@ -22,6 +22,7 @@ fn task(project: &str, title: &str, mode: PublishMode, auto_review: bool) -> Tas
         details: "Do the thing".into(),
         findings: String::new(),
         agent: Agent::Claude,
+        acp_agent: None,
         mode,
         auto_review,
     }

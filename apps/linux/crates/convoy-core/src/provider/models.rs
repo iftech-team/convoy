@@ -78,6 +78,8 @@ pub fn list(agent: Agent, home: &Path, claude_efforts: Option<&[String]>) -> Vec
             )
         }
         Agent::Codex => codex(home),
+        // An ACP agent lists its models when its session opens.
+        Agent::Acp => Vec::new(),
     }
 }
 

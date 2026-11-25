@@ -36,6 +36,7 @@ fn add_task(workspace: &mut Workspace, project: &str, title: &str, mode: Publish
             details: String::new(),
             findings: String::new(),
             agent: Agent::Claude,
+            acp_agent: None,
             mode,
             auto_review: false,
             skills: None,

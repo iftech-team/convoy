@@ -41,7 +41,23 @@ const TASK_STATUSES: [&str; 11] = [
 ];
 /// "gemini" is still read, as Claude, from a workspace that ran it; it is
 /// never written again.
-const AGENTS: [&str; 3] = ["claude", "codex", "gemini"];
+const AGENTS: [&str; 4] = ["claude", "codex", "gemini", "acp"];
+/// Accounts belong to agents whose sign-in Convoy keeps apart.
+const ACCOUNT_AGENTS: [&str; 3] = ["claude", "codex", "gemini"];
+
+/// An ACP record names its agent by a valid id.
+fn acp_named(item: &Value) -> bool {
+    string(field(item, "agent")) != Some("acp")
+        || string(field(item, "acpAgent")).is_some_and(crate::provider::acp_agents::valid_id)
+}
+
+/// The id an ACP agent gave its session: its own format, but plain text.
+fn acp_session_id(id: &str) -> bool {
+    id.len() <= 200
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':'))
+}
 const ACTIVITY_KINDS: [&str; 7] = [
     "started",
     "resumed",
@@ -117,8 +133,13 @@ pub fn validate(state: &Value) -> Result<()> {
                 && belongs,
             "Invalid session record."
         );
+        ensure!(acp_named(session), "Invalid session record.");
         if let Some(provider) = nonempty(field(session, "providerID")) {
-            ensure!(UUID.is_match(provider), "Invalid provider session ID.");
+            let acp = string(field(session, "agent")) == Some("acp");
+            ensure!(
+                if acp { acp_session_id(provider) } else { UUID.is_match(provider) },
+                "Invalid provider session ID."
+            );
         }
         if string(field(session, "agent")) == Some("claude") {
             ensure!(
@@ -389,6 +410,7 @@ pub fn validate_planning(state: &Value) -> Result<()> {
         ensure!(
             is_one_of(field(task, "status"), &TASK_STATUSES)
                 && is_one_of(field(task, "agent"), &AGENTS)
+                && acp_named(task)
                 && belongs
                 && spec_ok
                 && session_ok,
@@ -406,7 +428,7 @@ pub fn validate_planning(state: &Value) -> Result<()> {
     for profile in profiles {
         text(field(profile, "label"), "account label", 100, true)?;
         ensure!(
-            is_one_of(field(profile, "agent"), &AGENTS),
+            is_one_of(field(profile, "agent"), &ACCOUNT_AGENTS),
             "Invalid account provider."
         );
     }

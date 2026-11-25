@@ -160,6 +160,7 @@ fn a_managers_instructions_and_its_skills_go_in_one_value() {
                 assert_eq!(count(command, "'--append-system-prompt'"), 1, "{command}")
             }
             Agent::Codex => assert_eq!(count(command, "developer_instructions="), 1, "{command}"),
+            Agent::Acp => unreachable!(),
         }
         assert!(command.contains("--session spawn") && command.contains("PINEAPPLE"));
 
@@ -196,6 +197,7 @@ fn a_managers_instructions_and_its_skills_go_in_one_value() {
                     "{given}"
                 );
             }
+            Agent::Acp => unreachable!(),
         }
     }
 }
@@ -260,6 +262,7 @@ fn a_tasks_skills_go_to_its_session() {
         details: "The redirect loops.".into(),
         findings: String::new(),
         agent: Agent::Codex,
+        acp_agent: None,
         mode: PublishMode::None,
         auto_review: false,
     };

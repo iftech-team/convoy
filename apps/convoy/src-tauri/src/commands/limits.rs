@@ -387,6 +387,7 @@ pub async fn setup_checks(
         let (name, file) = match agent {
             convoy_core::model::Agent::Claude => ("Claude", ".credentials.json"),
             convoy_core::model::Agent::Codex => ("Codex", "auth.json"),
+            convoy_core::model::Agent::Acp => continue,
         };
         let id = if name == "Claude" {
             "login.claude"

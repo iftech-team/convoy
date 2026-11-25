@@ -531,8 +531,8 @@ pub fn plan_spawn(
         running < MAX_RUNNING,
         "{MAX_RUNNING} helpers are already running. Wait for one to finish first."
     );
-    let agent = Agent::parse(spawn.agent.trim())
-        .ok_or_else(|| ConvoyError::message("Unknown agent. Use claude or codex."))?;
+    let (agent, acp_agent) = crate::provider::acp_agents::parse_key(spawn.agent.trim())
+        .ok_or_else(|| ConvoyError::message("Unknown agent. Use claude, codex or acp:<id>."))?;
     let prompt = spawn.prompt.trim();
     ensure!(!prompt.is_empty(), "Give the helper a prompt.");
     ensure!(
@@ -563,12 +563,13 @@ pub fn plan_spawn(
         _ => None,
     };
     let mut session = NewSession::new(caller.project_id.clone(), agent, title);
+    session.acp_agent = acp_agent;
     session.prompt = prompt.to_string();
     session.model = model;
     session.effort = effort;
     // The manager's own account when it is the same agent; otherwise the
     // system login, as a new session gets.
-    session.profile_id = caller.profile_id.clone().filter(|_| caller.agent == agent);
+    session.profile_id = caller.profile_id.clone().filter(|_| caller.agent == agent && agent.is_native());
     Ok(HelperPlan {
         parent: caller.id.clone(),
         session,
@@ -841,6 +842,8 @@ pub fn terminal_flags(agent: Agent, instructions: &str) -> Vec<String> {
                 serde_json::to_string(instructions).unwrap_or_default()
             ),
         ],
+        // An ACP agent gets them ahead of its first turn instead.
+        Agent::Acp => Vec::new(),
     }
 }
 

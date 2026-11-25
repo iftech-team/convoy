@@ -29,18 +29,26 @@ pub enum Agent {
     #[serde(alias = "gemini")]
     Claude,
     Codex,
+    /// Any agent that speaks the Agent Client Protocol; which one is the
+    /// record's `acpAgent` (see [`crate::provider::acp_agents`]).
+    Acp,
 }
 
 impl Agent {
+    /// The agents with their own integration. ACP agents come from
+    /// [`crate::provider::acp_agents::all`].
     pub const ALL: [Agent; 2] = [Agent::Claude, Agent::Codex];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Agent::Claude => "claude",
             Agent::Codex => "codex",
+            Agent::Acp => "acp",
         }
     }
 
+    /// `claude` or `codex`. An ACP agent is never named without its id; see
+    /// [`crate::provider::acp_agents::parse_key`].
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "claude" => Some(Agent::Claude),
@@ -49,21 +57,29 @@ impl Agent {
         }
     }
 
-    /// The name people know it by.
+    /// The name people know it by. An ACP agent's own name is in its
+    /// definition.
     pub fn label(self) -> &'static str {
         match self {
             Agent::Claude => "Claude Code",
             Agent::Codex => "Codex",
+            Agent::Acp => "ACP agent",
         }
     }
 
     /// Who reviews its work when its project names no reviewer: Claude and
-    /// Codex review each other.
+    /// Codex review each other, and Claude reviews any other agent.
     pub fn reviewer(self) -> Agent {
         match self {
             Agent::Claude => Agent::Codex,
-            Agent::Codex => Agent::Claude,
+            Agent::Codex | Agent::Acp => Agent::Claude,
         }
+    }
+
+    /// Whether Convoy reads this agent's own transcripts, hooks and
+    /// accounts. ACP agents keep theirs private.
+    pub fn is_native(self) -> bool {
+        !matches!(self, Agent::Acp)
     }
 }
 
@@ -303,6 +319,9 @@ pub struct Project {
         skip_serializing_if = "Option::is_none"
     )]
     pub default_agent: Option<Agent>,
+    /// The ACP agent, when `default_agent` is [`Agent::Acp`].
+    #[serde(rename = "defaultAcpAgent", default, skip_serializing_if = "Option::is_none")]
+    pub default_acp_agent: Option<String>,
     /// What new worktrees start from; `None` is the current HEAD.
     #[serde(rename = "baseRef", default, skip_serializing_if = "Option::is_none")]
     pub base_ref: Option<String>,
@@ -436,6 +455,9 @@ pub struct Session {
     #[serde(rename = "projectID")]
     pub project_id: String,
     pub agent: Agent,
+    /// Which ACP agent, when `agent` is [`Agent::Acp`].
+    #[serde(rename = "acpAgent", default, skip_serializing_if = "Option::is_none")]
+    pub acp_agent: Option<String>,
     pub title: String,
     pub prompt: String,
     #[serde(rename = "providerID")]
@@ -548,6 +570,7 @@ impl Session {
             id: String::new(),
             project_id: project_id.into(),
             agent,
+            acp_agent: None,
             title: title.into(),
             prompt: String::new(),
             provider_id: String::new(),
@@ -645,6 +668,9 @@ pub struct Task {
     pub details: String,
     pub findings: String,
     pub agent: Agent,
+    /// Which ACP agent, when `agent` is [`Agent::Acp`].
+    #[serde(rename = "acpAgent", default, skip_serializing_if = "Option::is_none")]
+    pub acp_agent: Option<String>,
     pub status: TaskStatus,
     #[serde(default)]
     pub mode: PublishMode,
@@ -830,6 +856,12 @@ pub struct Settings {
     pub theme: Theme,
     #[serde(rename = "defaultAgent", default = "default_agent")]
     pub default_agent: Agent,
+    /// The ACP agent, when `default_agent` is [`Agent::Acp`].
+    #[serde(rename = "defaultAcpAgent", default, skip_serializing_if = "Option::is_none")]
+    pub default_acp_agent: Option<String>,
+    /// ACP agents the user added, or shipped ones they changed.
+    #[serde(rename = "acpAgents", default, skip_serializing_if = "Vec::is_empty")]
+    pub acp_agents: Vec<crate::provider::acp_agents::AcpAgentDef>,
     #[serde(default)]
     pub notifications: bool,
     #[serde(rename = "keepAwake", default = "default_keep_awake")]
@@ -1002,6 +1034,8 @@ impl Default for Settings {
             scrollback: default_scrollback(),
             theme: default_theme(),
             default_agent: default_agent(),
+            default_acp_agent: None,
+            acp_agents: Vec::new(),
             notifications: false,
             keep_awake: default_keep_awake(),
             hibernate_minutes: 0,

@@ -40,6 +40,7 @@ fn planned() -> Planned {
             details: String::new(),
             findings: String::new(),
             agent: Agent::Codex,
+            acp_agent: None,
             mode: PublishMode::None,
             auto_review: false,
         })
@@ -78,6 +79,7 @@ fn task_input(task: &Task) -> TaskInput {
         details: task.details.clone(),
         findings: task.findings.clone(),
         agent: task.agent,
+        acp_agent: None,
         mode: task.mode,
         auto_review: task.auto_review,
     }
@@ -299,6 +301,7 @@ fn publication_and_review_choices_are_explicit_and_changing_them_invalidates_the
             details: String::new(),
             findings: String::new(),
             agent: Agent::Claude,
+            acp_agent: None,
             mode: PublishMode::Pr,
             auto_review: true,
         })
@@ -394,6 +397,7 @@ fn related_tasks_are_linked_both_ways_and_read_by_the_agent() {
             details: "A help sheet lists every shortcut.".into(),
             findings: String::new(),
             agent: Agent::Claude,
+            acp_agent: None,
             mode: PublishMode::None,
             auto_review: false,
         })

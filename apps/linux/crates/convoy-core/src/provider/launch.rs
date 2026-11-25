@@ -62,6 +62,8 @@ pub fn agent_args(session: &Session, resume: bool) -> Vec<String> {
             args.push("--no-alt-screen".into());
             args
         }
+        // Launched from its definition instead; see `acp_agents`.
+        Agent::Acp => return Vec::new(),
     };
     // A first message of only blank lines is no message: passed on, the
     // agent would submit it and start a turn on nothing.
@@ -179,6 +181,8 @@ fn npm_entry(agent: Agent) -> &'static str {
     match agent {
         Agent::Claude => "@anthropic-ai/claude-code/cli.js",
         Agent::Codex => "@openai/codex/bin/codex.js",
+        // ACP agents are launched by their own command, never looked up.
+        Agent::Acp => "",
     }
 }
 

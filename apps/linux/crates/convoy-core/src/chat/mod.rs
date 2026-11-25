@@ -2,10 +2,11 @@
 //! over JSON pipes instead of a screen.
 //!
 //! Each agent has its own protocol — Claude Code's stream-json, Codex's
-//! app-server JSON-RPC — and both are reduced here to [`ChatEvent`]s. The
+//! app-server JSON-RPC, ACP for every other agent — and all are reduced here to [`ChatEvent`]s. The
 //! process itself belongs to the front end, as the pty does; everything it
 //! writes and everything it reads goes through a [`Driver`].
 
+pub mod acp;
 pub mod claude;
 pub mod codex;
 pub mod event;
@@ -22,6 +23,7 @@ use crate::Result;
 pub enum Driver {
     Claude(claude::ClaudeStream),
     Codex(codex::CodexClient),
+    Acp(acp::AcpClient),
 }
 
 impl Driver {
@@ -30,6 +32,7 @@ impl Driver {
         match self {
             Driver::Claude(_) => vec![claude::initialize()],
             Driver::Codex(codex) => codex.start(),
+            Driver::Acp(acp) => acp.start(),
         }
     }
 
@@ -38,6 +41,7 @@ impl Driver {
         match self {
             Driver::Claude(claude) => claude.feed(line),
             Driver::Codex(codex) => codex.feed(line),
+            Driver::Acp(acp) => acp.feed(line),
         }
     }
 
@@ -46,6 +50,7 @@ impl Driver {
         match self {
             Driver::Claude(claude) => claude.take_outgoing(),
             Driver::Codex(codex) => codex.take_outgoing(),
+            Driver::Acp(acp) => acp.take_outgoing(),
         }
     }
 
@@ -67,6 +72,11 @@ impl Driver {
                 events.extend(started);
                 lines
             }
+            Driver::Acp(acp) => {
+                let (lines, started) = acp.send(text, images);
+                events.extend(started);
+                lines
+            }
         };
         (lines, events)
     }
@@ -76,6 +86,7 @@ impl Driver {
         match self {
             Driver::Claude(claude) => claude.answer(request, decision),
             Driver::Codex(codex) => codex.answer(request, decision),
+            Driver::Acp(acp) => acp.answer(request, decision),
         }
     }
 
@@ -84,6 +95,7 @@ impl Driver {
         match self {
             Driver::Claude(claude) => vec![claude.interrupt()],
             Driver::Codex(codex) => codex.interrupt().into_iter().collect(),
+            Driver::Acp(acp) => acp.interrupt(),
         }
     }
 
@@ -96,6 +108,7 @@ impl Driver {
                 codex.set_model(model);
                 Vec::new()
             }
+            Driver::Acp(acp) => acp.set_model(model),
         }
     }
 
@@ -107,6 +120,8 @@ impl Driver {
                 codex.set_effort(effort);
                 Vec::new()
             }
+            // ACP has no effort levels.
+            Driver::Acp(_) => Vec::new(),
         }
     }
 
@@ -116,6 +131,7 @@ impl Driver {
         match self {
             Driver::Claude(claude) => claude.ready(),
             Driver::Codex(codex) => codex.ready(),
+            Driver::Acp(acp) => acp.ready(),
         }
     }
 }

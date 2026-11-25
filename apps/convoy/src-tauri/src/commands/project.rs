@@ -241,7 +241,7 @@ pub fn project_detail(
             color: project.color.clone().unwrap_or_default(),
             default_agent: project
                 .default_agent
-                .map(|agent| agent.as_str().to_string())
+                .map(|agent| convoy_core::provider::acp_agents::key(agent, project.default_acp_agent.as_deref()))
                 .unwrap_or_default(),
             base_ref: project.base_ref.clone().unwrap_or_default(),
             branch_prefix: project.branch_prefix.clone().unwrap_or_default(),

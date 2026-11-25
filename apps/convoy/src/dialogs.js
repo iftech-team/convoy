@@ -23,21 +23,16 @@ import { agentIcon, icons } from "./icons.js";
 import { t } from "./i18n.js";
 import { automationEditor } from "./views-automations.js";
 import { installedAgents } from "./onboarding.js";
+import { agentOptions, hasTerminal, isAcp } from "./agents.js";
 import { SPECS } from "./views-docs.js";
 import { autoSkills, skillEditor, skillImport, skillPicker } from "./views-skills.js";
 
-const ALL_AGENTS = [
-  ["claude", "Claude Code", agentIcon("claude", 15)],
-  ["codex", "Codex", agentIcon("codex", 15)],
-];
-
 /// The agents a sheet offers: the installed ones, and the one already
-/// chosen so a choice never disappears from under it.
-const agentChoices = (chosen) => {
-  const found = installedAgents(state.diagnostics);
-  const offered = ALL_AGENTS.filter(([agent]) => !found?.length || found.includes(agent) || agent === chosen);
-  return offered.length ? offered : ALL_AGENTS;
-};
+/// chosen so a choice never disappears from under it. `acp: false` keeps to
+/// Claude and Codex, for accounts, history and reviews, which read their
+/// own files.
+const agentChoices = (chosen, acp = true) =>
+  agentOptions({ chosen, installed: installedAgents(state.diagnostics), acp });
 
 export function dialogView() {
   const dialog = state.dialog;
@@ -196,7 +191,9 @@ function newSession(dialog) {
       ${field(t("Name (optional)"), textInput("draft-title", dialog.title, t("Leave empty to name it after the first message")))}
       ${field(
         t("Open in"),
-        choice("view", [["chat", t("Chat")], ["terminal", t("Terminal")]], dialog.view ?? "terminal"),
+        hasTerminal(dialog.agent)
+          ? choice("view", [["chat", t("Chat")], ["terminal", t("Terminal")]], dialog.view ?? "terminal")
+          : choice("view", [["chat", t("Chat")]], "chat"),
       )}
       ${worktree}
       ${skillPicker(dialog.skills ?? [], dialog.agent, dialog.projectId)}
@@ -208,11 +205,17 @@ function newSession(dialog) {
           "helpers",
         )}
       </div>
-      ${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
+      ${
+        // An ACP agent signs in its own way and lists its models once its
+        // chat opens, where they can be switched.
+        isAcp(dialog.agent)
+          ? `<p class="modal__hint">${escape(t("This agent signs in its own way and lists its models once its chat opens."))}</p>`
+          : `${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
       <div class="field-row">
         ${field(t("Model"), modelSelect("draft-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}
         ${field(t("Effort"), effortSelect("draft-effort", dialog.agent, dialog.account ?? "", dialog.model ?? "", dialog.effort ?? ""))}
-      </div>
+      </div>`
+      }
       ${knowledgeField(dialog)}
       <button class="sheet-disclosure" data-toggle="advanced" aria-expanded="${!!dialog.advanced}">
         ${dialog.advanced ? "▾" : "▸"} ${escape(t("Advanced"))}
@@ -276,7 +279,7 @@ const startReview = (dialog) =>
     }),
     wide: true,
     body: `
-      ${field(t("Reviewer"), choice("agent", agentChoices(dialog.agent), dialog.agent))}
+      ${field(t("Reviewer"), choice("agent", agentChoices(dialog.agent, false), dialog.agent))}
       ${field(t("Account"), select("draft-account", accountOptions(dialog.agent), dialog.account ?? ""))}
       <div class="field-row">
         ${field(t("Model"), modelSelect("draft-model", dialog.agent, dialog.account ?? "", dialog.model ?? ""))}
@@ -437,7 +440,7 @@ const accounts = (dialog) =>
         t("New profile"),
         `
         ${field(t("Label"), textInput("draft-label", dialog.label))}
-        ${field(t("Provider"), choice("agent", agentChoices(dialog.agent), dialog.agent))}`,
+        ${field(t("Provider"), choice("agent", agentChoices(dialog.agent, false), dialog.agent))}`,
       )}`,
     note: escape(t("Removing a profile removes only Convoy's record of it. Credential files stay where they are.")),
     foot: `
@@ -451,7 +454,7 @@ const transcripts = (dialog) =>
     hint: t("Conversations the provider already saved for this folder."),
     wide: true,
     body: `
-      ${field(t("Provider"), choice("agent", agentChoices(dialog.agent), dialog.agent))}
+      ${field(t("Provider"), choice("agent", agentChoices(dialog.agent, false), dialog.agent))}
       ${field(
         t("Account"),
         choice(

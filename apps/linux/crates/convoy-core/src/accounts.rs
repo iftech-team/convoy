@@ -29,6 +29,7 @@ pub fn home_key(agent: Agent) -> &'static str {
     match agent {
         Agent::Claude => "CLAUDE_CONFIG_DIR",
         Agent::Codex => "CODEX_HOME",
+        Agent::Acp => "",
     }
 }
 
@@ -38,6 +39,17 @@ pub fn account_environment(
     root: &Path,
     source: &BTreeMap<String, String>,
 ) -> Result<Account> {
+    // An ACP agent signs in its own way, wherever it keeps that; Convoy has
+    // no home or profile to give it.
+    if session.agent == Agent::Acp {
+        if session.profile_id.as_deref().is_some_and(|id| !id.is_empty()) {
+            bail!("Accounts are not available for this agent.")
+        }
+        return Ok(Account {
+            home: default_home_root(source),
+            env: agent_environment(source),
+        });
+    }
     let key = home_key(session.agent);
     let profile = match session.profile_id.as_deref().filter(|id| !id.is_empty()) {
         None => None,
@@ -64,7 +76,7 @@ pub fn account_environment(
                     .unwrap_or_else(|| {
                         default_home_root(source).join(match session.agent {
                             Agent::Claude => ".claude",
-                            Agent::Codex => ".codex",
+                            Agent::Codex | Agent::Acp => ".codex",
                         })
                     });
                 resolve(&fallback)
@@ -79,7 +91,7 @@ pub fn account_environment(
     // managed or custom home is named; one the user exported stays as it is.
     let standard = default_home_root(source).join(match session.agent {
         Agent::Claude => ".claude",
-        Agent::Codex => ".codex",
+        Agent::Codex | Agent::Acp => ".codex",
     });
     if profile.is_some() || home != standard || source.contains_key(key) {
         env.insert(key.to_string(), home.to_string_lossy().into_owned());

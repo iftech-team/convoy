@@ -20,7 +20,7 @@ use std::time::{Duration, Instant, SystemTime};
 pub const USAGE: &str = "\
 usage: convoy --session <command>
 
-  spawn --agent claude|codex --prompt <text|@file> [--title <t>] [--model <m>]
+  spawn --agent claude|codex|acp:<id> --prompt <text|@file> [--title <t>] [--model <m>]
         [--effort <e>] [--worktree <branch> | --worktree-auto] [--skill <name>]...
         Start a helper session in this project; prints its id. --skill attaches
         a skill from Convoy's library by name, on top of the automatic ones.
@@ -194,7 +194,7 @@ pub fn parse(args: &[String]) -> Result<Parsed, Failure> {
                 }
             }
             if spawn.agent.is_empty() {
-                return Err(usage("spawn needs --agent claude|codex"));
+                return Err(usage("spawn needs --agent claude|codex|acp:<id>"));
             }
             spawn.prompt = prompt.ok_or_else(|| usage("spawn needs --prompt"))?;
             if spawn.worktree.is_some() && spawn.worktree_auto {

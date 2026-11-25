@@ -42,6 +42,7 @@ fn turns(agent: Agent, file: &Path) -> Vec<(Speaker, String)> {
                 line.contains(r#""type":"user""#) || line.contains(r#""type":"assistant""#)
             }
             Agent::Codex => line.contains(r#""type":"message""#),
+            Agent::Acp => false,
         };
         if !wanted {
             continue;
@@ -52,6 +53,7 @@ fn turns(agent: Agent, file: &Path) -> Vec<(Speaker, String)> {
         if let Some(turn) = match agent {
             Agent::Claude => claude_turn(&record),
             Agent::Codex => codex_turn(&record),
+            Agent::Acp => None,
         } {
             turns.push(turn);
         }

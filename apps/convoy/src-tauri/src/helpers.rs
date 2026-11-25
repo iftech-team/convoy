@@ -699,7 +699,7 @@ mod tests {
         let (code, _, err) = run(&["spawn", "--agent", "gemini", "--prompt", "x"]);
         assert_eq!(
             (code, err.trim()),
-            (1, "convoy: Unknown agent. Use claude or codex.")
+            (1, "convoy: Unknown agent. Use claude, codex or acp:<id>.")
         );
         done.store(true, std::sync::atomic::Ordering::Relaxed);
         poller.join().unwrap();

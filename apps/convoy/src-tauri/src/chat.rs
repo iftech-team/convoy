@@ -22,6 +22,10 @@ use crate::pty::{Ended, Terminals};
 
 /// How long a stop waits before it insists, as a terminal's does.
 const GRACE: Duration = Duration::from_millis(1500);
+/// How long an ACP agent has to open its session. An agent that does not
+/// speak ACP — an older version without the command — never answers, and
+/// would otherwise leave the chat waiting for ever.
+const ACP_HANDSHAKE: Duration = Duration::from_secs(60);
 /// How much of stderr is kept for an early death's explanation.
 const STDERR_TAIL: usize = 4_000;
 
@@ -203,6 +207,40 @@ impl Chats {
             .unwrap_or_default();
         // A failed write means the process is already gone; the exit says why.
         let _ = handle.write(&first);
+
+        let acp = handle
+            .driver
+            .lock()
+            .map(|driver| matches!(*driver, Driver::Acp(_)))
+            .unwrap_or(false);
+        if acp {
+            let chats = Arc::clone(self);
+            let handle = Arc::clone(&handle);
+            let id = id.to_string();
+            std::thread::spawn(move || {
+                std::thread::sleep(ACP_HANDSHAKE);
+                // Still this very process, and still not answering.
+                let same = chats
+                    .sessions
+                    .lock()
+                    .map(|sessions| {
+                        sessions
+                            .get(&id)
+                            .is_some_and(|chat| Arc::ptr_eq(&chat.handle, &handle))
+                    })
+                    .unwrap_or(false);
+                let silent = handle.driver.lock().map(|driver| !driver.ready()).unwrap_or(false);
+                if same && silent {
+                    handle.emit(
+                        &id,
+                        &[ChatEvent::Error {
+                            message: "The agent did not answer as an ACP agent within a minute. Update it, or check its command in Settings → Agents.".into(),
+                        }],
+                    );
+                    chats.stop(&id);
+                }
+            });
+        }
 
         let (read_done, reading) = mpsc::channel::<()>();
         if let Some(stdout) = stdout {
@@ -561,6 +599,11 @@ pub struct Payload<'a> {
 struct Window<R: Runtime> {
     app: AppHandle<R>,
     pull_request: Mutex<Option<String>>,
+    /// For an ACP agent, the folder Convoy keeps its chats in: nobody else
+    /// writes them down. Streamed pieces wait in `unsaved` until the message
+    /// they belong to is followed by something else.
+    acp_record: Option<std::path::PathBuf>,
+    unsaved: Mutex<Vec<ChatEvent>>,
 }
 
 impl<R: Runtime> Window<R> {
@@ -568,6 +611,34 @@ impl<R: Runtime> Window<R> {
         Window {
             app: app.clone(),
             pull_request: Mutex::new(None),
+            acp_record: None,
+            unsaved: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn recording(mut self, folder: Option<std::path::PathBuf>) -> Self {
+        self.acp_record = folder;
+        self
+    }
+
+    /// Adds an event to an ACP chat's record; streamed text is written once
+    /// something else follows it.
+    fn keep(&self, id: &str, event: Option<&ChatEvent>) {
+        let Some(folder) = &self.acp_record else {
+            return;
+        };
+        let Ok(mut unsaved) = self.unsaved.lock() else {
+            return;
+        };
+        if let Some(event) = event {
+            unsaved.push(event.clone());
+            if matches!(event, ChatEvent::Text { .. } | ChatEvent::Thinking { .. }) {
+                return;
+            }
+        }
+        let events = std::mem::take(&mut *unsaved);
+        if let Err(error) = convoy_core::chat::history::record(folder, id, &events) {
+            eprintln!("convoy: could not save the chat of {id}: {error}");
         }
     }
 
@@ -611,12 +682,14 @@ impl<R: Runtime> Window<R> {
 impl<R: Runtime> ChatSink for Window<R> {
     fn event(&self, id: &str, event: &ChatEvent) {
         let _ = self.app.emit("chat:event", Payload { id, event });
+        self.keep(id, Some(event));
         self.record(id, event);
         crate::helpers::chat_event(&self.app, id, event);
         crate::automations::chat_event(&self.app, id, event);
     }
 
     fn ended(&self, id: &str, how: Ended) {
+        self.keep(id, None);
         crate::pty::report_exit(&self.app, id, how);
     }
 }
@@ -668,8 +741,9 @@ pub fn start_chat<R: Runtime>(
             (program, args) = fake.clone();
         }
     }
+    let record = matches!(driver, Driver::Acp(_)).then(|| storage.acp_chats());
     if let Err(error) = chats.start(
-        Arc::new(Window::new(app)),
+        Arc::new(Window::new(app).recording(record)),
         ChatLaunch {
             id,
             program: &program,
@@ -876,6 +950,7 @@ mod tests {
             details: String::new(),
             findings: String::new(),
             agent: Agent::Claude,
+            acp_agent: None,
             mode: PublishMode::None,
             auto_review: false,
         })
@@ -961,6 +1036,94 @@ mod tests {
 
         let core = CoreWorkspace::load(storage.workspace_file()).unwrap();
         assert_eq!(core.state().tasks[0].status, TaskStatus::Review);
+    }
+
+    /// An ACP agent end to end: handshake, a queued first turn, streamed
+    /// text joined into one message in Convoy's own record of the chat, and
+    /// the session id the agent chose kept on the session.
+    #[test]
+    fn an_acp_chat_runs_and_is_recorded() {
+        let root = tempfile::tempdir().unwrap();
+        let project = root.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let storage = Storage::new(root.path().join("state"));
+        let session_id = {
+            let mut core = CoreWorkspace::load(storage.workspace_file()).unwrap();
+            core.add_project(&project).unwrap();
+            let project_id = core.state().projects[0].id.clone();
+            let mut input = convoy_core::workspace::NewSession::new(project_id, Agent::Acp, "ACP");
+            input.acp_agent = Some("opencode".into());
+            core.add_session(input).unwrap();
+            core.state().sessions[0].id.clone()
+        };
+
+        let app = tauri::test::mock_app();
+        app.manage(Workspace::at(storage.clone()));
+        let (exits_in, exits) = mpsc::channel::<serde_json::Value>();
+        app.handle().listen("terminal:exit", move |event| {
+            let _ = exits_in.send(serde_json::from_str(event.payload()).unwrap());
+        });
+
+        let update = |text: &str| {
+            format!(
+                r#"{{"jsonrpc":"2.0","method":"session/update","params":{{"sessionId":"acp-1","update":{{"sessionUpdate":"agent_message_chunk","content":{{"type":"text","text":"{text}"}}}}}}}}"#
+            )
+        };
+        let script = format!(
+            "read -r l; echo '{}'; read -r l; echo '{}'; read -r l; echo '{}'; echo '{}'; echo '{}'; exit 0",
+            r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{}}}"#,
+            r#"{"jsonrpc":"2.0","id":2,"result":{"sessionId":"acp-1"}}"#,
+            update("Hel"),
+            update("lo"),
+            r#"{"jsonrpc":"2.0","id":11,"result":{"stopReason":"end_turn"}}"#,
+        );
+        let chats = Arc::new(Chats::new());
+        let env = vec![("PATH".to_string(), "/usr/bin:/bin".to_string())];
+        chats
+            .start(
+                Arc::new(Window::new(app.handle()).recording(Some(storage.acp_chats()))),
+                ChatLaunch {
+                    id: &session_id,
+                    program: "/bin/sh",
+                    args: &["-c".to_string(), script],
+                    cwd: &project,
+                    env: &env,
+                    driver: Driver::Acp(convoy_core::chat::acp::AcpClient::new(
+                        convoy_core::chat::acp::Options {
+                            cwd: project.to_string_lossy().into_owned(),
+                            ..Default::default()
+                        },
+                    )),
+                },
+            )
+            .unwrap();
+        chats.send(&session_id, "hi", &[]).unwrap();
+        let exit = exits
+            .recv_timeout(Duration::from_secs(10))
+            .expect("no exit event");
+        assert_eq!(exit["clean"], true);
+
+        let events = convoy_core::chat::history::recorded(&convoy_core::chat::history::acp_file(
+            &storage.acp_chats(),
+            &session_id,
+        ));
+        assert!(
+            events.iter().any(|event| matches!(event, ChatEvent::User { text, .. } if text == "hi")),
+            "{events:?}"
+        );
+        let texts: Vec<&str> = events
+            .iter()
+            .filter_map(|event| match event {
+                ChatEvent::Text { delta, .. } => Some(delta.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(texts, vec!["Hello"], "{events:?}");
+        assert!(events.iter().any(|event| matches!(event, ChatEvent::TurnEnded { .. })));
+
+        let core = CoreWorkspace::load(storage.workspace_file()).unwrap();
+        let session = core.session(&session_id).unwrap();
+        assert_eq!(session.provider_id, "acp-1");
     }
 
     /// An agent that dies before its handshake explains itself through

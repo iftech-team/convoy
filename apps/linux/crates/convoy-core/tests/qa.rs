@@ -59,6 +59,7 @@ fn setup(commands: &str, agent: Option<&str>) -> (common::Fixture, Workspace, St
             details: "Users stay signed in after the token expires.".into(),
             findings: String::new(),
             agent: Agent::Claude,
+            acp_agent: None,
             mode: PublishMode::Pr,
             auto_review: false,
             skills: None,

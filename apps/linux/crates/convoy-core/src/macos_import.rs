@@ -208,6 +208,8 @@ impl Merge<'_> {
             }
             // Codex's id is only known once it printed its resume line.
             Agent::Codex => !provider.is_empty() || snapshot,
+            // The Swift app never had ACP agents.
+            Agent::Acp => false,
         }
     }
 
@@ -285,6 +287,7 @@ impl Merge<'_> {
                 shared_paths: (!shared.is_empty()).then(|| shared.join("\n")),
                 review_template: text(project, "reviewTemplate"),
                 default_agent: agent(project.get("defaultAgent").and_then(Value::as_str)),
+                default_acp_agent: None,
                 base_ref: text(project, "baseRef"),
                 branch_prefix: text(project, "branchPrefix"),
                 // The macOS app finishes tasks with a pull request unless told otherwise.
@@ -493,6 +496,7 @@ impl Merge<'_> {
                         findings: clip(&text(work, "findings").unwrap_or_default(), 16_000),
                         agent: agent(work.get("builder").and_then(Value::as_str))
                             .unwrap_or(Agent::Claude),
+                        acp_agent: None,
                         // Done needs an approved spec; anything else re-opens for review.
                         status: if status == TaskStatus::Done
                             && state.specs.last().is_some_and(|spec| !spec.approved())
@@ -608,6 +612,7 @@ impl Merge<'_> {
                 details: clip(details.trim(), 16_000),
                 findings: String::new(),
                 agent: agent(task.get("agent").and_then(Value::as_str)).unwrap_or(Agent::Claude),
+                acp_agent: None,
                 status,
                 mode,
                 auto_review: flag(task, "autoReview").unwrap_or(false),

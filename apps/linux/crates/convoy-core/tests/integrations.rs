@@ -538,6 +538,7 @@ fn editing_an_imported_task_keeps_its_model_until_the_agent_changes() {
         details: String::new(),
         findings: String::new(),
         agent: Agent::Claude,
+        acp_agent: None,
         mode: PublishMode::None,
         auto_review: false,
     };

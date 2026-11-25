@@ -4,6 +4,7 @@
 //! the web view shows state and passes input back, and the rules it obeys are
 //! the same ones the GTK and Electron builds obey, from the same crate.
 
+pub mod agents;
 pub mod docs;
 pub mod files;
 pub mod icons;
@@ -246,7 +247,7 @@ pub fn view_of(
         id: session.id.clone(),
         project_id: session.project_id.clone(),
         title: shown_title(session, state, accounts),
-        agent: session.agent.as_str().to_string(),
+        agent: convoy_core::provider::acp_agents::key(session.agent, session.acp_agent.as_deref()),
         provider_id: session.provider_id.clone(),
         model: session.model.clone().unwrap_or_default(),
         effort: session.effort.clone().unwrap_or_default(),
@@ -309,7 +310,7 @@ pub fn workspace_read(
                     color: project.color.clone(),
                     default_agent: project
                         .default_agent
-                        .map(|agent| agent.as_str().to_string()),
+                        .map(|agent| convoy_core::provider::acp_agents::key(agent, project.default_acp_agent.as_deref())),
                     branch_prefix: project.branch_prefix.clone(),
                     task_mode: project.task_mode.clone(),
                     auto_run_tasks: project.auto_run_tasks == Some(true),
@@ -398,7 +399,10 @@ pub fn settings_read(workspace: State<'_, Workspace>) -> Result<SettingsView, St
                 convoy_core::model::Theme::System => "system",
             }
             .to_string(),
-            default_agent: settings.default_agent.as_str().to_string(),
+            default_agent: convoy_core::provider::acp_agents::key(
+                settings.default_agent,
+                settings.default_acp_agent.as_deref(),
+            ),
             font_size: settings.font_size,
             scrollback: settings.scrollback,
             claude_usage: settings.claude_usage,
@@ -505,7 +509,7 @@ pub struct SettingsInput {
 
 #[tauri::command]
 pub fn settings_save(input: SettingsInput, workspace: State<'_, Workspace>) -> Result<(), String> {
-    use convoy_core::model::{Agent, KeepAwake, Theme};
+    use convoy_core::model::{KeepAwake, Theme};
     let theme = match input.theme.as_str() {
         "dark" => Theme::Dark,
         "light" => Theme::Light,
@@ -518,12 +522,15 @@ pub fn settings_save(input: SettingsInput, workspace: State<'_, Workspace>) -> R
         "sessions" => KeepAwake::Sessions,
         other => return Err(format!("Unknown keep-awake mode: {other}")),
     };
-    let default_agent = Agent::parse(&input.default_agent).ok_or("Unknown agent.")?;
+    let (default_agent, default_acp_agent) =
+        convoy_core::provider::acp_agents::parse_key(&input.default_agent).ok_or("Unknown agent.")?;
     workspace.act(|workspace| {
         workspace
             .save_settings(convoy_core::workspace::SettingsPatch {
                 theme: Some(theme),
                 default_agent: Some(default_agent),
+                default_acp_agent,
+                acp_agents: None,
                 font_size: Some(input.font_size),
                 scrollback: Some(input.scrollback),
                 claude_usage: Some(input.claude_usage),

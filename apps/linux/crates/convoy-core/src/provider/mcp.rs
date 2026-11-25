@@ -128,6 +128,8 @@ pub fn flags(
                 file.to_string_lossy().into_owned(),
             ])
         }
+        // ACP takes its servers in `session/new`, not on the command line.
+        Agent::Acp => Ok(Vec::new()),
         Agent::Codex => {
             let mut flags = Vec::new();
             for server in servers {

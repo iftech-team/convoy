@@ -290,6 +290,7 @@ pub fn begin(workspace: &mut Workspace, context: &Context<'_>, task_id: &str) ->
         task.agent,
         head(&format!("Plan: {}", task.title), 200).to_string(),
     );
+    input.acp_agent = task.acp_agent.clone();
     input.prompt = brief(workspace, &task, &file)?;
     input.model = task.model.clone().unwrap_or_default();
     input.effort = task.effort.clone().unwrap_or_default();

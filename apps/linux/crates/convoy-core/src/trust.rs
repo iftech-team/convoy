@@ -35,6 +35,8 @@ pub fn approve(agent: Agent, directory: &Path, env: &BTreeMap<String, String>) {
                 .unwrap_or_else(|| home.join(".codex"));
             approve_codex(&dir.join("config.toml"), &folder)
         }
+        // ACP agents ask through the protocol, if at all.
+        Agent::Acp => return,
     };
 }
 

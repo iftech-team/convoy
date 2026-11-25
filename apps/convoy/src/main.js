@@ -2,11 +2,13 @@
 
 import { installTasks } from "./tasks.js";
 import { agentName, newTaskDefaults } from "./task-defaults.js";
+import { acpAgents, hasTerminal, isAcp, loadAcpAgents, splitCommand } from "./agents.js";
 import { dropStatus, movable } from "./phase.js";
 import { presetPatch } from "./presets.js";
 import { sessionLabel } from "./session-state.js";
 import { icons } from "./icons.js";
 import { getVersion } from "@tauri-apps/api/app";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialogNative, save as saveDialogNative } from "@tauri-apps/plugin-dialog";
 import {
@@ -1408,6 +1410,8 @@ const ACTIONS = {
   "limits-refresh": () => refreshLimits(true),
   "limits-settings": () => openSettings("AI Limits"),
   "page-add-profile": addPageProfile,
+  "acp-add": addAcpAgent,
+  "acp-refresh": () => loadAcpAgents(true).then(render),
   "add-profile": addProfile,
   "scan-transcripts": scanTranscripts,
 
@@ -1719,7 +1723,7 @@ app.addEventListener("click", async (event) => {
     "[data-action],[data-project],[data-tab],[data-start],[data-stop],[data-open]," +
       "[data-set],[data-toggle],[data-dismiss],[data-quick],[data-files-view]," +
       "[data-change],[data-file],[data-commit],[data-branch],[data-task],[data-spec]," +
-      "[data-approve],[data-export],[data-prepare],[data-remove-profile]," +
+      "[data-approve],[data-export],[data-prepare],[data-remove-profile],[data-acp-login],[data-acp-install],[data-acp-remove]," +
       "[data-remove-command],[data-import],[data-task-view],[data-palette],[data-split],"
       + "[data-capture],[data-expand],[data-project-more],[data-menu-act],[data-settings-section]," +
       "[data-pref-set],[data-pref-toggle],[data-icon-tab],[data-proj-color],[data-proj-icon],[data-sync-toggle],[data-intake-toggle]," +
@@ -2197,6 +2201,14 @@ app.addEventListener("click", async (event) => {
     return render();
   }
   if (data.loginAccount) return openLogin(data.loginAccount);
+  if (data.acpLogin) return openLogin("", data.acpLogin);
+  if (data.acpInstall) {
+    if (/^https:\/\//.test(data.acpInstall)) {
+      invoke("plugin:opener|open_url", { url: data.acpInstall }).catch(() => toast(t("Could not open the link")));
+    }
+    return;
+  }
+  if (data.acpRemove) return removeAcpAgent(data.acpRemove);
   if (data.removeProfile) {
     if (await done("profile_remove", { id: data.removeProfile })) await loadProfiles();
     return render();
@@ -3087,16 +3099,19 @@ async function createSession() {
   const target = draft.projectId;
   draft.busy = true;
   render();
+  // An ACP agent has no accounts or models here, and opens as a chat when
+  // it has no terminal of its own.
+  const acp = isAcp(draft.agent);
   const id = await call("session_create", {
     projectId: target,
     agent: draft.agent,
     title,
     prompt: draft.prompt,
-    model: draft.model,
-    effort: effortLevels(draft.agent, draft.account ?? "", draft.model ?? "").includes(draft.effort) ? draft.effort : null,
-    profileId: draft.account || null,
+    model: acp ? "" : draft.model,
+    effort: !acp && effortLevels(draft.agent, draft.account ?? "", draft.model ?? "").includes(draft.effort) ? draft.effort : null,
+    profileId: acp ? null : draft.account || null,
     notes: draft.notes,
-    view: draft.view === "chat" ? "chat" : "terminal",
+    view: draft.view === "chat" || !hasTerminal(draft.agent) ? "chat" : "terminal",
     knowledge: (draft.knowledge ?? []).map((item) => {
       if (item.key.startsWith("s:")) return { session_id: item.key.slice(2) };
       const [, agent, provider_id] = item.key.split(":");
@@ -3184,7 +3199,8 @@ async function openReview() {
   const brief = await call("review_brief", { id: current.id });
   if (brief === undefined) return;
   // The project's reviewer, or else the other agent: a second opinion from a
-  // different model. Claude and Codex review each other.
+  // different model. Claude and Codex review each other, and Claude reviews
+  // any other agent.
   const agent = state.projects.find((item) => item.id === current.project_id)?.review_agent || (current.agent === "claude" ? "codex" : "claude");
   openModal({ kind: "review", id: current.id, brief, agent, ...lastChoice(agent), account: activeAccount(agent) });
 }
@@ -3371,6 +3387,44 @@ async function savePref(patch) {
     if (["git_status", "git_poll_seconds", "compact_sidebar"].some((key) => key in patch)) scheduleGitPolling();
   }
   render();
+}
+
+/// The user's own ACP agents, as Settings stores them: every agent not
+/// shipped with Convoy, and shipped ones they changed.
+const ownAcpAgents = () =>
+  acpAgents()
+    .filter((agent) => !agent.builtin)
+    .map(({ key, installed, terminal, builtin, ...definition }) => definition);
+
+async function saveAcpAgents(agents) {
+  if (!(await done("acp_agents_save", { agents }))) return false;
+  await Promise.all([loadAcpAgents(true), loadSettings()]);
+  render();
+  return true;
+}
+
+async function addAcpAgent() {
+  const name = value("acp-name").trim();
+  const [command, ...args] = splitCommand(value("acp-command"));
+  if (!name || !command) return toast(t("Give the agent a name and the command that starts it."));
+  const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  if (!id) return toast(t("Give the agent a name with letters or digits."));
+  if (acpAgents().some((agent) => agent.id === id && !agent.builtin)) return toast(t("An agent with that name exists."));
+  const [tuiCommand, ...tuiArgs] = splitCommand(value("acp-tui"));
+  const env = {};
+  for (const line of value("acp-env").split("\n")) {
+    const at = line.indexOf("=");
+    if (at > 0) env[line.slice(0, at).trim()] = line.slice(at + 1).trim();
+  }
+  const loginCommand = value("acp-login").trim();
+  const agent = { id, name, command, args, env, tuiArgs, ...(tuiCommand ? { tuiCommand } : {}), ...(loginCommand ? { loginCommand } : {}) };
+  if (await saveAcpAgents([...ownAcpAgents().filter((item) => item.id !== id), agent])) {
+    toast(t("Added {name}", { name }));
+  }
+}
+
+async function removeAcpAgent(id) {
+  await saveAcpAgents(ownAcpAgents().filter((agent) => agent.id !== id));
 }
 
 async function addPageProfile() {
@@ -5072,6 +5126,9 @@ try {
   await loadAllTasks();
   // The status bar's account chips need them.
   await loadProfiles();
+  // Agents reached through ACP, for the pickers; probing them is slow, so
+  // the window does not wait.
+  loadAcpAgents().then(render, () => {});
   // For Settings, and an update that arrived before the window listened.
   getVersion().then((version) => {
     state.version = version;

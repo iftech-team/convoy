@@ -7,8 +7,9 @@ import { SYMBOLS, agentIcon, icon, projectIcon } from "./icons.js";
 import { icons } from "./icons.js";
 import { button, escape, shorten } from "./ui.js";
 import { state } from "./state.js";
+import { agentOptions } from "./agents.js";
 import { t } from "./i18n.js";
-import { TASK_MODES, taskModeOf } from "./task-defaults.js";
+import { TASK_MODES, agentName, taskModeOf } from "./task-defaults.js";
 import { CUSTOM, PRESETS, PRESET_ORDER, canTest, isRepository, presetOf } from "./presets.js";
 import { ROLES, projectSkills } from "./views-skills.js";
 
@@ -487,7 +488,7 @@ const PAGE_TABS = [
 export function projectSettingsPage() {
   const project = state.projectDraft;
   if (!project) return "";
-  const global = { codex: "Codex" }[state.settings.default_agent] ?? "Claude Code";
+  const global = agentName(state.settings.default_agent);
   const commands = (state.quickCommands ?? []).filter((command) => command.project_id === project.id);
   const tab = PAGE_TABS.some(([key]) => key === state.projectSettingsTab) ? state.projectSettingsTab : "general";
   return `
@@ -518,8 +519,7 @@ export function projectSettingsPage() {
               "default_agent",
               [
                 ["", t("Use global ({agent})", { agent: global })],
-                ["claude", "Claude Code"],
-                ["codex", "Codex"],
+                ...agentOptions({ chosen: project.default_agent ?? "" }).map(([value, name]) => [value, name]),
               ],
               project.default_agent ?? "",
             ),

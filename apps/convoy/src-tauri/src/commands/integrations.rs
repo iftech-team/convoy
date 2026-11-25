@@ -446,7 +446,11 @@ pub async fn models_list(
     profile_id: Option<String>,
     workspace: State<'_, Workspace>,
 ) -> Result<Vec<convoy_core::provider::models::Model>, String> {
-    let agent = Agent::parse(&agent).ok_or("Unknown agent.")?;
+    let (agent, _) = convoy_core::provider::acp_agents::parse_key(&agent).ok_or("Unknown agent.")?;
+    if agent == Agent::Acp {
+        // An ACP agent lists its models when its chat opens.
+        return Ok(Vec::new());
+    }
     let storage = workspace.storage.clone();
     let home = workspace.act(|core| {
         let mut probe = convoy_core::model::Session::new(String::new(), agent, "models");
@@ -470,7 +474,7 @@ pub async fn models_list(
             .await
             .ok()
             .flatten(),
-        Agent::Codex => None,
+        Agent::Codex | Agent::Acp => None,
     };
     Ok(convoy_core::provider::models::list(
         agent,

@@ -114,6 +114,7 @@ fn a_task_whose_session_opens_a_pull_request_awaits_it() {
             details: "Open a pull request.".into(),
             findings: String::new(),
             agent: Agent::Claude,
+            acp_agent: None,
             mode: PublishMode::Pr,
             auto_review: false,
         })
@@ -157,6 +158,7 @@ fn a_task_can_be_deleted_unless_its_agent_runs() {
             details: String::new(),
             findings: String::new(),
             agent: Agent::Codex,
+            acp_agent: None,
             mode: PublishMode::None,
             auto_review: false,
         })
@@ -210,6 +212,7 @@ fn task(workspace: &mut Workspace, project: &str, title: &str) -> String {
             details: String::new(),
             findings: String::new(),
             agent: Agent::Claude,
+            acp_agent: None,
             mode: PublishMode::None,
             auto_review: false,
         })

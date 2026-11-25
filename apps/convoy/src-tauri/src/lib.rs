@@ -244,6 +244,8 @@ pub fn run() {
             commands::sweep::history_sweep_scan,
             commands::sweep::history_sweep_import,
             commands::integrations::models_list,
+            commands::agents::acp_agents_list,
+            commands::agents::acp_agents_save,
             commands::integrations::activity_read,
             commands::integrations::activity_clear,
             commands::docs::docs_list,

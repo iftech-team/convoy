@@ -41,6 +41,7 @@ impl Roots {
         match agent {
             Agent::Claude => &self.claude,
             Agent::Codex => &self.codex,
+            Agent::Acp => Path::new(""),
         }
     }
 }
@@ -240,6 +241,7 @@ pub fn tool_calls(agent: Agent, file: &Path) -> Vec<Vec<String>> {
     let needles: &[&str] = match agent {
         Agent::Claude => &["\"tool_use\""],
         Agent::Codex => &["\"function_call\"", "\"custom_tool_call\""],
+        Agent::Acp => return Vec::new(),
     };
     let mut calls = Vec::new();
     let mut line = Vec::new();
@@ -296,6 +298,7 @@ pub fn tool_calls(agent: Agent, file: &Path) -> Vec<Vec<String>> {
                 }
                 calls.push(found);
             }
+            Agent::Acp => {}
         }
     }
     calls
@@ -399,6 +402,7 @@ pub fn conversation_files(agent: Agent, home: &Path, id: &str) -> Vec<PathBuf> {
                     .is_some_and(|name| name.to_string_lossy().to_lowercase().ends_with(&suffix))
             }));
         }
+        Agent::Acp => {}
     }
     found
 }
@@ -625,7 +629,7 @@ pub fn place(
             let into = roots.claude_projects().join(slug(&project.path));
             (found.file.parent() != Some(into.as_path())).then_some(into)
         }
-        Agent::Codex => None,
+        Agent::Codex | Agent::Acp => None,
     };
     Some(Placement {
         working_directory: None,
@@ -1089,6 +1093,7 @@ mod tests {
             shared_paths: None,
             review_template: None,
             default_agent: None,
+            default_acp_agent: None,
             base_ref: None,
             branch_prefix: None,
             task_mode: None,

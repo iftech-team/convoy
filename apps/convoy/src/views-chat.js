@@ -326,7 +326,7 @@ function effortsFor(id, model) {
   const chosen = model ? models.find((entry) => entry.id === model) : models.find((entry) => entry.is_default);
   if (chosen) return chosen.efforts ?? [];
   if (!model && models.length) return [...new Set(models.flatMap((entry) => entry.efforts ?? []))];
-  return anySession(id)?.agent === "codex" ? [] : CLAUDE_EFFORTS;
+  return anySession(id)?.agent === "claude" ? CLAUDE_EFFORTS : [];
 }
 
 function chips(id, blocked) {

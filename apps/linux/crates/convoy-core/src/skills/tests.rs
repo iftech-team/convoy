@@ -372,6 +372,7 @@ fn removing_skills_detaches_them_everywhere() {
             details: String::new(),
             findings: String::new(),
             agent: Agent::Claude,
+            acp_agent: None,
             mode: crate::model::PublishMode::None,
             auto_review: false,
         })

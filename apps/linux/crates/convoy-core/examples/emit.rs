@@ -46,6 +46,7 @@ fn main() {
             details: "Tab and Escape".into(),
             findings: String::new(),
             agent: Agent::Codex,
+            acp_agent: None,
             mode: PublishMode::Pr,
             auto_review: true,
         })
