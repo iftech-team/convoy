@@ -658,9 +658,9 @@ try {
     await page.locator('.tabbar__tabs [data-tab-group-toggle="project"]').click();
     assert.deepEqual(await shownTabs(), ["notes"], "the folded project's tabs are hidden");
     if (process.env.CONVOY_TEST_SHOTS) await page.screenshot({ path: `${process.env.CONVOY_TEST_SHOTS}/tabs-folded.png` });
-    await page.locator('.tabbar__tabs [data-tab-group-toggle="project"] .tab-group__count', { hasText: "3" }).waitFor();
+    await page.locator('.tabbar__tabs [data-tab-group="project"] .tab-group__count', { hasText: "3" }).waitFor();
     // Folded, the header still says an agent there needs you.
-    await page.locator('.tabbar__tabs [data-tab-group-toggle="project"] .tab-group__state--needs', { hasText: "1" }).waitFor();
+    await page.locator('.tabbar__tabs [data-tab-group="project"] .tab-group__state--needs', { hasText: "1" }).waitFor();
     assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem("convoy.collapsedTabGroups"))), ["project"], "the fold is remembered");
     await page.locator('.tabbar__tabs [data-tab-group-toggle="project"]').click();
     assert.deepEqual(await shownTabs(), ["builder", "project:project", "review", "notes"], "unfolded, they come back");
@@ -676,6 +676,12 @@ try {
     await page.locator('.project-row[data-menu-project="project"]').click({ button: "right" });
     await page.locator('.menu--context [data-menu-act="tabs-fold"]', { hasText: "Show tabs" }).click();
     assert.ok(!(await folded("project")), "shown from the sidebar");
+    // A project's name in its header opens the project's page.
+    await page.locator('.tabbar__tabs [data-tab-group="other"] [data-project="other"]').click();
+    await page.locator('.tab-item--selected[data-tab-open="project:other"]').waitFor();
+    await page.locator('[data-tab-close="project:other"]').click();
+    await page.locator('.tabbar__tabs [data-tab-open="notes"]').click();
+    await page.locator('.tab-item--selected[data-tab-open="notes"]').waitFor();
     // A project's header drags the whole project ahead of another.
     {
       await page.locator('.tabbar__tabs [data-tab-group="other"]').evaluate((el) => el.scrollIntoView({ inline: "nearest" }));

@@ -4166,7 +4166,7 @@ select:disabled {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 3px;
   height: 26px;
   max-width: 160px;
   padding: 0 6px 0 4px;
@@ -4210,7 +4210,28 @@ select:disabled {
   flex: none;
   display: grid;
   place-items: center;
+  width: 16px;
+  height: 18px;
+  border-radius: 4px;
   color: var(--text-faint);
+}
+
+.tab-group__chevron:hover {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+/* The project's name opens its page. */
+.tab-group__open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
 }
 
 .tab-group__chevron svg {

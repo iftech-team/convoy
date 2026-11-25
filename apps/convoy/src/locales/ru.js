@@ -326,6 +326,7 @@ export default {
     "Show all tabs": "Показать все вкладки",
     "Close {project}'s tabs": "Закрыть вкладки «{project}»",
     "Close tabs that aren't running": "Закрыть неактивные вкладки",
+    "Open {project}": "Открыть «{project}»",
     "Closed {count} tabs": "Закрыто вкладок: {count}",
     "Every tab is running": "Все вкладки активны",
     "Fold other projects automatically": "Сворачивать другие проекты автоматически",

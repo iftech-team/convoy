@@ -1221,29 +1221,32 @@ function drawnGroups() {
   });
 }
 
-/// A project's header in the tab strip or column: click folds its tabs away,
-/// and folded it says how many it holds.
+/// A project's header in the tab strip or column. The arrow folds its tabs
+/// away; the name opens the project's page. Folded, it says how many tabs it
+/// holds and whether any of their agents need you.
 function groupHeader(group, vertical) {
   const { owner, folded, tabs } = group;
-  const title = folded
+  const fold = folded
     ? t("Show {project}'s tabs", { project: owner.title })
     : t("Hide {project}'s tabs", { project: owner.title });
   return `
-    <button class="tab-group${vertical ? " tab-group--row" : ""}${folded ? " tab-group--folded" : ""}${folded && group.holdsCurrent ? " tab-group--current" : ""}"
-            data-tab-group-toggle="${escape(owner.id)}" data-tab-group="${escape(owner.id)}"
-            aria-expanded="${!folded}" title="${escape(title)}" style="--group-tint:${projectTint(owner)}">
-      <span class="tab-group__chevron">${folded ? icons.chevronRight : icons.chevronDown}</span>
-      ${projectIcon(owner, vertical ? 13 : 12)}
-      <span class="tab-group__title">${escape(owner.title)}</span>
-      ${
-        group.hidden.needs
-          ? `<span class="tab-group__state tab-group__state--needs" title="${escape(t("{count} need you", { count: group.hidden.needs }))}">${icons.warn}${group.hidden.needs}</span>`
-          : group.hidden.done
-            ? `<span class="tab-group__state tab-group__state--done" title="${escape(t("{count} finished", { count: group.hidden.done }))}">${icons.checkCircle}</span>`
-            : ""
-      }
-      ${folded || vertical ? `<span class="tab-group__count">${tabs.length}</span>` : ""}
-    </button>`;
+    <div class="tab-group${vertical ? " tab-group--row" : ""}${folded ? " tab-group--folded" : ""}${folded && group.holdsCurrent ? " tab-group--current" : ""}"
+         data-tab-group="${escape(owner.id)}" style="--group-tint:${projectTint(owner)}">
+      <button class="tab-group__chevron" data-tab-group-toggle="${escape(owner.id)}"
+              aria-expanded="${!folded}" title="${escape(fold)}" aria-label="${escape(fold)}">${folded ? icons.chevronRight : icons.chevronDown}</button>
+      <button class="tab-group__open" data-project="${escape(owner.id)}" title="${escape(t("Open {project}", { project: owner.title }))}">
+        ${projectIcon(owner, vertical ? 13 : 12)}
+        <span class="tab-group__title">${escape(owner.title)}</span>
+        ${
+          group.hidden.needs
+            ? `<span class="tab-group__state tab-group__state--needs" title="${escape(t("{count} need you", { count: group.hidden.needs }))}">${icons.warn}${group.hidden.needs}</span>`
+            : group.hidden.done
+              ? `<span class="tab-group__state tab-group__state--done" title="${escape(t("{count} finished", { count: group.hidden.done }))}">${icons.checkCircle}</span>`
+              : ""
+        }
+        ${folded || vertical ? `<span class="tab-group__count">${tabs.length}</span>` : ""}
+      </button>
+    </div>`;
 }
 
 /// A pinned tab: a tile with its icon, ahead of every project. Its name and
