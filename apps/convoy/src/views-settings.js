@@ -12,6 +12,7 @@ import { SHORTCUTS, SHORTCUT_GROUPS, label } from "./shortcuts.js";
 import { LANGUAGES, languageChoice, t } from "./i18n.js";
 import { ZOOMS, percent, uiZoom } from "./zoom.js";
 import { chosenTheme, themeFor, themesOf } from "./themes.js";
+import { MONO_FONTS, chosenMonoFont, customMonoFont, monoStack } from "./fonts.js";
 import { ROLES, skillsSection } from "./views-skills.js";
 import { pricesSection } from "./views-usage.js";
 import { checklistCard, gettingStarted } from "./views-home.js";
@@ -323,10 +324,28 @@ function themeChoice(kind) {
   )}</div>`;
 }
 
+/// The font's name drawn in itself, beside the choice; "Other installed
+/// font" adds a field for the family's name.
+function fontChoice() {
+  const chosen = chosenMonoFont();
+  const custom = customMonoFont();
+  const sample = `<span class="font-sample" style="font-family:${escape(monoStack(chosen, custom))}">{ a => 0O1lI }</span>`;
+  const field =
+    chosen === "custom"
+      ? `<input class="pref-text" data-mono-custom value="${escape(custom)}" placeholder="${escape(t("Font name, e.g. Iosevka"))}" spellcheck="false" />`
+      : "";
+  return `<div class="term-theme">${sample}${field}${select(
+    "mono_font",
+    MONO_FONTS.map((font) => [font.id, font.id === "system" || font.id === "custom" ? t(font.name) : font.name]),
+    chosen,
+  )}</div>`;
+}
+
 function terminalSection(settings) {
   return groupBox(
     t("Terminal"),
-    row(t("Font size"), t("10 to 24 points."), number("font_size", settings.font_size, 10, 24)) +
+    row(t("Font"), t("Terminals, diffs and code. JetBrains Mono, Fira Code, Cascadia Code and IBM Plex Mono ship with Convoy."), fontChoice()) +
+      row(t("Font size"), t("10 to 24 points."), number("font_size", settings.font_size, 10, 24)) +
       row(t("Scrollback"), t("Lines kept per terminal, 1,000 to 50,000."), number("scrollback", settings.scrollback, 1000, 50000, 1000)),
     t("Applies to open terminals immediately. Claude Code draws some colours itself: if its prompt rows look dark in a light terminal, run /theme in Claude Code and pick a light theme."),
   );

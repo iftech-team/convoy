@@ -57,6 +57,7 @@ import { setLanguage, t } from "./i18n.js";
 import { SHORTCUTS, binding, capture, label, matches } from "./shortcuts.js";
 import { applyZoom, percent, setZoom, stepZoom, uiZoom } from "./zoom.js";
 import { chooseTheme } from "./themes.js";
+import { applyMonoFont, chooseMonoFont, setCustomMonoFont } from "./fonts.js";
 import { dialogView, effortLevels, sweepChoices, sweepGroups, sweepProject, sweepVisible } from "./dialogs.js";
 import * as terminal from "./terminal.js";
 import { adoptApprovals, answer, chatEvent, chatExited, chatSnapshot, chatText, historyChanged, insertDraft, mountChat, rememberScroll, sendText, shownAsTranscript, viewOf, waitingFor } from "./views-chat.js";
@@ -2435,6 +2436,18 @@ app.addEventListener("change", async (event) => {
   const themeKind = /^terminal_theme_(light|dark)$/.exec(choiceKey ?? "")?.[1];
   if (themeKind) {
     chooseTheme(themeKind, event.target.value);
+    terminal.applySettings();
+    return render();
+  }
+  if (choiceKey === "mono_font") {
+    chooseMonoFont(event.target.value);
+    await applyMonoFont();
+    terminal.applySettings();
+    return render();
+  }
+  if (event.target.dataset?.monoCustom != null) {
+    setCustomMonoFont(event.target.value);
+    await applyMonoFont();
     terminal.applySettings();
     return render();
   }
@@ -5171,6 +5184,9 @@ try {
   wireFileDrop();
   await loadSettings();
   applyTheme();
+  // A shipped font is drawn once loaded; terminals opened before then are
+  // measured again with it.
+  applyMonoFont().then(() => terminal.applySettings());
   await loadWorkspace({ required: true });
   // The sidebar folds each task's sessions into one row.
   await loadAllTasks();

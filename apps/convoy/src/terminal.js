@@ -189,13 +189,14 @@ export function refit() {
   }
 }
 
-/// Font size, scrollback and colours reach terminals that are already open, so
+/// Font, size, scrollback and colours reach terminals that are already open, so
 /// a settings change is visible without restarting a session.
 export function applySettings() {
   for (const [id, entry] of terminals) {
     entry.terminal.options.fontSize = sizeFor(id);
     entry.terminal.options.scrollback = state.settings.scrollback;
     entry.terminal.options.theme = theme();
+    entry.terminal.options.fontFamily = getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim();
     if (entry.host.isConnected) entry.fit.fit();
   }
 }

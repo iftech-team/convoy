@@ -1,0 +1,26 @@
+/* The coding fonts that ship with the app: Latin, Latin Extended and
+   Cyrillic, regular and bold. Each file loads only when its glyphs are drawn. */
+@import "@fontsource/jetbrains-mono/latin-400.css";
+@import "@fontsource/jetbrains-mono/latin-700.css";
+@import "@fontsource/jetbrains-mono/latin-ext-400.css";
+@import "@fontsource/jetbrains-mono/latin-ext-700.css";
+@import "@fontsource/jetbrains-mono/cyrillic-400.css";
+@import "@fontsource/jetbrains-mono/cyrillic-700.css";
+@import "@fontsource/fira-code/latin-400.css";
+@import "@fontsource/fira-code/latin-700.css";
+@import "@fontsource/fira-code/latin-ext-400.css";
+@import "@fontsource/fira-code/latin-ext-700.css";
+@import "@fontsource/fira-code/cyrillic-400.css";
+@import "@fontsource/fira-code/cyrillic-700.css";
+@import "@fontsource/cascadia-code/latin-400.css";
+@import "@fontsource/cascadia-code/latin-700.css";
+@import "@fontsource/cascadia-code/latin-ext-400.css";
+@import "@fontsource/cascadia-code/latin-ext-700.css";
+@import "@fontsource/cascadia-code/cyrillic-400.css";
+@import "@fontsource/cascadia-code/cyrillic-700.css";
+@import "@fontsource/ibm-plex-mono/latin-400.css";
+@import "@fontsource/ibm-plex-mono/latin-700.css";
+@import "@fontsource/ibm-plex-mono/latin-ext-400.css";
+@import "@fontsource/ibm-plex-mono/latin-ext-700.css";
+@import "@fontsource/ibm-plex-mono/cyrillic-400.css";
+@import "@fontsource/ibm-plex-mono/cyrillic-700.css";
