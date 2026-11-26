@@ -165,6 +165,25 @@ export const TERMINAL_THEMES = [
     },
   },
   {
+    // Catppuccin's Mocha flavour. Its mauve is too light for the white text
+    // of a button, so buttons take Latte's deeper mauve; text keeps Mocha's.
+    id: "catppuccin-mocha",
+    name: "Catppuccin Mocha",
+    kind: "dark",
+    ui: { bg: "#1e1e2e", subtle: "#181825", sunken: "#11111b", hover: "#313244", active: "#45475a", border: "#313244", borderStrong: "#45475a", text: "#cdd6f4", muted: "#a6adc8", faint: "#7f849c", accent: "#8839ef", accentText: "#cba6f7" },
+    colors: {
+      background: "#1e1e2e",
+      foreground: "#cdd6f4",
+      cursor: "#f5e0dc",
+      cursorAccent: "#1e1e2e",
+      selectionBackground: "rgba(147, 153, 178, 0.3)",
+      ...palette([
+        "#45475a", "#f38ba8", "#a6e3a1", "#f9e2af", "#89b4fa", "#f5c2e7", "#94e2d5", "#bac2de",
+        "#585b70", "#f38ba8", "#a6e3a1", "#f9e2af", "#89b4fa", "#f5c2e7", "#94e2d5", "#a6adc8",
+      ]),
+    },
+  },
+  {
     id: "solarized-dark",
     name: "Solarized Dark",
     kind: "dark",
