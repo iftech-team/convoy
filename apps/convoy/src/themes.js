@@ -96,6 +96,80 @@ export const TERMINAL_THEMES = [
     },
   },
   {
+    // Catppuccin's Latte flavour, the light pair of Mocha. Secondary text
+    // takes Subtext 1 rather than Subtext 0, which reads too faint on Base.
+    id: "catppuccin-latte",
+    name: "Catppuccin Latte",
+    kind: "light",
+    ui: { bg: "#eff1f5", subtle: "#e6e9ef", sunken: "#dce0e8", hover: "#e1e4eb", active: "#ccd0da", border: "#ccd0da", borderStrong: "#bcc0cc", text: "#4c4f69", muted: "#5c5f77", faint: "#8c8fa1", accent: "#8839ef", accentText: "#8839ef" },
+    colors: {
+      background: "#eff1f5",
+      foreground: "#4c4f69",
+      cursor: "#dc8a78",
+      cursorAccent: "#eff1f5",
+      selectionBackground: "rgba(124, 127, 147, 0.3)",
+      ...palette([
+        "#5c5f77", "#d20f39", "#40a02b", "#df8e1d", "#1e66f5", "#ea76cb", "#179299", "#acb0be",
+        "#6c6f85", "#d20f39", "#40a02b", "#df8e1d", "#1e66f5", "#ea76cb", "#179299", "#bcc0cc",
+      ]),
+    },
+  },
+  {
+    id: "one-light",
+    name: "One Light",
+    kind: "light",
+    ui: { bg: "#fafafa", subtle: "#f0f0f1", sunken: "#e9e9eb", hover: "#ececed", active: "#e0e0e2", border: "#dbdbdc", borderStrong: "#c8c8ca", text: "#383a42", muted: "#696c77", faint: "#96979d", accent: "#4078f2", accentText: "#2f5fd0" },
+    colors: {
+      background: "#fafafa",
+      foreground: "#383a42",
+      cursor: "#526fff",
+      cursorAccent: "#fafafa",
+      selectionBackground: "rgba(64, 120, 242, 0.18)",
+      ...palette([
+        "#383a42", "#e45649", "#50a14f", "#c18401", "#4078f2", "#a626a4", "#0184bc", "#a0a1a7",
+        "#696c77", "#e45649", "#50a14f", "#c18401", "#4078f2", "#a626a4", "#0184bc", "#ffffff",
+      ]),
+    },
+  },
+  {
+    // Gruvbox puts its background in ANSI black on a light terminal; black
+    // here is dark text and white a light shade, as programs expect.
+    id: "gruvbox-light",
+    name: "Gruvbox Light",
+    kind: "light",
+    ui: { bg: "#fbf1c7", subtle: "#f2e5bc", sunken: "#ebdbb2", hover: "#ebdbb2", active: "#d5c4a1", border: "#e0cfa9", borderStrong: "#d5c4a1", text: "#3c3836", muted: "#665c54", faint: "#928374", accent: "#af3a03", accentText: "#af3a03" },
+    colors: {
+      background: "#fbf1c7",
+      foreground: "#3c3836",
+      cursor: "#3c3836",
+      cursorAccent: "#fbf1c7",
+      selectionBackground: "rgba(124, 111, 100, 0.25)",
+      ...palette([
+        "#3c3836", "#cc241d", "#98971a", "#d79921", "#458588", "#b16286", "#689d6a", "#d5c4a1",
+        "#7c6f64", "#9d0006", "#79740e", "#b57614", "#076678", "#8f3f71", "#427b58", "#ebdbb2",
+      ]),
+    },
+  },
+  {
+    // The window's text is a shade deeper than Dawn's own, which reads
+    // light at the app's small sizes.
+    id: "rose-pine-dawn",
+    name: "Rosé Pine Dawn",
+    kind: "light",
+    ui: { bg: "#faf4ed", subtle: "#fffaf3", sunken: "#f2e9e1", hover: "#f4ede8", active: "#dfdad9", border: "#dfdad9", borderStrong: "#cecacd", text: "#464261", muted: "#6e6a86", faint: "#9893a5", accent: "#286983", accentText: "#286983" },
+    colors: {
+      background: "#faf4ed",
+      foreground: "#575279",
+      cursor: "#575279",
+      cursorAccent: "#faf4ed",
+      selectionBackground: "rgba(152, 147, 165, 0.25)",
+      ...palette([
+        "#575279", "#b4637a", "#286983", "#ea9d34", "#56949f", "#907aa9", "#d7827e", "#dfdad9",
+        "#797593", "#b4637a", "#286983", "#ea9d34", "#56949f", "#907aa9", "#d7827e", "#f2e9e1",
+      ]),
+    },
+  },
+  {
     id: "convoy-dark",
     name: "Convoy Dark",
     kind: "dark",
@@ -197,6 +271,91 @@ export const TERMINAL_THEMES = [
       ...palette([
         "#073642", "#dc322f", "#859900", "#b58900", "#268bd2", "#d33682", "#2aa198", "#eee8d5",
         "#586e75", "#cb4b16", "#586e75", "#657b83", "#839496", "#6c71c4", "#93a1a1", "#fdf6e3",
+      ]),
+    },
+  },
+  {
+    id: "tokyo-night",
+    name: "Tokyo Night",
+    kind: "dark",
+    ui: { bg: "#1a1b26", subtle: "#16161e", sunken: "#13131a", hover: "#222333", active: "#292e42", border: "#292e42", borderStrong: "#3b4261", text: "#c0caf5", muted: "#a9b1d6", faint: "#737aa2", accent: "#3d59a1", accentText: "#7aa2f7" },
+    colors: {
+      background: "#1a1b26",
+      foreground: "#c0caf5",
+      cursor: "#c0caf5",
+      cursorAccent: "#1a1b26",
+      selectionBackground: "rgba(122, 162, 247, 0.25)",
+      ...palette([
+        "#15161e", "#f7768e", "#9ece6a", "#e0af68", "#7aa2f7", "#bb9af7", "#7dcfff", "#a9b1d6",
+        "#414868", "#f7768e", "#9ece6a", "#e0af68", "#7aa2f7", "#bb9af7", "#7dcfff", "#c0caf5",
+      ]),
+    },
+  },
+  {
+    id: "one-dark",
+    name: "One Dark",
+    kind: "dark",
+    ui: { bg: "#282c34", subtle: "#21252b", sunken: "#1e2227", hover: "#2c313a", active: "#3e4451", border: "#3a3f4b", borderStrong: "#4b5263", text: "#d7dae0", muted: "#abb2bf", faint: "#7f848e", accent: "#4d78cc", accentText: "#61afef" },
+    colors: {
+      background: "#282c34",
+      foreground: "#abb2bf",
+      cursor: "#528bff",
+      cursorAccent: "#282c34",
+      selectionBackground: "rgba(97, 175, 239, 0.22)",
+      ...palette([
+        "#3f4451", "#e06c75", "#98c379", "#e5c07b", "#61afef", "#c678dd", "#56b6c2", "#d7dae0",
+        "#5c6370", "#e06c75", "#98c379", "#d19a66", "#61afef", "#c678dd", "#56b6c2", "#ffffff",
+      ]),
+    },
+  },
+  {
+    id: "gruvbox-dark",
+    name: "Gruvbox Dark",
+    kind: "dark",
+    ui: { bg: "#282828", subtle: "#1d2021", sunken: "#32302f", hover: "#32302f", active: "#3c3836", border: "#3c3836", borderStrong: "#504945", text: "#ebdbb2", muted: "#bdae93", faint: "#928374", accent: "#d65d0e", accentText: "#fe8019" },
+    colors: {
+      background: "#282828",
+      foreground: "#ebdbb2",
+      cursor: "#ebdbb2",
+      cursorAccent: "#282828",
+      selectionBackground: "rgba(146, 131, 116, 0.35)",
+      ...palette([
+        "#3c3836", "#cc241d", "#98971a", "#d79921", "#458588", "#b16286", "#689d6a", "#a89984",
+        "#928374", "#fb4934", "#b8bb26", "#fabd2f", "#83a598", "#d3869b", "#8ec07c", "#ebdbb2",
+      ]),
+    },
+  },
+  {
+    id: "rose-pine",
+    name: "Rosé Pine",
+    kind: "dark",
+    ui: { bg: "#191724", subtle: "#1f1d2e", sunken: "#16141f", hover: "#26233a", active: "#403d52", border: "#26233a", borderStrong: "#403d52", text: "#e0def4", muted: "#908caa", faint: "#6e6a86", accent: "#31748f", accentText: "#c4a7e7" },
+    colors: {
+      background: "#191724",
+      foreground: "#e0def4",
+      cursor: "#e0def4",
+      cursorAccent: "#191724",
+      selectionBackground: "rgba(110, 106, 134, 0.35)",
+      ...palette([
+        "#26233a", "#eb6f92", "#31748f", "#f6c177", "#9ccfd8", "#c4a7e7", "#ebbcba", "#e0def4",
+        "#6e6a86", "#eb6f92", "#31748f", "#f6c177", "#9ccfd8", "#c4a7e7", "#ebbcba", "#e0def4",
+      ]),
+    },
+  },
+  {
+    id: "monokai",
+    name: "Monokai",
+    kind: "dark",
+    ui: { bg: "#272822", subtle: "#1e1f1c", sunken: "#2d2e27", hover: "#3e3d32", active: "#49483e", border: "#3e3d32", borderStrong: "#49483e", text: "#f8f8f2", muted: "#cfcfc2", faint: "#75715e", accent: "#c2185b", accentText: "#ff6f9a" },
+    colors: {
+      background: "#272822",
+      foreground: "#f8f8f2",
+      cursor: "#f8f8f0",
+      cursorAccent: "#272822",
+      selectionBackground: "rgba(117, 113, 94, 0.4)",
+      ...palette([
+        "#272822", "#f92672", "#a6e22e", "#f4bf75", "#66d9ef", "#ae81ff", "#a1efe4", "#f8f8f2",
+        "#75715e", "#f92672", "#a6e22e", "#f4bf75", "#66d9ef", "#ae81ff", "#a1efe4", "#f9f8f5",
       ]),
     },
   },

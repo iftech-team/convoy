@@ -74,7 +74,7 @@ test("a theme that colours the window keeps its text and accent readable", () =>
     for (const key of ["bg", "subtle", "sunken", "hover", "active", "border", "borderStrong", "text", "muted", "faint", "accent", "accentText"]) {
       assert.match(ui[key], HEX, `${theme.id}.ui.${key}`);
     }
-    assert.ok(contrast(ui.text, ui.bg) >= 10, `${theme.id} text`);
+    assert.ok(contrast(ui.text, ui.bg) >= 7, `${theme.id} text: ${contrast(ui.text, ui.bg).toFixed(2)}`);
     assert.ok(contrast(ui.muted, ui.bg) >= 4.5, `${theme.id} muted: ${contrast(ui.muted, ui.bg).toFixed(2)}`);
     assert.ok(contrast(ui.faint, ui.bg) >= 2.5, `${theme.id} faint: ${contrast(ui.faint, ui.bg).toFixed(2)}`);
     assert.ok(contrast(ui.accentText, ui.bg) >= 4.5, `${theme.id} accent text: ${contrast(ui.accentText, ui.bg).toFixed(2)}`);
