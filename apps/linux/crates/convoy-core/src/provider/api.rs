@@ -8,6 +8,7 @@
 //! The key is kept in an owner-only file in the account's folder, never in
 //! the workspace file, and reaches Claude Code through its environment only.
 
+use crate::model::{Agent, Profile};
 use crate::provider::models::Model;
 use crate::{bail, ensure, Result};
 use std::collections::BTreeMap;
@@ -78,6 +79,44 @@ pub fn models(provider: &str) -> Vec<Model> {
             },
         ],
         _ => Vec::new(),
+    }
+}
+
+/// The account a provider runs on, when it is connected.
+pub fn provider_profile<'a>(profiles: &'a [Profile], provider: &str) -> Option<&'a Profile> {
+    profiles
+        .iter()
+        .find(|profile| profile.agent == Agent::Claude && profile.provider.as_deref() == Some(provider))
+}
+
+/// What the window's agent key names: the agent, its ACP id, and the
+/// account it runs on. `deepseek` is Claude Code on the DeepSeek account;
+/// `claude`, `codex` and `acp:<id>` take no account of their own here.
+pub fn resolve_key(profiles: &[Profile], key: &str) -> Result<(Agent, Option<String>, Option<String>)> {
+    if PROVIDERS.contains(&key) {
+        let Some(profile) = provider_profile(profiles, key) else {
+            bail!("Connect {} in Settings → Agents first.", name(key))
+        };
+        return Ok((Agent::Claude, None, Some(profile.id.clone())));
+    }
+    match super::acp_agents::parse_key(key) {
+        Some((agent, acp)) => Ok((agent, acp, None)),
+        None => bail!("Unknown agent."),
+    }
+}
+
+/// The key the window shows for an agent, its ACP id and its account: a
+/// provider's account shows as the provider.
+pub fn role_key(profiles: &[Profile], agent: Agent, acp: Option<&str>, profile: Option<&str>) -> String {
+    let provider = profile.and_then(|id| {
+        profiles
+            .iter()
+            .find(|item| item.id == id && item.agent == agent)
+            .and_then(|item| item.provider.clone())
+    });
+    match provider {
+        Some(provider) => provider,
+        None => super::acp_agents::key(agent, acp),
     }
 }
 

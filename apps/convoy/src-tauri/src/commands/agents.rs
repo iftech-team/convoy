@@ -13,6 +13,15 @@ use tauri::State;
 
 use super::Workspace;
 
+/// The agent, ACP id and account a window key names: `claude`, `codex`,
+/// `acp:<id>` or a provider such as `deepseek`.
+pub fn resolve(
+    workspace: &Workspace,
+    key: &str,
+) -> Result<(convoy_core::model::Agent, Option<String>, Option<String>), String> {
+    workspace.act(|core| convoy_core::provider::api::resolve_key(&core.state().profiles, key))
+}
+
 #[derive(Serialize)]
 pub struct AcpAgentView {
     /// `acp:<id>`, as sessions and tasks name it.

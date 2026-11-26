@@ -86,7 +86,7 @@ pub async fn session_create(
     skills: Option<Vec<String>>,
     workspace: State<'_, Workspace>,
 ) -> Result<String, String> {
-    let (agent, acp_agent) = convoy_core::provider::acp_agents::parse_key(&agent).ok_or("Unknown agent.")?;
+    let (agent, acp_agent, key_profile) = super::agents::resolve(&workspace, &agent)?;
     let storage = workspace.storage.clone();
     // The skills picked, or the automatic ones when none were asked about.
     let skills = crate::skills::resolve(&storage, &project_id, Some(agent), skills.as_deref())?;
@@ -143,8 +143,9 @@ pub async fn session_create(
         input.prompt = prompt;
         input.model = model;
         input.effort = effort.unwrap_or_default();
-        // The account it signs in with; none means the system login.
-        input.profile_id = profile_id.filter(|id| !id.is_empty());
+        // The account it signs in with; none means the system login. A
+        // provider named as the agent brings its own.
+        input.profile_id = profile_id.filter(|id| !id.is_empty()).or(key_profile);
         input.skills = skills;
         let state = workspace.add_session(input)?;
         let id = state
@@ -491,9 +492,10 @@ pub fn review_create(
     profile_id: Option<String>,
     workspace: State<'_, Workspace>,
 ) -> Result<String, String> {
-    // `claude`, `codex` or `acp:<id>`; none is the project's reviewer.
+    // `claude`, `codex`, `acp:<id>` or `deepseek`; none is the project's
+    // reviewer.
     let agent = match agent.as_deref() {
-        Some(name) => Some(convoy_core::provider::acp_agents::parse_key(name).ok_or("Unknown agent.")?),
+        Some(name) => Some(super::agents::resolve(&workspace, name)?),
         None => None,
     };
     let storage = workspace.storage.clone();
@@ -501,7 +503,7 @@ pub fn review_create(
         let builder = workspace.session(&id)?;
         let reviewer = agent
             .as_ref()
-            .map(|(agent, _)| *agent)
+            .map(|(agent, _, _)| *agent)
             .unwrap_or_else(|| convoy_core::review::reviewer(workspace, builder));
         Ok((builder.project_id.clone(), reviewer))
     })?;
@@ -509,14 +511,19 @@ pub fn review_create(
     let skills = crate::skills::resolve(&storage, &project, Some(reviewer), None)?;
     workspace.act(|workspace| {
         let mut input = convoy_core::review::handoff(workspace, &id, prompt)?;
-        if let Some((agent, acp)) = agent.clone() {
+        // The project's reviewer comes with its account; a reviewer picked
+        // here with the one picked, or its provider's.
+        let picked = profile_id.filter(|id| !id.is_empty());
+        if let Some((agent, acp, key_profile)) = agent.clone() {
             input.agent = agent;
             input.acp_agent = acp;
+            input.profile_id = picked.or(key_profile);
+        } else if picked.is_some() {
+            input.profile_id = picked;
         }
         input.skills = skills;
         input.model = model.unwrap_or_default();
         input.effort = effort.unwrap_or_default();
-        input.profile_id = profile_id.filter(|id| !id.is_empty());
         let state = workspace.add_session(input)?;
         Ok(state
             .sessions

@@ -47,6 +47,15 @@ export const isProviderAccount = (id) => !!id && (state.profiles ?? []).some((it
 /// the DeepSeek account, the agent otherwise.
 export const pickedAgent = (agent, account) => (agent === "claude" && account && account === deepseekProfile()?.id ? "deepseek" : agent);
 
+/// A dialog's agent and account from a window key: `deepseek` is Claude
+/// Code on the DeepSeek account; anything else is the agent itself, with
+/// the account `fallback` gives it.
+export function fromKey(key, fallback = () => "") {
+  if (key === "deepseek" && deepseekProfile()) return { agent: "claude", account: deepseekProfile().id };
+  const agent = key === "deepseek" ? "claude" : key || "claude";
+  return { agent, account: fallback(agent) };
+}
+
 /// Picker rows: Claude and Codex (those installed, when known), DeepSeek
 /// when connected and `providers` allows it, then the installed ACP agents
 /// — and always the one already chosen, so a choice never disappears from

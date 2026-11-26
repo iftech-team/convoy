@@ -426,9 +426,14 @@ pub fn handoff(
     let task = find(workspace, task_id)?;
     let title = head(&format!("QA: {}", task.title), 200).to_string();
     let mut input = NewSession::new(task.project_id.clone(), agent, title);
-    // An ACP QA agent is the one the project names.
+    // An ACP QA agent is the one the project names, and the account it
+    // runs on is the project's too.
+    let project = workspace.project(&task.project_id)?;
     if agent == Agent::Acp {
-        input.acp_agent = workspace.project(&task.project_id)?.qa_acp_agent.clone();
+        input.acp_agent = project.qa_acp_agent.clone();
+    }
+    if project.qa_agent == Some(agent) {
+        input.profile_id = project.qa_profile.clone();
     }
     input.prompt = prompt;
     input.qa_of = Some(task_id.to_string());

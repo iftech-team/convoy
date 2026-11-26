@@ -229,6 +229,7 @@ pub fn project_detail(
 ) -> Result<ProjectDetail, String> {
     workspace.act(|workspace| {
         let project = workspace.project(&id)?;
+        let profiles = &workspace.state().profiles;
         Ok(ProjectDetail {
             id: project.id.clone(),
             title: project.title.clone(),
@@ -241,7 +242,7 @@ pub fn project_detail(
             color: project.color.clone().unwrap_or_default(),
             default_agent: project
                 .default_agent
-                .map(|agent| convoy_core::provider::acp_agents::key(agent, project.default_acp_agent.as_deref()))
+                .map(|agent| convoy_core::provider::api::role_key(profiles, agent, project.default_acp_agent.as_deref(), project.default_profile.as_deref()))
                 .unwrap_or_default(),
             base_ref: project.base_ref.clone().unwrap_or_default(),
             branch_prefix: project.branch_prefix.clone().unwrap_or_default(),
@@ -250,11 +251,11 @@ pub fn project_detail(
             test_commands: project.test_commands.clone().unwrap_or_default(),
             qa_agent: project
                 .qa_agent
-                .map(|agent| convoy_core::provider::acp_agents::key(agent, project.qa_acp_agent.as_deref()))
+                .map(|agent| convoy_core::provider::api::role_key(profiles, agent, project.qa_acp_agent.as_deref(), project.qa_profile.as_deref()))
                 .unwrap_or_default(),
             review_agent: project
                 .review_agent
-                .map(|agent| convoy_core::provider::acp_agents::key(agent, project.review_acp_agent.as_deref()))
+                .map(|agent| convoy_core::provider::api::role_key(profiles, agent, project.review_acp_agent.as_deref(), project.review_profile.as_deref()))
                 .unwrap_or_default(),
             qa_auto: project.qa_auto == Some(true),
             qa_timeout: project

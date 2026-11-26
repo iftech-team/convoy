@@ -6,13 +6,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { t } from "./i18n.js";
 import { plural } from "./ui.js";
-import { agentOptions } from "./agents.js";
+import { agentOptions, pickedAgent } from "./agents.js";
 import { catalog, storageNote } from "./integrations-catalog.js";
 import { TASK_MODES, taskModeOf } from "./task-defaults.js";
 
 const MODELS = {
   claude: [["fable", "Fable · most capable"], ["opus", "Opus"], ["sonnet", "Sonnet · balanced"], ["haiku", "Haiku · fastest"]],
   codex: [["gpt-5-codex", "GPT-5 Codex"], ["gpt-5", "GPT-5"], ["o3", "o3"]],
+  deepseek: [["deepseek-flash[1m]", "DeepSeek Flash"], ["claude-opus-4-5", "DeepSeek V4 Pro"]],
 };
 const AUTH = {
   apiKey: { linear: "API key", jira: "API token", peshbar: "API token", notion: "Integration token" },
@@ -47,7 +48,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
   };
 
   const agentSelect = (attrs, value) =>
-    `<select ${attrs}>${agentOptions({ chosen: value })
+    `<select ${attrs}>${agentOptions({ chosen: value, providers: true })
       .map(([id, name]) => `<option value="${escape(id)}"${id === value ? " selected" : ""}>${escape(name)}</option>`)
       .join("")}</select>`;
 
@@ -355,7 +356,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
           <select id="imp-mode">${TASK_MODES.map(([id, name]) => `<option value="${id}"${id === draft.mode ? " selected" : ""}>${escape(t(name))}</option>`).join("")}</select>
         </label>
       </div>
-      ${modelList("claude")}${modelList("codex")}`;
+      ${modelList("claude")}${modelList("codex")}${modelList("deepseek")}`;
 
     const foot = `
       <label class="import__check"><input type="checkbox" id="imp-review"${draft.autoReview ? " checked" : ""} /> ${escape(t("Auto-review"))}</label>
@@ -466,7 +467,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
         ${modelInput('id="task-model"', draft.agent, draft.model)}
         <span class="field__note">${escape(t("Passed as --model; leave empty for the CLI default."))}</span>
       </label>
-      ${modelList("claude")}${modelList("codex")}`,
+      ${modelList("claude")}${modelList("codex")}${modelList("deepseek")}`,
       `<button class="button" data-dismiss="1">${escape(t("Cancel"))}</button>
        <button class="button button--primary" data-action="task-save">${escape(t("Save"))}</button>`);
   }
@@ -520,7 +521,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
     }
     if (data.taskEdit) {
       const task = state.tasks.find((item) => item.id === data.taskEdit);
-      state.dialog = { kind: "task-model", id: task.id, title: task.title, agent: task.agent, model: task.model || "", effort: task.effort || "" };
+      state.dialog = { kind: "task-model", id: task.id, title: task.title, agent: pickedAgent(task.agent, task.profile_id), model: task.model || "", effort: task.effort || "" };
       return render(), true;
     }
     if (data.issue) {
@@ -675,7 +676,7 @@ export function installTasks({ state, escape, icons, call, callDone, toast, rend
   const editModel = (id) => {
     const task = state.tasks.find((item) => item.id === id);
     if (!task) return;
-    state.dialog = { kind: "task-model", id: task.id, title: task.title, agent: task.agent, model: task.model || "", effort: task.effort || "" };
+    state.dialog = { kind: "task-model", id: task.id, title: task.title, agent: pickedAgent(task.agent, task.profile_id), model: task.model || "", effort: task.effort || "" };
     render();
   };
   return { dialog, loadTasks, onClick, onInput, onChange, onEnter, editModel };

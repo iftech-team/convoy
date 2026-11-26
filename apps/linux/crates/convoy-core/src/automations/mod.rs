@@ -206,8 +206,8 @@ pub fn validate(input: &AutomationInput, workspace: &Workspace) -> Result<(Agent
         "The prompt is too long (32,000 characters at most)."
     );
     workspace.project(&input.project_id)?;
-    let (agent, acp_agent) = crate::provider::acp_agents::parse_key(&input.agent)
-        .ok_or_else(|| ConvoyError::message("Unknown agent. Use claude, codex or acp:<id>."))?;
+    let (agent, acp_agent, _) = crate::provider::api::resolve_key(&workspace.state().profiles, &input.agent)
+        .map_err(|_| ConvoyError::message("Unknown agent. Use claude, codex or acp:<id>."))?;
     if agent == Agent::Acp {
         crate::provider::acp_agents::find(workspace.settings(), acp_agent.as_deref())?;
         ensure!(
@@ -480,7 +480,12 @@ impl Store {
         // A terminal run ends on its agent's hook, which only Claude and
         // Codex have: an ACP agent always runs as a chat.
         let view = if agent == Agent::Acp { "chat".to_string() } else { input.view.clone() };
-        let profile_id = input.profile_id.clone().filter(|id| !id.is_empty());
+        // A provider named as the agent (DeepSeek) brings its account.
+        let profile_id = input.profile_id.clone().filter(|id| !id.is_empty()).or_else(|| {
+            crate::provider::api::resolve_key(&workspace.state().profiles, &input.agent)
+                .ok()
+                .and_then(|(_, _, profile)| profile)
+        });
         match input.id.clone() {
             Some(id) => self.with(&id, |automation| {
                 ensure!(

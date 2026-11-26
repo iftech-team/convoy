@@ -466,7 +466,7 @@ function agents(settings) {
         t("Preselected for a new session and a new task. Reviews default to the other agent."),
         segmented(
           "default_agent",
-          agentOptions({ chosen: settings.default_agent }).map(([value, name]) => [value, name, agentIcon(value, 13)]),
+          agentOptions({ chosen: settings.default_agent, providers: true }).map(([value, name]) => [value, name, agentIcon(value, 13)]),
           settings.default_agent,
         ),
       ) +

@@ -2,7 +2,7 @@
 
 import { installTasks } from "./tasks.js";
 import { agentName, newTaskDefaults } from "./task-defaults.js";
-import { acpAgents, deepseekProfile, hasTerminal, isAcp, isProviderAccount, loadAcpAgents, loadAcpRegistry, splitCommand } from "./agents.js";
+import { acpAgents, deepseekProfile, fromKey, hasTerminal, isAcp, isProviderAccount, loadAcpAgents, loadAcpRegistry, splitCommand } from "./agents.js";
 import { dropStatus, movable } from "./phase.js";
 import { presetPatch } from "./presets.js";
 import { sessionLabel } from "./session-state.js";
@@ -3089,9 +3089,10 @@ async function openNewSession(projectId) {
 async function sessionProject(draft, projectId) {
   const target = state.projects.find((item) => item.id === projectId);
   draft.projectId = projectId;
-  draft.agent = target?.default_agent || state.settings.default_agent;
-  draft.account = activeAccount(draft.agent);
-  Object.assign(draft, lastChoice(draft.agent));
+  const picked = fromKey(target?.default_agent || state.settings.default_agent, activeAccount);
+  draft.agent = picked.agent;
+  draft.account = picked.account;
+  if (!isProviderAccount(picked.account)) Object.assign(draft, lastChoice(draft.agent));
   draft.worktree = !!state.settings.worktree_by_default;
   draft.branchEdited = false;
   draft.branch = suggestBranch(draft.title || "session", projectId);
@@ -3231,8 +3232,9 @@ async function openReview() {
   // The project's reviewer, or else the other agent: a second opinion from a
   // different model. Claude and Codex review each other, and Claude reviews
   // any other agent.
-  const agent = state.projects.find((item) => item.id === current.project_id)?.review_agent || (current.agent === "claude" ? "codex" : "claude");
-  openModal({ kind: "review", id: current.id, brief, agent, ...lastChoice(agent), account: activeAccount(agent) });
+  const key = state.projects.find((item) => item.id === current.project_id)?.review_agent || (current.agent === "claude" ? "codex" : "claude");
+  const { agent, account } = fromKey(key, activeAccount);
+  openModal({ kind: "review", id: current.id, brief, agent, ...(isProviderAccount(account) ? {} : lastChoice(agent)), account });
 }
 
 async function createReview() {
@@ -3630,7 +3632,8 @@ async function openTranscripts() {
   await loadProfiles();
   openModal({
     kind: "transcripts",
-    agent: state.settings.default_agent,
+    // History import reads Claude's and Codex's own files.
+    agent: ["claude", "codex"].includes(state.settings.default_agent) ? state.settings.default_agent : "claude",
     profile: "",
     found: null,
     scanning: false,
@@ -3880,7 +3883,9 @@ Object.assign(ACTIONS, {
 /// machine's last model and account for its agent.
 function newTask() {
   const defaults = newTaskDefaults(project(), state.settings);
-  return { ...defaults, ...lastChoice(defaults.agent), profile_id: activeAccount(defaults.agent) };
+  const picked = fromKey(defaults.agent, activeAccount);
+  const choice = isProviderAccount(picked.account) ? {} : lastChoice(picked.agent);
+  return { ...defaults, ...choice, agent: picked.agent, profile_id: picked.account };
 }
 
 // ------------------------------------------------------------- planning ---

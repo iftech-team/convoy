@@ -395,18 +395,25 @@ pub async fn issues_import(
     } else {
         issues
     };
+    // `claude`, `codex`, `acp:<id>` or a provider such as `deepseek`.
+    let profiles = workspace.with(|core| Ok::<_, String>(core.state().profiles.clone()))?;
+    let resolve = |key: &str| {
+        convoy_core::provider::api::resolve_key(&profiles, key).map_err(|error| error.to_string())
+    };
     let mut overrides = BTreeMap::new();
     let mut acp_overrides = BTreeMap::new();
+    let mut profile_overrides = BTreeMap::new();
     for (key, pick) in options.overrides {
-        let (agent, acp) = convoy_core::provider::acp_agents::parse_key(&pick.agent)
-            .ok_or("Unknown agent.")?;
+        let (agent, acp, profile) = resolve(&pick.agent)?;
         if let Some(acp) = acp {
             acp_overrides.insert(key.clone(), acp);
         }
+        if let Some(profile) = profile {
+            profile_overrides.insert(key.clone(), profile);
+        }
         overrides.insert(key, (agent, pick.model));
     }
-    let (agent, acp_agent) =
-        convoy_core::provider::acp_agents::parse_key(&options.agent).ok_or("Unknown agent.")?;
+    let (agent, acp_agent, profile_id) = resolve(&options.agent)?;
     let skills = crate::skills::resolve(&workspace.storage, &project_id, None, None)?;
     let options = ImportOptions {
         skills,
@@ -417,6 +424,8 @@ pub async fn issues_import(
         overrides,
         acp_agent,
         acp_overrides,
+        profile_id,
+        profile_overrides,
     };
     let (created, skipped) = import_into(&workspace, &project_id, &connection, &issues, &options)?;
     download_attachments(&workspace, &connection, &created, &issues).await;
@@ -630,14 +639,21 @@ async fn intake_one(
     })
     .await
     .map_err(|error| error.to_string())??;
-    let (agent, mode, auto_review) = workspace.with(|core| {
+    let (agent, acp_agent, profile_id, mode, auto_review) = workspace.with(|core| {
         let project = core
             .project(project_id)
             .map_err(|error| error.to_string())?;
+        let settings = core.settings();
+        // The project's default agent, or the global one, with its ACP id
+        // and account.
+        let (agent, acp_agent, profile_id) = match project.default_agent {
+            Some(agent) => (agent, project.default_acp_agent.clone(), project.default_profile.clone()),
+            None => (settings.default_agent, settings.default_acp_agent.clone(), settings.default_profile.clone()),
+        };
         Ok((
-            project
-                .default_agent
-                .unwrap_or(core.settings().default_agent),
+            agent,
+            acp_agent,
+            profile_id,
             project
                 .task_mode
                 .as_deref()
@@ -653,8 +669,10 @@ async fn intake_one(
         mode,
         auto_review,
         overrides: BTreeMap::new(),
-        acp_agent: None,
+        acp_agent,
         acp_overrides: BTreeMap::new(),
+        profile_id,
+        profile_overrides: BTreeMap::new(),
     };
     let (created, _) = import_into(workspace, project_id, &connection, &issues, &options)?;
     download_attachments(workspace, &connection, &created, &issues).await;
@@ -690,7 +708,13 @@ pub fn tasks_for(
                 id: task.id.clone(),
                 title: task.title.clone(),
                 details: task.details.clone(),
-                agent: convoy_core::provider::acp_agents::key(task.agent, task.acp_agent.as_deref()),
+                // A task on DeepSeek shows as DeepSeek.
+                agent: convoy_core::provider::api::role_key(
+                    &workspace.state().profiles,
+                    task.agent,
+                    task.acp_agent.as_deref(),
+                    task.profile_id.as_deref(),
+                ),
                 model: task.model.clone(),
                 status: task.status.as_str().to_string(),
                 mode: task.mode,
@@ -710,8 +734,23 @@ pub fn task_agent(
     effort: Option<String>,
     workspace: State<'_, Workspace>,
 ) -> Result<(), String> {
-    let (agent, acp_agent) = convoy_core::provider::acp_agents::parse_key(&agent).ok_or("Unknown agent.")?;
+    let (agent, acp_agent, key_profile) = crate::commands::agents::resolve(&workspace, &agent)?;
     workspace.with(|workspace| {
+        // Leaving a provider (DeepSeek) for plain Claude lets its account go;
+        // picking the provider takes it.
+        let on_provider = workspace
+            .state()
+            .tasks
+            .iter()
+            .find(|task| task.id == id)
+            .and_then(|task| task.profile_id.clone())
+            .is_some_and(|profile| {
+                workspace
+                    .state()
+                    .profiles
+                    .iter()
+                    .any(|item| item.id == profile && item.provider.is_some())
+            });
         workspace
             .set_task_agent_with(
                 &id,
@@ -720,8 +759,13 @@ pub fn task_agent(
                 &model,
                 effort.as_deref().unwrap_or_default(),
             )
-            .map(|_| ())
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        if key_profile.is_some() || on_provider {
+            workspace
+                .set_task_account(&id, key_profile)
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
     })
 }
 

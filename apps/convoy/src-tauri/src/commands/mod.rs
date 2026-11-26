@@ -310,7 +310,7 @@ pub fn workspace_read(
                     color: project.color.clone(),
                     default_agent: project
                         .default_agent
-                        .map(|agent| convoy_core::provider::acp_agents::key(agent, project.default_acp_agent.as_deref())),
+                        .map(|agent| convoy_core::provider::api::role_key(&state.profiles, agent, project.default_acp_agent.as_deref(), project.default_profile.as_deref())),
                     branch_prefix: project.branch_prefix.clone(),
                     task_mode: project.task_mode.clone(),
                     auto_run_tasks: project.auto_run_tasks == Some(true),
@@ -319,7 +319,7 @@ pub fn workspace_read(
                     review_auto: project.review_auto == Some(true),
                     review_agent: project
                         .review_agent
-                        .map(|agent| convoy_core::provider::acp_agents::key(agent, project.review_acp_agent.as_deref())),
+                        .map(|agent| convoy_core::provider::api::role_key(&state.profiles, agent, project.review_acp_agent.as_deref(), project.review_profile.as_deref())),
                     plan_first_default: project.plan_first_default == Some(true),
                     docs_auto: project.docs_auto == Some(true),
                     sessions: own.iter().filter(|session| !session.is_archived()).count(),
@@ -401,9 +401,11 @@ pub fn settings_read(workspace: State<'_, Workspace>) -> Result<SettingsView, St
                 convoy_core::model::Theme::System => "system",
             }
             .to_string(),
-            default_agent: convoy_core::provider::acp_agents::key(
+            default_agent: convoy_core::provider::api::role_key(
+                &workspace.state().profiles,
                 settings.default_agent,
                 settings.default_acp_agent.as_deref(),
+                settings.default_profile.as_deref(),
             ),
             font_size: settings.font_size,
             scrollback: settings.scrollback,
@@ -524,14 +526,16 @@ pub fn settings_save(input: SettingsInput, workspace: State<'_, Workspace>) -> R
         "sessions" => KeepAwake::Sessions,
         other => return Err(format!("Unknown keep-awake mode: {other}")),
     };
-    let (default_agent, default_acp_agent) =
-        convoy_core::provider::acp_agents::parse_key(&input.default_agent).ok_or("Unknown agent.")?;
     workspace.act(|workspace| {
+        // `claude`, `codex`, `acp:<id>` or a provider such as `deepseek`.
+        let (default_agent, default_acp_agent, default_profile) =
+            convoy_core::provider::api::resolve_key(&workspace.state().profiles, &input.default_agent)?;
         workspace
             .save_settings(convoy_core::workspace::SettingsPatch {
                 theme: Some(theme),
                 default_agent: Some(default_agent),
                 default_acp_agent,
+                default_profile,
                 acp_agents: None,
                 font_size: Some(input.font_size),
                 scrollback: Some(input.scrollback),

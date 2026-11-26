@@ -167,6 +167,8 @@ pub struct SettingsPatch {
     pub default_agent: Option<Agent>,
     /// The ACP agent, when `default_agent` is [`Agent::Acp`].
     pub default_acp_agent: Option<String>,
+    /// The account the default agent runs on, set with `default_agent`.
+    pub default_profile: Option<String>,
     /// Replaces the user's ACP agents; each is checked first.
     pub acp_agents: Option<Vec<crate::provider::acp_agents::AcpAgentDef>>,
     pub notifications: Option<bool>,
@@ -305,6 +307,7 @@ impl Workspace {
                     review_template: None,
                     default_agent: None,
                     default_acp_agent: None,
+                    default_profile: None,
                     base_ref: None,
                     branch_prefix: None,
                     task_mode: None,
@@ -313,6 +316,8 @@ impl Workspace {
                     qa_agent: None,
                     review_agent: None,
                     qa_acp_agent: None,
+                    qa_profile: None,
+                    review_profile: None,
                     review_acp_agent: None,
                     qa_auto: None,
                     qa_timeout: None,
@@ -355,17 +360,15 @@ impl Workspace {
                 "Enter a colour as #RRGGBB."
             );
         }
+        // `claude`, `codex`, `acp:<id>` or a provider such as `deepseek`:
+        // QA and review write their verdicts to a file, which any agent can.
+        let profiles = self.state.profiles.clone();
         #[allow(clippy::type_complexity)]
-        let agent = |value: Option<&str>| -> Result<Option<Option<(Agent, Option<String>)>>> {
+        let agent = |value: Option<&str>| -> Result<Option<Option<(Agent, Option<String>, Option<String>)>>> {
             Ok(match value {
                 None => None,
                 Some("") => Some(None),
-                // `claude`, `codex` or `acp:<id>`: QA and review write their
-                // verdicts to a file, which any agent can.
-                Some(value) => Some(Some(
-                    crate::provider::acp_agents::parse_key(value)
-                        .ok_or_else(|| ConvoyError::message("Unknown agent."))?,
-                )),
+                Some(value) => Some(Some(crate::provider::api::resolve_key(&profiles, value)?)),
             })
         };
         let qa_agent = agent(patch.qa_agent.as_deref())?;
@@ -408,15 +411,7 @@ impl Workspace {
                 "QA checks may take 1 to 240 minutes."
             );
         }
-        // `claude`, `codex` or `acp:<id>`.
-        let default_agent = match patch.default_agent.as_deref() {
-            None => None,
-            Some("") => Some(None),
-            Some(value) => Some(Some(
-                crate::provider::acp_agents::parse_key(value)
-                    .ok_or_else(|| ConvoyError::message("Unknown agent."))?,
-            )),
-        };
+        let default_agent = agent(patch.default_agent.as_deref())?;
         if let Some(prefix) = patch.branch_prefix.as_deref() {
             ensure!(
                 crate::patterns::BRANCH_PREFIX.is_match(prefix.trim().trim_matches('/')),
@@ -480,8 +475,9 @@ impl Workspace {
                 project.review_template = Some(value);
             }
             if let Some(value) = default_agent {
-                project.default_agent = value.as_ref().map(|(agent, _)| *agent);
-                project.default_acp_agent = value.and_then(|(_, acp)| acp);
+                project.default_agent = value.as_ref().map(|(agent, _, _)| *agent);
+                project.default_acp_agent = value.as_ref().and_then(|(_, acp, _)| acp.clone());
+                project.default_profile = value.and_then(|(_, _, profile)| profile);
             }
             // An empty value falls back to the global setting.
             let optional = |value: String| {
@@ -504,12 +500,14 @@ impl Workspace {
                 project.test_commands = Some(value).filter(|value| !value.trim().is_empty());
             }
             if let Some(value) = qa_agent {
-                project.qa_agent = value.as_ref().map(|(agent, _)| *agent);
-                project.qa_acp_agent = value.and_then(|(_, acp)| acp);
+                project.qa_agent = value.as_ref().map(|(agent, _, _)| *agent);
+                project.qa_acp_agent = value.as_ref().and_then(|(_, acp, _)| acp.clone());
+                project.qa_profile = value.and_then(|(_, _, profile)| profile);
             }
             if let Some(value) = review_agent {
-                project.review_agent = value.as_ref().map(|(agent, _)| *agent);
-                project.review_acp_agent = value.and_then(|(_, acp)| acp);
+                project.review_agent = value.as_ref().map(|(agent, _, _)| *agent);
+                project.review_acp_agent = value.as_ref().and_then(|(_, acp, _)| acp.clone());
+                project.review_profile = value.and_then(|(_, _, profile)| profile);
             }
             if let Some(value) = patch.qa_auto {
                 project.qa_auto = Some(value);
@@ -643,6 +641,7 @@ impl Workspace {
                     review_template: None,
                     default_agent: None,
                     default_acp_agent: None,
+                    default_profile: None,
                     base_ref: None,
                     branch_prefix: None,
                     task_mode: None,
@@ -651,6 +650,8 @@ impl Workspace {
                     qa_agent: None,
                     review_agent: None,
                     qa_acp_agent: None,
+                    qa_profile: None,
+                    review_profile: None,
                     review_acp_agent: None,
                     qa_auto: None,
                     qa_timeout: None,
@@ -1022,6 +1023,11 @@ impl Workspace {
                 Some(Agent::Acp) => patch.default_acp_agent.clone(),
                 Some(_) => None,
                 None => current.default_acp_agent.clone(),
+            },
+            default_profile: match patch.default_agent {
+                Some(Agent::Claude) => patch.default_profile.clone(),
+                Some(_) => None,
+                None => current.default_profile.clone(),
             },
             acp_agents: patch.acp_agents.clone().unwrap_or(current.acp_agents.clone()),
             notifications: patch.notifications.unwrap_or(current.notifications),

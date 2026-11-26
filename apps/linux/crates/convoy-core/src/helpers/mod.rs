@@ -531,8 +531,9 @@ pub fn plan_spawn(
         running < MAX_RUNNING,
         "{MAX_RUNNING} helpers are already running. Wait for one to finish first."
     );
-    let (agent, acp_agent) = crate::provider::acp_agents::parse_key(spawn.agent.trim())
-        .ok_or_else(|| ConvoyError::message("Unknown agent. Use claude, codex or acp:<id>."))?;
+    let (agent, acp_agent, provider_profile) =
+        crate::provider::api::resolve_key(&workspace.state().profiles, spawn.agent.trim())
+            .map_err(|_| ConvoyError::message("Unknown agent. Use claude, codex or acp:<id>."))?;
     let prompt = spawn.prompt.trim();
     ensure!(!prompt.is_empty(), "Give the helper a prompt.");
     ensure!(
@@ -569,7 +570,20 @@ pub fn plan_spawn(
     session.effort = effort;
     // The manager's own account when it is the same agent; otherwise the
     // system login, as a new session gets.
-    session.profile_id = caller.profile_id.clone().filter(|_| caller.agent == agent && agent.is_native());
+    session.profile_id = provider_profile.or_else(|| {
+        caller
+            .profile_id
+            .clone()
+            .filter(|_| caller.agent == agent && agent.is_native())
+            // A provider's account is asked for by its own name.
+            .filter(|id| {
+                !workspace
+                    .state()
+                    .profiles
+                    .iter()
+                    .any(|profile| &profile.id == id && profile.provider.is_some())
+            })
+    });
     Ok(HelperPlan {
         parent: caller.id.clone(),
         session,

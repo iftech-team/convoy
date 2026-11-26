@@ -322,6 +322,9 @@ pub struct Project {
     /// The ACP agent, when `default_agent` is [`Agent::Acp`].
     #[serde(rename = "defaultAcpAgent", default, skip_serializing_if = "Option::is_none")]
     pub default_acp_agent: Option<String>,
+    /// The account the default agent runs on: a provider's, such as DeepSeek.
+    #[serde(rename = "defaultProfile", default, skip_serializing_if = "Option::is_none")]
+    pub default_profile: Option<String>,
     /// What new worktrees start from; `None` is the current HEAD.
     #[serde(rename = "baseRef", default, skip_serializing_if = "Option::is_none")]
     pub base_ref: Option<String>,
@@ -361,6 +364,12 @@ pub struct Project {
         skip_serializing_if = "Option::is_none"
     )]
     pub review_agent: Option<Agent>,
+    /// The account the QA agent runs on: a provider's, such as DeepSeek.
+    #[serde(rename = "qaProfile", default, skip_serializing_if = "Option::is_none")]
+    pub qa_profile: Option<String>,
+    /// The account the reviewer runs on.
+    #[serde(rename = "reviewProfile", default, skip_serializing_if = "Option::is_none")]
+    pub review_profile: Option<String>,
     /// The ACP agent, when `qa_agent` is [`Agent::Acp`].
     #[serde(rename = "qaAcpAgent", default, skip_serializing_if = "Option::is_none")]
     pub qa_acp_agent: Option<String>,
@@ -869,6 +878,9 @@ pub struct Settings {
     /// The ACP agent, when `default_agent` is [`Agent::Acp`].
     #[serde(rename = "defaultAcpAgent", default, skip_serializing_if = "Option::is_none")]
     pub default_acp_agent: Option<String>,
+    /// The account the default agent runs on: a provider's, such as DeepSeek.
+    #[serde(rename = "defaultProfile", default, skip_serializing_if = "Option::is_none")]
+    pub default_profile: Option<String>,
     /// ACP agents the user added, or shipped ones they changed.
     #[serde(rename = "acpAgents", default, skip_serializing_if = "Vec::is_empty")]
     pub acp_agents: Vec<crate::provider::acp_agents::AcpAgentDef>,
@@ -1045,6 +1057,7 @@ impl Default for Settings {
             theme: default_theme(),
             default_agent: default_agent(),
             default_acp_agent: None,
+            default_profile: None,
             acp_agents: Vec::new(),
             notifications: false,
             keep_awake: default_keep_awake(),

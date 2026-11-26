@@ -132,3 +132,74 @@ fn an_unknown_acp_agent_is_refused() {
         )
         .is_err());
 }
+
+#[test]
+fn deepseek_fills_every_role_as_claude_on_its_account() {
+    let fixture = fixture();
+    let (mut workspace, project) = fixture.with_project();
+    // Not connected: DeepSeek cannot be picked.
+    assert!(workspace
+        .edit_project(
+            &project,
+            ProjectPatch {
+                review_agent: Some("deepseek".into()),
+                ..ProjectPatch::default()
+            },
+        )
+        .is_err());
+
+    workspace
+        .update(|state| {
+            state.profiles.push(convoy_core::model::Profile {
+                id: "ds".into(),
+                label: "DeepSeek".into(),
+                agent: Agent::Claude,
+                provider: Some("deepseek".into()),
+                unknown: Default::default(),
+            });
+            Ok(())
+        })
+        .unwrap();
+    workspace
+        .edit_project(
+            &project,
+            ProjectPatch {
+                default_agent: Some("deepseek".into()),
+                review_agent: Some("deepseek".into()),
+                qa_agent: Some("deepseek".into()),
+                ..ProjectPatch::default()
+            },
+        )
+        .unwrap();
+    let settings = workspace.project(&project).unwrap().clone();
+    assert_eq!(settings.review_agent, Some(Agent::Claude));
+    assert_eq!(settings.review_profile.as_deref(), Some("ds"));
+    assert_eq!(settings.qa_profile.as_deref(), Some("ds"));
+    assert_eq!(settings.default_profile.as_deref(), Some("ds"));
+    let profiles = workspace.state().profiles.clone();
+    assert_eq!(
+        convoy_core::provider::api::role_key(&profiles, Agent::Claude, None, Some("ds")),
+        "deepseek"
+    );
+    assert_eq!(convoy_core::provider::api::role_key(&profiles, Agent::Claude, None, None), "claude");
+
+    let id = task(&mut workspace, &project, Agent::Codex, None);
+    let builder = workspace.state().tasks[0].session_id.clone().unwrap();
+    let review = convoy_core::review::handoff(&workspace, &builder, String::new()).unwrap();
+    assert_eq!((review.agent, review.profile_id.as_deref()), (Agent::Claude, Some("ds")));
+    let tester = qa::handoff(&workspace, &id, Agent::Claude, String::new()).unwrap();
+    assert_eq!(tester.profile_id.as_deref(), Some("ds"));
+
+    // Back to Claude: the account goes with it.
+    workspace
+        .edit_project(
+            &project,
+            ProjectPatch {
+                review_agent: Some("claude".into()),
+                ..ProjectPatch::default()
+            },
+        )
+        .unwrap();
+    let review = convoy_core::review::handoff(&workspace, &builder, String::new()).unwrap();
+    assert_eq!(review.profile_id, None);
+}

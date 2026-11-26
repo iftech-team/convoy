@@ -4,7 +4,7 @@
 
 import { attempt, done, ensureModels, activeAccount, lastChoice, state, toast } from "./state.js";
 import { t } from "./i18n.js";
-import { agentKey, deepseekProfile, isAcp, isProviderAccount } from "./agents.js";
+import { agentKey, deepseekProfile, fromKey, isAcp, isProviderAccount } from "./agents.js";
 import { DAYS, draftSchedule, previewBlock } from "./views-automations.js";
 import { fitSkills } from "./skills.js";
 import { autoSkills } from "./views-skills.js";
@@ -56,7 +56,8 @@ export function installAutomations({ render, openModal, closeDialog, selectProje
   }
 
   function open(item) {
-    const agent = (item ? agentKey(item) : null) ?? state.settings.default_agent ?? "claude";
+    const picked = fromKey((item ? agentKey(item) : null) ?? state.settings.default_agent ?? "claude", activeAccount);
+    const agent = picked.agent;
     const schedule = item?.schedule ?? { kind: "weekdays", at: "09:00", days: ["mon", "tue", "wed", "thu", "fri"] };
     const fresh = item ? {} : lastChoice(agent);
     openModal({
@@ -66,7 +67,7 @@ export function installAutomations({ render, openModal, closeDialog, selectProje
       title: item?.title ?? "",
       prompt: item?.prompt ?? "",
       agent,
-      account: item ? (item.profile_id ?? "") : activeAccount(agent),
+      account: item ? (item.profile_id ?? "") : picked.account,
       model: item?.model ?? fresh.model ?? "",
       effort: item?.effort ?? fresh.effort ?? "",
       view: item?.view ?? "terminal",

@@ -154,6 +154,8 @@ fn a_status_change_or_a_new_pull_request_is_noted_for_the_tracker() {
         overrides: BTreeMap::new(),
         acp_agent: None,
         acp_overrides: BTreeMap::new(),
+        profile_id: None,
+        profile_overrides: BTreeMap::new(),
     };
     let issue = Issue {
         key: "MOB-4".into(),

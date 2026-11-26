@@ -68,6 +68,10 @@ pub struct ImportOptions {
     pub acp_agent: Option<String>,
     /// The ACP agent of each override whose agent is [`Agent::Acp`].
     pub acp_overrides: BTreeMap<String, String>,
+    /// The account the tasks run on: a provider's, such as DeepSeek.
+    pub profile_id: Option<String>,
+    /// The account of each override that names one.
+    pub profile_overrides: BTreeMap<String, String>,
     /// Skills every imported task starts with.
     pub skills: Vec<String>,
 }
@@ -945,6 +949,10 @@ impl Workspace {
                     None => options.acp_agent.clone(),
                 }
                 .filter(|_| agent == Agent::Acp);
+                let profile_id = match picks.get(&issue.key) {
+                    Some(_) => options.profile_overrides.get(&issue.key).cloned(),
+                    None => options.profile_id.clone(),
+                };
                 created.push(Task {
                     id: new_id(),
                     project_id: project_id.to_string(),
@@ -972,7 +980,7 @@ impl Workspace {
                     pr_url: None,
                     depends_on: Vec::new(),
                     related: Vec::new(),
-                    profile_id: None,
+                    profile_id,
                     skills: attached(options.skills.clone()),
                     sync: None,
                     qa: None,

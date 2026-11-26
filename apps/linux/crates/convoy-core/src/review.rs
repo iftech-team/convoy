@@ -86,11 +86,24 @@ pub fn reviewer_acp(workspace: &Workspace, builder: &Session) -> Option<String> 
         .and_then(|project| project.review_acp_agent.clone())
 }
 
-/// The reviewer as the window names it: `claude`, `codex` or `acp:<id>`.
+/// The account the reviewer runs on, when the project names one with it:
+/// a provider's, such as DeepSeek.
+pub fn reviewer_profile(workspace: &Workspace, builder: &Session) -> Option<String> {
+    workspace
+        .project(&builder.project_id)
+        .ok()
+        .filter(|project| project.review_agent.is_some())
+        .and_then(|project| project.review_profile.clone())
+}
+
+/// The reviewer as the window names it: `claude`, `codex`, `acp:<id>` or a
+/// provider such as `deepseek`.
 pub fn reviewer_key(workspace: &Workspace, builder: &Session) -> String {
-    crate::provider::acp_agents::key(
+    crate::provider::api::role_key(
+        &workspace.state().profiles,
         reviewer(workspace, builder),
         reviewer_acp(workspace, builder).as_deref(),
+        reviewer_profile(workspace, builder).as_deref(),
     )
 }
 
@@ -102,6 +115,7 @@ pub fn handoff(workspace: &Workspace, id: &str, prompt: String) -> Result<NewSes
     let title = head(&format!("Review: {}", session.title), 200).to_string();
     let mut input = NewSession::new(session.project_id.clone(), agent, title);
     input.acp_agent = reviewer_acp(workspace, &session).filter(|_| agent == Agent::Acp);
+    input.profile_id = reviewer_profile(workspace, &session);
     input.prompt = prompt;
     input.review_of = Some(session.id);
     Ok(input)

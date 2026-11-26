@@ -288,6 +288,7 @@ impl Merge<'_> {
                 review_template: text(project, "reviewTemplate"),
                 default_agent: agent(project.get("defaultAgent").and_then(Value::as_str)),
                 default_acp_agent: None,
+                default_profile: None,
                 base_ref: text(project, "baseRef"),
                 branch_prefix: text(project, "branchPrefix"),
                 // The macOS app finishes tasks with a pull request unless told otherwise.
@@ -297,6 +298,8 @@ impl Merge<'_> {
                 qa_agent: None,
                 review_agent: None,
                 qa_acp_agent: None,
+                qa_profile: None,
+                review_profile: None,
                 review_acp_agent: None,
                 qa_auto: None,
                 qa_timeout: None,

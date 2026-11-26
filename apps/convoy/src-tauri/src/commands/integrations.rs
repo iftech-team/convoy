@@ -118,6 +118,30 @@ pub fn api_provider_remove(provider: String, workspace: State<'_, Workspace>) ->
         if !bound {
             core.update(move |state| {
                 state.profiles.retain(|profile| profile.id != id);
+                // Roles that ran on it go back to their defaults.
+                let gone = |profile: &Option<String>| profile.as_deref() == Some(id.as_str());
+                for project in state.projects.iter_mut() {
+                    if gone(&project.default_profile) {
+                        project.default_agent = None;
+                        project.default_profile = None;
+                    }
+                    if gone(&project.qa_profile) {
+                        project.qa_agent = None;
+                        project.qa_profile = None;
+                    }
+                    if gone(&project.review_profile) {
+                        project.review_agent = None;
+                        project.review_profile = None;
+                    }
+                }
+                if gone(&state.settings.default_profile) {
+                    state.settings.default_profile = None;
+                }
+                for task in state.tasks.iter_mut() {
+                    if gone(&task.profile_id) {
+                        task.profile_id = None;
+                    }
+                }
                 Ok(())
             })?;
         }

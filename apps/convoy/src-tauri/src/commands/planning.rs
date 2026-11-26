@@ -315,7 +315,7 @@ pub struct TaskFormInput {
 #[tauri::command]
 /// Returns the task's id, so a new task can be run at once.
 pub fn task_save(input: TaskFormInput, workspace: State<'_, Workspace>) -> Result<String, String> {
-    let (agent, acp_agent) = convoy_core::provider::acp_agents::parse_key(&input.agent).ok_or("Unknown agent.")?;
+    let (agent, acp_agent, key_profile) = super::agents::resolve(&workspace, &input.agent)?;
     let mode = PublishMode::parse(&input.mode)
         .ok_or_else(|| format!("Unknown publication mode: {}", input.mode))?;
     let existing = input.id.clone().filter(|id| !id.is_empty());
@@ -342,13 +342,18 @@ pub fn task_save(input: TaskFormInput, workspace: State<'_, Workspace>) -> Resul
             mode,
             auto_review: input.auto_review,
         })?;
-        Ok(existing.unwrap_or_else(|| {
+        let id = existing.unwrap_or_else(|| {
             state
                 .tasks
                 .last()
                 .map(|task| task.id.clone())
                 .unwrap_or_default()
-        }))
+        });
+        // A provider named as the agent runs the task on its account.
+        if key_profile.is_some() {
+            workspace.set_task_account(&id, key_profile)?;
+        }
+        Ok(id)
     })
 }
 
