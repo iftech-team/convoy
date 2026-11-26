@@ -79,26 +79,6 @@ export const TERMINAL_THEMES = [
     },
   },
   {
-    // Catppuccin's Latte flavour. Its text and subtext0 are too faint for the
-    // window's text on its base, so text takes Frappé's base and muted text
-    // Latte's subtext1; the terminal keeps Latte as drawn.
-    id: "catppuccin-latte",
-    name: "Catppuccin Latte",
-    kind: "light",
-    ui: { bg: "#eff1f5", subtle: "#e6e9ef", sunken: "#dce0e8", hover: "#ccd0da", active: "#bcc0cc", border: "#ccd0da", borderStrong: "#bcc0cc", text: "#303446", muted: "#5c5f77", faint: "#8c8fa1", accent: "#8839ef", accentText: "#8839ef" },
-    colors: {
-      background: "#eff1f5",
-      foreground: "#4c4f69",
-      cursor: "#dc8a78",
-      cursorAccent: "#eff1f5",
-      selectionBackground: "rgba(124, 127, 147, 0.3)",
-      ...palette([
-        "#5c5f77", "#d20f39", "#40a02b", "#df8e1d", "#1e66f5", "#ea76cb", "#179299", "#acb0be",
-        "#6c6f85", "#d20f39", "#40a02b", "#df8e1d", "#1e66f5", "#ea76cb", "#179299", "#bcc0cc",
-      ]),
-    },
-  },
-  {
     id: "solarized-light",
     name: "Solarized Light",
     kind: "light",
@@ -259,13 +239,12 @@ export const TERMINAL_THEMES = [
     },
   },
   {
-    // Catppuccin's Frappé flavour. Its text is too faint for the window's text
-    // on its base, so that takes Latte's mantle; buttons take Latte's mauve,
-    // as in Mocha. The terminal keeps Frappé as drawn.
+    // Catppuccin's Frappé flavour. Its mauve is too light for the white text
+    // of a button, so buttons take Latte's deeper mauve, as in Mocha.
     id: "catppuccin-frappe",
     name: "Catppuccin Frappé",
     kind: "dark",
-    ui: { bg: "#303446", subtle: "#292c3c", sunken: "#232634", hover: "#414559", active: "#51576d", border: "#414559", borderStrong: "#51576d", text: "#e6e9ef", muted: "#a5adce", faint: "#838ba7", accent: "#8839ef", accentText: "#ca9ee6" },
+    ui: { bg: "#303446", subtle: "#292c3c", sunken: "#232634", hover: "#414559", active: "#51576d", border: "#414559", borderStrong: "#51576d", text: "#c6d0f5", muted: "#a5adce", faint: "#838ba7", accent: "#8839ef", accentText: "#ca9ee6" },
     colors: {
       background: "#303446",
       foreground: "#c6d0f5",
@@ -279,13 +258,12 @@ export const TERMINAL_THEMES = [
     },
   },
   {
-    // Catppuccin's Macchiato flavour. The window's text takes Mocha's, a shade
-    // lighter than its own, to read on its base; buttons take Latte's mauve,
-    // as in Mocha. The terminal keeps Macchiato as drawn.
+    // Catppuccin's Macchiato flavour. Its mauve is too light for the white
+    // text of a button, so buttons take Latte's deeper mauve, as in Mocha.
     id: "catppuccin-macchiato",
     name: "Catppuccin Macchiato",
     kind: "dark",
-    ui: { bg: "#24273a", subtle: "#1e2030", sunken: "#181926", hover: "#363a4f", active: "#494d64", border: "#363a4f", borderStrong: "#494d64", text: "#cdd6f4", muted: "#a5adcb", faint: "#8087a2", accent: "#8839ef", accentText: "#c6a0f6" },
+    ui: { bg: "#24273a", subtle: "#1e2030", sunken: "#181926", hover: "#363a4f", active: "#494d64", border: "#363a4f", borderStrong: "#494d64", text: "#cad3f5", muted: "#a5adcb", faint: "#8087a2", accent: "#8839ef", accentText: "#c6a0f6" },
     colors: {
       background: "#24273a",
       foreground: "#cad3f5",
