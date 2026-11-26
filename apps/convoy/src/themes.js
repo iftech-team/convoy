@@ -116,25 +116,6 @@ export const TERMINAL_THEMES = [
     },
   },
   {
-    // Catppuccin's Latte flavour, the light pair of Mocha. Secondary text
-    // takes Subtext 1 rather than Subtext 0, which reads too faint on Base.
-    id: "catppuccin-latte",
-    name: "Catppuccin Latte",
-    kind: "light",
-    ui: { bg: "#eff1f5", subtle: "#e6e9ef", sunken: "#dce0e8", hover: "#e1e4eb", active: "#ccd0da", border: "#ccd0da", borderStrong: "#bcc0cc", text: "#4c4f69", muted: "#5c5f77", faint: "#8c8fa1", accent: "#8839ef", accentText: "#8839ef" },
-    colors: {
-      background: "#eff1f5",
-      foreground: "#4c4f69",
-      cursor: "#dc8a78",
-      cursorAccent: "#eff1f5",
-      selectionBackground: "rgba(124, 127, 147, 0.3)",
-      ...palette([
-        "#5c5f77", "#d20f39", "#40a02b", "#df8e1d", "#1e66f5", "#ea76cb", "#179299", "#acb0be",
-        "#6c6f85", "#d20f39", "#40a02b", "#df8e1d", "#1e66f5", "#ea76cb", "#179299", "#bcc0cc",
-      ]),
-    },
-  },
-  {
     id: "one-light",
     name: "One Light",
     kind: "light",
