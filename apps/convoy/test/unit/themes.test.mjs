@@ -85,6 +85,14 @@ test("a theme that colours the window keeps its text and accent readable", () =>
   }
 });
 
+test("Catppuccin comes in all four flavours, Latte light and the rest dark", () => {
+  const flavours = TERMINAL_THEMES.filter((theme) => theme.id.startsWith("catppuccin-"));
+  assert.deepEqual(
+    flavours.map((theme) => [theme.id, theme.kind]),
+    [["catppuccin-latte", "light"], ["catppuccin-frappe", "dark"], ["catppuccin-macchiato", "dark"], ["catppuccin-mocha", "dark"]],
+  );
+});
+
 test("Convoy's own look stays in tokens.css", () => {
   for (const id of Object.values(DEFAULT_THEME)) {
     assert.deepEqual(uiVariables(themeFor(id.endsWith("light") ? "light" : "dark", id)), {});
