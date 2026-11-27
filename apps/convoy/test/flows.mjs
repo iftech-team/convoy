@@ -1709,6 +1709,47 @@ try {
     const main = await page.locator(".main").boundingBox();
     assert.ok(column.x > main.x, "on the right, the column sits after the content");
   }
+  // The sidebar can sit on the right too, outside the tab column; slim, it is
+  // icons only and widens over the content while hovered, from its own edge.
+  await page.keyboard.press(`${primary}+Comma`);
+  await page.locator('[data-settings-section="General"]').click();
+  await page.locator('[data-pref-set="sidebar_side"][data-value="left"][aria-pressed="true"]').waitFor();
+  await page.locator('[data-pref-set="sidebar_side"][data-value="right"]').click();
+  await page.waitForFunction(() => window.savedSettings.sidebar_side === "right");
+  await page.locator('[data-action="close-settings"]').click();
+  await page.locator(".shell--sidebar-right .sidebar").waitFor();
+  {
+    const box = (selector) => page.locator(selector).boundingBox();
+    const [sidebar, column, main] = [await box(".sidebar"), await box(".vtabs"), await box(".main")];
+    assert.ok(main.x < column.x && column.x < sidebar.x, "content, then the tab column, then the sidebar at the edge");
+    await page.locator('.sidebar [data-action="sidebar-slim"]').click();
+    await page.locator(".shell--sidebar-slim .sidebar--slim").waitFor();
+    assert.equal(await page.evaluate(() => localStorage.getItem("convoy.sidebarSlim")), "1", "kept per machine");
+    await page.mouse.move(400, 400);
+    await page.waitForFunction(() => document.querySelector(".sidebar").getBoundingClientRect().width < 60);
+    const slim = await box(".sidebar");
+    assert.equal(await page.locator(".sidebar .project-row__title").first().isVisible(), false, "no names while slim");
+    if (shots) await page.screenshot({ path: `${shots}/sidebar-slim-right.png` });
+    await page.locator(".sidebar").hover();
+    await page.waitForFunction(() => document.querySelector(".sidebar").getBoundingClientRect().width > 200);
+    const open = await box(".sidebar");
+    assert.ok(Math.abs(open.x + open.width - (slim.x + slim.width)) <= 1, "it widens from the window's edge, over the content");
+    await page.locator(".sidebar .project-row__title").first().waitFor();
+    if (shots) await page.screenshot({ path: `${shots}/sidebar-slim-right-hover.png` });
+    await page.mouse.move(400, 400);
+    await page.waitForFunction(() => document.querySelector(".sidebar").getBoundingClientRect().width < 60);
+  }
+  // Settings turns slim off again, and the sidebar goes back to the left.
+  await page.keyboard.press(`${primary}+Comma`);
+  await page.locator('[data-settings-section="General"]').click();
+  await page.locator('[data-pref-toggle="sidebar_slim"][aria-pressed="true"]').click();
+  await page.locator('[data-pref-toggle="sidebar_slim"][aria-pressed="false"]').waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem("convoy.sidebarSlim")), "0");
+  await page.locator('[data-pref-set="sidebar_side"][data-value="left"]').click();
+  await page.waitForFunction(() => window.savedSettings.sidebar_side === "left");
+  await page.waitForFunction(() => !("sidebar_slim" in window.savedSettings));
+  await page.locator('[data-action="close-settings"]').click();
+  await page.locator(".shell:not(.shell--sidebar-right):not(.shell--sidebar-slim) .sidebar:not(.sidebar--slim)").waitFor();
   await page.keyboard.press(`${primary}+Comma`);
   await page.locator('[data-settings-section="General"]').click();
   await page.locator('[data-pref-toggle="tab_auto_fold"]').click();

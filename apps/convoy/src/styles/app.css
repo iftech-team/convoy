@@ -83,8 +83,10 @@ select:disabled {
 /* ---------------------------------------------------------------- shell -- */
 
 .shell {
+  /* The sidebar's column: its full width, or icons only when slim. */
+  --sidebar-col: var(--sidebar-width);
   display: grid;
-  grid-template-columns: var(--sidebar-width) 1fr;
+  grid-template-columns: var(--sidebar-col) 1fr;
   grid-template-rows: 1fr var(--status-height);
   grid-template-areas:
     "sidebar main"
@@ -3858,14 +3860,14 @@ select:disabled {
 
 /* Open tabs as a column beside the content, on either side of it. */
 .shell--vtabs-left {
-  grid-template-columns: var(--sidebar-width) var(--vtabs-width, 240px) minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-col) var(--vtabs-width, 240px) minmax(0, 1fr);
   grid-template-areas:
     "sidebar vtabs main"
     "status status status";
 }
 
 .shell--vtabs-right {
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--vtabs-width, 240px);
+  grid-template-columns: var(--sidebar-col) minmax(0, 1fr) var(--vtabs-width, 240px);
   grid-template-areas:
     "sidebar main vtabs"
     "status status status";
@@ -4081,11 +4083,11 @@ select:disabled {
 }
 
 .shell--vtabs-left:has(.vtabs--slim) {
-  grid-template-columns: var(--sidebar-width) 52px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-col) 52px minmax(0, 1fr);
 }
 
 .shell--vtabs-right:has(.vtabs--slim) {
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) 52px;
+  grid-template-columns: var(--sidebar-col) minmax(0, 1fr) 52px;
 }
 
 .shell--vtabs-left.shell--nosidebar:has(.vtabs--slim) {
@@ -7985,4 +7987,191 @@ select:disabled {
 
 .menu__check input {
   margin: 0 2px 0 4px;
+}
+
+/* ------------------------------------------- sidebar: side and slim -- */
+
+/* The sidebar on the right: the same grid, mirrored. The tab column, when
+   there is one, stays beside the content and the sidebar takes the edge. */
+.shell--sidebar-right:not(.shell--nosidebar) {
+  grid-template-columns: minmax(0, 1fr) var(--sidebar-col);
+  grid-template-areas:
+    "main sidebar"
+    "status status";
+}
+
+.shell--sidebar-right.shell--vtabs-left:not(.shell--nosidebar) {
+  grid-template-columns: var(--vtabs-width, 240px) minmax(0, 1fr) var(--sidebar-col);
+  grid-template-areas:
+    "vtabs main sidebar"
+    "status status status";
+}
+
+.shell--sidebar-right.shell--vtabs-right:not(.shell--nosidebar) {
+  grid-template-columns: minmax(0, 1fr) var(--vtabs-width, 240px) var(--sidebar-col);
+  grid-template-areas:
+    "main vtabs sidebar"
+    "status status status";
+}
+
+.shell--sidebar-right.shell--vtabs-left:not(.shell--nosidebar):has(.vtabs--slim) {
+  grid-template-columns: 52px minmax(0, 1fr) var(--sidebar-col);
+}
+
+.shell--sidebar-right.shell--vtabs-right:not(.shell--nosidebar):has(.vtabs--slim) {
+  grid-template-columns: minmax(0, 1fr) 52px var(--sidebar-col);
+}
+
+.shell--sidebar-right .sidebar {
+  border-right: none;
+  border-left: 1px solid var(--border);
+}
+
+/* Narrow windows drop the sidebar on this side too. */
+@media (max-width: 900px) {
+  .shell--sidebar-right:not(.shell--nosidebar) {
+    grid-template-columns: 1fr;
+    grid-template-areas: "main" "status";
+  }
+
+  .shell--sidebar-right.shell--vtabs-left:not(.shell--nosidebar),
+  .shell--sidebar-right.shell--vtabs-left:not(.shell--nosidebar):has(.vtabs--slim) {
+    grid-template-columns: var(--vtabs-width, 240px) minmax(0, 1fr);
+    grid-template-areas: "vtabs main" "status status";
+  }
+
+  .shell--sidebar-right.shell--vtabs-right:not(.shell--nosidebar),
+  .shell--sidebar-right.shell--vtabs-right:not(.shell--nosidebar):has(.vtabs--slim) {
+    grid-template-columns: minmax(0, 1fr) var(--vtabs-width, 240px);
+    grid-template-areas: "main vtabs" "status status";
+  }
+}
+
+/* Narrows or widens the sidebar, beside the app's name. */
+.sidebar__tool {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  border-radius: 7px;
+  color: var(--text-muted);
+}
+
+.sidebar__tool:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.sidebar__tool svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* Slim: the projects' icons only, widening over the content while hovered
+   or while the search has the keyboard, as the slim tab column does. */
+.shell--sidebar-slim {
+  --sidebar-col: 52px;
+}
+
+.sidebar--slim {
+  position: relative;
+  z-index: 2;
+  width: 52px;
+}
+
+.shell--sidebar-right .sidebar--slim {
+  justify-self: end;
+}
+
+.sidebar--slim:hover,
+.sidebar--slim:has(#project-search:focus) {
+  z-index: 30;
+  width: var(--sidebar-width);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.28);
+  transition: width 120ms ease-out 150ms;
+}
+
+.sidebar--slim:not(:hover, :has(#project-search:focus)) :is(
+    .sidebar__name,
+    .sidebar__tool,
+    .sidebar__label > span,
+    .sidebar__label [data-action="workspace-menu"],
+    .sidebar__group:not(.sidebar__group--fold),
+    .sidebar__group--fold > span,
+    .sidebar__group--fold .project-row__count,
+    .sidebar__none,
+    .sidebar__open,
+    .project-row__chevron,
+    .project-row__text,
+    .project-row__count,
+    .project-row__more,
+    .side-session__text,
+    .side-session .chip,
+    .side-session__tag
+  ) {
+  display: none;
+}
+
+.sidebar--slim:not(:hover, :has(#project-search:focus)) .sidebar__brand {
+  justify-content: center;
+  padding: 0;
+}
+
+/* The search box stays focusable — ⌘F reaches it — but shows only its icon. */
+.sidebar--slim:not(:hover, :has(#project-search:focus)) .sidebar__search {
+  padding: 0 8px 12px;
+}
+
+.sidebar--slim:not(:hover, :has(#project-search:focus)) .sidebar__search input {
+  padding: 0;
+  color: transparent;
+  cursor: pointer;
+}
+
+.sidebar--slim:not(:hover, :has(#project-search:focus)) .sidebar__search input::placeholder {
+  color: transparent;
+}
+
+.sidebar--slim:not(:hover, :has(#project-search:focus)) .sidebar__search svg {
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.sidebar--slim:not(:hover, :has(#project-search:focus)) .sidebar__label {
+  justify-content: center;
+  padding: 4px 0 6px;
+}
+
+.sidebar--slim:not(:hover, :has(#project-search:focus)) .sidebar__list {
+  padding: 0 6px 12px;
+  overflow-x: hidden;
+}
+
+.sidebar--slim:not(:hover, :has(#project-search:focus)) :is(.sidebar__children, .sidebar__children--nested) {
+  padding-left: 0;
+}
+
+.sidebar--slim:not(:hover, :has(#project-search:focus)) :is(.project-row, .side-session, .sidebar__group--fold) {
+  position: relative;
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar--slim:not(:hover, :has(#project-search:focus)) .project-row__main {
+  justify-content: center;
+}
+
+/* A project's running or waiting dot sits on the corner of its icon. */
+.sidebar--slim:not(:hover, :has(#project-search:focus)) .project-row > .dot {
+  position: absolute;
+  top: 5px;
+  right: 7px;
+}
+
+.sidebar--slim:not(:hover, :has(#project-search:focus)) .sidebar__footer {
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
 }

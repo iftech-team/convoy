@@ -297,6 +297,14 @@ pub fn validate_settings(settings: &Value) -> Result<()> {
             "Invalid tab side."
         );
     }
+    if let Some(value) = settings.get("sidebarSide") {
+        ensure!(
+            value
+                .as_str()
+                .is_some_and(|side| crate::model::SIDEBAR_SIDES.contains(&side)),
+            "Invalid sidebar side."
+        );
+    }
     if let Some(value) = settings.get("notificationSound") {
         ensure!(
             value

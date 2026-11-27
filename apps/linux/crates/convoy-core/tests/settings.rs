@@ -145,6 +145,7 @@ fn tab_layout_settings_default_save_and_reject_unknown_values() {
     assert!(defaults.tab_grouping);
     assert_eq!(defaults.tab_side, "left");
     assert!(!defaults.tab_auto_fold, "folding on its own is opt-in");
+    assert_eq!(defaults.sidebar_side, "left");
 
     workspace
         .save_settings(SettingsPatch {
@@ -152,6 +153,7 @@ fn tab_layout_settings_default_save_and_reject_unknown_values() {
             tab_grouping: Some(false),
             tab_side: Some("right".into()),
             tab_auto_fold: Some(true),
+            sidebar_side: Some("right".into()),
             ..Default::default()
         })
         .unwrap();
@@ -163,8 +165,10 @@ fn tab_layout_settings_default_save_and_reject_unknown_values() {
     assert!(!saved.tab_grouping);
     assert_eq!(saved.tab_side, "right");
     assert!(saved.tab_auto_fold);
+    assert_eq!(saved.sidebar_side, "right");
     let json = std::fs::read_to_string(&fixture.file).unwrap();
     assert!(json.contains("\"tabLayout\""), "saved under its macOS-style key");
+    assert!(json.contains("\"sidebarSide\""), "the sidebar's side too");
 
     for patch in [
         SettingsPatch {
@@ -173,6 +177,10 @@ fn tab_layout_settings_default_save_and_reject_unknown_values() {
         },
         SettingsPatch {
             tab_side: Some("top".into()),
+            ..Default::default()
+        },
+        SettingsPatch {
+            sidebar_side: Some("middle".into()),
             ..Default::default()
         },
     ] {

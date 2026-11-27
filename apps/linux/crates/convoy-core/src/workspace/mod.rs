@@ -197,6 +197,8 @@ pub struct SettingsPatch {
     /// `left` or `right`.
     pub tab_side: Option<String>,
     pub tab_auto_fold: Option<bool>,
+    /// `left` or `right`.
+    pub sidebar_side: Option<String>,
     pub worktree_setup: Option<String>,
     pub worktree_shared: Option<String>,
     /// `chat` or `terminal`.
@@ -1063,6 +1065,7 @@ impl Workspace {
             tab_grouping: patch.tab_grouping.unwrap_or(current.tab_grouping),
             tab_side: patch.tab_side.unwrap_or(current.tab_side),
             tab_auto_fold: patch.tab_auto_fold.unwrap_or(current.tab_auto_fold),
+            sidebar_side: patch.sidebar_side.unwrap_or(current.sidebar_side),
             worktree_setup: patch.worktree_setup.unwrap_or(current.worktree_setup),
             worktree_shared: patch.worktree_shared.unwrap_or(current.worktree_shared),
             default_view: patch.default_view.unwrap_or(current.default_view),

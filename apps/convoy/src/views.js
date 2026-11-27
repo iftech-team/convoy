@@ -114,6 +114,13 @@ export const taskOfSession = (id) => {
   return stage ? { ...stage, task: knownTasks().get(stage.taskId) } : null;
 };
 
+/// The arrow on the sidebar's narrow/widen button points the way the
+/// sidebar will go: towards its own edge to narrow, away from it to widen.
+function slimIcon() {
+  const right = state.settings.sidebar_side === "right";
+  return state.sidebarSlim !== right ? icons.chevronRight : icons.back;
+}
+
 export function sidebar() {
   const needle = state.search.toLowerCase();
   const groups = new Map();
@@ -216,10 +223,12 @@ export function sidebar() {
   ].join("");
 
   return `
-    <aside class="sidebar">
+    <aside class="sidebar${state.sidebarSlim ? " sidebar--slim" : ""}" aria-label="${escape(t("Projects"))}">
       <div class="sidebar__brand">
         <span class="sidebar__mark">${appMark(22)}</span>
         <span class="sidebar__name">Convoy</span>
+        <button class="sidebar__tool" data-action="sidebar-slim" aria-pressed="${state.sidebarSlim}"
+                title="${escape(state.sidebarSlim ? t("Show names in the sidebar") : t("Narrow the sidebar to icons"))}">${slimIcon()}</button>
       </div>
       <div class="sidebar__search">
         ${icons.search}

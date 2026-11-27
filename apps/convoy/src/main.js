@@ -49,6 +49,7 @@ import {
   clampTabColumn,
   savePinnedTabs,
   saveTabColumnSlim,
+  saveSidebarSlim,
   PINNED,
 } from "./state.js";
 import { groupBounds, moveGroup, normalizeOrder } from "./tab-groups.js";
@@ -688,6 +689,8 @@ function restoreUnsaved({ fields, scrolls }) {
 function shellClass() {
   const classes = ["shell"];
   if (state.sidebarHidden) classes.push("shell--nosidebar");
+  if (state.settings.sidebar_side === "right") classes.push("shell--sidebar-right");
+  if (state.sidebarSlim) classes.push("shell--sidebar-slim");
   if (tabsVertical()) classes.push("shell--vtabs", state.settings.tab_side === "right" ? "shell--vtabs-right" : "shell--vtabs-left");
   return classes.join(" ");
 }
@@ -1147,6 +1150,11 @@ const ACTIONS = {
   "tabs-slim": () => {
     state.tabColumnSlim = !state.tabColumnSlim;
     saveTabColumnSlim();
+    render();
+  },
+  "sidebar-slim": () => {
+    state.sidebarSlim = !state.sidebarSlim;
+    saveSidebarSlim();
     render();
   },
   "layout-1": () => setLayout(1),
@@ -1887,6 +1895,8 @@ app.addEventListener("click", async (event) => {
       return render();
     }
     if (data.prefSet) return savePref({ [data.prefSet]: data.value });
+    // Kept per machine, not in the workspace file.
+    if (data.prefToggle === "sidebar_slim") return ACTIONS["sidebar-slim"]();
     if (data.prefToggle) return savePref({ [data.prefToggle]: !state.settings[data.prefToggle] });
     if (data.capture) {
       state.capturing = state.capturing === data.capture ? null : data.capture;

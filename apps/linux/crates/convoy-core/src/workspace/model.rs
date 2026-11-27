@@ -956,6 +956,9 @@ pub struct Settings {
     /// Fold every other project's tabs when a tab of another project opens.
     #[serde(rename = "tabAutoFold", default)]
     pub tab_auto_fold: bool,
+    /// The side of the window the projects sidebar sits on: `left` or `right`.
+    #[serde(rename = "sidebarSide", default = "default_sidebar_side")]
+    pub sidebar_side: String,
     /// Run in every new worktree, before the project's own command.
     #[serde(rename = "worktreeSetup", default)]
     pub worktree_setup: String,
@@ -994,12 +997,18 @@ impl Settings {
 pub const TAB_LAYOUTS: &[&str] = &["horizontal", "vertical"];
 /// The sides the vertical tab column can sit on.
 pub const TAB_SIDES: &[&str] = &["left", "right"];
+/// The sides the projects sidebar can sit on.
+pub const SIDEBAR_SIDES: &[&str] = &["left", "right"];
 
 fn default_tab_layout() -> String {
     "horizontal".into()
 }
 
 fn default_tab_side() -> String {
+    "left".into()
+}
+
+fn default_sidebar_side() -> String {
     "left".into()
 }
 
@@ -1084,6 +1093,7 @@ impl Default for Settings {
             tab_grouping: true,
             tab_side: default_tab_side(),
             tab_auto_fold: false,
+            sidebar_side: default_sidebar_side(),
             worktree_setup: String::new(),
             worktree_shared: String::new(),
             default_view: default_view(),

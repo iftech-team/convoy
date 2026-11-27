@@ -69,6 +69,14 @@ export function saveTabColumnSlim() {
   }
 }
 
+export function saveSidebarSlim() {
+  try {
+    localStorage.setItem("convoy.sidebarSlim", state.sidebarSlim ? "1" : "0");
+  } catch {
+    /* not remembered */
+  }
+}
+
 export const state = {
   settings: {
     theme: "dark",
@@ -137,6 +145,15 @@ export const state = {
   tabColumnSlim: (() => {
     try {
       return localStorage.getItem("convoy.tabColumnSlim") === "1";
+    } catch {
+      return false;
+    }
+  })(),
+  // The projects sidebar narrowed to icons, widening while hovered; per
+  // machine, like the tab column's.
+  sidebarSlim: (() => {
+    try {
+      return localStorage.getItem("convoy.sidebarSlim") === "1";
     } catch {
       return false;
     }

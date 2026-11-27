@@ -188,7 +188,24 @@ function general(settings) {
     ${groupBox(
       t("Sidebar"),
       row(t("Sort projects by name"), t("Otherwise projects keep the order they were added in."), toggle("sort_projects", settings.sort_projects, t("Sort projects by name"))) +
-        row(t("Compact rows"), t("Hides the branch and status line under projects and sessions."), toggle("compact_sidebar", settings.compact_sidebar !== false, t("Compact rows"))),
+        row(t("Compact rows"), t("Hides the branch and status line under projects and sessions."), toggle("compact_sidebar", settings.compact_sidebar !== false, t("Compact rows"))) +
+        row(
+          t("Sidebar side"),
+          t("The side of the window the projects sidebar sits on."),
+          segmented(
+            "sidebar_side",
+            [
+              ["left", t("Left")],
+              ["right", t("Right")],
+            ],
+            settings.sidebar_side === "right" ? "right" : "left",
+          ),
+        ) +
+        row(
+          t("Narrow sidebar"),
+          t("Only the projects' icons, widening over the content while the pointer is on it."),
+          toggle("sidebar_slim", state.sidebarSlim, t("Narrow sidebar")),
+        ),
     )}
     ${groupBox(
       t("Tabs"),
